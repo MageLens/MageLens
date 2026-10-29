@@ -31,7 +31,7 @@ Read [Real-world E2E coverage for hundreds or thousands of tests](docs/parallel-
 Run this inside the empty directory you want to use for MageLens:
 
 ```bash
-wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.5.0.tar.gz | tar -xz --strip-components=1 && ./install.sh
+wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.5.1.tar.gz | tar -xz --strip-components=1 && ./install.sh
 ```
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
