@@ -17,6 +17,7 @@
 !/bin/application-compose
 !/bin/application-domain
 !/bin/badges.cjs
+!/bin/browser-navigation.cjs
 !/bin/common
 !/bin/compose-project
 !/bin/dependencies

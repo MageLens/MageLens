@@ -2,12 +2,14 @@ const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const {chromium} = require('@playwright/test');
 const {warmupPaths} = require('./project.cjs');
+const {disablePageTransitions} = require('./browser-navigation.cjs');
 
 async function main() {
     if (process.argv.includes('--warmup')) {
         const browser = await chromium.launch({headless: false});
         try {
             const page = await browser.newPage({ignoreHTTPSErrors: true});
+            await page.context().addInitScript(disablePageTransitions);
             await require('@vitaliiboiko/magento-template-coverage/playwright').installTemplateRuntime(page.context());
             const paths = warmupPaths(JSON.parse(fs.readFileSync('coverage/project-fixtures.json')));
             const baseUrl = process.env.PLAYWRIGHT_BASE_URL || process.env.CYPRESS_BASE_URL;

@@ -15,6 +15,14 @@ const server = http.createServer((request, response) => {
     requests.push({url: request.url, cookie: request.headers.cookie || ''});
     const send = (body, type = 'text/html') => {
         response.writeHead(200, {'content-type': type, 'cache-control': 'no-store'});
+        if (type === 'text/html') body += `<style>@view-transition { navigation: auto; }</style><script>
+            addEventListener('pagereveal', event => {
+                if (event.viewTransition) {
+                    event.viewTransition.ready.then(() => {});
+                    event.viewTransition.skipTransition();
+                }
+            });
+        </script>`;
         response.end(body);
     };
     if (request.url === '/late.js') return setTimeout(() => send('window.lateScript = true;', 'text/javascript'), 700);
@@ -73,7 +81,7 @@ async function browser(warmup, shouldFail = false) {
 
 (async () => {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    for (const file of ['cypress.config.cjs', 'bin/run-browser.cjs', 'bin/project.cjs',
+    for (const file of ['cypress.config.cjs', 'bin/run-browser.cjs', 'bin/project.cjs', 'bin/browser-navigation.cjs',
         'cypress/support/warmup.js', 'cypress/support/e2e.js', 'cypress/support/javascript-coverage.js', 'cypress/warmup/storefront.cy.js']) {
         write(file, fs.readFileSync(path.join(root, file)));
     }
@@ -109,7 +117,7 @@ async function browser(warmup, shouldFail = false) {
     await browser(false);
     assert.equal(read('coverage/cypress-results.json').totalPassed, 1);
     assert.ok(requests.filter(request => request.url === '/fresh').every(request => request.cookie.includes('application_coverage=')));
-    console.log('PASS: homepage and fixture assets finish loading; retained initializer markers do not block; warm-up produces no coverage; tests start with fresh state and existing timeouts.');
+    console.log('PASS: homepage and fixture assets finish loading without page transitions; retained initializer markers do not block; warm-up produces no coverage; tests start with fresh state and existing timeouts.');
 
     write('cypress/warmup/storefront.cy.js', fs.readFileSync(path.join(root, 'cypress/warmup/storefront.cy.js'), 'utf8')
         .replace("describe('Storefront warm-up',", "describe('Storefront warm-up', {defaultCommandTimeout: 1500},"));
