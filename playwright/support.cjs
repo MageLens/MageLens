@@ -3,6 +3,7 @@ const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {withTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
+const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         applicationErrors: [async ({context}, use) => {
@@ -20,13 +21,7 @@ function withCoverage(base = playwright.test) {
         }, {auto: true}],
         context: async ({context, baseURL}, use) => {
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
-            // Match Cypress navigation: native page snapshots can be aborted by
-            // rapid Admin/storefront visits. An adopted sheet also works under CSP.
-            await context.addInitScript(() => {
-                const sheet = new CSSStyleSheet();
-                sheet.replaceSync('@view-transition { navigation: none; }');
-                document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-            });
+            await context.addInitScript(disablePageTransitions);
             await context.addCookies([{name: 'application_coverage', value: run.id,
                 domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
             const snapshots = new Map();

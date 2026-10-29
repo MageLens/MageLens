@@ -82,7 +82,7 @@ dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-root
 touch .runtime/hooks-active
 dc exec -T phpfpm php /application/docker/php/project-hooks.php before
 dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
-say 'Warming the storefront homepage in a separate browser (up to 10 minutes)'
+say 'Warming the storefront and fixture pages in a separate browser (up to 10 minutes)'
 browser_script=bin/run-browser.cjs
 [[ "$runner" == playwright ]] && browser_script=bin/run-playwright.cjs
 if dc exec -T runner timeout --signal=TERM --kill-after=10s 600s node "$browser_script" --warmup; then

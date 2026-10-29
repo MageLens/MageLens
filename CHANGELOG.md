@@ -1,5 +1,14 @@
 # Release notes
 
+## 1.5.1 - 2026-10-29
+
+- Update Cypress to 16.2.1 for TLS verification, compressed HTTPS responses and test reliability fixes.
+- Update the Docker Magento foundation to 53.2.0, retaining the patched PHP 8.4.27 base.
+- Update template coverage to 1.5.3, with Node.js 24 and 26 compatibility checks. MageLens runners continue to use Node.js 24.22.1.
+- Prepare Admin login assets before Blog scenarios, avoiding cold asset-generation timeouts on fresh installations.
+
+After updating, rerun `./install.sh` with your platform, theme and runner flags, then `./bin/run-coverage`.
+
 ## 1.5.0 - 2026-10-27
 
 - Choose an isolated Docker project during installation with `--project-name NAME`. The saved name is used by installation, coverage and service commands; existing installations reject name changes that would select different application data.

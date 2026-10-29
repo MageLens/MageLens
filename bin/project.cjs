@@ -5,6 +5,21 @@ function readCoverageConfig() {
     return fs.existsSync('coverage.config.json') ? JSON.parse(fs.readFileSync('coverage.config.json', 'utf8')) : {};
 }
 
+function warmupPaths(fixtures) {
+    const paths = ['/'];
+    for (const fixture of Object.values(fixtures)) {
+        const extra = fixture?.warmupPaths ?? [];
+        if (!Array.isArray(extra)) throw new Error('Fixture warmupPaths must be an array of application paths');
+        for (const value of extra) {
+            if (typeof value !== 'string' || !/^\/(?!\/)[^\\\s]*$/.test(value)) {
+                throw new Error('Fixture warmupPaths must contain paths on the application origin');
+            }
+            paths.push(value);
+        }
+    }
+    return [...new Set(paths)];
+}
+
 function directories(directory) {
     if (!fs.existsSync(directory)) return [];
     return fs.readdirSync(directory, {withFileTypes: true}).sort((a, b) => a.name.localeCompare(b.name)).filter(entry => {
@@ -110,4 +125,4 @@ function nginxConfig(template, environment = process.env) {
     return ports.reduce((config, [key, value]) => config.replaceAll(`__${key}__`, String(Number(value))), template);
 }
 
-module.exports = {discover, files, writeRuntime, writeChanged, nginxConfig, specPatterns, withThemeRoots, isCoverageExcluded, readCoverageConfig};
+module.exports = {discover, files, writeRuntime, writeChanged, nginxConfig, specPatterns, withThemeRoots, isCoverageExcluded, readCoverageConfig, warmupPaths};
