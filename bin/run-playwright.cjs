@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const {chromium} = require('@playwright/test');
+const {warmupPaths} = require('./project.cjs');
 
 async function main() {
     if (process.argv.includes('--warmup')) {
@@ -8,9 +9,13 @@ async function main() {
         try {
             const page = await browser.newPage({ignoreHTTPSErrors: true});
             await require('@vitaliiboiko/magento-template-coverage/playwright').installTemplateRuntime(page.context());
-            const response = await page.goto(process.env.PLAYWRIGHT_BASE_URL || process.env.CYPRESS_BASE_URL, {timeout: 180000});
-            if (!response?.ok()) throw new Error(`Storefront warm-up HTTP ${response?.status()}`);
-            await page.waitForLoadState('networkidle', {timeout: 180000});
+            const paths = warmupPaths(JSON.parse(fs.readFileSync('coverage/project-fixtures.json')));
+            const baseUrl = process.env.PLAYWRIGHT_BASE_URL || process.env.CYPRESS_BASE_URL;
+            for (const path of paths) {
+                const response = await page.goto(new URL(path, baseUrl).href, {timeout: 180000});
+                if (!response?.ok()) throw new Error(`Warm-up ${path} HTTP ${response?.status()}`);
+                await page.waitForLoadState('networkidle', {timeout: 180000});
+            }
             fs.writeFileSync('coverage/warmup-results.json', JSON.stringify({runner: 'playwright', status: 'passed'}));
         } finally { await browser.close(); }
         return;

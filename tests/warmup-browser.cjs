@@ -20,6 +20,8 @@ const server = http.createServer((request, response) => {
     if (request.url === '/late.js') return setTimeout(() => send('window.lateScript = true;', 'text/javascript'), 700);
     if (request.url === '/late.css') return setTimeout(() => send('body { color: black; }', 'text/css'), 700);
     if (request.url === '/template.html') return setTimeout(() => send('<p data-cy="rendered-template">Loaded article</p>'), 700);
+    if (request.url === '/admin.css') return setTimeout(() => send('body { color: blue; }', 'text/css'), 2000);
+    if (request.url === '/admin-login/') return send('<html><head><link rel="stylesheet" href="/admin.css"></head><body data-mage-init="{}">Admin login</body></html>');
     if (request.url === '/unfinished-template.html') return; // Deliberate unresolved request.
     if (request.url === '/' && scenario !== 'loaded') return send(`<html><body data-mage-init="{}"><script>
         window.requirejs = {s: {contexts: {_: {registry: ${scenario === 'module'
@@ -76,7 +78,7 @@ async function browser(warmup, shouldFail = false) {
         write(file, fs.readFileSync(path.join(root, file)));
     }
     fs.symlinkSync(path.dirname(path.dirname(require.resolve('cypress/package.json'))), path.join(scratch, 'node_modules'));
-    write('coverage/project-fixtures.json', '{}');
+    write('coverage/project-fixtures.json', JSON.stringify({Admin: {warmupPaths: ['/admin-login/']}}));
     write('coverage/run.json', JSON.stringify({id: 'a'.repeat(32)}));
     await browser(true);
     assert.equal(read('coverage/warmup-results.json').totalPassed, 1);
@@ -84,9 +86,10 @@ async function browser(warmup, shouldFail = false) {
     assert.equal(loaded.initializerMarkers, 1, 'The retained marker regression did not execute');
     assert.deepEqual(loaded.pendingRequests, []);
     assert.deepEqual(loaded.pendingModules, []);
-    for (const url of ['/late.js', '/late.css', '/template.html']) {
+    for (const url of ['/late.js', '/late.css', '/template.html', '/admin-login/', '/admin.css']) {
         assert.ok(requests.some(request => request.url === url), `Warm-up missed ${url}`);
     }
+    assert.ok(loaded.page.endsWith('/admin-login/'), 'Warm-up did not finish the fixture page');
     assert.ok(!fs.existsSync(path.join(scratch, '.nyc_output')), 'Warm-up wrote JavaScript coverage');
     assert.ok(!fs.existsSync(path.join(scratch, 'coverage/raw')), 'Warm-up wrote raw coverage');
     assert.ok(requests.every(request => !request.cookie.includes('application_coverage=')), 'Warm-up sent a PHP collection cookie');
@@ -106,7 +109,7 @@ async function browser(warmup, shouldFail = false) {
     await browser(false);
     assert.equal(read('coverage/cypress-results.json').totalPassed, 1);
     assert.ok(requests.filter(request => request.url === '/fresh').every(request => request.cookie.includes('application_coverage=')));
-    console.log('PASS: retained initializer markers do not block loaded assets; warm-up produces no coverage; tests start with fresh state and existing timeouts.');
+    console.log('PASS: homepage and fixture assets finish loading; retained initializer markers do not block; warm-up produces no coverage; tests start with fresh state and existing timeouts.');
 
     write('cypress/warmup/storefront.cy.js', fs.readFileSync(path.join(root, 'cypress/warmup/storefront.cy.js'), 'utf8')
         .replace("describe('Storefront warm-up',", "describe('Storefront warm-up', {defaultCommandTimeout: 1500},"));

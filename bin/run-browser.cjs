@@ -1,13 +1,13 @@
 const fs = require('node:fs');
 const cypress = require('cypress');
-const {specPatterns} = require('./project.cjs');
+const {specPatterns, warmupPaths} = require('./project.cjs');
 const warmup = process.argv.includes('--warmup');
 const run = JSON.parse(fs.readFileSync('coverage/run.json'));
 const projectFixtures = JSON.parse(fs.readFileSync('coverage/project-fixtures.json'));
 const expectedSpecs = warmup ? ['cypress/warmup/storefront.cy.js'] : fs.globSync(specPatterns()).sort();
 if (!expectedSpecs.length) throw new Error('Add your project tests to cypress/e2e/*.cy.js before running coverage.');
 const options = warmup ? {
-    expose: {warmup: true, coverageRun: null, projectFixtures},
+    expose: {warmup: true, coverageRun: null, projectFixtures, warmupPaths: warmupPaths(projectFixtures)},
     config: {
         specPattern: expectedSpecs, supportFile: 'cypress/support/warmup.js',
         pageLoadTimeout: 180000, defaultCommandTimeout: 180000, responseTimeout: 180000,

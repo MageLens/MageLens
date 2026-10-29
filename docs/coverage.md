@@ -17,7 +17,7 @@ Coverage runs use disposable source copies and verify that your originals remain
 
 Each run replaces previous reports and starts fresh execution counters. Unchanged browser instrumentation is reused; source edits update the disposable runtime copies. Run installation and coverage commands one at a time.
 
-After instrumentation, compatibility patches and fixture preparation, the command warms the storefront homepage using the installed runner in a separate browser. This prepares shared [static assets generated on demand in developer mode](https://experienceleague.adobe.com/en/docs/commerce-operations/configuration-guide/cli/static-view/static-view-file-deployment).
+After instrumentation, compatibility patches and fixture preparation, the command warms the storefront homepage and fixture pages using the installed runner in a separate browser. The Blog fixture includes the Admin login page. This prepares shared [static assets generated on demand in developer mode](https://experienceleague.adobe.com/en/docs/commerce-operations/configuration-guide/cli/static-view/static-view-file-deployment).
 
 Warm-up allows up to three minutes per navigation/readiness check and ten minutes overall, with up to ten seconds to terminate the browser. It waits for the document load, enabled RequireJS modules (including `text!` templates), browser requests and a one-second quiet interval. Remaining `data-mage-init` and `text/x-magento-init` declaration markers are recorded for diagnostics; their presence does not block readiness. Coverage collection begins after warm-up succeeds, in a fresh browser session with the existing test timeouts. Warm-up execution contributes no PHP, JavaScript or template hits to the reports.
 
@@ -117,6 +117,8 @@ Modules can provide optional fixture hooks in `Test/MageLens/hooks.php`:
 | `cleanup` | When the run exits; also before preparation if a previous run was interrupted | Optional diagnostic output; safe to repeat |
 
 Cypress receives each module's `prepare` result through `Cypress.expose('projectFixtures')[moduleName]`. Playwright tests can read the same data from `coverage/project-fixtures.json`. The [blog hooks](../src/app/code/Application/Blog/Test/MageLens/hooks.php) provide an example of fixture creation and cleanup.
+
+The result may include `warmupPaths`, an array of application paths such as `["/admin/"]`. Both runners visit these pages after the homepage, before coverage collection. Paths must start with a single `/`; external URLs are not accepted.
 
 ## Reports and artifacts
 

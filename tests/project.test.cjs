@@ -3,8 +3,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {discover, specPatterns, writeRuntime, withThemeRoots, isCoverageExcluded} = require('../bin/project.cjs');
+const {discover, specPatterns, writeRuntime, withThemeRoots, isCoverageExcluded, warmupPaths} = require('../bin/project.cjs');
 const {sourceHashes} = require('../bin/prepare.cjs');
+
+test('warm-up visits the homepage and each fixture page once, without assuming an Admin path', () => {
+    assert.deepEqual(warmupPaths({}), ['/']);
+    assert.deepEqual(warmupPaths({Blog: {warmupPaths: ['/custom-admin/', '/']},
+        Catalog: {warmupPaths: ['/custom-admin/', '/catalog/']}, Other: {id: 1}}),
+    ['/', '/custom-admin/', '/catalog/']);
+});
+
+test('warm-up rejects malformed lists and paths outside the application origin', () => {
+    for (const paths of ['/admin/', [null], [42], ['https://outside.test/'], ['//outside.test/'],
+        ['/\\outside.test/'], ['/admin/\n'], ['admin/']]) {
+        assert.throws(() => warmupPaths({Blog: {warmupPaths: paths}}), /warmupPaths/);
+    }
+});
 
 test('coverage exclusions match whole directory names across file types and path separators', () => {
     for (const file of ['Test/fixture.php', 'Setup/Patch/Data/Example.php',

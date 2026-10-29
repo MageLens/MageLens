@@ -34,6 +34,7 @@ $run = json_decode(file_get_contents('/coverage/run.json'), true, 512, JSON_THRO
 if (!preg_match('/^[a-f0-9]{32}$/D', $run['id'])) throw new RuntimeException('Invalid run ID.');
 $fixture = ['run' => $run['id'], 'prefix' => 'coverage-' . $run['id'] . '-', 'query' => 'Run-' . $run['id'],
     'readerUser' => 'reader_' . $run['id'], 'readerPassword' => 'Reader9!' . bin2hex(random_bytes(16))];
+$fixture['warmupPaths'] = ['/' . $om->get(\Magento\Backend\App\Area\FrontNameResolver::class)->getFrontName() . '/'];
 $store = $om->get(\Magento\Store\Model\StoreManagerInterface::class)->getDefaultStoreView();
 $themeKey = $om->get(\Magento\Framework\View\DesignInterface::class)->getConfigurationDesignTheme('frontend', ['store' => $store]);
 $theme = $om->get(\Magento\Framework\View\Design\Theme\FlyweightFactory::class)->create($themeKey, 'frontend');

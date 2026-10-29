@@ -5,6 +5,7 @@
 - Update Cypress to 16.2.1 for TLS verification, compressed HTTPS responses and test reliability fixes.
 - Update the Docker Magento foundation to 53.2.0, retaining the patched PHP 8.4.27 base.
 - Update template coverage to 1.5.3, with Node.js 24 and 26 compatibility checks. MageLens runners continue to use Node.js 24.22.1.
+- Prepare Admin login assets before Blog scenarios, avoiding cold asset-generation timeouts on fresh installations.
 
 After updating, rerun `./install.sh` with your platform, theme and runner flags, then `./bin/run-coverage`.
 
