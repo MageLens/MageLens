@@ -4,6 +4,34 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 
+for (const [name, failure, until, expected, attempts] of [
+    ['successful downloads run once', 0, 0, 0, 1],
+    ['temporary download failures recover', 6, 2, 0, 3],
+    ['persistent download failures retain their exit status', 23, 9, 23, 4],
+    ['interrupted downloads stop immediately', 130, 9, 130, 1],
+    ['terminated downloads stop immediately', 143, 9, 143, 1]
+]) {
+    test(name, () => {
+        const result = spawnSync('bash', ['-c', `
+            source "$1/bin/common"
+            attempt=0
+            operation() {
+                [[ $# == 2 && "$1" == 'argument with spaces' && "$2" == final ]] || return 97
+                attempt=$((attempt + 1))
+                printf 'attempt %s: %s\\n' "$attempt" "$*"
+                (( attempt > TEST_FAIL_UNTIL )) || return "$TEST_DOWNLOAD_STATUS"
+            }
+            sleep() { printf 'delay %s\\n' "$1"; }
+            download_with_retry operation 'argument with spaces' final
+        `, 'test', root], {encoding: 'utf8', env: {...process.env,
+            TEST_DOWNLOAD_STATUS: String(failure), TEST_FAIL_UNTIL: String(until)}});
+        assert.equal(result.status, expected, result.stderr);
+        assert.deepEqual(result.stdout.match(/attempt .*/g), Array.from({length: attempts}, (_, index) =>
+            `attempt ${index + 1}: argument with spaces final`));
+        assert.deepEqual(result.stdout.match(/delay .*/g) || [], Array.from({length: attempts - 1}, (_, index) => `delay ${(index + 1) * 5}`));
+    });
+}
+
 for (const failure of ['', 'runner', 'logs']) {
     test(`dependency startup ${failure ? `reports a failure even when ${failure} fails` : 'continues after all services are ready'}`, () => {
         const result = spawnSync('bash', ['-c', `

@@ -76,7 +76,7 @@ if [[ ! -d .runtime/docker-magento/.git ]]; then
     git init -q .runtime/docker-magento
     git -C .runtime/docker-magento remote add origin https://github.com/markshust/docker-magento.git
 fi
-git -C .runtime/docker-magento fetch --depth 1 origin "$UPSTREAM"
+download_with_retry git -C .runtime/docker-magento fetch --depth 1 origin "$UPSTREAM"
 git -C .runtime/docker-magento checkout --detach FETCH_HEAD
 mkdir -p .runtime/pcov .runtime/magento coverage node_modules src
 say 'Exposing pinned Docker Magento bin tools and supporting files'
@@ -84,7 +84,8 @@ say 'Exposing pinned Docker Magento bin tools and supporting files'
 say 'Synchronizing browser coverage versions and dependency locks'
 bootstrap_image=$RUNNER_IMAGE
 [[ "$MAGELENS_RUNNER" != playwright ]] || bootstrap_image=$PLAYWRIGHT_RUNNER_IMAGE
-docker run --rm --pull always --user "$LOCAL_UID:$LOCAL_GID" \
+download_with_retry docker pull "$bootstrap_image"
+docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
     --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
     --env CYPRESS_VERSION --env PLAYWRIGHT_VERSION --env TEMPLATE_COVERAGE_VERSION --env CYPRESS_CODE_COVERAGE_VERSION \
     --env MAGELENS_RUNNER --env TEMPLATE_COVERAGE_PACKAGE \
@@ -92,11 +93,11 @@ docker run --rm --pull always --user "$LOCAL_UID:$LOCAL_GID" \
     --env npm_config_cache=/tmp/npm-cache \
     --entrypoint node "$bootstrap_image" bin/sync-dependencies.cjs
 say "Building PHP/PCOV and $MAGELENS_RUNNER tooling"
-dc pull app db redis opensearch
+download_with_retry dc pull app db redis opensearch
 "$ROOT/bin/build-php-image"
 # The base was just built locally with --pull; it is not a registry image.
 dc build phpfpm
-dc build --pull runner
+download_with_retry dc build --pull runner
 # Docker initializes this dependencies volume from the image; refresh it on reruns too.
 dc run --rm --no-deps --user root runner chown -R "$LOCAL_UID:$LOCAL_GID" /workspace/node_modules
 dc run --rm --no-deps runner npm ci --ignore-scripts --no-audit --no-fund

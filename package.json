@@ -1,6 +1,6 @@
 {
   "name": "magelens",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "private": true,
   "description": "Quickly bootstrap Magento with PHP, JavaScript, and HTML template code coverage",
   "scripts": {

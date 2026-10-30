@@ -1,11 +1,12 @@
 # Release notes
 
-## Unreleased
+## 1.6.0 - 2026-10-30
 
 - Remove legacy non-CSP Hyvä support, its package selection and coverage example. `--hyva` continues to install Hyvä CSP.
 - Reject `--nocsp` and saved `hyva-legacy` profiles before changing the environment. Back up the application and database, then migrate customizations to CSP in a separate checkout on the same platform with a different Docker project, domain and ports. Keep the old profile and data unchanged; use the previous MageLens release to manage that installation.
 - Reduce the complete E2E matrix to eight combinations: Magento Open Source and Mage-OS, Luma and Hyvä CSP, Cypress and Playwright. Retain shared Alpine coverage, CSP enforcement, source preservation and viewer recovery checks.
 - Keep the runner display ready between startup checks and desktop clients, preventing intermittent window-manager startup failures.
+- Retry temporary Git and Docker download failures during installation; persistent failures still stop setup.
 
 ## 1.5.1 - 2026-10-29
 
