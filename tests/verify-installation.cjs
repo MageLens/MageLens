@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const [theme, runner, platform] = process.argv.slice(2);
-assert.ok(['luma', 'hyva', 'hyva-legacy'].includes(theme));
+assert.ok(['luma', 'hyva'].includes(theme));
 assert.ok(['cypress', 'playwright'].includes(runner));
 assert.ok(['magento', 'mageos'].includes(platform));
 const manifest = JSON.parse(fs.readFileSync('package.json'));
@@ -39,7 +39,7 @@ assert.equal(composer.packages.find(pkg => pkg.name === `${vendor}/product-commu
 assert.equal(composer.packages.some(pkg => pkg.name === `${otherVendor}/product-community-edition`), false);
 assert.ok(fs.existsSync(`src/vendor/${vendor}/framework/Component/ComponentRegistrar.php`));
 assert.equal(JSON.parse(fs.readFileSync('src/.magelens-source.json')).platform, platform);
-assert.equal(composer.packages.some(pkg => pkg.name === 'hyva-themes/magento2-default-theme'), theme === 'hyva-legacy');
+assert.equal(composer.packages.some(pkg => pkg.name === 'hyva-themes/magento2-default-theme'), false);
 assert.equal(composer.packages.some(pkg => pkg.name === 'hyva-themes/magento2-default-theme-csp'), theme === 'hyva');
 fs.writeFileSync('.runtime/e2e-installation.json', JSON.stringify({platform, version, phpVersion, nodeVersion, theme, runner}) + '\n');
 console.log(`Verified isolated ${platform}/${theme}/${runner} installation, Node.js ${nodeVersion}, packages, browsers and persisted selection.`);

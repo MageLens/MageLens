@@ -13,7 +13,9 @@ if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
     exit 1
 fi
 rm -f "/tmp/.X${display_number}-lock" "/tmp/.X11-unix/X${display_number}"
-Xvfb "$DISPLAY" -screen 0 1600x1000x24 -nolisten tcp &
+# Readiness probes disconnect before Openbox starts. Keep their last-client exit
+# from resetting the server while the next desktop client connects.
+Xvfb "$DISPLAY" -screen 0 1600x1000x24 -nolisten tcp -noreset &
 pids+=("$!")
 for attempt in {1..50}; do
     xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break
@@ -37,4 +39,5 @@ pids+=("$!")
 status=0
 wait -n -p exited "${pids[@]}" || status=$?
 echo "Runner desktop process ${exited:-unknown} exited (status $status)." >&2
+[[ ! -f /tmp/magelens-openbox.log ]] || cat /tmp/magelens-openbox.log >&2
 exit 1

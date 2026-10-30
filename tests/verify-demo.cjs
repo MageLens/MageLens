@@ -7,7 +7,7 @@ const js = read('coverage/js/coverage-summary.json');
 const templates = read('coverage/templates/coverage-summary.json');
 const themePaths = read('coverage/project-fixtures.json').Application_Blog.themePaths;
 const demoThemeActive = themePaths[0] === 'Application/coverage';
-const hyva = themePaths.some(theme => ['Hyva/default', 'Hyva/default-csp'].includes(theme));
+const hyva = themePaths.includes('Hyva/default-csp');
 const expectedTemplates = hyva ? ['templates/blog-hyva.phtml', 'web/template/editor-preview.html'] :
     ['web/template/list.html', 'web/template/details.html', 'web/html/favorite.html', 'web/template/editor-preview.html'];
 if (demoThemeActive) expectedTemplates.push('web/template/theme-note.html');

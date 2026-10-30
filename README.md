@@ -24,8 +24,6 @@ MageLens grew out of a real-world Magento project with **600+ E2E tests**, where
 
 It makes those gaps visible across PHP, JavaScript and templates, with **low coverage overhead and near-native performance** observed in that project.
 
-Read [Real-world E2E coverage for hundreds or thousands of tests](docs/parallel-e2e-coverage.md) for a practical CI example with smoke tests, parallel shards, and merged PHP, JavaScript and template coverage.
-
 ## Quick start
 
 Run this inside the empty directory you want to use for MageLens:
@@ -44,8 +42,6 @@ The command above installs Magento Open Source with Luma and Cypress. Add `--mag
 | `./install.sh --hyva` | `./install.sh --mageos --hyva` | Hyvä CSP | Cypress |
 | `./install.sh --playwright` | `./install.sh --mageos --playwright` | Luma | Playwright |
 | `./install.sh --hyva --playwright` | `./install.sh --mageos --hyva --playwright` | Hyvä CSP | Playwright |
-| `./install.sh --hyva --nocsp` | `./install.sh --mageos --hyva --nocsp` | Legacy Hyvä | Cypress |
-| `./install.sh --hyva --nocsp --playwright` | `./install.sh --mageos --hyva --nocsp --playwright` | Legacy Hyvä | Playwright |
 
 Each installation includes its selected runner and browser, with the same live viewer for Cypress and Playwright. Both run entirely in Docker. The installer saves the platform, theme and runner; `./bin/run-coverage` uses them automatically. Repeat the same flags when rerunning installation; omitted flags select Magento Open Source/Luma/Cypress.
 
@@ -55,15 +51,15 @@ Mage-OS is downloaded from its public Composer repository without Magento Market
 
 Hyvä replaces the active storefront theme. Magento's bundled Luma/Blank packages remain part of Magento; the installer does not remove core files. Hyvä is downloaded only for `--hyva`.
 
-All twelve combinations install their coverage dependencies from npm. `--nocsp` requires `--hyva`.
+All eight combinations install their coverage dependencies from npm.
 
 `--hyva` installs `Hyva/default-csp` and enforces its storefront script policy.
-Use `--hyva --nocsp` for `Hyva/default` and existing customizations that require the
-regular Alpine evaluator. The bundled Luma fallback checkout keeps its legacy script
-policy; licensed Hyvä Checkout is a separate product. CSP-aware template coverage
+The bundled Luma fallback checkout keeps its existing script policy; licensed Hyvä Checkout is a separate product. CSP-aware template coverage
 keeps bindings and inline scripts in the template report and whole `.js` files in
 the JavaScript report. Cypress preserves script CSP directives and adds its own
 nonce; Playwright tests the original policy. See [Cypress CSP behavior](https://docs.cypress.io/app/references/content-security-policy).
+
+Legacy non-CSP Hyvä is no longer supported. `--nocsp` and saved `hyva-legacy` profiles stop with migration guidance before changing the environment. Back up the existing application and database, then migrate customizations to Hyvä CSP in a separate checkout using `--hyva`, the same platform flag, and a different Docker project, domain and ports. Keep the old profile, project name and data unchanged; use the previous MageLens release to manage that installation.
 
 See the [release notes](CHANGELOG.md) for changes in this version.
 
@@ -179,13 +175,13 @@ After installation, Magento's full source is available in **`src/`** and bind-mo
 Copy them into their normal Magento locations, for example `src/app/code/YourVendor/YourModule` or `src/app/design/frontend/YourVendor/your-theme`, then run:
 
 ```bash
-./install.sh # repeat your --mageos, --hyva, --nocsp and --playwright selections
+./install.sh # repeat your --mageos, --hyva and --playwright selections
 ./bin/run-coverage
 ```
 
 The installer enables newly discovered modules and preserves explicitly disabled modules. Add Cypress tests under `cypress/e2e/` or a module's `Test/Cypress/` directory; add Playwright tests under `playwright/e2e/` or a module's `Test/Playwright/` directory. See [adding scenarios](docs/coverage.md#use-your-project) for the required Playwright coverage fixture.
 
-Fresh installations select Luma by default and Hyvä CSP with `--hyva` (legacy Hyvä with `--hyva --nocsp`). Installation applies the selected base theme. To select a custom child theme afterward, use **Content → Design → Configuration**; the next coverage run follows your selection.
+Fresh installations select Luma by default and Hyvä CSP with `--hyva`. Installation applies the selected base theme. To select a custom child theme afterward, use **Content → Design → Configuration**; the next coverage run follows your selection.
 
 ### Copy a complete Magento project
 
@@ -257,7 +253,7 @@ The application, dependencies, selected test runner and report tools run in Dock
 
 ### Does Hyvä work with Mage-OS?
 
-Yes. Use `./install.sh --mageos --hyva` for Hyvä CSP, or add `--nocsp` for legacy Hyvä. Add `--playwright` to use Playwright instead of Cypress. Hyvä Checkout remains a separate product.
+Yes. Use `./install.sh --mageos --hyva` for Hyvä CSP. Add `--playwright` to use Playwright instead of Cypress. Hyvä Checkout remains a separate product.
 
 ### Can I use my own Magento modules and themes?
 

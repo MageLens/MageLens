@@ -201,7 +201,7 @@ test('failed dependency resolution preserves the working manifest and lock', t =
 });
 
 for (const platform of ['magento', 'mageos']) {
-for (const [theme, runner] of [['luma', 'cypress'], ['hyva', 'cypress'], ['hyva-legacy', 'cypress'], ['luma', 'playwright'], ['hyva', 'playwright'], ['hyva-legacy', 'playwright']]) {
+for (const [theme, runner] of [['luma', 'cypress'], ['hyva', 'cypress'], ['luma', 'playwright'], ['hyva', 'playwright']]) {
 for (const containerOnly of [false, true]) {
 test(`installer selects ${platform}/${theme}/${runner} with ${containerOnly ? 'container-only' : 'host'} HTTPS`, t => {
     const directory = workspace(t);
@@ -242,7 +242,7 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
 `;
     for (const command of ['docker', 'git', 'sudo']) fs.writeFileSync(path.join(commands, command), script, {mode: 0o755});
     const project = containerOnly ? `client-${platform}-${theme}-${runner}` : 'magelens';
-    execFileSync('bash', ['install.sh', ...(platform === 'mageos' ? ['--mageos'] : []), ...(theme.startsWith('hyva') ? ['--hyva'] : []), ...(theme === 'hyva-legacy' ? ['--nocsp'] : []), ...(runner === 'playwright' ? ['--playwright'] : []), ...(containerOnly ? ['--container-only', '--project-name', project] : []), 'shop.magelens.test'],
+    execFileSync('bash', ['install.sh', ...(platform === 'mageos' ? ['--mageos'] : []), ...(theme === 'hyva' ? ['--hyva'] : []), ...(runner === 'playwright' ? ['--playwright'] : []), ...(containerOnly ? ['--container-only', '--project-name', project] : []), 'shop.magelens.test'],
         {cwd: directory, env: {...process.env, COMPOSE_PROJECT_NAME: '', PATH: `${commands}:${process.env.PATH}`}, stdio: 'pipe'});
     const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
     assert.ok(calls.filter(call => call.command === 'docker' && call.args[0] === 'compose' && !call.args.includes('version')).every(call => call.project === project));

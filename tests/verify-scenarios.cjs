@@ -18,6 +18,6 @@ assert.equal(results.totalPassed, expected.length);
 assert.equal(results.totalFailed, 0);
 assert.equal(results.totalSkipped, 0);
 assert.equal(results.totalPending, 0);
-assert.deepEqual(results.tests.map(test => test.title).sort(), expected, 'All twelve modes must exercise the same scenarios');
+assert.deepEqual(results.tests.map(test => test.title).sort(), expected, 'All eight modes must exercise the same scenarios');
 assert.ok(results.tests.every(test => test.status === 'passed'));
 console.log(`Verified all ${expected.length} shared acceptance scenarios (${runner}).`);

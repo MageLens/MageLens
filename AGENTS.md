@@ -14,7 +14,6 @@ Run commands from the repository root. Docker with Compose 2.24.4+, Git, Bash, w
 | Mage-OS | `--mageos` |
 | Luma | Default |
 | Hyvä CSP | `--hyva` |
-| Legacy Hyvä | `--hyva --nocsp` |
 | Cypress | Default |
 | Playwright | `--playwright` |
 | Automated setup without host DNS or certificate changes | `--container-only [domain]` |
@@ -27,6 +26,8 @@ Combine options as needed. For Mage-OS with Hyvä CSP and Playwright:
 ```
 
 Before reinstalling an existing environment, read its saved selection in `.runtime/install-profile` and repeat the platform, theme and runner flags. Older profiles containing only a theme and runner use Magento Open Source. Omitting flags selects Magento Open Source/Luma/Cypress. Coverage and service commands automatically use the saved selection.
+
+Legacy non-CSP Hyvä is unsupported. `--nocsp` and saved `hyva-legacy` profiles fail before changes. Back up the application and database, then migrate customizations to CSP in a separate checkout with the same platform and a different Docker project, domain and ports. Keep the old profile and data unchanged; manage that installation with the previous MageLens release.
 
 `--mageos` creates a Mage-OS installation; it does not migrate an existing Magento project. Use a separate directory, Docker project, domain and ports for another platform. Keep an existing `COMPOSE_PROJECT_NAME` unchanged when reusing its database.
 
@@ -81,9 +82,9 @@ For an isolated Mage-OS installation and real browser tests without Marketplace 
 MAGELENS_E2E_PLATFORM=mageos bash tests/e2e-isolated.sh
 ```
 
-Select `MAGELENS_E2E_THEME=luma|hyva|hyva-legacy` and `MAGELENS_E2E_RUNNER=cypress|playwright` for a particular combination. The default platform is Magento Open Source. Supply its credentials using `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`, as described in [tests/README.md](tests/README.md).
+Select `MAGELENS_E2E_THEME=luma|hyva` and `MAGELENS_E2E_RUNNER=cypress|playwright` for a particular combination. The default platform is Magento Open Source. Supply its credentials using `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`, as described in [tests/README.md](tests/README.md).
 
-`npm run test:e2e:matrix` checks all twelve combinations: two platforms, three storefronts and two runners. It checks the installed platform/version, the same acceptance scenarios, coverage reports, source preservation, viewer access and browser recovery after graceful and forced stops. It also compares coverage outcomes for shared application code. Use the full matrix for changes affecting shared installation or coverage behavior. The GitHub workflow publishes releases; it does not automatically run this matrix for pull requests.
+`npm run test:e2e:matrix` checks all eight combinations: two platforms, two storefronts and two runners. It checks the installed platform/version, the same acceptance scenarios, coverage reports, source preservation, viewer access and browser recovery after graceful and forced stops. It also compares coverage outcomes for shared application code. Use the full matrix for changes affecting shared installation or coverage behavior. The GitHub workflow publishes releases; it does not automatically run this matrix for pull requests.
 
 Isolated checks retain reports and logs under `.runtime/e2e/` and remove only their own temporary Compose projects and volumes. See [tests/README.md](tests/README.md) for port overrides, retained failure environments and testing an unpublished template-coverage package.
 

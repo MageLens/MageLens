@@ -6,11 +6,18 @@ source "$ROOT/bin/dependencies"
 load_dependencies "$ROOT/dependencies.yaml"
 export LOCAL_UID=$(id -u) LOCAL_GID=$(id -g)
 MAGELENS_THEME=luma MAGELENS_RUNNER=cypress MAGELENS_PLATFORM=magento
+unsupported_legacy_hyva() {
+    printf '%s\n' 'Legacy non-CSP Hyva (--nocsp / hyva-legacy) is no longer supported.' \
+        'Back up the existing application and database. Migrate customizations to Hyva CSP in a separate checkout using --hyva, the same platform flag, and a different Docker project, domain and ports.' \
+        'Keep the existing profile, Docker project and data unchanged; use the previous MageLens release to manage that installation. See README.md.' >&2
+    exit 1
+}
 if [[ -f .runtime/install-profile ]]; then
     read -r MAGELENS_THEME MAGELENS_RUNNER MAGELENS_PLATFORM extra < .runtime/install-profile
     # Profiles created before Mage-OS support contain just the theme and runner.
     MAGELENS_PLATFORM=${MAGELENS_PLATFORM:-magento}
-    [[ "$MAGELENS_THEME" == luma || "$MAGELENS_THEME" == hyva || "$MAGELENS_THEME" == hyva-legacy ]] && [[ "$MAGELENS_RUNNER" == cypress || "$MAGELENS_RUNNER" == playwright ]] && [[ "$MAGELENS_PLATFORM" == magento || "$MAGELENS_PLATFORM" == mageos ]] && [[ -z "${extra:-}" ]] \
+    [[ "$MAGELENS_THEME" != hyva-legacy ]] || unsupported_legacy_hyva
+    [[ "$MAGELENS_THEME" == luma || "$MAGELENS_THEME" == hyva ]] && [[ "$MAGELENS_RUNNER" == cypress || "$MAGELENS_RUNNER" == playwright ]] && [[ "$MAGELENS_PLATFORM" == magento || "$MAGELENS_PLATFORM" == mageos ]] && [[ -z "${extra:-}" ]] \
         || { printf 'Invalid .runtime/install-profile.\n' >&2; exit 1; }
 fi
 select_platform() {

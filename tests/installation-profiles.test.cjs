@@ -45,7 +45,7 @@ test('unknown runners are rejected before modifying the installation', () => {
 function profileWorkspace(t, profile) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-platform-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
-    for (const file of ['bin/common', 'bin/dependencies', 'bin/install', 'dependencies.yaml']) {
+    for (const file of ['bin/common', 'bin/dependencies', 'bin/install', 'bin/run-coverage', 'bin/application-compose', 'install.sh', 'dependencies.yaml']) {
         fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
         fs.copyFileSync(path.resolve(__dirname, '..', file), path.join(directory, file));
     }
@@ -54,10 +54,59 @@ function profileWorkspace(t, profile) {
     return directory;
 }
 
+function rejectWithoutChanges(t, profile, command) {
+    const directory = profileWorkspace(t, profile);
+    const preserved = {
+        '.runtime/install-profile': profile + '\n',
+        '.runtime/installed': '3\n',
+        '.runtime/compose-project-name': 'existing-shop\n',
+        '.env': 'COMPOSE_PROJECT_NAME=existing-shop\nAPPLICATION_DOMAIN=existing.test\n',
+        'src/.application-source-ready': '',
+        'src/app/etc/env.php': '<?php return [];\n',
+        'src/composer.json': '{"require":{}}\n'
+    };
+    for (const [file, contents] of Object.entries(preserved)) {
+        fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
+        fs.writeFileSync(path.join(directory, file), contents);
+    }
+    fs.mkdirSync(path.join(directory, 'commands'));
+    fs.writeFileSync(path.join(directory, 'commands/docker'), '#!/bin/sh\ntouch docker-invoked\nexit 99\n', {mode: 0o755});
+    const result = spawnSync('bash', command, {cwd: directory, encoding: 'utf8',
+        env: {...process.env, PATH: `${directory}/commands:${process.env.PATH}`}});
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Legacy non-CSP Hyva.*no longer supported/);
+    assert.match(result.stderr, /separate checkout using --hyva, the same platform flag/);
+    assert.match(result.stderr, /Keep the existing profile, Docker project and data unchanged/);
+    for (const [file, contents] of Object.entries(preserved)) {
+        assert.equal(fs.readFileSync(path.join(directory, file), 'utf8'), contents, file);
+    }
+    assert.equal(fs.existsSync(path.join(directory, 'docker-invoked')), false);
+    assert.equal(fs.existsSync(path.join(directory, '.runtime/workflow.lock')), false);
+}
+
+for (const flag of ['--nocsp', '-nocsp']) {
+    for (const args of [[flag], ['--hyva', flag], [flag, '--hyva', '--playwright']]) {
+        test(`removed flags ${args.join(' ')} fail without changing an existing installation`, t => {
+            rejectWithoutChanges(t, 'luma cypress magento', ['install.sh', ...args]);
+        });
+    }
+}
+
+for (const platform of ['', ' magento', ' mageos']) {
+    for (const runner of ['cypress', 'playwright']) {
+        test(`legacy ${runner}${platform} profile rejects installer and runtime commands without changes`, t => {
+            for (const command of [
+                ['install.sh'], ['install.sh', '--hyva', '--mageos'],
+                ['bin/run-coverage'], ['bin/application-compose', 'up', '-d']
+            ]) rejectWithoutChanges(t, `hyva-legacy ${runner}${platform}`, command);
+        });
+    }
+}
+
 for (const [profile, platform, versionKey] of [
     ['hyva playwright', 'magento', 'MAGENTO_VERSION'],
     ['luma cypress magento', 'magento', 'MAGENTO_VERSION'],
-    ['hyva-legacy playwright mageos', 'mageos', 'MAGEOS_VERSION']
+    ['hyva playwright mageos', 'mageos', 'MAGEOS_VERSION']
 ]) {
     test(`saved profile ${profile} selects the platform for subsequent commands`, t => {
         const directory = profileWorkspace(t, profile);

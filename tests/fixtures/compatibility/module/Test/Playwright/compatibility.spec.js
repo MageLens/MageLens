@@ -23,7 +23,7 @@ test('collects real PHP, JavaScript and template execution', async ({page, exter
     await expect(page.locator('[data-cy="probe-saved"]')).toHaveText('Saved coverage');
     await expect(page.locator('[data-cy="probe-item"]')).toHaveCount(2);
     await expect(page.locator('[data-cy="probe-never"]')).toHaveCount(0);
-    if (process.env.MAGELENS_THEME.startsWith('hyva')) {
+    if (process.env.MAGELENS_THEME === 'hyva') {
         expect(await page.evaluate(() => {
             window.dispatchEvent(new CustomEvent('update-gallery-42', {detail: 'gallery-updated'}));
             window.dispatchEvent(new CustomEvent('update-prices-42', {detail: 'price-updated'}));

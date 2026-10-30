@@ -8,7 +8,7 @@ $framework = (new ReflectionClass(Magento\Framework\App\Bootstrap::class))->getF
 if (!str_contains($framework, "/vendor/$vendor/framework/")) throw new RuntimeException('Unexpected platform framework: ' . $framework);
 $om = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $om->get(Magento\Framework\App\State::class)->setAreaCode('adminhtml');
-$expected = ['hyva' => 'Hyva/default-csp', 'hyva-legacy' => 'Hyva/default', 'luma' => 'Magento/luma'][$argv[1]];
+$expected = ['hyva' => 'Hyva/default-csp', 'luma' => 'Magento/luma'][$argv[1]];
 $design = $om->get(Magento\Framework\View\DesignInterface::class);
 $factory = $om->get(Magento\Framework\View\Design\Theme\FlyweightFactory::class);
 foreach ($om->get(Magento\Store\Model\StoreManagerInterface::class)->getStores() as $store) {
