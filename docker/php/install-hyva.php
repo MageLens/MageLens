@@ -3,10 +3,8 @@ declare(strict_types=1);
 $file = '/var/www/html/composer.json';
 $repository = json_decode(file_get_contents(__DIR__ . '/hyva-packages.json'), true, 512, JSON_THROW_ON_ERROR);
 $version = getenv('HYVA_VERSION');
-$themePackage = getenv('MAGELENS_THEME') === 'hyva'
-    ? 'hyva-themes/magento2-default-theme-csp' : 'hyva-themes/magento2-default-theme';
-$packages = array_values(array_filter($repository['package'], static fn(array $package): bool =>
-    !str_starts_with($package['name'], 'hyva-themes/magento2-default-theme') || $package['name'] === $themePackage));
+$themePackage = 'hyva-themes/magento2-default-theme-csp';
+$packages = $repository['package'];
 foreach ($packages as $package) {
     if (in_array($package['name'], [$themePackage, 'hyva-themes/magento2-theme-module'], true) && $package['version'] !== $version) {
         throw new RuntimeException('Update docker/php/hyva-packages.json to match HYVA_VERSION before installing.');

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/common"
 container_only=0
-nocsp=0
 requested_domain=''
 requested_project=''
-usage='Usage: ./install.sh [--project-name NAME] [--mageos] [--hyva [--nocsp]] [--playwright] [--container-only] [domain]'
+usage='Usage: ./install.sh [--project-name NAME] [--mageos] [--hyva] [--playwright] [--container-only] [domain]'
 previous_platform=$MAGELENS_PLATFORM
 export MAGELENS_THEME=luma MAGELENS_RUNNER=cypress MAGELENS_PLATFORM=magento
 while (( $# )); do
@@ -20,11 +19,11 @@ while (( $# )); do
         --container-only) container_only=1 ;;
         --mageos) MAGELENS_PLATFORM=mageos ;;
         --hyva) MAGELENS_THEME=hyva ;;
-        --nocsp|-nocsp) nocsp=1 ;;
+        --nocsp|-nocsp) unsupported_legacy_hyva ;;
         --playwright) MAGELENS_RUNNER=playwright ;;
         --help|-h)
             printf '%s\n' "$usage"
-            printf 'Default: Magento Open Source, Luma and Cypress. --mageos selects Mage-OS; --hyva selects Hyva CSP; --hyva --nocsp selects legacy Hyva; --playwright selects Playwright.\n'
+            printf 'Default: Magento Open Source, Luma and Cypress. --mageos selects Mage-OS; --hyva selects Hyva CSP; --playwright selects Playwright. Legacy non-CSP Hyva is no longer supported.\n'
             printf 'Project name: --project-name NAME > COMPOSE_PROJECT_NAME environment > saved .env > magelens. Saved for all commands; an existing installation cannot change projects. Domain and ports are independent.\n'
             exit 0 ;;
         -*) fail "$usage" ;;
@@ -38,16 +37,12 @@ select_platform
 if [[ -f src/.application-source-ready && -f .runtime/install-profile && "$previous_platform" != "$MAGELENS_PLATFORM" ]]; then
     fail "This installation uses $previous_platform. Repeat its platform flag when reinstalling. To use $MAGELENS_PLATFORM, install in a separate directory; changing platforms in place is not supported."
 fi
-if (( nocsp )); then
-    [[ "$MAGELENS_THEME" == hyva ]] || fail '--nocsp requires --hyva.'
-    MAGELENS_THEME=hyva-legacy
-fi
 if [[ "$MAGELENS_THEME" == hyva && "$TEMPLATE_COVERAGE_VERSION" == 1.[0-4].* && -z "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
     fail 'Hyva CSP requires template coverage 1.5 or newer. Update dependencies.yaml.'
 fi
-if [[ "$MAGELENS_THEME" == hyva* || "$MAGELENS_RUNNER" == playwright ]]; then
+if [[ "$MAGELENS_RUNNER" == playwright ]]; then
     [[ "$TEMPLATE_COVERAGE_VERSION" != 1.1.* && "$TEMPLATE_COVERAGE_VERSION" != 1.0.* || -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]] \
-        || fail 'Hyva and Playwright require template coverage 1.2 or newer. Update TEMPLATE_COVERAGE_VERSION in dependencies.yaml.'
+        || fail 'Playwright requires template coverage 1.2 or newer. Update TEMPLATE_COVERAGE_VERSION in dependencies.yaml.'
 fi
 source "$ROOT/bin/compose-project"
 resolve_compose_project "$requested_project"
@@ -81,7 +76,7 @@ if [[ ! -d .runtime/docker-magento/.git ]]; then
     git init -q .runtime/docker-magento
     git -C .runtime/docker-magento remote add origin https://github.com/markshust/docker-magento.git
 fi
-git -C .runtime/docker-magento fetch --depth 1 origin "$UPSTREAM"
+download_with_retry git -C .runtime/docker-magento fetch --depth 1 origin "$UPSTREAM"
 git -C .runtime/docker-magento checkout --detach FETCH_HEAD
 mkdir -p .runtime/pcov .runtime/magento coverage node_modules src
 say 'Exposing pinned Docker Magento bin tools and supporting files'
@@ -89,7 +84,8 @@ say 'Exposing pinned Docker Magento bin tools and supporting files'
 say 'Synchronizing browser coverage versions and dependency locks'
 bootstrap_image=$RUNNER_IMAGE
 [[ "$MAGELENS_RUNNER" != playwright ]] || bootstrap_image=$PLAYWRIGHT_RUNNER_IMAGE
-docker run --rm --pull always --user "$LOCAL_UID:$LOCAL_GID" \
+download_with_retry docker pull "$bootstrap_image"
+docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
     --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
     --env CYPRESS_VERSION --env PLAYWRIGHT_VERSION --env TEMPLATE_COVERAGE_VERSION --env CYPRESS_CODE_COVERAGE_VERSION \
     --env MAGELENS_RUNNER --env TEMPLATE_COVERAGE_PACKAGE \
@@ -97,11 +93,11 @@ docker run --rm --pull always --user "$LOCAL_UID:$LOCAL_GID" \
     --env npm_config_cache=/tmp/npm-cache \
     --entrypoint node "$bootstrap_image" bin/sync-dependencies.cjs
 say "Building PHP/PCOV and $MAGELENS_RUNNER tooling"
-dc pull app db redis opensearch
+download_with_retry dc pull app db redis opensearch
 "$ROOT/bin/build-php-image"
 # The base was just built locally with --pull; it is not a registry image.
 dc build phpfpm
-dc build --pull runner
+download_with_retry dc build --pull runner
 # Docker initializes this dependencies volume from the image; refresh it on reruns too.
 dc run --rm --no-deps --user root runner chown -R "$LOCAL_UID:$LOCAL_GID" /workspace/node_modules
 dc run --rm --no-deps runner npm ci --ignore-scripts --no-audit --no-fund
@@ -117,7 +113,7 @@ fi
 dc stop -t 60 app phpfpm
 say "Preparing local $MAGELENS_PLATFORM_NAME source in src/ (preserving an existing installation)"
 dc run --rm --no-deps workspace
-if [[ "$MAGELENS_THEME" == hyva* ]]; then
+if [[ "$MAGELENS_THEME" == hyva ]]; then
     say "Installing Hyva $HYVA_VERSION"
     if ! dc run --rm --no-deps phpfpm php /application/docker/php/install-hyva.php --check; then
         dc run --rm --no-deps phpfpm php /application/docker/php/install-hyva.php

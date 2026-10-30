@@ -4,7 +4,7 @@ This supplements the root [AGENTS.md](../../../../../AGENTS.md). Paths below are
 
 `Application_Blog` is the bundled example for trying PHP, JavaScript and template coverage on Magento Open Source or Mage-OS. Read [README.md](README.md) for behavior and scenarios.
 
-From the repository root, use `./install.sh --mageos` for Mage-OS. Add `--hyva` for Hyvä CSP or `--hyva --nocsp` for legacy Hyvä, and add `--playwright` for Playwright. Omit `--mageos` for Magento Open Source. Run `./bin/run-coverage` to execute the demo scenarios and open `coverage/index.html` afterward. Repeat the same platform, theme and runner flags when reinstalling.
+From the repository root, use `./install.sh --mageos` for Mage-OS. Add `--hyva` for Hyvä CSP, and add `--playwright` for Playwright. Omit `--mageos` for Magento Open Source. Run `./bin/run-coverage` to execute the demo scenarios and open `coverage/index.html` afterward. Repeat the same platform, theme and runner flags when reinstalling.
 
 ## Navigation and contracts
 
@@ -17,7 +17,7 @@ From the repository root, use `./install.sh --mageos` for Mage-OS. Add `--hyva` 
 
 Keep Admin ACL, secret keys, form-key checks and POST-only mutations intact. Preserve plain-text escaping, publication/visibility rules, pending comment moderation, image validation and owned-file cleanup. Do not reset ordinary editorial content to make a fixture pass.
 
-Maintain behavior on both platforms across Luma and both Hyvä profiles, and keep both browser suites equivalent. Coverage must include unused functions/branches rather than forcing every example to appear covered.
+Maintain behavior on both platforms across Luma and Hyvä CSP, and keep both browser suites equivalent. Coverage must include unused functions/branches rather than forcing every example to appear covered.
 
 Fixture preparation returns one JSON value on stdout; send diagnostics to stderr. Cleanup must be repeatable and remove only this run's owned posts, images, categories, comments, user and role. Preserve recovery metadata for interrupted runs.
 

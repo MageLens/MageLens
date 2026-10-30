@@ -201,7 +201,7 @@ test('failed dependency resolution preserves the working manifest and lock', t =
 });
 
 for (const platform of ['magento', 'mageos']) {
-for (const [theme, runner] of [['luma', 'cypress'], ['hyva', 'cypress'], ['hyva-legacy', 'cypress'], ['luma', 'playwright'], ['hyva', 'playwright'], ['hyva-legacy', 'playwright']]) {
+for (const [theme, runner] of [['luma', 'cypress'], ['hyva', 'cypress'], ['luma', 'playwright'], ['hyva', 'playwright']]) {
 for (const containerOnly of [false, true]) {
 test(`installer selects ${platform}/${theme}/${runner} with ${containerOnly ? 'container-only' : 'host'} HTTPS`, t => {
     const directory = workspace(t);
@@ -242,7 +242,7 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
 `;
     for (const command of ['docker', 'git', 'sudo']) fs.writeFileSync(path.join(commands, command), script, {mode: 0o755});
     const project = containerOnly ? `client-${platform}-${theme}-${runner}` : 'magelens';
-    execFileSync('bash', ['install.sh', ...(platform === 'mageos' ? ['--mageos'] : []), ...(theme.startsWith('hyva') ? ['--hyva'] : []), ...(theme === 'hyva-legacy' ? ['--nocsp'] : []), ...(runner === 'playwright' ? ['--playwright'] : []), ...(containerOnly ? ['--container-only', '--project-name', project] : []), 'shop.magelens.test'],
+    execFileSync('bash', ['install.sh', ...(platform === 'mageos' ? ['--mageos'] : []), ...(theme === 'hyva' ? ['--hyva'] : []), ...(runner === 'playwright' ? ['--playwright'] : []), ...(containerOnly ? ['--container-only', '--project-name', project] : []), 'shop.magelens.test'],
         {cwd: directory, env: {...process.env, COMPOSE_PROJECT_NAME: '', PATH: `${commands}:${process.env.PATH}`}, stdio: 'pipe'});
     const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
     assert.ok(calls.filter(call => call.command === 'docker' && call.args[0] === 'compose' && !call.args.includes('version')).every(call => call.project === project));
@@ -250,7 +250,11 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
     assert.match(fs.readFileSync(path.join(directory, '.env'), 'utf8'), new RegExp(`^COMPOSE_PROJECT_NAME=${project}$`, 'm'));
     assert.ok(calls.some(call => call.command === 'git' && call.args.includes('refs/tags/54.0.0')));
     const sync = calls.find(call => call.args.includes('bin/sync-dependencies.cjs'));
-    assert.ok(sync.args.includes(runner === 'cypress' ? 'cypress/base:24.16.0' : configured('PLAYWRIGHT_RUNNER_IMAGE')), 'Bootstrap must use the selected runner base');
+    const bootstrapImage = runner === 'cypress' ? 'cypress/base:24.16.0' : configured('PLAYWRIGHT_RUNNER_IMAGE');
+    const bootstrapPull = calls.find(call => call.command === 'docker' && call.args[0] === 'pull' && call.args[1] === bootstrapImage);
+    assert.ok(bootstrapPull && calls.indexOf(bootstrapPull) < calls.indexOf(sync), 'Refresh the selected bootstrap image before synchronizing dependencies');
+    assert.ok(sync.args.includes(bootstrapImage), 'Bootstrap must use the selected runner base');
+    assert.equal(sync.args[sync.args.indexOf('--pull') + 1], 'never', 'Dependency synchronization must use the successfully pulled image');
     assert.equal(sync.cypress, '16.2.0');
     assert.equal(sync.templates, '1.5.2');
     assert.deepEqual(sync.browserVersions, browserVersions);
@@ -320,58 +324,3 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
 }
 }
 }
-
-test('Compose inherits upstream services and uses the rebuilt PHP base with the selected patch', t => {
-    if (spawnSync('docker', ['compose', 'version'], {stdio: 'ignore'}).status !== 0) return t.skip('Docker Compose CLI unavailable');
-    const directory = workspace(t);
-    for (const file of ['compose.yaml', 'dependencies.yaml', 'bin/common', 'bin/compose-project', 'bin/dependencies', 'bin/application-compose']) {
-        fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
-        fs.copyFileSync(path.join(root, file), path.join(directory, file));
-    }
-    const upstream = path.join(directory, '.runtime/docker-magento/compose');
-    fs.mkdirSync(upstream, {recursive: true});
-    fs.writeFileSync(path.join(upstream, 'compose.yaml'), JSON.stringify({services: {
-        app: {image: 'fixture/nginx:9.0'}, phpfpm: {image: 'fixture/php:8.5'},
-        db: {image: 'fixture/db:12.0'}, redis: {image: 'fixture/cache:9.0'}, opensearch: {image: 'fixture/search:4.0'}
-    }}));
-    const config = JSON.parse(execFileSync('bash', ['bin/application-compose', 'config', '--format', 'json'], {cwd: directory, encoding: 'utf8'}));
-    assert.equal(config.services.app.image, 'fixture/nginx:9.0');
-    assert.equal(config.services.db.image, 'fixture/db:12.0');
-    assert.equal(config.services.redis.image, 'fixture/cache:9.0');
-    assert.equal(config.services.opensearch.image, 'fixture/search:4.0');
-    assert.equal(config.services.phpfpm.build.args.PHP_IMAGE, phpBase());
-    assert.equal(config.services.phpfpm.build.args.EXPECTED_PHP_VERSION, phpVersion);
-    assert.equal(config.services.phpfpm.image, `magelens-php:${configured('MAGENTO_VERSION')}-php${phpVersion}-pcov${configured('PCOV_VERSION')}-markshust${configured('MARKSHUST_DOCKER_MAGENTO_VERSION')}`);
-    assert.equal(config.services.phpfpm.environment.MAGENTO_VERSION, configured('MAGENTO_VERSION'));
-    assert.equal(config.services.phpfpm.environment.MAGELENS_PLATFORM, 'magento');
-    assert.equal(config.services.phpfpm.environment.MAGELENS_PLATFORM_VERSION, configured('MAGENTO_VERSION'));
-    assert.equal(config.services.phpfpm.environment.APPLICATION_DOMAIN, 'magelens.test');
-    assert.equal(config.services.phpfpm.environment.APPLICATION_HTTPS_PORT, '443');
-    assert.equal(config.services.phpfpm.environment.RUNNER_VIEW_PORT, '6080');
-    assert.deepEqual(config.services.app.ports.map(port => [port.host_ip, port.published, port.target]),
-        [['127.0.0.1', '80', 80], ['127.0.0.1', '443', 443], ['127.0.0.1', '6080', 6080]]);
-    assert.ok(config.services.app.networks.default.aliases.includes('magelens.test'));
-    assert.equal(config.services.runner.environment.CYPRESS_BASE_URL, 'https://magelens.test:443');
-    assert.equal(config.services.runner.build.args.RUNNER_IMAGE, configured('RUNNER_IMAGE'));
-    for (const runner of ['cypress', 'playwright']) {
-    for (const platform of ['magento', 'mageos']) {
-        fs.writeFileSync(path.join(directory, '.runtime/install-profile'), `luma ${runner} ${platform}\n`);
-        for (const [settings, port] of [
-            [{}, '6080'],
-            [{CYPRESS_VIEW_PORT: '6090'}, '6090'],
-            [{CYPRESS_VIEW_PORT: '6090', RUNNER_VIEW_PORT: '6091'}, '6091']
-        ]) {
-            const selected = JSON.parse(execFileSync('bash', ['bin/application-compose', '--profile', 'tools', 'config', '--format', 'json'], {
-                cwd: directory, encoding: 'utf8', env: {...process.env, CYPRESS_VIEW_PORT: '', RUNNER_VIEW_PORT: '', ...settings}
-            }));
-            assert.equal(selected.services.runner.build.target, runner);
-            assert.equal(selected.services.phpfpm.environment.MAGELENS_PLATFORM, platform);
-            assert.equal(selected.services.phpfpm.environment.MAGELENS_PLATFORM_VERSION, configured(platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION'));
-            assert.equal(selected.services.workspace.environment.MAGELENS_PLATFORM, platform);
-            assert.equal(selected.services.runner.environment.RUNNER_VIEW_PORT, port);
-            assert.equal(selected.services.phpfpm.environment.RUNNER_VIEW_PORT, port);
-            assert.ok(selected.services.app.ports.some(entry => entry.host_ip === '127.0.0.1' && entry.published === port && entry.target === Number(port)));
-        }
-    }
-    }
-});

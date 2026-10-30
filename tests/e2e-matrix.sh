@@ -10,7 +10,7 @@ trap 'rm -rf "$results"' EXIT
 reports=()
 bash tests/project-isolation.sh || result=1
 for platform in magento mageos; do
-    for theme in luma hyva hyva-legacy; do
+    for theme in luma hyva; do
         for runner in cypress playwright; do
             output="$results/$platform-$theme-$runner"
             if MAGELENS_E2E_RESULT_FILE="$output" MAGELENS_E2E_PLATFORM="$platform" MAGELENS_E2E_THEME="$theme" MAGELENS_E2E_RUNNER="$runner" bash tests/e2e-isolated.sh; then

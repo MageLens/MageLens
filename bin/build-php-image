@@ -13,5 +13,5 @@ generated="$ROOT/.runtime/php-base.Dockerfile"
 awk -v expected="$expected" -v image="$PHP_IMAGE" \
     '{ if ($0 == expected) print "FROM " image " AS base"; else print }' "$recipe" > "$generated"
 say "Rebuilding Mark Shust PHP $series with official PHP $PHP_VERSION"
-docker build --pull --target base --file "$generated" \
+download_with_retry docker build --pull --target base --file "$generated" \
     --tag "$APPLICATION_PHP_IMAGE" "$context"

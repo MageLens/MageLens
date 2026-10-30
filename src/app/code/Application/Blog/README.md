@@ -6,7 +6,7 @@ Equivalent browser scenarios live in `Test/Cypress/` and `Test/Playwright/`; fix
 
 ## Try the demo
 
-From the repository root, run `./install.sh`, then `./bin/run-coverage`. Add `--mageos` for Mage-OS instead of Magento Open Source, `--hyva` for Hyvä CSP, `--hyva --nocsp` for legacy Hyvä, and `--playwright` to use Playwright with any theme. The Blog features and five acceptance scenarios are the same in all twelve combinations.
+From the repository root, run `./install.sh`, then `./bin/run-coverage`. Add `--mageos` for Mage-OS instead of Magento Open Source, `--hyva` for Hyvä CSP, and `--playwright` to use Playwright with any theme. The Blog features and five acceptance scenarios are the same in all eight combinations.
 
 - Storefront: **https://magelens.test/blog/**.
 - Magento Admin: **https://magelens.test/admin/**; local demo credentials are `application` / `ApplicationOnly123456!`.
@@ -28,7 +28,7 @@ Admin uses Magento's normal login, Blog ACL permission, secret URL keys, and for
 
 Content is shared across this installation's store views, with one category per post. Articles and comments use plain text. This demo is intended for local development.
 
-Installation selects Luma by default or Hyvä CSP with `--hyva` or legacy Hyvä with `--hyva --nocsp`. The Blog uses Knockout on Luma and Alpine on Hyvä. To use the included Luma demonstration theme, select `Application/coverage` in **Content → Design → Configuration**. Both browser suites support these themes; the journal note is checked only for the demo theme. Reports follow the selected themes and their local parents, excluding inactive themes and `vendor`.
+Installation selects Luma by default or Hyvä CSP with `--hyva`. The Blog uses Knockout on Luma and Alpine on Hyvä. To use the included Luma demonstration theme, select `Application/coverage` in **Content → Design → Configuration**. Both browser suites support these themes; the journal note is checked only for the demo theme. Reports follow the selected themes and their local parents, excluding inactive themes and `vendor`.
 
 ## What the browser suites verify
 

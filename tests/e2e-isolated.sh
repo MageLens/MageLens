@@ -6,13 +6,12 @@ preflight
 theme=${MAGELENS_E2E_THEME:-luma}
 runner=${MAGELENS_E2E_RUNNER:-cypress}
 platform=${MAGELENS_E2E_PLATFORM:-magento}
-[[ "$theme" == luma || "$theme" == hyva || "$theme" == hyva-legacy ]] || fail 'MAGELENS_E2E_THEME must be luma, hyva or hyva-legacy.'
+[[ "$theme" == luma || "$theme" == hyva ]] || fail 'MAGELENS_E2E_THEME must be luma or hyva (Hyva CSP).'
 [[ "$runner" == cypress || "$runner" == playwright ]] || fail 'MAGELENS_E2E_RUNNER must be cypress or playwright.'
 [[ "$platform" == magento || "$platform" == mageos ]] || fail 'MAGELENS_E2E_PLATFORM must be magento or mageos.'
 install_options=()
 [[ "$platform" != mageos ]] || install_options+=(--mageos)
-[[ "$theme" != hyva* ]] || install_options+=(--hyva)
-[[ "$theme" != hyva-legacy ]] || install_options+=(--nocsp)
+[[ "$theme" != hyva ]] || install_options+=(--hyva)
 [[ "$runner" != playwright ]] || install_options+=(--playwright)
 
 if [[ "$platform" == mageos ]]; then

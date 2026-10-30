@@ -34,6 +34,38 @@ if docker exec "$container" bash /opt/magelens/desktop.sh; then
     exit 1
 fi
 docker exec "$container" node /opt/magelens/healthcheck.cjs
+# Keep the display stable while readiness probes have disconnected and the
+# persistent desktop clients have not connected yet.
+docker exec -i "$container" bash -s <<'BASH'
+set -euo pipefail
+probe=$(mktemp -d /tmp/magelens-display-probe.XXXXXX)
+desktop=''
+cleanup() {
+    [[ -z "$desktop" ]] || { kill "$desktop" 2>/dev/null || true; wait "$desktop" || true; }
+    rm -rf "$probe"
+}
+trap cleanup EXIT
+for command in openbox xmessage x11vnc websockify; do
+    printf '#!/usr/bin/env bash\nexec sleep 60\n' > "$probe/$command"
+    chmod +x "$probe/$command"
+done
+export DISPLAY=:108
+PATH="$probe:$PATH" bash /opt/magelens/desktop.sh > "$probe/startup.log" 2>&1 &
+desktop=$!
+for attempt in {1..50}; do
+    xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break
+    sleep 0.1
+done
+xprop -root -f MAGELENS_READY 8s -set MAGELENS_READY ready
+sleep 0.2
+if ! xprop -root MAGELENS_READY | grep -q '"ready"'; then
+    cat "$probe/startup.log" >&2
+    echo 'Runner display reset between client connections.' >&2
+    exit 1
+fi
+kill -0 "$desktop"
+BASH
+echo 'PASS: display state survives the gap between readiness and desktop clients.'
 for shutdown in graceful forced forced; do
     if [[ "$shutdown" == graceful ]]; then
         docker stop -t 10 "$container" >/dev/null
