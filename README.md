@@ -277,6 +277,14 @@ Thank you to [Mark Shust](https://github.com/markshust) for creating and maintai
 
 For reproducible setup or reporting problems, [open an issue](https://github.com/MageLens/MageLens/issues) with the MageLens version, platform, theme, runner and relevant diagnostics. See [releases](https://github.com/MageLens/MageLens/releases) and the [changelog](CHANGELOG.md) for version changes.
 
+## License
+
+MageLens is source-available under the [Elastic License 2.0](LICENSE). Commercial use, modification and redistribution are allowed under its terms, including agencies using MageLens to check clients' projects and deliver reports.
+
+You may not offer MageLens to third parties as a hosted or managed service that gives users access to a substantial set of its features or functionality, including a SaaS offering of MageLens. Using MageLens internally to test your own SaaS application is allowed. Preserve licensing and copyright notices and do not bypass any license-key protections. See [LICENSE](LICENSE) for the complete terms.
+
+Third-party dependencies and assets retain their own licenses, including the [badge icons](assets/badge-icons/LICENSE.md).
+
 ## Repository navigation for AI agents
 
 See [AGENTS.md](AGENTS.md) for installation, coverage and testing instructions for coding agents using MageLens.
