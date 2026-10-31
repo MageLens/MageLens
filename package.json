@@ -1,6 +1,6 @@
 {
   "name": "magelens",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "license": "Elastic-2.0",
   "description": "Quickly bootstrap Magento with PHP, JavaScript, and HTML template code coverage",

@@ -146,7 +146,7 @@ This is the single place to choose the main dependency versions:
 | [PCOV fork](https://github.com/VitaliyBoyko/pcov) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |
-| Hyvä CSP / legacy theme | `HYVA_VERSION` |
+| Hyvä CSP theme | `HYVA_VERSION` |
 | Cypress JavaScript coverage adapter | `CYPRESS_CODE_COVERAGE_VERSION` |
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |
 | Istanbul report CLI (nyc) | `NYC_VERSION` |
@@ -155,6 +155,8 @@ This is the single place to choose the main dependency versions:
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
 
 Use exact release versions and keep values quoted. `RUNNER_IMAGE` is an image with a version tag. `PHP_IMAGE` uses `php:X.Y.Z-fpm-bookworm`, optionally pinned with `@sha256:<digest>`. Choose a PHP version supported by both the selected Mark Shust release and your platform. The defaults pair Magento Open Source 2.4.8-p5 and Mage-OS 2.3.0, which share the same Magento foundation.
+
+The PHP image uses PIE 1.5.5 to install PCOV 2.1.2, including the [PIE installer security fix](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67). After updating MageLens, rerun the installer with your existing platform, theme and runner flags to rebuild the PHP image.
 
 The installer updates `package.json` and `package-lock.json` for your selected runner and coverage tools. You do not need to install Cypress or Playwright separately. Hyvä upgrades also require a matching package list in `docker/php/hyva-packages.json` for the selected `HYVA_VERSION`.
 

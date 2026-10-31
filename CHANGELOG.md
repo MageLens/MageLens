@@ -1,5 +1,12 @@
 # Release notes
 
+## 1.6.1 - 2026-10-31
+
+- Update PIE to 1.5.5, fixing unsafe temporary-file handling of failed build output ([GHSA-4538-pqqf-mv67](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67)). PCOV remains pinned to 2.1.2.
+- Include the Elastic License 2.0 and usage guidance already added to the repository.
+
+After updating, rerun `./install.sh` with your existing platform, theme and runner flags to rebuild the PHP image, then run `./bin/run-coverage`.
+
 ## 1.6.0 - 2026-10-30
 
 - Remove legacy non-CSP Hyvä support, its package selection and coverage example. `--hyva` continues to install Hyvä CSP.
