@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const {test, expect, fixtures, headers, get, message, visitBlog, waitForBlog, search, fillComment} = require('./support');
 
 test.describe('Blog storefront', () => {

@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # Cypress-only Magento patches
 
 The bundled blog demo temporarily applies one compatibility fix while Cypress runs:

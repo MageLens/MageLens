@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 describe('Copied Vitalii/TodoList module', () => {
     it('renders PHP and adds, completes, and removes tasks through its JS and HTML template', () => {
         cy.visit('/todo/');

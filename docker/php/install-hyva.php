@@ -1,4 +1,10 @@
 <?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
 declare(strict_types=1);
 $file = '/var/www/html/composer.json';
 $repository = json_decode(file_get_contents(__DIR__ . '/hyva-packages.json'), true, 512, JSON_THROW_ON_ERROR);

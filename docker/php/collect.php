@@ -1,4 +1,10 @@
 <?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
 declare(strict_types=1);
 
 // Installed only into this application's FPM SAPI. CLI setup and unrelated browser

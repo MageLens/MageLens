@@ -1,4 +1,10 @@
 <?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
 // Run in a disposable container with writable /coverage and /pcov-state.
 declare(strict_types=1);
 require dirname(__DIR__) . '/docker/php/collection.php';

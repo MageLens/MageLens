@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # Badge icons
 
 PHP, JavaScript, HTML5 and Cypress SVGs are vendored from

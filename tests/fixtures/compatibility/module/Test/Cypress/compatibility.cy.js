@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const {verifyScriptPolicy} = require('../csp-proof');
 describe('Magento storefront coverage compatibility', () => {
     it('collects real PHP, JavaScript and template execution', () => {

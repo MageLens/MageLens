@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const path = require('node:path');
 const {test, expect, fixtures, headers, get, message, login, section, findRecord, save, remove, visitBlog, fillPost, fillComment} = require('./support');
 

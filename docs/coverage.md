@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # MageLens coverage
 
 Run `./bin/run-coverage` from the repository root, then open `coverage/index.html`. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, and HTML template reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.

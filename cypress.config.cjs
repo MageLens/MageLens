@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const {defineConfig} = require('cypress');
 const {specPatterns} = require('./bin/project.cjs');
 module.exports = defineConfig({

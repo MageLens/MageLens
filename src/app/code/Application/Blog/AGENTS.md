@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # Demonstration Blog module
 
 This supplements the root [AGENTS.md](../../../../../AGENTS.md). Paths below are relative to this module unless stated otherwise.

@@ -1,4 +1,10 @@
 <?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
 declare(strict_types=1);
 require '/application/docker/php/report-data.php';
 $read = static fn(string $file): array => json_decode(file_get_contents('/coverage/' . $file), true, flags: JSON_THROW_ON_ERROR);

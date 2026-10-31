@@ -1,4 +1,10 @@
 <?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
 declare(strict_types=1);
 require_once '/opt/pcov-tools/pcov_manifest_tools.php';
 require_once __DIR__ . '/project.php';

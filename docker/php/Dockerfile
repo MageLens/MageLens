@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 ARG PHP_IMAGE
 FROM ${PHP_IMAGE}
 USER root

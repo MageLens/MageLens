@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const read = file => JSON.parse(fs.readFileSync(file));

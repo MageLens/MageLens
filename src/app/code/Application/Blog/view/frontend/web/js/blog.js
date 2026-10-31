@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 define(['uiComponent', 'ko', 'jquery', 'mage/template', 'text!Application_Blog/html/favorite.html'], function (Component, ko, $, renderTemplate, favoriteTemplate) {
     'use strict';
     return Component.extend({

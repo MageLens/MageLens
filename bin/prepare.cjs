@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash, randomBytes} = require('node:crypto');

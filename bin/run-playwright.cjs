@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const {chromium} = require('@playwright/test');

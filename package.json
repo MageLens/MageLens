@@ -5,6 +5,7 @@
   "license": "Elastic-2.0",
   "description": "Quickly bootstrap Magento with PHP, JavaScript, and HTML template code coverage",
   "scripts": {
+    "check:copyright": "node tests/check-copyright.cjs",
     "coverage": "./bin/run-coverage",
     "cy:coverage": "./bin/run-coverage",
     "test:integration": "node --test tests/*.test.cjs",

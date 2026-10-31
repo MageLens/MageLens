@@ -1,4 +1,11 @@
-<?php declare(strict_types=1); $productId = 42; $missingId = 0; ?>
+<?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
+declare(strict_types=1); $productId = 42; $missingId = 0; ?>
 <section data-cy="probe" data-save-url="<?= $block->getUrl('coverageprobe/index/save') ?>" data-form-key="<?= $block->getFormKey() ?>" x-data="coverageProbe">
 <input aria-label="Probe name" data-cy="probe-name" x-model="nameModel">
 <span data-cy="probe-echo" x-text="name"></span>

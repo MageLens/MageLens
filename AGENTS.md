@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # Use MageLens with a coding agent
 
 MageLens provides a local Magento Open Source or Mage-OS environment with Cypress or Playwright and PHP, JavaScript and template coverage. Use [README.md](README.md) for installation and daily commands, [docs/coverage.md](docs/coverage.md) for scenarios and coverage configuration, and [tests/README.md](tests/README.md) for isolated validation.

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 set -euo pipefail
 platform=${MAGELENS_PLATFORM:-magento}
 version=${MAGELENS_PLATFORM_VERSION:-$MAGENTO_VERSION}
