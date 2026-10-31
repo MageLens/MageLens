@@ -1,4 +1,11 @@
-<?php declare(strict_types=1);
+<?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
+declare(strict_types=1);
 $config = ['Magento_Ui/js/core/app' => ['components' => ['coverageProbe' => ['component' => 'MageLens_Compatibility/js/probe-luma', 'url' => $block->getUrl('coverageprobe/index/save'), 'formKey' => $block->getFormKey()]]]];
 ?>
 <div id="coverage-probe" data-bind="scope: 'coverageProbe'" data-mage-init="<?= htmlspecialchars(json_encode($config), ENT_QUOTES) ?>"><!-- ko template: getTemplate() --><!-- /ko --></div>

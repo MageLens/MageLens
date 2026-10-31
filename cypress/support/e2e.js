@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 require('./javascript-coverage');
 const {registerTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/cypress');
 registerTemplateCoverage({outputDir: 'coverage/raw/templates'});

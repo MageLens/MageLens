@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 define(['uiComponent', 'ko'], function (Component, ko) {
     return Component.extend({
         defaults: {template: 'MageLens_Compatibility/probe'},

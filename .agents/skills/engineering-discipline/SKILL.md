@@ -2,6 +2,12 @@
 name: engineering-discipline
 description: "Apply focused changes, consistent behavior across entry points, minimal user-facing documentation, and a mandatory E2E release gate when implementing, documenting, testing, or releasing software."
 ---
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 
 # Engineering Discipline
 

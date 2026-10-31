@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Real Cypress checks for Node-side TLS, proxy decompression and concurrent artifacts.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

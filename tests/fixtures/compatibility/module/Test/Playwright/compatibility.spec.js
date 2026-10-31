@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const {verifyScriptPolicy} = require('../csp-proof');
 const {test, expect} = require('../../../../../../../.runtime/elgentos/support.cjs');
 test('collects real PHP, JavaScript and template execution', async ({page, externalFixture}) => {

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Exercise the real instrumenters and report filters without Magento credentials.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

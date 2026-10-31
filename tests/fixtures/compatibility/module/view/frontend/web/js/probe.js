@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 window.probeRequest = async function (url, formKey, value) {
     const cookie = document.cookie.split('; ').find(value => value.startsWith('form_key='));
     const currentKey = window.hyva?.getFormKey?.() || (cookie ? decodeURIComponent(cookie.slice('form_key='.length)) : formKey);

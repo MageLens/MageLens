@@ -1,3 +1,7 @@
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+
 Subject: Retired Admin change-tracking workaround (revert only)
 Target: Magento 2.4.8-p5 lib/web/mage/adminhtml/form.js
 

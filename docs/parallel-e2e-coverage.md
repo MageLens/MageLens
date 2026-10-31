@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # Real-world E2E coverage for hundreds or thousands of tests
 
 When a Magento suite grows to hundreds or thousands of end-to-end tests, running everything on one runner makes feedback slow. Checkout, account, catalog, Admin and integration scenarios all add browser time. Coverage needs those scenarios, but it does not need them to execute sequentially on one machine.

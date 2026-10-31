@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 set -euo pipefail
 cd /var/www/html
 [[ -f .application-source-ready ]] || { echo 'Magento source is missing from src/. Rerun ./install.sh.' >&2; exit 1; }

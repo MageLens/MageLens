@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 # MageLens demonstration blog
 
 `Application_Blog` is a sample application for [MageLens](../../../../../README.md). Its PHP controllers, Magento Admin forms, browser JavaScript, and Knockout/Alpine templates provide examples for all three coverage reports.

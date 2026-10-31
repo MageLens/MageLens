@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const fs = require('node:fs');
 const {test, expect} = require('../../../../../../../playwright/support.cjs');
 const fixtures = () => JSON.parse(fs.readFileSync('coverage/project-fixtures.json')).Application_Blog;

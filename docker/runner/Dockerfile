@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 ARG RUNNER_IMAGE
 ARG PLAYWRIGHT_RUNNER_IMAGE
 FROM ${PLAYWRIGHT_RUNNER_IMAGE} AS playwright

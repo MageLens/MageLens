@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 set -euo pipefail
 pids=()
 cleanup() { trap - EXIT TERM INT; kill "${pids[@]}" 2>/dev/null || true; wait || true; }

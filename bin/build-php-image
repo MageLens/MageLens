@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 source "$(dirname "$0")/common"
 series=${PHP_VERSION%.*}
 context="$ROOT/.runtime/docker-magento/images/php/$series"

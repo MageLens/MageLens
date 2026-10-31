@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 export const fixtures = () => Cypress.expose('projectFixtures').Application_Blog;
 export const headers = () => ({'x-application-coverage': Cypress.expose('coverageRun')});
 export const get = (name) => cy.get(`[data-cy="${name}"]`);

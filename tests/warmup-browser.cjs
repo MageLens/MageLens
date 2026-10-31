@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Isolated browser regression: ./bin/application-compose exec -T runner node tests/warmup-browser.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

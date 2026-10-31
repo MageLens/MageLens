@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Maintainer regression: set e2e.supportFile=false and e2e.specPattern to this file.
 // Controlled responses exercise the helpers without modifying Magento data.
 import {visitBlog} from '../src/app/code/Application/Blog/Test/Cypress/support';

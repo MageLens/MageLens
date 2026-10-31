@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // The dynamic-code result is produced by the normally loaded probe.js asset.
 async function verifyScriptPolicy(document) {
     const win = document.defaultView;

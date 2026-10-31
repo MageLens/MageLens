@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Keep instrumented templates functional without recording coverage or a PHP token.
 const {observeExecution} = require('@vitaliiboiko/magento-template-coverage/browser');
 const {disablePageTransitions} = require('../../bin/browser-navigation.cjs');

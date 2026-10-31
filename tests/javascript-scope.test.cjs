@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {createJavascriptScope} = require('../bin/javascript-scope.cjs');

@@ -1,4 +1,11 @@
-<?php /** @var \Magento\Framework\View\Element\Template $block */ ?>
+<?php
+/*
+ * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
+/** @var \Magento\Framework\View\Element\Template $block */ ?>
 <section data-cy="todo">
     <h2><?= $block->escapeHtml(__('Tasks for today')) ?></h2>
     <div data-bind="scope: 'todoList'"><!-- ko template: getTemplate() --><!-- /ko --></div>

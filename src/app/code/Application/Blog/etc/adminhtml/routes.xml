@@ -1,4 +1,10 @@
 <?xml version="1.0"?>
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd">
     <router id="admin"><route id="application_blog" frontName="application_blog"><module name="Application_Blog" before="Magento_Backend"/></route></router>
 </config>

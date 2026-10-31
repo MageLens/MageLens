@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 import {fixtures, headers, get, login, section, findRecord, save, remove, visitBlog} from './support';
 
 function fillPost(title, slug, category) {

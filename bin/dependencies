@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
 # Deliberately accept only the documented flat YAML string mapping. No eval,
 # shell expansion, host YAML package, or bootstrapping container is needed.
 load_dependencies() {

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Acceptance check after the full demo suite, also usable with the alternate test theme.
 const fs = require('node:fs');
 const assert = require('node:assert/strict');

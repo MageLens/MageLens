@@ -1,3 +1,7 @@
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+
 Subject: Follow regenerated sessions when a request starts with a stale cookie
 Upstream: https://github.com/magento/magento2/issues/41057
 Target: magento/framework 103.0.8-p5 (Magento 2.4.8-p5)

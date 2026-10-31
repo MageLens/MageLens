@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
 // Keep every page's actual Istanbul map by identity. Magento loads AMD modules
 // after window:load, and its Admin Prototype library changes Array#toJSON.
 // The standard browser hook's deep comparison can collapse distinct empty maps.
