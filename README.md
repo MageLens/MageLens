@@ -29,7 +29,7 @@ It makes those gaps visible across PHP, JavaScript and templates, with **low cov
 Run this inside the empty directory you want to use for MageLens:
 
 ```bash
-wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.6.0.tar.gz | tar -xz --strip-components=1 && ./install.sh
+wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.6.1.tar.gz | tar -xz --strip-components=1 && ./install.sh
 ```
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
