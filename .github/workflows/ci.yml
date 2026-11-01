@@ -1,22 +1,30 @@
 # SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
-name: Cookie diagnosis in Chrome
+name: Cypress rollback cookie diagnosis
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   cookie:
+    name: Cookie replay on Cypress ${{ matrix.cypress }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        cypress: ['16.2.0', '15.19.0']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Reproduce browser-cleared cookie handling independently of Magento
+        env:
+          CYPRESS_VERSION: ${{ matrix.cypress }}
         run: |
-          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e cypress/included:16.2.1 -c '
+          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e "cypress/included:$CYPRESS_VERSION" -c '
             node tests/ci/cookie-diagnosis.cjs &
-            cypress run --browser chrome --config-file tests/ci/cookie-diagnosis-config.cjs
+            cypress run --config-file tests/ci/cookie-diagnosis-config.cjs
           '
