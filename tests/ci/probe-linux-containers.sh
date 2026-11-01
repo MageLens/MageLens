@@ -11,6 +11,7 @@ project="magelens-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 cleanup() {
     result=$?
     trap - EXIT
+    docker compose -p "$project" -f "$scratch/compose.yaml" logs --no-color || result=1
     docker compose -p "$project" -f "$scratch/compose.yaml" down --volumes --remove-orphans || result=1
     rm -rf "$scratch"
     exit "$result"
@@ -22,13 +23,13 @@ printf 'host-written\n' > "$scratch/input"
 cat > "$scratch/compose.yaml" <<'COMPOSE'
 services:
   server:
-    image: alpine:3.22
-    command: [sh, -ec, 'test "$(cat /probe/input)" = host-written; echo container-written > /probe/output; ln -s input /probe/link; mkdir -p /www; echo network-ok > /www/index.html; httpd -f -p 8080 -h /www']
+    image: ${PLAYWRIGHT_RUNNER_IMAGE}
+    command: [node, -e, 'const fs=require("fs"); if(fs.readFileSync("/probe/input","utf8").trim()!=="host-written") process.exit(1); fs.writeFileSync("/probe/output","container-written"); fs.symlinkSync("input","/probe/link"); require("http").createServer((req,res)=>res.end("network-ok")).listen(8080);']
     volumes: [".:/probe"]
     ports: ["127.0.0.1::8080"]
   client:
-    image: alpine:3.22
-    command: [sh, -ec, 'wget -qO- http://server:8080 | grep network-ok']
+    image: ${PLAYWRIGHT_RUNNER_IMAGE}
+    command: [node, -e, 'fetch("http://server:8080").then(r=>r.text()).then(t=>{if(t!=="network-ok")process.exit(1)}).catch(()=>process.exit(1))']
 COMPOSE
 docker compose -p "$project" -f "$scratch/compose.yaml" up -d server
 # Wait only for readiness; assertions below are never retried.
