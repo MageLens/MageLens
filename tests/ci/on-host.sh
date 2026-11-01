@@ -4,6 +4,7 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
+if [[ "$RUNNER_OS" == macOS ]]; then export CI_HOST_RUNTIME=QEMU-TCG; fi
 if [[ "$RUNNER_OS" != Windows ]]; then
     # Ubuntu 26 can mount /tmp on RAM. Installations must live on the runner disk.
     export MAGELENS_TEST_TMPDIR="$RUNNER_TEMP/magelens-e2e-tmp"

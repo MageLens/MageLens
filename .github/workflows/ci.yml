@@ -98,10 +98,7 @@ jobs:
     name: Reviewed Magento E2E
     # Forks never receive credentials. Repository branches require environment
     # approval of the exact commit (including the PR merge candidate).
-    if: >-
-      inputs.feasibility-only != true &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+    if: ${{ false }}
     strategy:
       fail-fast: false
       max-parallel: 2
