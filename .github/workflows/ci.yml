@@ -5,49 +5,48 @@
 name: Report diagnosis
 on:
   workflow_dispatch:
-    inputs:
-      source-run:
-        description: 'CI run containing the sanitized case artifacts'
-        required: true
-        type: string
-      source-sha:
-        description: 'Exact tested commit (PR merge SHA for PR runs)'
-        required: true
-        type: string
-      source-attempt:
-        description: 'Exact source run attempt'
-        default: '1'
-        type: string
 permissions:
   contents: read
   actions: read
 jobs:
+  e2e:
+    name: Diagnose Hyva report parity
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        runner: [cypress, playwright]
+    uses: ./.github/workflows/e2e-case.yml
+    with:
+      os: ubuntu-latest
+      platform: mageos
+      theme: hyva
+      runner: ${{ matrix.runner }}
+      sha: ${{ github.sha }}
   compare:
-    name: Diagnose available reports without qualifying a commit
+    name: Diagnose both reports without qualifying a partial matrix
+    if: always()
+    needs: [e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.source-sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '24'
           package-manager-cache: false
-      - name: Retrieve current-attempt evidence from this repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          SOURCE_RUN: ${{ inputs.source-run }}
-          SOURCE_ATTEMPT: ${{ inputs.source-attempt }}
-        run: gh run download "$SOURCE_RUN" --pattern "case-*-attempt-$SOURCE_ATTEMPT" --dir ci-artifacts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: case-*-attempt-${{ github.run_attempt }}
+          path: ci-artifacts
       - name: Compare available reports (missing jobs deliberately prevent qualification)
+        if: always()
         env:
-          SOURCE_RUN: ${{ inputs.source-run }}
-          SOURCE_ATTEMPT: ${{ inputs.source-attempt }}
-          SOURCE_SHA: ${{ inputs.source-sha }}
-        run: CI_NEEDS='{}' CI_SHA="$SOURCE_SHA" GITHUB_RUN_ID="$SOURCE_RUN" GITHUB_RUN_ATTEMPT="$SOURCE_ATTEMPT" node tests/ci/gate.cjs
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_SHA: ${{ github.sha }}
+        run: node tests/ci/gate.cjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
