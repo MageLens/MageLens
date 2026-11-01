@@ -30,7 +30,11 @@ const server = http.createServer((request, response) => {
         response.end(body);
     };
     if (request.url === '/native-post' || request.url === '/native-redirect') {
-        response.writeHead(302, {location: request.url === '/native-post' ? '/native-redirect' : '/fresh', 'cache-control': 'no-store'});
+        response.writeHead(302, {
+            location: request.url === '/native-post' ? '/native-redirect' : '/fresh',
+            'content-type': 'text/html; charset=UTF-8', 'cache-control': 'no-store',
+            'set-cookie': 'fixture-message=redirect; Path=/; SameSite=Lax'
+        });
         request.resume();
         return response.end();
     }
@@ -113,7 +117,15 @@ async function browser(warmup, shouldFail = false) {
     assert.ok(!fs.existsSync(path.join(scratch, 'coverage/raw')), 'Warm-up wrote raw coverage');
     assert.ok(requests.every(request => !request.cookie.includes('application_coverage=')), 'Warm-up sent a PHP collection cookie');
 
-    write('cypress/e2e/fresh.cy.js', `it('starts the coverage suite with fresh browser state', () => {
+    write('cypress/e2e/fresh.cy.js', `
+    function assertInitialized() {
+        cy.window().then(win => {
+            expect(win.Cypress, 'Cypress bootstrap in redirected document').to.equal(Cypress);
+            const rules = win.document.adoptedStyleSheets.flatMap(sheet => [...sheet.cssRules]);
+            expect(rules.some(rule => /navigation:\\s*none/.test(rule.cssText)), 'redirected page initialized').to.equal(true);
+        });
+    }
+    it('starts the coverage suite with fresh browser state', () => {
         cy.visit('/fresh');
         cy.window().then(win => {
             expect(win.localStorage.getItem('warmup-only')).to.equal(null);
@@ -136,17 +148,22 @@ async function browser(warmup, shouldFail = false) {
         cy.location('pathname').should('equal', '/fresh-next');
         cy.go('forward');
         cy.location('pathname').should('equal', '/fresh');
+        cy.intercept('POST', '**/native-post').as('nativePost');
         for (let navigation = 0; navigation < 4; navigation++) {
             cy.get('body').invoke('attr', 'data-response').then(previous => {
                 cy.get('[data-cy="native-form"] button').click();
                 cy.get('body').should('not.have.attr', 'data-response', previous);
                 cy.location('pathname').should('equal', '/fresh');
             });
+            cy.wait('@nativePost').its('response.statusCode').should('equal', 302);
+            assertInitialized();
             cy.get('body').invoke('attr', 'data-response').then(previous => {
                 cy.get('[data-cy="native-form"]').then(([form]) => form.submit());
                 cy.get('body').should('not.have.attr', 'data-response', previous);
                 cy.location('pathname').should('equal', '/fresh');
             });
+            cy.wait('@nativePost').its('response.statusCode').should('equal', 302);
+            assertInitialized();
             cy.visit('/fresh-next');
             cy.get('[data-cy="native-next"]').click();
             cy.location('pathname').should('equal', '/fresh');
