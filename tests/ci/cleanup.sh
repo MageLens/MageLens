@@ -7,7 +7,7 @@ set -euo pipefail
 # Only the resource registered by this job's harness may be removed.
 [[ -f "$RUNNER_TEMP/magelens-resource" ]] || exit 0
 read -r project scratch < "$RUNNER_TEMP/magelens-resource"
-[[ "$project" == magelens-e2e-* && "$scratch" == /tmp/magelens-e2e.* ]]
+[[ "$project" == magelens-e2e-* && "$scratch" == "${MAGELENS_TEST_TMPDIR:-/tmp}"/magelens-e2e.* ]]
 if [[ -f "$scratch/.runtime/docker-magento/compose/compose.yaml" ]]; then
     (cd "$scratch" && ./bin/application-compose --profile '*' down --volumes --remove-orphans)
 fi

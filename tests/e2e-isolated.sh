@@ -33,7 +33,7 @@ else
     auth_path=/auth.json
 fi
 original_root=$ROOT
-scratch=$(mktemp -d /tmp/magelens-e2e.XXXXXX)
+scratch=$(mktemp -d "${MAGELENS_TEST_TMPDIR:-/tmp}/magelens-e2e.XXXXXX")
 project="magelens-e2e-$(basename "$scratch" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 artifacts="$original_root/.runtime/e2e/$project"
 mkdir -p "$artifacts"

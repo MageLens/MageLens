@@ -79,6 +79,10 @@ jobs:
           mkdir -p "$HOME/.docker/cli-plugins"
           ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Reclaim unused hosted Linux SDK space
+        if: runner.os == 'Linux'
+        id: disk
+        run: bash tests/ci/prepare-disk.sh
       - id: probe
         name: Validate actual host, Linux engine, mounts and networking
         run: bash tests/ci/on-host.sh node tests/ci/probe.cjs

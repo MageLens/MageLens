@@ -16,7 +16,7 @@ function run(name, command, args) {
     return report.checks[name];
 }
 try {
-    run('bash', 'bash', ['-c', 'set -euo pipefail; printf "Bash %s\\n" "$BASH_VERSION"; for tool in git tar wget; do command -v "$tool" || exit 1; done; uname -a; df -Pk . /tmp']);
+    run('bash', 'bash', ['-c', 'set -euo pipefail; printf "Bash %s\\n" "$BASH_VERSION"; for tool in git tar wget; do command -v "$tool" || exit 1; done; uname -a; df -Pk . "${MAGELENS_TEST_TMPDIR:-/tmp}"']);
     if (process.platform === 'win32') {
         run('wsl', 'wsl.exe', ['--status']);
         run('wsl-install', 'wsl.exe', ['--install', '--distribution', 'Ubuntu-24.04', '--no-launch']);

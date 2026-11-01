@@ -7,7 +7,7 @@ set -euo pipefail
 source "$(dirname "$0")/../bin/common"
 preflight
 original_root=$ROOT
-scratch=$(mktemp -d /tmp/magelens-isolation.XXXXXX)
+scratch=$(mktemp -d "${MAGELENS_TEST_TMPDIR:-/tmp}/magelens-isolation.XXXXXX")
 prefix="magelens-isolation-$(basename "$scratch" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 # Never inherit a project selection from the user's shell.
 unset COMPOSE_PROJECT_NAME APPLICATION_DOMAIN

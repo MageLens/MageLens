@@ -4,7 +4,7 @@
 
 const fs = require('node:fs');
 const os = require('node:os');
-const disk = fs.statfsSync('/tmp');
+const disk = fs.statfsSync(process.env.MAGELENS_TEST_TMPDIR || '/tmp');
 let free = disk.bavail * disk.bsize / 2 ** 30;
 if (process.env.MAGELENS_CI_HOST_PATH) {
     // WSL's sparse virtual disk capacity must not hide the Windows drive limit.

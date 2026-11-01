@@ -6,7 +6,7 @@
 set -euo pipefail
 source bin/common
 preflight
-scratch=$(mktemp -d /tmp/magelens-feasibility.XXXXXX)
+scratch=$(mktemp -d "${MAGELENS_TEST_TMPDIR:-/tmp}/magelens-feasibility.XXXXXX")
 project="magelens-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 cleanup() {
     result=$?
