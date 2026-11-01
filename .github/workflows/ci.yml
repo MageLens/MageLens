@@ -82,6 +82,6 @@ jobs:
           for browser in ('electron', 'chrome'):
               result = json.loads((Path(os.environ['RUNNER_TEMP']) / f'cookie-{browser}.json').read_text())
               print(browser, result)
-              assert result['totalTests'] == result['totalPassed'] == 2
+              assert result['totalTests'] == result['totalPassed'] == 6
               assert result['totalFailed'] == result['totalPending'] == result['totalSkipped'] == 0
           PY
