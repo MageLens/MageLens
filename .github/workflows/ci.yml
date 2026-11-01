@@ -7,17 +7,17 @@ on:
     inputs:
       investigation:
         type: choice
-        options: [cookie, images, navigation, mageos-navigation]
+        options: [cookie, images, navigation, mageos-navigation, windows-warmup]
         default: cookie
 permissions:
   contents: read
   actions: read
 jobs:
   mageos-navigation:
-    if: inputs.investigation == 'mageos-navigation'
+    if: inputs.investigation == 'mageos-navigation' || inputs.investigation == 'windows-warmup'
     uses: ./.github/workflows/e2e-case.yml
     with:
-      os: ubuntu-latest
+      os: ${{ inputs.investigation == 'windows-warmup' && 'windows-latest' || 'ubuntu-latest' }}
       platform: mageos
       theme: luma
       runner: cypress

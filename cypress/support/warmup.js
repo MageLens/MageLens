@@ -10,6 +10,8 @@ let lastActivity = Date.now();
 let requests = new Map();
 let failedRequests = [];
 let requestId = 0;
+const resourceEvents = new Map();
+const lifecycle = [];
 
 function snapshot() {
     const modules = [];
@@ -26,7 +28,19 @@ function snapshot() {
         failedRequests,
         pendingModules: modules,
         initializerMarkers: win?.document.querySelectorAll('[data-mage-init], script[type="text/x-magento-init"]').length,
-        quietForMs: Date.now() - lastActivity
+        quietForMs: Date.now() - lastActivity,
+        diagnostic: {
+            requirejs: Boolean(win?.requirejs), lifecycle,
+            pendingResourceStates: [...requests.values()].map(request => ({
+                url: request.url,
+                event: resourceEvents.get(request.url) || null,
+                timing: (win?.performance.getEntriesByName(request.url) || []).map(entry => ({
+                    type: entry.initiatorType, duration: entry.duration,
+                    responseStatus: entry.responseStatus, transferSize: entry.transferSize,
+                    responseEnd: entry.responseEnd
+                }))
+            }))
+        }
     };
 }
 
@@ -35,6 +49,8 @@ beforeEach(() => {
     lastActivity = Date.now();
     requests = new Map();
     failedRequests = [];
+    resourceEvents.clear();
+    lifecycle.length = 0;
     cy.intercept({url: '**', middleware: true}, request => {
         const id = ++requestId;
         lastActivity = Date.now();
@@ -49,6 +65,16 @@ beforeEach(() => {
 
 Cypress.on('window:before:load', current => {
     win = current;
+    lifecycle.push({event: 'before-load', at: Date.now()});
+    for (const event of ['beforeunload', 'unload', 'pagehide']) {
+        current.addEventListener(event, () => lifecycle.push({event, at: Date.now()}));
+    }
+    for (const event of ['load', 'error']) {
+        current.addEventListener(event, emitted => {
+            const resource = emitted.target?.src || emitted.target?.href;
+            if (resource) resourceEvents.set(resource, {event, at: Date.now()});
+        }, true);
+    }
     disablePageTransitions(current);
     observeExecution(current, () => {});
 });
