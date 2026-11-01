@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 docker run -d --name "$container" --init --user "$(id -u):$(id -g)" \
-    --env HOME=/tmp --env DISPLAY=:107 --shm-size=1g \
+    --env HOME=/tmp --env DISPLAY=:107 --env CYPRESS_BASE_URL=https://storefront.invalid --shm-size=1g \
     --mount "type=bind,source=$PWD/docker/runner/desktop.sh,target=/opt/magelens/desktop.sh,readonly" \
     --mount "type=bind,source=$PWD/docker/runner/healthcheck.cjs,target=/opt/magelens/healthcheck.cjs,readonly" \
     "$1" >/dev/null
