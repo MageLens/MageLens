@@ -7,6 +7,12 @@ const {createHash} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const cache = execFileSync('cypress', ['cache', 'path'], {encoding:'utf8'}).trim();
 const file = path.join(cache, '16.2.1/Cypress/resources/app/packages/proxy/lib/adapters/attach-cross-origin-cookies.js');
+if (!fs.existsSync(file)) {
+  const root = path.join(cache, '16.2.1/Cypress/resources/app');
+  console.log('Packaged app entries:', fs.readdirSync(root));
+  console.log('Proxy entries:', fs.readdirSync(path.join(root, 'packages/proxy/lib'), {recursive:true}));
+  process.exit(1);
+}
 const source = fs.readFileSync(file, 'utf8');
 console.log('Original adapter SHA256:',createHash('sha256').update(source).digest('hex'));
 const old = 'if (!doesTopNeedSimulation) {';
