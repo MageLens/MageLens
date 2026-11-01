@@ -4,6 +4,13 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
+if [[ "${MAGELENS_RUNNER:-}" == cypress ]]; then
+    # Electron's dictionary directory is shared by its isolated session profiles.
+    # Provision it as the runtime UID, keeping browser files writable on restart.
+    dictionaries="${XDG_CONFIG_HOME:-$HOME/.config}/Cypress/Dictionaries"
+    mkdir -p "$dictionaries"
+    cp /opt/magelens/dictionaries/*.bdic "$dictionaries/"
+fi
 pids=()
 cleanup() { trap - EXIT TERM INT; kill "${pids[@]}" 2>/dev/null || true; wait || true; }
 trap cleanup EXIT
