@@ -6,3 +6,7 @@
 /tests export-ignore
 /.github export-ignore
 /.gitattributes export-ignore
+
+# Bash entry points must also be executable from WSL after a Windows checkout.
+*.sh text eol=lf
+/bin/* text eol=lf

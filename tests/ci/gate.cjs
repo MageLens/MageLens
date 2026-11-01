@@ -25,13 +25,20 @@ function verifyCase(entry, evidence, directory, context) {
     const summary = read(path.join(directory, 'summary.json'));
     const installation = read(path.join(directory, 'installation.json'));
     assert.ok(run.id);
+    assert.equal(run.runner, entry.runner);
     assert.equal(results.run, run.id);
     assert.equal(summary.run, run.id);
     for (const key of ['platform', 'theme', 'runner']) assert.equal(installation[key], entry[key]);
     const pins = Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
     assert.deepEqual(evidence.dependencies, pins, 'Dependency provenance differs');
     assert.equal(installation.version, pins[entry.platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION']);
-    for (const type of ['php', 'js', 'templates']) assert.ok(Number.isFinite(summary.metrics[type]?.percent));
+    for (const type of ['php', 'js', 'templates']) {
+        const percent = summary.metrics[type]?.percent;
+        assert.ok(Number.isFinite(percent) && percent >= 0 && percent <= 100, `Invalid ${type} summary`);
+    }
+    assert.ok(Object.keys(read(path.join(directory, 'php/line-coverage.json'))).length, 'Missing PHP coverage');
+    assert.ok(Object.keys(read(path.join(directory, 'js/coverage-final.json'))).length, 'Missing JavaScript coverage');
+    assert.ok(read(path.join(directory, 'templates/coverage-summary.json')).templates.length, 'Missing template coverage');
     execFileSync(process.execPath, ['tests/verify-scenarios.cjs', directory], {stdio: 'inherit'});
     return run.id;
 }

@@ -85,3 +85,11 @@ test('case gate rejects stale collection reports and missing coverage evidence',
     fs.rmSync(path.join(directory, 'cypress-results.json'));
     assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
 });
+
+for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templates/coverage-summary.json']) {
+    test(`every host case requires ${file}`, t => {
+        const {directory, entry, evidence, context} = fixture(t);
+        fs.rmSync(path.join(directory, file));
+        assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
+    });
+}
