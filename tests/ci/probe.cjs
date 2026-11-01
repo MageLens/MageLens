@@ -25,7 +25,8 @@ try {
     }
     if (process.platform === 'darwin') {
         run('virtualization', 'sysctl', ['kern.hv_support', 'hw.optional.arm64']);
-        run('local-vm-start', 'colima', ['start', '--vm-type', 'qemu', '--cpu', '2', '--memory', '5', '--disk', '40']);
+        run('vm-tools', 'bash', ['-c', 'set -e\ncolima version\nlimactl --version']);
+        run('local-vm-start', 'colima', ['start', '--vm-type', 'vz', '--cpu', '2', '--memory', '6', '--disk', '40']);
     }
     run('docker', 'docker', ['version']);
     const info = run('engine', 'docker', ['info', '--format', '{{.OSType}}/{{.Architecture}}']);
