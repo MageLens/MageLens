@@ -21,7 +21,8 @@ execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days
 const server = http2.createSecureServer({allowHTTP1: true, key: fs.readFileSync(key), cert: fs.readFileSync(cert)}, (request, response) => {
     requests.push({url: request.url, cookie: request.headers.cookie || '', protocol: request.httpVersion});
     const send = (body, type = 'text/html') => {
-        response.writeHead(200, {'content-type': type, 'cache-control': 'no-store'});
+        response.writeHead(200, {'content-type': type, 'cache-control': 'no-store',
+            'content-security-policy': "default-src 'self'; script-src 'self' 'nonce-fixture'; style-src 'self' 'unsafe-inline'; form-action 'self'"});
         if (type === 'text/html') body += `<style>@view-transition { navigation: auto; }</style><script>
             addEventListener('pagereveal', event => {
                 if (event.viewTransition) {
@@ -30,6 +31,7 @@ const server = http2.createSecureServer({allowHTTP1: true, key: fs.readFileSync(
                 }
             });
         </script>`;
+        if (type === 'text/html') body = body.replaceAll('<script>', '<script nonce="fixture">');
         response.end(body);
     };
     if (request.url === '/native-post' || request.url === '/native-redirect') {
