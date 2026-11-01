@@ -79,7 +79,7 @@ jobs:
         if: runner.os == 'macOS'
         timeout-minutes: 10
         run: |
-          brew install colima qemu docker docker-compose bash
+          brew install colima docker docker-compose bash
           mkdir -p "$HOME/.docker/cli-plugins"
           ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"

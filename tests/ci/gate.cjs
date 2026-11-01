@@ -14,7 +14,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.equal(evidence.sha, context.sha, 'Wrong commit');
     assert.equal(evidence.workflowRun, context.run, 'Wrong workflow run');
     assert.equal(evidence.attempt, context.attempt, 'Stale artifact from an earlier attempt');
-    assert.equal(evidence.host, {'ubuntu-latest': 'Linux', 'macos-latest': 'macOS', 'windows-latest': 'Windows'}[entry.os]);
+    assert.equal(evidence.host, {'ubuntu-latest': 'Linux', 'macos-26-intel': 'macOS', 'windows-latest': 'Windows'}[entry.os]);
     assert.ok(evidence.image && evidence.imageVersion && evidence.architecture, 'Missing runner provenance');
     assert.equal(evidence.passed, true, 'Incomplete harness');
     assert.equal(evidence.feasibility?.passed, true, 'Host feasibility not proven');

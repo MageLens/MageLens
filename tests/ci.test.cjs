@@ -41,7 +41,7 @@ test('matrix is eight Linux modes and the two requested actual host cases', () =
     assert.equal(new Set(cases.map(c => c.id)).size, 10);
     assert.equal(cases.filter(c => c.os === 'ubuntu-latest').length, 8);
     assert.deepEqual(cases.filter(c => c.os !== 'ubuntu-latest').map(({os, platform, theme, runner}) => ({os, platform, theme, runner})), [
-        {os: 'macos-latest', platform: 'mageos', theme: 'hyva', runner: 'playwright'},
+        {os: 'macos-26-intel', platform: 'mageos', theme: 'hyva', runner: 'playwright'},
         {os: 'windows-latest', platform: 'mageos', theme: 'luma', runner: 'cypress'}
     ]);
 });

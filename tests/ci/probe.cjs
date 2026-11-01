@@ -24,11 +24,11 @@ try {
         run('virtualization', 'powershell.exe', ['-NoProfile', '-Command', 'Get-CimInstance Win32_Processor | Select-Object Name,VirtualizationFirmwareEnabled,SecondLevelAddressTranslationExtensions | ConvertTo-Json; Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform | Select-Object FeatureName,State | ConvertTo-Json; Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V | Select-Object FeatureName,State | ConvertTo-Json']);
     }
     if (process.platform === 'darwin') {
-        run('virtualization', 'sysctl', ['kern.hv_support', 'hw.optional.arm64']);
-        run('vm-tools', 'bash', ['-c', 'set -e\ncolima version\nlimactl --version\nqemu-system-aarch64 --version']);
-        // Standard ARM64 hosts expose no hypervisor. QEMU uses software emulation;
-        // the full harness must still pass on this actual macOS host.
-        run('local-vm-start', 'colima', ['start', '--vm-type', 'qemu', '--cpu', '2', '--memory', '5', '--disk', '40']);
+        run('virtualization', 'sysctl', ['kern.hv_support']);
+        run('vm-tools', 'bash', ['-c', 'set -e\ncolima version\nlimactl --version']);
+        // Standard Intel macOS exposes the Virtualization framework. The local VM
+        // must prove real host mounts/networking before the complete harness runs.
+        run('local-vm-start', 'colima', ['start', '--vm-type', 'vz', '--cpu', '2', '--memory', '6', '--disk', '40']);
     }
     run('docker', 'docker', ['version']);
     const info = run('engine', 'docker', ['info', '--format', '{{.OSType}}/{{.Architecture}}']);
