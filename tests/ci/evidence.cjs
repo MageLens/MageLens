@@ -70,7 +70,7 @@ function writeEvidence() {
         report.counts = pick(read(`${directory}/coverage/${entry.runner}-results.json`), ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']);
         fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(snapshot(source)) + '\n');
         execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
-        report.passed = !report.diagnostics && ['probe', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
+        report.passed = !report.diagnostics && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {
         // Errors can contain arbitrary subprocess output; publish a fixed diagnostic.
         report.incomplete = 'Missing or invalid completed harness report. Inspect the failed step in Actions.';

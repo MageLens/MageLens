@@ -128,7 +128,6 @@ jobs:
           echo "MAGELENS_COMPOSER_AUTH_FILE=$RUNNER_TEMP/auth.json" >> "$GITHUB_ENV"
       - name: Check available resources
         id: resources
-        if: inputs.feasibility-only != true
         run: bash tests/ci/on-host.sh node tests/ci/resources.cjs
       - id: isolation
         if: inputs.feasibility-only != true

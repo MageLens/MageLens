@@ -33,7 +33,7 @@ function fixture(t) {
     write('project-fixtures.json', {Application_Blog: {themePaths: ['Magento/luma'], password: 'SECRET'}});
     writeCoverage(directory);
     const evidence = {...entry, sha: 'candidate', workflowRun: '123', attempt: '1', host: 'Linux', image: 'ubuntu', imageVersion: 'today', architecture: 'x64', passed: true,
-        feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts};
+        feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'resources', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts};
     return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1'}};
 }
 test('matrix is eight Linux modes and the two requested actual host cases', () => {
@@ -56,7 +56,8 @@ test('case gate accepts complete evidence and rejects stale, skipped, canceled a
     const {directory, entry, evidence, context} = fixture(t);
     assert.equal(verifyCase(entry, evidence, directory, context), 'fresh');
     for (const patch of [{passed: false}, {sha: 'older'}, {attempt: '0'}, {workflowRun: 'other'}, {host: 'Windows'},
-        {counts: {...counts, totalSkipped: 1}}, {feasibility: {passed: false}}, {steps: {...evidence.steps, cleanup: {outcome: 'cancelled'}}}]) {
+        {counts: {...counts, totalSkipped: 1}}, {feasibility: {passed: false}}, {steps: {...evidence.steps, cleanup: {outcome: 'cancelled'}}},
+        {steps: {...evidence.steps, resources: undefined}}, {steps: {...evidence.steps, resources: {outcome: 'failure'}}}]) {
         assert.throws(() => verifyCase(entry, {...evidence, ...patch}, directory, context));
     }
 });

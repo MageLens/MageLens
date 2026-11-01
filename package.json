@@ -8,7 +8,7 @@
     "check:copyright": "node tests/check-copyright.cjs",
     "coverage": "./bin/run-coverage",
     "cy:coverage": "./bin/run-coverage",
-    "test:integration": "node --test tests/*.test.cjs",
+    "test:integration": "node --test --test-concurrency=2 tests/*.test.cjs",
     "test:e2e": "bash tests/e2e-isolated.sh",
     "test:e2e:matrix": "bash tests/e2e-matrix.sh"
   },

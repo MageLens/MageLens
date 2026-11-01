@@ -19,7 +19,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.equal(evidence.passed, true, 'Incomplete harness');
     assert.equal(evidence.feasibility?.passed, true, 'Host feasibility not proven');
     assert.equal(evidence.feasibility.sha, context.sha);
-    for (const step of ['probe', 'isolation', 'e2e', 'cleanup']) assert.equal(evidence.steps[step]?.outcome, 'success', step);
+    for (const step of ['probe', 'resources', 'isolation', 'e2e', 'cleanup']) assert.equal(evidence.steps[step]?.outcome, 'success', step);
     assert.deepEqual(evidence.counts, {totalTests: 7, totalPassed: 7, totalFailed: 0, totalSkipped: 0, totalPending: 0});
     const run = read(path.join(directory, 'run.json'));
     const results = read(path.join(directory, `${entry.runner}-results.json`));

@@ -84,7 +84,7 @@ CI exists to expose real gaps and problems in the user journey: installation, da
 
 For host-side integration checks, install the locked dependencies with `npm ci --ignore-scripts`, then run `npm run test:integration`. Target an existing relevant test first; use the full integration suite for shared orchestration changes. PHP checks live in `tests/*.test.php`; inspect their prerequisites before selecting host or container execution. Use `bash -n`, `node --check` and `php -l` for changed scripts.
 
-All E2E execution and debugging belongs in GitHub Actions. Do not run E2E locally unless the user explicitly requests it. Static and unit/integration checks remain available locally; cap integration concurrency on memory-constrained machines with `node --test --test-concurrency=2 tests/*.test.cjs`.
+All E2E execution and debugging belongs in GitHub Actions. Do not run E2E locally unless the user explicitly requests it. Static and unit/integration checks remain available locally; `npm run test:integration` limits concurrency to two workers to bound memory use.
 
 The CI workflow checks all eight Linux combinations (two platforms, two storefronts and two runners), plus Mage-OS/Hyvä CSP/Playwright on `macos-26-intel` and Mage-OS/Luma/Cypress on `windows-latest`. Actual host feasibility is required; a Linux job cannot stand in for Windows or macOS. The final `Required CI gate` requires all ten cases, 70 acceptance scenarios, every report and the eight-way Linux coverage comparison. Missing, skipped, canceled and incomplete checks block qualification.
 
