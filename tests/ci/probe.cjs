@@ -34,8 +34,10 @@ try {
     run('docker', 'docker', ['version']);
     const info = run('engine', 'docker', ['info', '--format', '{{.OSType}}/{{.Architecture}}']);
     const compose = run('compose', 'docker', ['compose', 'version', '--short']);
+    const builder = run('buildx', 'docker', ['buildx', 'version']);
     if (info.status !== 0 || !info.output.startsWith('linux/')) throw new Error('A working local Linux Docker engine is required; host mount/network checks cannot run.');
     if (compose.status !== 0) throw new Error('Docker Compose unavailable.');
+    if (builder.status !== 0) throw new Error('Docker Buildx unavailable; the legacy builder cannot qualify this host.');
     // Image download/unpacking is infrastructure preparation, with its own bound.
     // Keep the actual mount/network assertions on their original two-minute limit.
     const image = run('probe-image', 'bash', ['-c', 'set -euo pipefail; source bin/common; docker pull "$PLAYWRIGHT_RUNNER_IMAGE"']);

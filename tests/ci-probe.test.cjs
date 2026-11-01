@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-for (const failure of ['', 'image', 'network']) {
+for (const failure of ['', 'builder', 'image', 'network']) {
     test(`host probe separates image preparation and preserves required assertions: ${failure || 'success'}`, () => {
         const calls = [];
         let report;
@@ -20,16 +20,17 @@ for (const failure of ['', 'image', 'network']) {
                     calls.push({command, args: [...args], timeout: options.timeout});
                     const image = args.some(arg => arg.includes('docker pull'));
                     const network = args.includes('tests/ci/probe-linux-containers.sh');
-                    return {status: failure === 'image' && image || failure === 'network' && network ? 1 : 0,
+                    return {status: failure === 'builder' && args[0] === 'buildx' || failure === 'image' && image || failure === 'network' && network ? 1 : 0,
                         stdout: command === 'docker' && args[0] === 'info' ? 'linux/x86_64\n' : 'ok\n'};
                 }};
                 throw new Error(`Unexpected dependency: ${name}`);
             }
         });
         const image = calls.find(call => call.args.some(arg => arg.includes('docker pull')));
-        assert.equal(image.timeout, 300000);
+        if (failure === 'builder') assert.equal(image, undefined);
+        else assert.equal(image.timeout, 300000);
         const network = calls.find(call => call.args.includes('tests/ci/probe-linux-containers.sh'));
-        if (failure === 'image') assert.equal(network, undefined);
+        if (['builder', 'image'].includes(failure)) assert.equal(network, undefined);
         else assert.equal(network.timeout, 120000);
         assert.equal(report.passed, !failure);
         assert.equal(fakeProcess.exitCode, failure ? 1 : 0);
