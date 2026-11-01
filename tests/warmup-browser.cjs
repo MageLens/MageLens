@@ -179,7 +179,15 @@ async function browser(warmup, shouldFail = false) {
     });`);
     await browser(false);
     assert.equal(read('coverage/cypress-results.json').totalPassed, 1);
-    assert.ok(requests.filter(request => request.url === '/fresh').every(request => request.protocol === '2.0'), 'Native Chrome navigations must use HTTP/2');
+    const posts = requests.filter(request => request.url === '/native-post');
+    console.log('Native form protocol counts:', JSON.stringify(posts.reduce((counts, request) => {
+        counts[request.protocol] = (counts[request.protocol] || 0) + 1;
+        return counts;
+    }, {})));
+    assert.equal(posts.length, 8, 'Every native form navigation must execute');
+    // cy.visit resolves the initial HTML through Cypress's Node HTTP client.
+    // The actual form submissions must negotiate HTTP/2 directly in Chrome.
+    assert.ok(posts.every(request => request.protocol === '2.0'), 'Native Chrome form navigations must use HTTP/2');
     assert.ok(requests.filter(request => request.url === '/fresh').every(request => request.cookie.includes('application_coverage=')));
     console.log('PASS: homepage and fixture assets finish loading without page transitions; retained initializer markers do not block; warm-up produces no coverage; tests start with fresh state and existing timeouts.');
 
