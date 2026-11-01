@@ -1,59 +1,23 @@
 # SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
-
-name: Report diagnosis
+name: Cookie diagnosis
 on:
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 jobs:
-  e2e:
-    name: Diagnose storefront message delivery
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        include:
-          - {theme: luma, runner: cypress}
-          - {theme: hyva, runner: cypress}
-          - {theme: hyva, runner: playwright}
-    uses: ./.github/workflows/e2e-case.yml
-    with:
-      os: ubuntu-latest
-      platform: mageos
-      theme: ${{ matrix.theme }}
-      runner: ${{ matrix.runner }}
-      sha: ${{ github.sha }}
-  compare:
-    name: Diagnose both reports without qualifying a partial matrix
-    if: always()
-    needs: [e2e]
+  cookie:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          pattern: case-*-attempt-${{ github.run_attempt }}
-          path: ci-artifacts
-      - name: Compare available reports (missing jobs deliberately prevent qualification)
-        if: always()
-        env:
-          CI_NEEDS: ${{ toJSON(needs) }}
-          CI_SHA: ${{ github.sha }}
-        run: node tests/ci/gate.cjs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: report-diagnosis-${{ github.run_id }}
-          path: ci-gate/
-          retention-days: 1
-          if-no-files-found: error
+      - name: Reproduce browser-cleared cookie handling independently of Magento
+        run: |
+          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e cypress/included:16.2.1 -ec '
+            node tests/ci/patch-cookie-diagnosis.cjs
+            node tests/ci/cookie-diagnosis.cjs &
+            cypress run --config-file tests/ci/cookie-diagnosis-config.cjs
+          '
