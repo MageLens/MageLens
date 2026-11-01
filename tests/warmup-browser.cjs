@@ -29,6 +29,11 @@ const server = http.createServer((request, response) => {
         </script>`;
         response.end(body);
     };
+    if (request.url === '/native-post' || request.url === '/native-redirect') {
+        response.writeHead(302, {location: request.url === '/native-post' ? '/native-redirect' : '/fresh', 'cache-control': 'no-store'});
+        request.resume();
+        return response.end();
+    }
     if (request.url === '/late.js') return setTimeout(() => send('window.lateScript = true;', 'text/javascript'), 700);
     if (request.url === '/late.css') return setTimeout(() => send('body { color: black; }', 'text/css'), 700);
     if (request.url === '/template.html') return setTimeout(() => send('<p data-cy="rendered-template">Loaded article</p>'), 700);
@@ -60,7 +65,8 @@ const server = http.createServer((request, response) => {
         }, 500));
     </script></body></html>`);
     const next = request.url === '/fresh' ? '/fresh-next' : '/fresh';
-    send('<html><body>Fresh storefront <a data-cy="native-next" href="' + next + '">Next page</a></body></html>');
+    send('<html><body data-response="' + requests.length + '">Fresh storefront <a data-cy="native-next" href="' + next + '">Next page</a>' +
+        '<form data-cy="native-form" method="post" action="/native-post"><input name="value" value="test"><button type="submit">Save</button></form></body></html>');
 });
 
 function write(file, text) {
@@ -130,6 +136,21 @@ async function browser(warmup, shouldFail = false) {
         cy.location('pathname').should('equal', '/fresh-next');
         cy.go('forward');
         cy.location('pathname').should('equal', '/fresh');
+        for (let navigation = 0; navigation < 4; navigation++) {
+            cy.get('body').invoke('attr', 'data-response').then(previous => {
+                cy.get('[data-cy="native-form"] button').click();
+                cy.get('body').should('not.have.attr', 'data-response', previous);
+                cy.location('pathname').should('equal', '/fresh');
+            });
+            cy.get('body').invoke('attr', 'data-response').then(previous => {
+                cy.get('[data-cy="native-form"]').then(([form]) => form.submit());
+                cy.get('body').should('not.have.attr', 'data-response', previous);
+                cy.location('pathname').should('equal', '/fresh');
+            });
+            cy.visit('/fresh-next');
+            cy.get('[data-cy="native-next"]').click();
+            cy.location('pathname').should('equal', '/fresh');
+        }
     });`);
     await browser(false);
     assert.equal(read('coverage/cypress-results.json').totalPassed, 1);
