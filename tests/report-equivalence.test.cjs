@@ -45,6 +45,16 @@ test('OS paths, line endings, ordering, counter IDs and repeated hits do not cha
     }
     assert.deepEqual(snapshot(directory), before);
 });
+test('Istanbul empty library groups retain Unknown percentages, but nonempty unknown totals are invalid', t => {
+    const {directory, read, write} = fixture(t);
+    const value = snapshot(directory);
+    assert.equal(value.js.groups.libraries.statements.pct, 'Unknown');
+    assert.equal(value.js.groups.libraries.statements.total, 0);
+    const summary = read('javascript-summary.json');
+    summary.groups.libraries.statements.total = 1;
+    write('javascript-summary.json', summary);
+    assert.throws(() => snapshot(directory), /Invalid coverage total/);
+});
 test('same-theme comparisons include the Windows and macOS host reports', t => {
     const {directory} = fixture(t);
     const all = reports(snapshot(directory));
@@ -67,6 +77,7 @@ test('equal percentages cannot conceal different executed files, statements, fun
         value => {value.php.files[privateKey('php')]['1'] = true;},
         value => {value.js.files[privateKey('js')].statements[0][1] = false; value.js.files[privateKey('js')].statements[1][1] = true;},
         value => {value.js.files[privateKey('js')].functions[0][2] = false;},
+        value => {value.js.files[privateKey('js')].functions[0][3] = 'changed-name';},
         value => {value.js.files[privateKey('js')].branches[0][2][1][1] = true;},
         value => {value.templates.files[privateKey('templates')].status = 'observed';},
         value => {value.templates.files[privateKey('templates')].source = 'changed';},
@@ -92,6 +103,10 @@ test('missing or duplicate host cases and stale or incomplete reports cannot sat
     const incomplete = structuredClone(value);
     delete Object.values(incomplete.js.files)[0].functions;
     assert.throws(() => validateSnapshot(incomplete, 'fresh', read('summary.json')), /Missing coverage inventory/);
+    const scope = read('javascript-scope.json');
+    write('javascript-scope.json', {...scope, included: scope.included.slice(0, 1)});
+    assert.throws(() => snapshot(directory), /Incomplete JavaScript source inventory/);
+    write('javascript-scope.json', scope);
     const js = read('js/coverage-final.json');
     delete Object.values(js)[0].f;
     write('js/coverage-final.json', js);

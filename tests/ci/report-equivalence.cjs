@@ -23,7 +23,7 @@ function fileKey(file) {
     const match = String(file).replace(/\\/g, '/').match(/(?:^|\/)((?:app\/code|app\/design|vendor|lib\/web)\/[^\0]+)$/);
     assert.ok(match && !match[1].split('/').includes('..'), 'Unrecognized coverage source root');
     const relative = match[1];
-    return /^(?:app\/code\/(?:Application\/Blog|MageLens\/CoverageProbe)\/|vendor\/hyva-themes\/)/.test(relative)
+    return /^(?:app\/code\/(?:Application\/Blog|MageLens\/Compatibility)\/|vendor\/hyva-themes\/magento2-default-theme-csp\/)/.test(relative)
         ? relative : `source-sha256:${digest(relative)}`;
 }
 function files(entries, project) {
@@ -43,13 +43,17 @@ function totals(value) {
     object(value);
     return Object.fromEntries(Object.entries(value).map(([key, number]) => {
         assert.ok(['total', 'covered', 'uncovered', 'skipped', 'pct', 'percent', 'eligible', 'unsupported'].includes(key), 'Unknown coverage total');
-        assert.ok(number === null || Number.isFinite(number), 'Invalid coverage total');
+        // Istanbul's empty library group has no denominator and uses this literal.
+        // Preserve it; it is valid only for an explicitly empty coverage group.
+        assert.ok(number === null || Number.isFinite(number) ||
+            key === 'pct' && number === 'Unknown' && value.total === 0 && value.covered === 0, 'Invalid coverage total');
         return [key, number];
     }));
 }
-const istanbulTotals = value => Object.fromEntries(['lines', 'statements', 'functions', 'branches'].map(key => [key, totals(value[key])]));
+const istanbulTotals = value => Object.fromEntries(['lines', 'statements', 'functions', 'branches', ...('branchesTrue' in object(value) ? ['branchesTrue'] : [])]
+    .map(key => [key, totals(value[key])]));
 function templateCounter(value) {
-    return [location(value), digest(value.syntax || value.type || ''), Boolean(value.implicit), hit(value.hits)];
+    return [location(value), digest(value.syntax || value.type || ''), Boolean(value.implicit), hit(value.hits), digest(value.name || value.binding || '')];
 }
 function template(value) {
     assert.equal(typeof value.source, 'string', 'Missing template source fingerprint');
@@ -75,10 +79,17 @@ function snapshot(directory) {
     const run = read(directory, 'run.json');
     const php = read(directory, 'php/coverage-summary.json');
     const js = read(directory, 'javascript-summary.json');
+    const scope = read(directory, 'javascript-scope.json');
     const templates = read(directory, 'templates/coverage-summary.json');
     const summary = read(directory, 'summary.json');
-    for (const report of [php, js, summary]) assert.equal(report.run, run.id, 'Stale coverage summary');
+    for (const report of [php, js, scope, summary]) assert.equal(report.run, run.id, 'Stale coverage summary');
     assert.equal(templates.schemaVersion, 2);
+    const groups = files(array(scope.included).map(entry => [entry.path, entry]), entry => {
+        assert.ok(['application', 'libraries'].includes(entry.group), 'Missing JavaScript report group');
+        return entry.group;
+    });
+    const javascript = read(directory, 'js/coverage-final.json');
+    assert.deepEqual(Object.keys(groups).sort(), Object.keys(files(Object.entries(javascript), () => true)).sort(), 'Incomplete JavaScript source inventory');
     const result = {
         schema: 1, run: run.id,
         metrics: Object.fromEntries(['php', 'js', 'templates'].map(key => [key, summary.metrics[key].percent])),
@@ -86,10 +97,11 @@ function snapshot(directory) {
             files: files(Object.entries(read(directory, 'php/line-coverage.json')), lines =>
                 Object.fromEntries(Object.entries(object(lines)).map(([line, value]) => [line, hit(value)])))},
         js: {groups: Object.fromEntries(['all', 'application', 'libraries'].map(group => [group, istanbulTotals(js.groups[group])])),
-            excluded: sort(array(js.excluded).map(entry => [fileKey(entry.path), digest(entry.reason)])),
-            files: files(Object.entries(read(directory, 'js/coverage-final.json')), value => ({
+            inventory: groups, requiredExecuted: sort(array(scope.requiredExecuted).map(fileKey)),
+            excluded: sort(array(js.excluded).map(entry => [fileKey(entry.path), digest(entry.reason), entry.replacement ? fileKey(entry.replacement) : null])),
+            files: files(Object.entries(javascript), value => ({
                 statements: counters(value.s, value.statementMap, (loc, hits) => [location(loc), hit(hits)]),
-                functions: counters(value.f, value.fnMap, (fn, hits) => [location(fn.loc), location(fn.decl), hit(hits)]),
+                functions: counters(value.f, value.fnMap, (fn, hits) => [location(fn.loc), location(fn.decl), hit(hits), digest(fn.name)]),
                 branches: counters(value.b, value.branchMap, (branch, hits) => {
                     assert.equal(array(hits).length, array(branch.locations).length, 'Incomplete branch paths');
                     return [digest(branch.type), location(branch.loc), hits.map((hits, index) => [location(branch.locations[index]), hit(hits)])];
@@ -115,6 +127,8 @@ function validateSnapshot(value, run, summary) {
     }
     for (const group of ['all', 'application', 'libraries']) istanbulTotals(value.js.groups[group]);
     array(value.js.excluded);
+    array(value.js.requiredExecuted);
+    assert.deepEqual(Object.keys(object(value.js.inventory)).sort(), Object.keys(value.js.files).sort(), 'Incomplete JavaScript report groups');
     for (const file of Object.values(value.js.files)) for (const key of ['statements', 'functions', 'branches']) array(file[key]);
     for (const key of ['summary', 'lines', 'statements', 'functions', 'branches']) totals(value.templates.totals[key]);
     for (const file of Object.values(value.templates.files)) {

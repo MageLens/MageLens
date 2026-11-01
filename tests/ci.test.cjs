@@ -145,3 +145,22 @@ test('failed harness uploads sanitized failing test counts without completed rep
     assert.doesNotMatch(browser, /SECRET|private|screenshot/);
     assert.match(browser, /failed/);
 });
+
+test('invalid full report fails its case while retaining safe acceptance and legacy coverage diagnostics', t => {
+    const {directory, entry} = fixture(t);
+    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
+    fs.writeFileSync(path.join(directory, 'magelens-result'), directory);
+    fs.writeFileSync(path.join(directory, 'javascript-summary.json'), JSON.stringify({run: 'fresh', groups: {private: 'SECRET'}}));
+    const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/evidence.cjs')], {cwd: directory, encoding: 'utf8', env: {...process.env,
+        CI_CASE: entry.id, CI_SHA: 'candidate', RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: '',
+        CI_STEPS: JSON.stringify({e2e: {outcome: 'success'}, cleanup: {outcome: 'success'}})}});
+    assert.equal(result.status, 1, result.stderr);
+    const target = path.join(directory, 'ci-reports', entry.id);
+    const evidence = JSON.parse(fs.readFileSync(path.join(target, 'evidence.json')));
+    assert.equal(evidence.passed, false);
+    assert.deepEqual(evidence.counts, counts);
+    assert.ok(evidence.diagnosticLocations.some(location => location.includes('report-equivalence.cjs:')));
+    assert.ok(fs.existsSync(path.join(target, 'coverage/php/line-coverage.json')));
+    assert.ok(!fs.existsSync(path.join(target, 'coverage/equivalence.json')));
+    assert.doesNotMatch(JSON.stringify(evidence), /SECRET/);
+});
