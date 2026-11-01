@@ -5,6 +5,10 @@
 name: E2E case
 on:
   workflow_call:
+    secrets:
+      COMPOSER_AUTH:
+        # Public cases omit it; Magento validates the protected environment value.
+        required: false
     inputs:
       feasibility-only:
         type: boolean

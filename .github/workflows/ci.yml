@@ -133,6 +133,10 @@ jobs:
         theme: [luma, hyva]
         runner: [cypress, playwright]
     uses: ./.github/workflows/e2e-case.yml
+    # Explicit forwarding enables environment-secret resolution in the called job.
+    # The protected environment supplies the value after review; public cases omit it.
+    secrets:
+      COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
     with:
       os: ubuntu-latest
       platform: magento
