@@ -120,8 +120,12 @@ jobs:
       feasibility-only: ${{ inputs.feasibility-only == true }}
   magento:
     name: Reviewed Magento E2E
-    # A PR never gets credentials, even when its branch is in this repository.
-    if: github.event_name != 'pull_request' && inputs.feasibility-only != true
+    # Forks never receive credentials. Repository branches require environment
+    # approval of the exact commit (including the PR merge candidate).
+    if: >-
+      inputs.feasibility-only != true &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     strategy:
       fail-fast: false
       max-parallel: 2

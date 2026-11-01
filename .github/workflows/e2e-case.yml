@@ -30,7 +30,11 @@ permissions:
 jobs:
   case:
     name: ${{ inputs.os }} / ${{ inputs.platform }} / ${{ inputs.theme }} / ${{ inputs.runner }}
-    if: inputs.platform != 'magento' || github.event_name != 'pull_request'
+    # Repository-branch commits become trusted only after environment review.
+    # Standard pull_request events cannot grant environment secrets to forks.
+    if: >-
+      inputs.platform != 'magento' || github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ inputs.os }}
     timeout-minutes: 150
     environment: ${{ inputs.platform == 'magento' && 'magento-e2e' || 'public-e2e' }}
@@ -60,7 +64,7 @@ jobs:
         env:
           REPOSITORY: ${{ github.repository }}
         run: |
-          wsl --install --distribution Ubuntu-24.04 --no-launch
+          wsl --install --distribution Ubuntu-24.04 --no-launch --location "$env:RUNNER_TEMP/magelens-wsl"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $setup = (wsl --distribution Ubuntu-24.04 --exec wslpath -u "$env:GITHUB_WORKSPACE/tests/ci/setup-windows.sh").Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

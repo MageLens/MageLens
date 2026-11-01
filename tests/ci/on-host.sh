@@ -24,6 +24,6 @@ wsl.exe --distribution Ubuntu-24.04 --user magelens --exec env \
 # Copy only allowlisted evidence into the host checkout for upload-artifact.
 if [[ "$1" == node && "$2" == tests/ci/evidence.cjs ]]; then
     wsl.exe --distribution Ubuntu-24.04 --user magelens --exec \
-        cp -a /home/magelens/project/ci-reports "$host_workspace/"
+        cp -R /home/magelens/project/ci-reports "$host_workspace/"
 fi
 exit "$result"
