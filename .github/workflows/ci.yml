@@ -80,7 +80,7 @@ jobs:
       - run: npm run check:copyright
       - run: node --test tests/copyright.test.cjs
   e2e:
-    name: Public E2E
+    name: Mage-OS E2E
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -115,7 +115,7 @@ jobs:
       sha: ${{ github.sha }}
       feasibility-only: ${{ inputs.feasibility-only == true }}
   magento:
-    name: Reviewed Magento E2E
+    name: Magento E2E
     # Forks never receive credentials. Repository branches require environment
     # approval of the exact commit (including the PR merge candidate).
     if: >-
