@@ -17,6 +17,7 @@ jobs:
       - name: Reproduce browser-cleared cookie handling independently of Magento
         run: |
           docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e cypress/included:16.2.1 -c '
+            node tests/ci/patch-cookie-diagnosis.cjs
             node tests/ci/cookie-diagnosis.cjs &
             cypress run --config-file tests/ci/cookie-diagnosis-config.cjs
           '
