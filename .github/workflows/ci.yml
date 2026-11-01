@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  feasibility:
+    name: Runner feasibility (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Prove the actual host can run MageLens containers
+        run: node tests/ci/probe.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: feasibility-${{ matrix.os }}
+          path: ci-reports/feasibility.json
+          retention-days: 1
+          if-no-files-found: error
