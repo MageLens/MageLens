@@ -16,6 +16,9 @@ function recordNavigation(event, win = Cypress.state('window')) {
     const document = win?.document;
     navigationTrace.push({
         event, ready: document?.readyState,
+        bootstrap: Boolean(win?.Cypress),
+        initial: Boolean(document && /(?:^|; )__cypress\.initial=true(?:;|$)/.test(document.cookie)),
+        area: win?.location?.pathname.startsWith('/admin') ? 'admin' : 'storefront',
         adoptedRules: document ? document.adoptedStyleSheets.flatMap(sheet =>
             [...sheet.cssRules].filter(rule => rule.cssText.startsWith('@view-transition')).map(rule => rule.cssText)) : [],
         activeTransition: Boolean(document?.activeViewTransition)
@@ -23,6 +26,7 @@ function recordNavigation(event, win = Cypress.state('window')) {
     if (navigationTrace.length > 60) navigationTrace.shift();
 }
 Cypress.on('command:start', command => recordNavigation('command:' + command.attributes.name));
+Cypress.on('window:before:unload', () => recordNavigation('before-unload'));
 Cypress.on('window:before:load', win => {
     recordNavigation('before-load', win);
     for (const name of ['pagereveal', 'pageswap', 'load', 'DOMContentLoaded']) {

@@ -3,6 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
+// Diagnostic branch: this namespace emits only injection decision booleans.
+process.env.DEBUG = 'cypress:network-interception:document';
 const cypress = require('cypress');
 const {specPatterns, warmupPaths} = require('./project.cjs');
 const warmup = process.argv.includes('--warmup');
