@@ -29,7 +29,10 @@ async function main() {
         fs.writeFileSync(path.join(project, 'recovery.cy.js'), `it('recovers the visible Chrome browser', () => {
             cy.visit('index.html'); cy.title().should('equal', 'Desktop check'); cy.contains('h1', 'Chrome recovered');
         });`);
-        const results = await runnerRequire('cypress').run({project, browser: 'chrome-for-testing', headed: true});
+        // Compose supplies the storefront's CYPRESS_BASE_URL. This standalone
+        // desktop check serves its own local page, before storefront setup.
+        const results = await runnerRequire('cypress').run({project, browser: 'chrome-for-testing', headed: true,
+            config: {baseUrl: null}});
         assert.equal(results.browserName, 'chrome-for-testing');
         assert.equal(results.totalTests, 1);
         assert.equal(results.totalPassed, 1);
