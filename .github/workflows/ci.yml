@@ -4,10 +4,16 @@
 name: Cypress 16.2.1 cookie fix investigation
 on:
   workflow_dispatch:
+    inputs:
+      investigation:
+        type: choice
+        options: [cookie, images]
+        default: cookie
 permissions:
   contents: read
 jobs:
   cookie:
+    if: inputs.investigation == 'cookie'
     name: Validate primary-origin cookie fix in Cypress 16.2.1 source
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -103,3 +109,65 @@ jobs:
       - name: Inspect fixture requests
         if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
         run: cat "$RUNNER_TEMP/cookie-fixture.log"
+  chrome-images:
+    if: inputs.investigation == 'images'
+    name: Chrome installation and recovery / ${{ matrix.runner }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        runner: [cypress, playwright]
+    env:
+      MAGELENS_RUNNER: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare disk
+        run: bash tests/ci/prepare-disk.sh
+      - name: Build the production runner with pinned Chrome
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          source bin/dependencies
+          load_dependencies dependencies.yaml
+          mkdir -p .runtime/template-package
+          image=$RUNNER_IMAGE
+          [[ "$MAGELENS_RUNNER" != playwright ]] || image=$PLAYWRIGHT_RUNNER_IMAGE
+          docker run --rm --user "$(id -u):$(id -g)" --mount "type=bind,source=$PWD,target=/workspace" --workdir /workspace \
+            --env CYPRESS_VERSION --env PLAYWRIGHT_VERSION --env TEMPLATE_COVERAGE_VERSION --env CYPRESS_CODE_COVERAGE_VERSION \
+            --env MAGELENS_RUNNER --env ISTANBUL_LIB_COVERAGE_VERSION --env ISTANBUL_LIB_INSTRUMENT_VERSION \
+            --env ISTANBUL_LIB_REPORT_VERSION --env ISTANBUL_REPORTS_VERSION --env NYC_VERSION --env npm_config_cache=/tmp/npm-cache \
+            --entrypoint node "$image" bin/sync-dependencies.cjs
+          docker build --file docker/runner/Dockerfile --target "$MAGELENS_RUNNER" \
+            --build-arg RUNNER_IMAGE --build-arg PLAYWRIGHT_RUNNER_IMAGE --build-arg CHROME_VERSION \
+            --build-arg CHROME_LINUX_X64_SHA256 --build-arg CHROME_LINUX_ARM64_SHA256 \
+            --tag "magelens-chrome:$MAGELENS_RUNNER" .
+      - name: Verify actual Chrome through every desktop restart
+        timeout-minutes: 8
+        run: bash tests/runner-container.sh "magelens-chrome:$MAGELENS_RUNNER"
+      - name: Verify Cypress TLS, decompression and artifact isolation in Chrome
+        if: matrix.runner == 'cypress'
+        timeout-minutes: 5
+        run: |
+          docker run --rm --name magelens-chrome-runtime --init --shm-size=1g --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp --env DISPLAY=:99 --mount "type=bind,source=$PWD,target=/workspace" \
+            --volume /workspace/node_modules "magelens-chrome:cypress" bash -c '
+              set -euo pipefail
+              bash /opt/magelens/desktop.sh > /tmp/desktop.log 2>&1 &
+              for attempt in {1..30}; do
+                if node /opt/magelens/healthcheck.cjs; then break; fi
+                sleep 1
+              done
+              node /opt/magelens/healthcheck.cjs
+              node tests/cypress-runtime.cjs
+            '
+      - name: Clean owned runtime
+        if: always()
+        run: |
+          if docker container inspect magelens-chrome-runtime > /dev/null 2>&1; then
+            docker logs magelens-chrome-runtime
+            docker rm -fv magelens-chrome-runtime
+          fi
