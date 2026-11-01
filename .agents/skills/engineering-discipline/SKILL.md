@@ -30,7 +30,7 @@ License: see LICENSE in the repository root.
 
 ## Mandatory gate before every release
 
-1. Identify the complete E2E suite and required configuration matrix from project instructions, scripts, and CI configuration: eight Linux combinations, macOS Mage-OS/Hyvä CSP/Playwright, and Windows Mage-OS/Luma/Cypress. A filtered subset or single matrix entry does not satisfy this gate.
+1. Identify the complete E2E suite and required configuration matrix from project instructions, scripts, and CI configuration: eight Linux combinations and Windows Mage-OS/Luma/Cypress (nine cases, 63 acceptance scenarios). macOS is explicitly deferred because hosted execution is too slow; Apple Silicon awaits a self-hosted Mac. Do not claim macOS qualification. A filtered subset of the active matrix or a single entry does not satisfy this gate.
 2. Execute the entire suite in GitHub Actions against the final release candidate and wait for every job to finish. Also complete all other project-required release checks. Verify exit statuses and reports; confirm expected tests actually ran and all passed.
    Require complete same-theme coverage equality across platforms, runners and hosts: Luma with Luma, Hyvä CSP with Hyvä CSP. Retain the original eight-way shared-code comparison. Inspect file inventories, covered/uncovered outcomes, totals, DOM observations and measurement limitations; do not hide differences behind matching percentages, scope exclusions or tolerances. Normalize only non-semantic OS/run differences and repeated-hit frequencies.
 3. Block release and any claim of readiness if tests fail, are skipped or pending, are interrupted, or cannot run. Missing suites, credentials, services, or evidence of completion are blockers, not assumed successes.

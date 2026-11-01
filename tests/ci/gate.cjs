@@ -75,9 +75,9 @@ function gate() {
     fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');
     errors.push(...themes.errors);
     const report = {sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
-        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: 70, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
+        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 7, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
     fs.writeFileSync('ci-gate/qualification.json', JSON.stringify(report, null, 2) + '\n');
-    const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/10 complete cases; 70 acceptance tests required.\n${errors.join('\n')}`;
+    const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/${cases.length} complete cases; ${report.expectedAcceptanceTests} acceptance tests required.\n${errors.join('\n')}`;
     console.log(summary);
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Required CI gate\n\n${summary}\n`);
     process.exitCode = report.passed ? 0 : 1;

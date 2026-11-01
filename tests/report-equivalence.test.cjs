@@ -55,7 +55,7 @@ test('Istanbul empty library groups retain Unknown percentages, but nonempty unk
     write('javascript-summary.json', summary);
     assert.throws(() => snapshot(directory), /Invalid coverage total/);
 });
-test('same-theme comparisons include the Windows and macOS host reports', t => {
+test('same-theme comparisons include every required host report', t => {
     const {directory} = fixture(t);
     const all = reports(snapshot(directory));
     all.filter(entry => entry.theme === 'hyva').forEach(entry => {entry.snapshot.metrics.templates = 12;});

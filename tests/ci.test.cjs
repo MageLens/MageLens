@@ -36,12 +36,11 @@ function fixture(t) {
         feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'resources', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts};
     return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1'}};
 }
-test('matrix is eight Linux modes and the two requested actual host cases', () => {
-    assert.equal(cases.length, 10);
-    assert.equal(new Set(cases.map(c => c.id)).size, 10);
+test('required matrix is eight Linux modes and Windows while macOS is deferred', () => {
+    assert.equal(cases.length, 9);
+    assert.equal(new Set(cases.map(c => c.id)).size, 9);
     assert.equal(cases.filter(c => c.os === 'ubuntu-latest').length, 8);
     assert.deepEqual(cases.filter(c => c.os !== 'ubuntu-latest').map(({os, platform, theme, runner}) => ({os, platform, theme, runner})), [
-        {os: 'macos-26-intel', platform: 'mageos', theme: 'hyva', runner: 'playwright'},
         {os: 'windows-latest', platform: 'mageos', theme: 'luma', runner: 'cypress'}
     ]);
 });
@@ -70,7 +69,8 @@ test('final gate fails when reports are missing even if all job results claim su
     const report = JSON.parse(fs.readFileSync(`${directory}/ci-gate/qualification.json`));
     assert.equal(report.passed, false);
     assert.equal(report.completedCases, 0);
-    assert.equal(report.expectedCases, 10);
+    assert.equal(report.expectedCases, 9);
+    assert.equal(report.expectedAcceptanceTests, 63);
     assert.match(result.stdout, /Linux comparison incomplete/);
 });
 
