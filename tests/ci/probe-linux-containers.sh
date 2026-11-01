@@ -39,3 +39,13 @@ for attempt in {1..30}; do [[ ! -f "$scratch/output" ]] || break; sleep 1; done
 docker compose -p "$project" -f "$scratch/compose.yaml" run --rm client
 endpoint=$(docker compose -p "$project" -f "$scratch/compose.yaml" port server 8080)
 curl --fail --silent "http://$endpoint" | grep network-ok
+
+if [[ "${CI_HOST_RUNTIME:-}" == WSL2 ]]; then
+    # Verify Windows loopback forwarding and Windows filesystem access too.
+    /mnt/c/Windows/System32/curl.exe --fail --silent "http://$endpoint" | grep network-ok
+    host_probe="$MAGELENS_CI_HOST_PATH/.magelens-mount-probe"
+    printf 'windows-filesystem\n' > "$host_probe"
+    docker run --rm --mount "type=bind,source=$host_probe,target=/input,readonly" "$PLAYWRIGHT_RUNNER_IMAGE" \
+        node -e 'if (require("fs").readFileSync("/input", "utf8").trim() !== "windows-filesystem") process.exit(1)'
+    rm "$host_probe"
+fi

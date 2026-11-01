@@ -21,6 +21,7 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/ci.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     permissions:
       contents: write
@@ -60,7 +61,10 @@ jobs:
           [[ -s release-notes.md ]]
           # Never publish or edit a tag pointing to a different, unqualified commit.
           if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then exit 0; fi
-          [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$QUALIFIED_SHA" ]]
+          if [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" != "$QUALIFIED_SHA" ]]; then
+            echo 'No release tag targets this qualified commit; publication deferred.'
+            exit 0
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --notes-file release-notes.md
             exit 0

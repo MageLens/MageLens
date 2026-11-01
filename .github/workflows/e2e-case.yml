@@ -23,6 +23,7 @@ on:
         type: string
 permissions:
   contents: read
+  actions: read
 jobs:
   case:
     name: ${{ inputs.os }} / ${{ inputs.platform }} / ${{ inputs.theme }} / ${{ inputs.runner }}
@@ -47,9 +48,29 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
+      - name: Prepare Windows WSL2 Linux engine
+        if: runner.os == 'Windows'
+        id: windows
+        timeout-minutes: 12
+        shell: pwsh
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          wsl --install --distribution Ubuntu-24.04 --no-launch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content -Raw tests/ci/setup-windows.sh | wsl --distribution Ubuntu-24.04 --user root --exec bash -s -- "$env:REPOSITORY" "$env:CI_SHA"
+          exit $LASTEXITCODE
+      - name: Prepare macOS local VM tools
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        run: |
+          brew install colima docker docker-compose bash
+          mkdir -p "$HOME/.docker/cli-plugins"
+          ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
       - id: probe
         name: Validate actual host, Linux engine, mounts and networking
-        run: node tests/ci/probe.cjs
+        run: bash tests/ci/on-host.sh node tests/ci/probe.cjs
       - name: Require reviewed credential access
         if: inputs.platform == 'magento'
         env:
@@ -78,36 +99,35 @@ jobs:
           NODE
           echo "MAGELENS_COMPOSER_AUTH_FILE=$RUNNER_TEMP/auth.json" >> "$GITHUB_ENV"
       - name: Check available resources
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-          const os = require('os');
-          const disk = fs.statfsSync('/tmp');
-          const free = disk.bavail * disk.bsize / 2 ** 30;
-          console.log(`Available disk: ${free.toFixed(1)} GiB; memory: ${(os.totalmem()/2**30).toFixed(1)} GiB`);
-          if (free < 25 || os.totalmem() < 6 * 2 ** 30) throw new Error('Insufficient resources for one isolated installation');
-          NODE
+        run: bash tests/ci/on-host.sh node tests/ci/resources.cjs
       - id: isolation
         name: Verify independent Compose projects
-        run: bash tests/project-isolation.sh
+        run: bash tests/ci/on-host.sh bash tests/project-isolation.sh
       - id: e2e
         name: Install and run the complete acceptance harness
         timeout-minutes: 130
         env:
           MAGELENS_E2E_RESULT_FILE: ${{ runner.temp }}/magelens-result
           MAGELENS_E2E_RESOURCE_FILE: ${{ runner.temp }}/magelens-resource
-        run: bash tests/e2e-isolated.sh
+        run: bash tests/ci/on-host.sh bash tests/e2e-isolated.sh
       - id: cleanup
         name: Remove only this installation and credentials
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/auth.json"
-          bash tests/ci/cleanup.sh
+          if [[ "$RUNNER_OS" != Windows || "${{ steps.windows.outcome }}" == success ]]; then
+            bash tests/ci/on-host.sh bash tests/ci/cleanup.sh
+          fi
       - name: Prepare sanitized evidence and failure diagnostics
         if: always()
         env:
           CI_STEPS: ${{ toJSON(steps) }}
-        run: node tests/ci/evidence.cjs
+        run: |
+          if [[ "$RUNNER_OS" == Windows && "${{ steps.windows.outcome }}" != success ]]; then
+            node tests/ci/evidence.cjs
+          else
+            bash tests/ci/on-host.sh node tests/ci/evidence.cjs
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

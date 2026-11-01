@@ -74,3 +74,14 @@ test('final gate fails when reports are missing even if all job results claim su
     assert.equal(report.expectedCases, 10);
     assert.match(result.stdout, /Linux comparison incomplete/);
 });
+
+test('case gate rejects stale collection reports and missing coverage evidence', t => {
+    const {directory, entry, evidence, context} = fixture(t);
+    const summaryFile = path.join(directory, 'summary.json');
+    const summary = JSON.parse(fs.readFileSync(summaryFile));
+    fs.writeFileSync(summaryFile, JSON.stringify({...summary, run: 'warmup'}));
+    assert.throws(() => verifyCase(entry, evidence, directory, context), /warmup/);
+    fs.writeFileSync(summaryFile, JSON.stringify(summary));
+    fs.rmSync(path.join(directory, 'cypress-results.json'));
+    assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
+});

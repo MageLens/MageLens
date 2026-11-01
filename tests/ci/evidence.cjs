@@ -38,7 +38,7 @@ function writeEvidence() {
     fs.mkdirSync(directory, {recursive: true});
     const report = {...entry, sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID,
         attempt: process.env.GITHUB_RUN_ATTEMPT, host: process.env.RUNNER_OS, architecture: process.arch,
-        image: process.env.ImageOS, imageVersion: process.env.ImageVersion, memoryGiB: Math.round(os.totalmem() / 2 ** 30),
+        runtime: process.env.CI_HOST_RUNTIME || 'native', image: process.env.ImageOS, imageVersion: process.env.ImageVersion, memoryGiB: Math.round(os.totalmem() / 2 ** 30),
         dependencies: Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(match => [match[1], match[2]])),
         steps: Object.fromEntries(Object.entries(JSON.parse(process.env.CI_STEPS)).map(([key, value]) => [key, pick(value, ['outcome', 'conclusion'])])), passed: false};
     try {

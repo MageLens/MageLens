@@ -18,6 +18,7 @@ License: see LICENSE in the repository root.
 - Before changing shared behavior, identify every affected route, entry point, interface, and workflow. Equivalent actions under equivalent conditions must produce consistent results, validation, and errors.
 - Reuse existing components, business logic, validation, and error handling. Update shared implementations instead of creating competing paths.
 - Add or update automated regression tests for behavior changes, including equivalent entry points and existing workflows. Run relevant checks during development and any broader checks required by the project; inspect the final diff for unintended changes.
+- Execute all E2E tests and E2E debugging in GitHub Actions. Local static and unit/integration checks remain available. Run E2E locally only when the user explicitly requests it; never start local Docker installations to work around a CI blocker.
 - Investigate failures and fix their root causes. Never ignore, skip, suppress, delete, or weaken failing tests to manufacture a passing result.
 
 ## User-facing documentation
@@ -28,8 +29,8 @@ License: see LICENSE in the repository root.
 
 ## Mandatory gate before every release
 
-1. Identify the complete E2E suite and required configuration matrix from project instructions, scripts, and CI configuration. A filtered subset or single matrix entry does not satisfy this gate.
-2. Execute the entire suite against the final release candidate and wait for every job to finish. Also complete all other project-required release checks. Verify exit statuses and reports; confirm expected tests actually ran and all passed.
+1. Identify the complete E2E suite and required configuration matrix from project instructions, scripts, and CI configuration: eight Linux combinations, macOS Mage-OS/Hyvä CSP/Playwright, and Windows Mage-OS/Luma/Cypress. A filtered subset or single matrix entry does not satisfy this gate.
+2. Execute the entire suite in GitHub Actions against the final release candidate and wait for every job to finish. Also complete all other project-required release checks. Verify exit statuses and reports; confirm expected tests actually ran and all passed.
 3. Block release and any claim of readiness if tests fail, are skipped or pending, are interrupted, or cannot run. Missing suites, credentials, services, or evidence of completion are blockers, not assumed successes.
 4. Fix root causes, then rerun the complete E2E suite. Changes to the candidate or its test setup after verification require a fresh full run. Do not bypass failures with selective retries or reduced coverage.
 5. Proceed only after the gate passes and release publication is authorized by the user. This skill itself does not authorize publishing.

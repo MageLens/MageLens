@@ -82,17 +82,13 @@ Run installation and coverage one at a time. Do not bypass `.runtime/workflow.lo
 
 For host-side integration checks, install the locked dependencies with `npm ci --ignore-scripts`, then run `npm run test:integration`. Target an existing relevant test first; use the full integration suite for shared orchestration changes. PHP checks live in `tests/*.test.php`; inspect their prerequisites before selecting host or container execution. Use `bash -n`, `node --check` and `php -l` for changed scripts.
 
-For an isolated Mage-OS installation and real browser tests without Marketplace credentials:
+All E2E execution and debugging belongs in GitHub Actions. Do not run E2E locally unless the user explicitly requests it. Static and unit/integration checks remain available locally; cap integration concurrency on memory-constrained machines with `node --test --test-concurrency=2 tests/*.test.cjs`.
 
-```bash
-MAGELENS_E2E_PLATFORM=mageos bash tests/e2e-isolated.sh
-```
+The CI workflow checks all eight Linux combinations (two platforms, two storefronts and two runners), plus Mage-OS/Hyvä CSP/Playwright on `macos-latest` and Mage-OS/Luma/Cypress on `windows-latest`. Actual host feasibility is required; a Linux job cannot stand in for Windows or macOS. The final `Required CI gate` requires all ten cases, 70 acceptance scenarios, every report and the eight-way Linux coverage comparison. Missing, skipped, canceled and incomplete checks block qualification.
 
-Select `MAGELENS_E2E_THEME=luma|hyva` and `MAGELENS_E2E_RUNNER=cypress|playwright` for a particular combination. The default platform is Magento Open Source. Supply its credentials using `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`, as described in [tests/README.md](tests/README.md).
+Use pull request runs for uncredentialed validation. For full qualification, review the exact branch commit, then dispatch `gh workflow run ci.yml --ref BRANCH` and approve the protected `magento-e2e` environment for that SHA. PR jobs never receive Marketplace secrets. Never approve an unreviewed commit. Retrieve the sanitized `case-*` and `qualification` artifacts from the run; see [tests/README.md](tests/README.md) for setup and diagnostics. Do not copy CI credentials or failed installations back to the local machine.
 
-`npm run test:e2e:matrix` checks all eight combinations: two platforms, two storefronts and two runners. It checks the installed platform/version, the same acceptance scenarios, coverage reports, source preservation, viewer access and browser recovery after graceful and forced stops. It also compares coverage outcomes for shared application code. Use the full matrix for changes affecting shared installation or coverage behavior. The GitHub workflow publishes releases; it does not automatically run this matrix for pull requests.
-
-Isolated checks retain reports and logs under `.runtime/e2e/` and remove only their own temporary Compose projects and volumes. See [tests/README.md](tests/README.md) for port overrides, retained failure environments and testing an unpublished template-coverage package.
+Fix failures and push a new candidate to run CI again. Rerun all jobs on the final candidate: artifacts from different attempts cannot be combined. Automatic publishing consumes successful exact-commit CI evidence and verifies the release tag targets that commit. Do not merge or publish unless requested.
 
 ## Preserve application data and report integrity
 

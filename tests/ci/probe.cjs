@@ -9,7 +9,7 @@ const output = process.env.CI_REPORT_DIR || 'ci-reports';
 fs.mkdirSync(output, {recursive: true});
 const report = {sha: process.env.CI_SHA || process.env.GITHUB_SHA, host: process.env.RUNNER_OS, image: process.env.ImageOS,
     imageVersion: process.env.ImageVersion, architecture: process.arch, release: os.release(),
-    memoryGiB: Math.round(os.totalmem() / 2 ** 30), checks: {}, passed: false};
+    runtime: process.env.CI_HOST_RUNTIME || 'native', memoryGiB: Math.round(os.totalmem() / 2 ** 30), checks: {}, passed: false};
 function run(name, command, args) {
     const result = spawnSync(command, args, {encoding: 'utf8', timeout: 120000, env: {...process.env, MSYS_NO_PATHCONV: '1'}});
     report.checks[name] = {status: result.status, output: `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.slice(-16000)};
@@ -23,7 +23,10 @@ try {
         run('wsl-boot', 'wsl.exe', ['--distribution', 'Ubuntu-24.04', '--user', 'root', '--exec', '/bin/uname', '-a']);
         run('virtualization', 'powershell.exe', ['-NoProfile', '-Command', 'Get-CimInstance Win32_Processor | Select-Object Name,VirtualizationFirmwareEnabled,SecondLevelAddressTranslationExtensions | ConvertTo-Json; Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform | Select-Object FeatureName,State | ConvertTo-Json; Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V | Select-Object FeatureName,State | ConvertTo-Json']);
     }
-    if (process.platform === 'darwin') run('virtualization', 'sysctl', ['kern.hv_support', 'hw.optional.arm64']);
+    if (process.platform === 'darwin') {
+        run('virtualization', 'sysctl', ['kern.hv_support', 'hw.optional.arm64']);
+        run('local-vm-start', 'colima', ['start', '--vm-type', 'vz', '--cpu', '2', '--memory', '4', '--disk', '40']);
+    }
     run('docker', 'docker', ['version']);
     const info = run('engine', 'docker', ['info', '--format', '{{.OSType}}/{{.Architecture}}']);
     const compose = run('compose', 'docker', ['compose', 'version', '--short']);

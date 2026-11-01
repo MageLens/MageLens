@@ -4,7 +4,7 @@ License: see LICENSE in the repository root.
 
 Subject: Follow regenerated sessions when a request starts with a stale cookie
 Upstream: https://github.com/magento/magento2/issues/41057
-Target: magento/framework 103.0.8-p5 (Magento 2.4.8-p5)
+Target: Magento Open Source 2.4.9 and Mage-OS 3.6.0 framework
 
 Cypress CI-only workaround for the upstream session-cookie race; review on Magento upgrades.
 Applied only around Cypress runs by docker/php/cypress-patches.sh.
