@@ -12,8 +12,12 @@ const report = {sha: process.env.CI_SHA || process.env.GITHUB_SHA, host: process
     runtime: process.env.CI_HOST_RUNTIME || 'native', memoryGiB: Math.round(os.totalmem() / 2 ** 30), checks: {}, passed: false};
 function run(name, command, args) {
     const timeout = {'local-vm-start': 600000, 'probe-image': 300000}[name] || 120000;
+    const started = Date.now();
+    console.log(`Host probe: ${name} (limit ${timeout / 1000}s)`);
     const result = spawnSync(command, args, {encoding: 'utf8', timeout, env: {...process.env, MSYS_NO_PATHCONV: '1'}});
-    report.checks[name] = {status: result.status, output: `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.slice(-16000)};
+    report.checks[name] = {status: result.status, durationMs: Date.now() - started,
+        output: `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.slice(-16000)};
+    console.log(`Host probe: ${name} finished in ${report.checks[name].durationMs}ms (status ${result.status})`);
     return report.checks[name];
 }
 try {
