@@ -29,7 +29,7 @@ try {
         run('vm-tools', 'bash', ['-c', 'set -e\ncolima version\nlimactl --version']);
         // Standard Intel macOS exposes the Virtualization framework. The local VM
         // must prove real host mounts/networking before the complete harness runs.
-        run('local-vm-start', 'colima', ['start', '--vm-type', 'vz', '--cpu', '2', '--memory', '6', '--disk', '40']);
+        run('local-vm-start', 'colima', ['start', '--vm-type', 'vz', '--cpu', '4', '--memory', '8', '--disk', '40']);
     }
     run('docker', 'docker', ['version']);
     const info = run('engine', 'docker', ['info', '--format', '{{.OSType}}/{{.Architecture}}']);
