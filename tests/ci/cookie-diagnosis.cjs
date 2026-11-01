@@ -4,7 +4,9 @@
 const http = require('node:http');
 http.createServer((req, res) => {
   res.setHeader('content-type', 'text/html');
-  if (req.url === '/set') {
+  if (req.url === '/start') {
+    res.end('<form method="post" action="/set"><button>Set message</button></form>');
+  } else if (req.url === '/set') {
     res.setHeader('set-cookie', 'message=previous; Path=/; SameSite=Strict');
     res.end('<form method="post" action="/next"><button>Continue</button></form><script>document.cookie="message=; Path=/; SameSite=Strict";</script>');
   } else {

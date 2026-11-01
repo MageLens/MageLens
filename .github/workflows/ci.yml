@@ -28,3 +28,27 @@ jobs:
             node tests/ci/cookie-diagnosis.cjs &
             cypress run --config-file tests/ci/cookie-diagnosis-config.cjs
           '
+      - name: Preserve existing TLS, compressed response and artifact checks
+        if: ${{ !cancelled() }}
+        env:
+          CYPRESS_VERSION: ${{ matrix.cypress }}
+        run: |
+          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e "cypress/included:$CYPRESS_VERSION" -c '
+            export NODE_PATH="$(npm root -g)"
+            xvfb-run -a node tests/cypress-runtime.cjs
+          '
+      - name: Inspect runtime results
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for report in Path('coverage/cypress-runtime').glob('*/*/result.json'):
+              result = json.loads(report.read_text())
+              print(report, {key: result.get(key) for key in ('totalTests', 'totalPassed', 'totalFailed', 'totalPending', 'totalSkipped')})
+              for run in result.get('runs', []):
+                  for test in run.get('tests', []):
+                      for attempt in test.get('attempts', []):
+                          if attempt.get('error'):
+                              print(test['title'], attempt['error'].get('message'))
+          PY
