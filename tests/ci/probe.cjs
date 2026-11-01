@@ -11,7 +11,8 @@ const report = {sha: process.env.CI_SHA || process.env.GITHUB_SHA, host: process
     imageVersion: process.env.ImageVersion, architecture: process.arch, release: os.release(),
     runtime: process.env.CI_HOST_RUNTIME || 'native', memoryGiB: Math.round(os.totalmem() / 2 ** 30), checks: {}, passed: false};
 function run(name, command, args) {
-    const result = spawnSync(command, args, {encoding: 'utf8', timeout: name === 'local-vm-start' ? 600000 : 120000, env: {...process.env, MSYS_NO_PATHCONV: '1'}});
+    const timeout = {'local-vm-start': 600000, 'probe-image': 300000}[name] || 120000;
+    const result = spawnSync(command, args, {encoding: 'utf8', timeout, env: {...process.env, MSYS_NO_PATHCONV: '1'}});
     report.checks[name] = {status: result.status, output: `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.slice(-16000)};
     return report.checks[name];
 }
@@ -35,6 +36,10 @@ try {
     const compose = run('compose', 'docker', ['compose', 'version', '--short']);
     if (info.status !== 0 || !info.output.startsWith('linux/')) throw new Error('A working local Linux Docker engine is required; host mount/network checks cannot run.');
     if (compose.status !== 0) throw new Error('Docker Compose unavailable.');
+    // Image download/unpacking is infrastructure preparation, with its own bound.
+    // Keep the actual mount/network assertions on their original two-minute limit.
+    const image = run('probe-image', 'bash', ['-c', 'set -euo pipefail; source bin/common; docker pull "$PLAYWRIGHT_RUNNER_IMAGE"']);
+    if (image.status !== 0) throw new Error('Probe image preparation failed.');
     const mounts = run('mounts-network', 'bash', ['tests/ci/probe-linux-containers.sh']);
     if (mounts.status !== 0 || report.checks.bash.status !== 0) throw new Error('Bash, Compose, filesystem or networking validation failed.');
     report.passed = true;
