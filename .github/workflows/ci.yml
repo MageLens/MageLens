@@ -1,54 +1,87 @@
 # SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
-name: Cypress rollback cookie diagnosis
+name: Cypress 16.2.1 cookie fix investigation
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   cookie:
-    name: Cookie replay on Cypress ${{ matrix.cypress }}
+    name: Validate primary-origin cookie fix in Cypress 16.2.1 source
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        cypress: ['16.2.0', '15.19.0']
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      CYPRESS_INSTALL_BINARY: '0'
+      NODE_OPTIONS: --max-old-space-size=4096
+      CHILD_CONCURRENCY: '2'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          path: magelens
           persist-credentials: false
-      - name: Reproduce browser-cleared cookie handling independently of Magento
-        env:
-          CYPRESS_VERSION: ${{ matrix.cypress }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cypress-io/cypress
+          ref: 519d66d80b0ae1bd3f9581665ce69473b82af59b
+          path: cypress
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Prepare bounded build resources
         run: |
-          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e "cypress/included:$CYPRESS_VERSION" -c '
-            node tests/ci/cookie-diagnosis.cjs &
-            cypress run --config-file tests/ci/cookie-diagnosis-config.cjs
-          '
-      - name: Preserve existing TLS, compressed response and artifact checks
-        if: ${{ !cancelled() }}
-        env:
-          CYPRESS_VERSION: ${{ matrix.cypress }}
+          bash magelens/tests/ci/prepare-disk.sh
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libgtk-3-0t64 libgbm1 libasound2t64 libnss3 libatk-bridge2.0-0t64 libxss1 xvfb xauth
+          npm install -g yarn@1.22.22 --ignore-scripts --no-audit --no-fund
+          df -h .
+          free -h
+      - name: Install locked Cypress source dependencies
+        working-directory: cypress
+        run: yarn install --frozen-lockfile --network-concurrency 4
+      - name: Apply the source fix and its regression tests
+        working-directory: cypress
+        run: git apply ../magelens/tests/ci/cypress-primary-cookie.patch
+      - name: Build Cypress with two workers
+        working-directory: cypress
         run: |
-          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e "cypress/included:$CYPRESS_VERSION" -c '
-            export NODE_PATH="$(npm root -g)"
-            xvfb-run -a node tests/cypress-runtime.cjs
-          '
-      - name: Inspect runtime results
+          yarn lerna run build --stream --concurrency 2
+          yarn workspace @packages/electron build-binary
+          yarn lerna run build-cli --stream --concurrency 2
+      - name: Run proxy unit regressions
+        working-directory: cypress
+        run: yarn workspace @packages/proxy test --maxWorkers=2 --minWorkers=1
+      - name: Start the isolated cookie fixture
+        run: |
+          node magelens/tests/ci/cookie-diagnosis.cjs > "$RUNNER_TEMP/cookie-fixture.log" 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8123/start > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Verify browser cookie handling in Electron
+        working-directory: cypress
+        env:
+          COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-electron.json
+        run: yarn cypress:run --project ../magelens --browser electron --config-file tests/ci/cookie-diagnosis-config.cjs
+      - name: Verify browser cookie handling in Chrome
+        working-directory: cypress
+        env:
+          COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-chrome.json
+        run: yarn cypress:run --project ../magelens --browser chrome --config-file tests/ci/cookie-diagnosis-config.cjs
+      - name: Inspect every browser result
         if: ${{ !cancelled() }}
         run: |
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-          for report in Path('coverage/cypress-runtime').glob('*/*/result.json'):
-              result = json.loads(report.read_text())
-              print(report, {key: result.get(key) for key in ('totalTests', 'totalPassed', 'totalFailed', 'totalPending', 'totalSkipped')})
-              for run in result.get('runs', []):
-                  for test in run.get('tests', []):
-                      for attempt in test.get('attempts', []):
-                          if attempt.get('error'):
-                              print(test['title'], attempt['error'].get('message'))
+          for browser in ('electron', 'chrome'):
+              result = json.loads((Path(os.environ['RUNNER_TEMP']) / f'cookie-{browser}.json').read_text())
+              print(browser, result)
+              assert result['totalTests'] == result['totalPassed'] == 2
+              assert result['totalFailed'] == result['totalPending'] == result['totalSkipped'] == 0
           PY
