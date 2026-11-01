@@ -2,10 +2,24 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+Cypress.on('window:before:load', observeStorefrontReadiness);
+
 export const fixtures = () => Cypress.expose('projectFixtures').Application_Blog;
 export const headers = () => ({'x-application-coverage': Cypress.expose('coverageRun')});
 export const get = (name) => cy.get(`[data-cy="${name}"]`);
+export function waitForStorefront() {
+    if (fixtures().themePaths[0] === 'Hyva/default-csp') {
+        cy.window().its('__magelensStorefrontReady').should('deep.equal', {messages: true, privateContent: true});
+    }
+}
+export function storefrontMessage(type, text) {
+    cy.get(`.message-${type}, .message.${type}`).should('contain', text);
+    waitForStorefront();
+    return cy.get(`.message-${type}, .message.${type}`).should('have.length', 1).and('contain', text);
+}
 export function waitForBlog() {
+    waitForStorefront();
     // Magento loads AMD components and Knockout templates after window:load.
     // Treat that bootstrap as page loading; ordinary interactions keep their
     // shorter timeout. Cached pages resolve this check immediately.

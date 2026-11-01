@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {test, expect, fixtures, headers, get, message, visitBlog, waitForBlog, search, fillComment} = require('./support');
+const {test, expect, fixtures, headers, get, visitBlog, waitForBlog, search, fillComment, storefrontMessage} = require('./support');
 
 test.describe('Blog storefront', () => {
     test('searches, filters, paginates, reads articles, and retains favorites', async ({page}) => {
@@ -78,12 +78,12 @@ test.describe('Blog storefront', () => {
             form.submit();
         });
         expect((await response).status()).toBe(302);
-        await expect(message(page, 'error')).toContainText('Invalid Form Key');
+        await storefrontMessage(page, 'error', 'Invalid Form Key');
         await expect(get(page, 'no-comments')).toBeVisible();
         await fillComment(page, 'Reader', 'invalid', 'A comment with an invalid email');
         await get(page, 'comment-form').evaluate(form => form.noValidate = true);
         await get(page, 'comment-submit').click();
-        await expect(message(page, 'error')).toContainText('valid email');
+        await storefrontMessage(page, 'error', 'valid email');
         await expect(get(page, 'approved-comment')).toHaveCount(0);
         await visitBlog(page);
         await page.route(/\/blog\/index\/posts[/?]/, route => route.fulfill({status: 503, json: {error: 'Unavailable'}}));

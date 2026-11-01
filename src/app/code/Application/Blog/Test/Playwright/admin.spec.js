@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const path = require('node:path');
-const {test, expect, fixtures, headers, get, message, login, section, findRecord, save, remove, visitBlog, fillPost, fillComment} = require('./support');
+const {test, expect, fixtures, headers, get, message, login, section, findRecord, save, remove, visitBlog, fillPost, fillComment, storefrontMessage} = require('./support');
 
 test.describe('Blog Admin and publishing', () => {
     test('creates a category and illustrated article, publishes, moderates comments, and deletes records', async ({page}) => {
@@ -49,11 +49,11 @@ test.describe('Blog Admin and publishing', () => {
         await expect(get(page, 'article-body').locator('script')).toHaveCount(0);
         await fillComment(page, query + ' Reader', 'private-reader@example.test', 'Thoughtful article. <img src=x onerror=alert(1)>');
         await get(page, 'comment-submit').click();
-        await expect(message(page, 'success')).toContainText('awaiting moderation');
+        await storefrontMessage(page, 'success', 'awaiting moderation');
         await expect(get(page, 'approved-comment')).toHaveCount(0);
         await fillComment(page, 'Another reader', 'another@example.test', 'Too soon');
         await get(page, 'comment-submit').click();
-        await expect(message(page, 'error')).toContainText('wait a minute');
+        await storefrontMessage(page, 'error', 'wait a minute');
         await page.goto('/admin/');
         await section(page, 'comments');
         await findRecord(page, query + ' Reader');
