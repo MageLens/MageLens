@@ -80,12 +80,6 @@ for shutdown in graceful forced forced; do
     fi
     docker start "$container" >/dev/null
     ready
-    docker exec "$container" bash -c '
-        if [[ "$MAGELENS_RUNNER" == playwright ]]; then
-            node -e "require(\"@playwright/test\").chromium.launch({headless:false}).then(async browser=>{const page=await browser.newPage();await page.setContent(\"<title>Desktop check</title>\");await browser.close()}).catch(error=>{console.error(error);process.exitCode=1})"
-        else
-            cypress verify
-        fi
-    '
+    docker exec "$container" timeout --signal=TERM --kill-after=10s 120s node /opt/magelens/browser-smoke.cjs
     echo "PASS: desktop, VNC, viewer, and selected browser recovered after $shutdown shutdown."
 done

@@ -10,6 +10,12 @@ const playwright = require('@playwright/test');
 const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+        browserIdentity: [async ({browser}, use, testInfo) => {
+            testInfo.annotations.push({type: 'magelens-browser', description: JSON.stringify({
+                name: testInfo.project.use.channel, version: browser.version()
+            })});
+            await use();
+        }, {auto: true}],
         applicationErrors: [async ({context}, use) => {
             const errors = [];
             const record = error => errors.push(error.message);

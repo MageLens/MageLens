@@ -6,7 +6,8 @@
 set -euo pipefail
 # Cypress 16.2.1 bundles Electron 41.7.0. Electron initializes Hunspell even
 # with webPreferences.spellcheck=false (electron/electron#22995). Package the
-# runner's English dictionary as a browser dependency, before any test traffic.
+# Cypress controller's English dictionary before any test traffic. The
+# application under test runs in Chrome; Cypress itself still uses Electron.
 archive=$(mktemp)
 trap 'rm -f "$archive"' EXIT
 curl --fail --location --max-time 120 \

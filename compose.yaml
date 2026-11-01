@@ -134,6 +134,9 @@ services:
       args:
         RUNNER_IMAGE: ${RUNNER_IMAGE:?Missing dependencies.yaml configuration}
         PLAYWRIGHT_RUNNER_IMAGE: ${PLAYWRIGHT_RUNNER_IMAGE:?Missing dependencies.yaml configuration}
+        CHROME_VERSION: ${CHROME_VERSION:?Missing dependencies.yaml configuration}
+        CHROME_LINUX_X64_SHA256: ${CHROME_LINUX_X64_SHA256:?Missing dependencies.yaml configuration}
+        CHROME_LINUX_ARM64_SHA256: ${CHROME_LINUX_ARM64_SHA256:?Missing dependencies.yaml configuration}
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     working_dir: /workspace
     environment:

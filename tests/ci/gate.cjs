@@ -32,6 +32,8 @@ function verifyCase(entry, evidence, directory, context) {
     for (const key of ['platform', 'theme', 'runner']) assert.equal(installation[key], entry[key]);
     const pins = Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
     assert.deepEqual(evidence.dependencies, pins, 'Dependency provenance differs');
+    assert.deepEqual(results.browser, {name: entry.runner === 'cypress' ? 'chrome-for-testing' : 'chrome', version: pins.CHROME_VERSION}, 'Wrong or missing Chrome browser');
+    assert.deepEqual(evidence.browser, results.browser, 'Browser evidence differs');
     assert.equal(installation.version, pins[entry.platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION']);
     for (const type of ['php', 'js', 'templates']) {
         const percent = summary.metrics[type]?.percent;

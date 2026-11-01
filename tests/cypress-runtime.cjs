@@ -12,7 +12,7 @@ const {execFileSync, spawn} = require('node:child_process');
 const {gzipSync} = require('node:zlib');
 
 async function worker(project) {
-    const result = await require('cypress').run({project, browser: 'electron', headed: true});
+    const result = await require('cypress').run({project, browser: 'chrome-for-testing', headed: true});
     fs.writeFileSync(path.join(project, 'result.json'), JSON.stringify(result, null, 2));
     assert.equal(result.totalTests, 3);
     assert.equal(result.totalPassed, 3);

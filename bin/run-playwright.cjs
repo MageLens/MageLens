@@ -10,7 +10,7 @@ const {disablePageTransitions} = require('./browser-navigation.cjs');
 
 async function main() {
     if (process.argv.includes('--warmup')) {
-        const browser = await chromium.launch({headless: false});
+        const browser = await chromium.launch({channel: 'chrome', headless: false});
         try {
             const page = await browser.newPage({ignoreHTTPSErrors: true});
             await page.context().addInitScript(disablePageTransitions);
@@ -22,7 +22,8 @@ async function main() {
                 if (!response?.ok()) throw new Error(`Warm-up ${path} HTTP ${response?.status()}`);
                 await page.waitForLoadState('networkidle', {timeout: 180000});
             }
-            fs.writeFileSync('coverage/warmup-results.json', JSON.stringify({runner: 'playwright', status: 'passed'}));
+            fs.writeFileSync('coverage/warmup-results.json', JSON.stringify({runner: 'playwright', status: 'passed',
+                browser: {name: 'chrome-for-testing', version: browser.version()}}));
         } finally { await browser.close(); }
         return;
     }
