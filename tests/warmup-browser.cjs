@@ -5,18 +5,21 @@
 // Isolated browser regression: ./bin/application-compose exec -T runner node tests/warmup-browser.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const http = require('node:http');
+const http2 = require('node:http2');
 const os = require('node:os');
 const path = require('node:path');
-const {execFile} = require('node:child_process');
+const {execFile, execFileSync} = require('node:child_process');
 const {promisify} = require('node:util');
 const execute = promisify(execFile);
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-warmup-'));
 const root = path.resolve(__dirname, '..');
 const requests = [];
 let scenario = 'loaded';
-const server = http.createServer((request, response) => {
-    requests.push({url: request.url, cookie: request.headers.cookie || ''});
+const key = path.join(scratch, 'key.pem'), cert = path.join(scratch, 'cert.pem');
+execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+    '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', key, '-out', cert], {stdio: 'ignore'});
+const server = http2.createSecureServer({allowHTTP1: true, key: fs.readFileSync(key), cert: fs.readFileSync(cert)}, (request, response) => {
+    requests.push({url: request.url, cookie: request.headers.cookie || '', protocol: request.httpVersion});
     const send = (body, type = 'text/html') => {
         response.writeHead(200, {'content-type': type, 'cache-control': 'no-store'});
         if (type === 'text/html') body += `<style>@view-transition { navigation: auto; }</style><script>
@@ -72,6 +75,11 @@ const server = http.createServer((request, response) => {
     send('<html><body data-response="' + requests.length + '">Fresh storefront <a data-cy="native-next" href="' + next + '">Next page</a>' +
         '<form data-cy="native-form" method="post" action="/native-post"><input name="value" value="test"><button type="submit">Save</button></form></body></html>');
 });
+const sessions = new Set();
+server.on('session', session => {
+    sessions.add(session);
+    session.once('close', () => sessions.delete(session));
+});
 
 function write(file, text) {
     fs.mkdirSync(path.dirname(path.join(scratch, file)), {recursive: true});
@@ -82,7 +90,7 @@ function read(file) { return JSON.parse(fs.readFileSync(path.join(scratch, file)
 async function browser(warmup, shouldFail = false) {
     try {
         await execute(process.execPath, ['bin/run-browser.cjs', ...(warmup ? ['--warmup'] : [])], {
-            cwd: scratch, env: {...process.env, CYPRESS_BASE_URL: `http://127.0.0.1:${server.address().port}`},
+            cwd: scratch, env: {...process.env, CYPRESS_BASE_URL: `https://127.0.0.1:${server.address().port}`},
             timeout: 90000, maxBuffer: 2 * 1024 * 1024
         });
         assert.equal(shouldFail, false, 'Expected preparation to reject unresolved assets');
@@ -171,6 +179,7 @@ async function browser(warmup, shouldFail = false) {
     });`);
     await browser(false);
     assert.equal(read('coverage/cypress-results.json').totalPassed, 1);
+    assert.ok(requests.filter(request => request.url === '/fresh').every(request => request.protocol === '2.0'), 'Native Chrome navigations must use HTTP/2');
     assert.ok(requests.filter(request => request.url === '/fresh').every(request => request.cookie.includes('application_coverage=')));
     console.log('PASS: homepage and fixture assets finish loading without page transitions; retained initializer markers do not block; warm-up produces no coverage; tests start with fresh state and existing timeouts.');
 
@@ -191,7 +200,8 @@ async function browser(warmup, shouldFail = false) {
     }
     console.log('PASS: unfinished requests and RequireJS modules independently block readiness and produce diagnostics.');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
-    server.closeAllConnections();
+    for (const session of sessions) session.destroy();
+    server.closeAllConnections?.();
     server.close();
     fs.rmSync(scratch, {recursive: true, force: true});
 });
