@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '3') {
+function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '4') {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-workflow-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const name of ['bin', '.runtime', 'coverage']) fs.mkdirSync(path.join(directory, name));
@@ -95,10 +95,13 @@ test(`${runner}: warm-up timeout cleans hooks before collection and does not run
 });
 
 test(`${runner}: old installations require an update before launching a headed browser`, t => {
-    const result = workflow(t, [], '', false, runner, '2');
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /theme and runner flags/);
-    assert.equal(result.calls, '');
+    for (const version of ['2', '3']) {
+        const result = workflow(t, [], '', false, runner, version);
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /saved platform, theme and runner flags/);
+        assert.match(result.stderr, /pinned Chrome browser/);
+        assert.equal(result.calls, '');
+    }
 });
 }
 
