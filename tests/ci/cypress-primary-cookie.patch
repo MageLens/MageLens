@@ -1,44 +1,45 @@
-diff --git a/packages/proxy/lib/adapters/attach-cross-origin-cookies.ts b/packages/proxy/lib/adapters/attach-cross-origin-cookies.ts
-index 5581c23..2f67e7d 100644
---- a/packages/proxy/lib/adapters/attach-cross-origin-cookies.ts
-+++ b/packages/proxy/lib/adapters/attach-cross-origin-cookies.ts
+diff --git a/packages/proxy/lib/http/util/top-simulation.ts b/packages/proxy/lib/http/util/top-simulation.ts
+index 36e1384..f350d27 100644
+--- a/packages/proxy/lib/http/util/top-simulation.ts
++++ b/packages/proxy/lib/http/util/top-simulation.ts
 @@ -1,4 +1,5 @@
- import { telemetry } from '@packages/telemetry'
+ import type { HttpMiddlewareThis } from '../index'
 +import { urlOriginsMatch } from '@packages/network-tools'
- import { getSameSiteContext, shouldAttachAndSetCookies, addCookieJarCookiesToRequest } from '../http/util/cookies'
- import { doesTopNeedToBeSimulated } from '../http/util/top-simulation'
- import { isVerboseTelemetry as isVerbose } from '../http'
-@@ -10,6 +11,17 @@ import type { RequestInterceptionMiddlewareCtx } from './types'
-  */
- export function attachCrossOriginCookies (mw: RequestInterceptionMiddlewareCtx): void {
-   const span = telemetry.startSpan({ name: 'maybe:attach:cross:origin:cookies', parentSpan: mw.reqMiddlewareSpan, isVerbose })
-+  const currentAUTUrl = mw.getAUTUrl()
-+
-+  // The browser already applies its cookie policy on the primary origin. Its
-+  // cookie header also includes document.cookie changes that the jar cannot see.
-+  // Cross-site redirect chains still need the simulated top-level cookie policy.
-+  if (currentAUTUrl && mw.remoteStates.isPrimarySuperDomainOrigin(currentAUTUrl)
-+    && urlOriginsMatch(currentAUTUrl, mw.req.proxiedUrl) && mw.req.headers['sec-fetch-site'] === 'same-origin') {
-+    span?.end()
-+
-+    return mw.next()
-+  }
  
-   const doesTopNeedSimulation = doesTopNeedToBeSimulated(mw)
- 
-@@ -29,7 +41,6 @@ export function attachCrossOriginCookies (mw: RequestInterceptionMiddlewareCtx):
+ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean => {
+   const currentAUTUrl = ctx.getAUTUrl()
+@@ -8,7 +9,23 @@ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean
+     return false
    }
  
-   // Top needs to be simulated since the AUT is in a cross origin state. Get the "requested with" and credentials and see what cookies need to be attached
--  const currentAUTUrl = mw.getAUTUrl()
-   const shouldCookiesBeAttachedToRequest = shouldAttachAndSetCookies(mw.req.proxiedUrl, currentAUTUrl, mw.req.resourceType, mw.req.credentialsLevel, mw.req.isAUTFrame)
- 
-   span?.setAttributes({
+-  // only simulate top if the AUT is NOT the primary super domain origin, meaning that we should treat the AUT as top
+-  // or the request is the AUT frame, which is common for redirects and navigations.
+-  return !ctx.remoteStates.isPrimarySuperDomainOrigin(currentAUTUrl) || ctx.req.isAUTFrame
++  if (!ctx.remoteStates.isPrimarySuperDomainOrigin(currentAUTUrl)) {
++    return true
++  }
++
++  if (!ctx.req.isAUTFrame) {
++    return false
++  }
++
++  // A direct navigation within the primary origin already has the browser's
++  // native cookie policy. Simulating it would overwrite document.cookie changes
++  // with stale jar values, on both the request and the page-load response.
++  // Chrome's Fetch interception omits Fetch Metadata headers. Its correlated
++  // pre-request can still identify a direct navigation; redirect chains must
++  // retain simulation because they may have visited a cross-site origin.
++  const fetchSite = ctx.req.headers?.['sec-fetch-site']
++  const isDirectPrimaryNavigation = fetchSite === 'same-origin'
++    || (fetchSite === undefined && ctx.req.browserPreRequest?.hasRedirectResponse === false)
++
++  return !(isDirectPrimaryNavigation && urlOriginsMatch(currentAUTUrl, ctx.req.proxiedUrl))
+ }
 diff --git a/packages/proxy/test/unit/http/request-middleware.spec.ts b/packages/proxy/test/unit/http/request-middleware.spec.ts
-index cbd6c28..0328a54 100644
+index cbd6c28..3b41465 100644
 --- a/packages/proxy/test/unit/http/request-middleware.spec.ts
 +++ b/packages/proxy/test/unit/http/request-middleware.spec.ts
-@@ -430,6 +430,51 @@ describe('http/request-middleware', () => {
+@@ -430,6 +430,73 @@ describe('http/request-middleware', () => {
    describe('MaybeAttachCrossOriginCookies', () => {
      const { MaybeAttachCrossOriginCookies } = RequestMiddleware
  
@@ -69,6 +70,28 @@ index cbd6c28..0328a54 100644
 +      expect(ctx.req.headers.cookie).toEqual('message=previous')
 +    })
 +
++    it('preserves browser cookies for a direct primary navigation without Fetch Metadata', async () => {
++      const ctx = await getContext([], ['message=previous'])
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++      ctx.req.browserPreRequest = { hasRedirectResponse: false }
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toBeUndefined()
++    })
++
++    it('retains cookie simulation for a correlated redirect without Fetch Metadata', async () => {
++      const ctx = await getContext([], ['message=previous'])
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++      ctx.req.browserPreRequest = { hasRedirectResponse: true }
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toEqual('message=previous')
++    })
++
 +    it('still attaches cookies when navigating away from the primary origin', async () => {
 +      const ctx = await getContext([], ['message=previous'], 'http://primary.test', 'http://secondary.test')
 +
@@ -90,3 +113,82 @@ index cbd6c28..0328a54 100644
      it('is a noop if no current AUT URL', async () => {
        const ctx = await getContext()
  
+diff --git a/packages/proxy/test/unit/http/response-middleware.spec.ts b/packages/proxy/test/unit/http/response-middleware.spec.ts
+index 0ba751a..c1e6421 100644
+--- a/packages/proxy/test/unit/http/response-middleware.spec.ts
++++ b/packages/proxy/test/unit/http/response-middleware.spec.ts
+@@ -1236,6 +1236,21 @@ describe('http/response-middleware', function () {
+   describe('MaybeCopyCookiesFromIncomingRes', function () {
+     const { MaybeCopyCookiesFromIncomingRes } = ResponseMiddleware
+ 
++    it.each(['same-origin', undefined])('leaves native primary-navigation cookie application to the browser with Fetch Metadata %s', async function (fetchSite) {
++      const { appendStub, ctx } = prepareSameOriginContext({
++        req: {
++          isAUTFrame: true,
++          headers: { 'sec-fetch-site': fetchSite },
++          browserPreRequest: { hasRedirectResponse: false },
++        },
++      })
++
++      await testMiddleware([MaybeCopyCookiesFromIncomingRes], ctx)
++
++      expect(appendStub).toHaveBeenCalledExactlyOnceWith('Set-Cookie', 'cookie=value')
++      expect(ctx.serverBus.emit).not.toHaveBeenCalled()
++    })
++
+     it('appends cookies on the response when an array', async function () {
+       const { appendStub, ctx } = prepareSameOriginContext({
+         incomingRes: {
+diff --git a/packages/proxy/test/unit/http/util/top-simulation.spec.ts b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
+index 10454fb..139e4d9 100644
+--- a/packages/proxy/test/unit/http/util/top-simulation.spec.ts
++++ b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
+@@ -5,6 +5,48 @@ import { doesTopNeedToBeSimulated } from '../../../../lib/http/util/top-simulati
+ describe('.doesTopNeedToBeSimulated', () => {
+   const autUrl = 'http://localhost:8080'
+ 
++  it.each([
++    ['same-origin', undefined, false],
++    [undefined, false, false],
++    [undefined, true, true],
++    [undefined, undefined, true],
++    ['cross-site', false, true],
++    ['same-site', false, true],
++    ['none', false, true],
++  ])('handles primary navigation with fetch site %s and redirect state %s', (fetchSite, hasRedirectResponse, expected) => {
++    const ctx: HttpMiddlewareThis<any> = {
++      getAUTUrl: vi.fn().mockReturnValue(autUrl),
++      req: {
++        proxiedUrl: `${autUrl}/next`,
++        isAUTFrame: true,
++        headers: { 'sec-fetch-site': fetchSite },
++        browserPreRequest: { hasRedirectResponse },
++      },
++      remoteStates: {
++        isPrimarySuperDomainOrigin: vi.fn().mockReturnValue(true),
++      },
++    }
++
++    expect(doesTopNeedToBeSimulated(ctx)).toBe(expected)
++  })
++
++  it('simulates a direct navigation to a different origin', () => {
++    const ctx: HttpMiddlewareThis<any> = {
++      getAUTUrl: vi.fn().mockReturnValue(autUrl),
++      req: {
++        proxiedUrl: 'http://secondary.test/next',
++        isAUTFrame: true,
++        headers: {},
++        browserPreRequest: { hasRedirectResponse: false },
++      },
++      remoteStates: {
++        isPrimarySuperDomainOrigin: vi.fn().mockReturnValue(true),
++      },
++    }
++
++    expect(doesTopNeedToBeSimulated(ctx)).toBe(true)
++  })
++
+   it('returns false when URL matches the AUT Url origin and the AUT Url exists and is NOT the AUT frame', () => {
+     const mockCtx: HttpMiddlewareThis<any> = {
+       getAUTUrl: vi.fn().mockReturnValue(autUrl),

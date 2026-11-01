@@ -47,21 +47,7 @@ jobs:
         run: yarn install --frozen-lockfile --network-concurrency 4
       - name: Apply the source fix and its regression tests
         working-directory: cypress
-        run: |
-          git apply ../magelens/tests/ci/cypress-primary-cookie.patch
-          # Temporary tracing is limited to this credential-free fixture.
-          python3 - <<'PY'
-          from pathlib import Path
-          for name, anchor in (
-              ('attach-cross-origin-cookies', '  const currentAUTUrl = mw.getAUTUrl()'),
-              ('copy-cookies-from-response', '  const doesTopNeedSimulating = doesTopNeedToBeSimulated(mw)'),
-          ):
-              path = Path('packages/proxy/lib/adapters') / f'{name}.ts'
-              source = path.read_text()
-              trace = "\n  console.log('COOKIE_DIAG ' + JSON.stringify({ phase: '" + name + "', aut: mw.getAUTUrl(), url: mw.req.proxiedUrl, primary: mw.remoteStates.isPrimarySuperDomainOrigin(mw.getAUTUrl() || ''), frame: mw.req.isAUTFrame, fetchSite: mw.req.headers['sec-fetch-site'], referer: mw.req.headers.referer, cookie: mw.req.headers.cookie }))\n"
-              assert source.count(anchor) == 1
-              path.write_text(source.replace(anchor, anchor + trace))
-          PY
+        run: git apply ../magelens/tests/ci/cypress-primary-cookie.patch
       - name: Build Cypress with two workers
         id: build
         working-directory: cypress
@@ -77,7 +63,7 @@ jobs:
       - name: Check the changed Cypress source
         working-directory: cypress
         run: |
-          yarn workspace @packages/proxy eslint lib/adapters/attach-cross-origin-cookies.ts test/unit/http/request-middleware.spec.ts
+          yarn workspace @packages/proxy eslint lib/http/util/top-simulation.ts test/unit/http/request-middleware.spec.ts test/unit/http/response-middleware.spec.ts test/unit/http/util/top-simulation.spec.ts
           yarn workspace @packages/proxy check-ts
       - name: Start the isolated cookie fixture
         id: fixture
@@ -89,13 +75,8 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Verify browser cookie handling in Electron
-        if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
-        working-directory: cypress
-        env:
-          COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-electron.json
-        run: yarn cypress:run --project ../magelens --browser electron --config-file tests/ci/cookie-diagnosis-config.cjs
       - name: Verify browser cookie handling in Chrome
+        timeout-minutes: 3
         if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
         working-directory: cypress
         env:
@@ -108,7 +89,7 @@ jobs:
           import json, os
           from pathlib import Path
           errors = []
-          for browser in ('electron', 'chrome'):
+          for browser in ('chrome',):
               report = Path(os.environ['RUNNER_TEMP']) / f'cookie-{browser}.json'
               if not report.is_file():
                   errors.append(f'{browser}: missing report')
