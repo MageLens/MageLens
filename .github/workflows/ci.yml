@@ -55,9 +55,16 @@ jobs:
           yarn lerna run build --stream --concurrency 2
           yarn workspace @packages/electron build-binary
           yarn lerna run build-cli --stream --concurrency 2
+          # Cypress skips this part of its normal postinstall when CI=true.
+          yarn build-v8-snapshot-dev
       - name: Run proxy unit regressions
         working-directory: cypress
         run: yarn workspace @packages/proxy test --maxWorkers=2 --minWorkers=1
+      - name: Check the changed Cypress source
+        working-directory: cypress
+        run: |
+          yarn workspace @packages/proxy eslint lib/adapters/attach-cross-origin-cookies.ts test/unit/http/request-middleware.spec.ts
+          yarn workspace @packages/proxy check-ts
       - name: Start the isolated cookie fixture
         id: fixture
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
