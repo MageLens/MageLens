@@ -9,6 +9,31 @@ registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 const {disablePageTransitions} = require('../../bin/browser-navigation.cjs');
 Cypress.on('window:before:load', disablePageTransitions);
 
+// Diagnostic branch only: preserve the failure and add navigation timing,
+// without recording cookies, form values, URLs, private source, or credentials.
+const navigationTrace = [];
+function recordNavigation(event, win = Cypress.state('window')) {
+    const document = win?.document;
+    navigationTrace.push({
+        event, ready: document?.readyState,
+        adoptedRules: document ? document.adoptedStyleSheets.flatMap(sheet =>
+            [...sheet.cssRules].filter(rule => rule.cssText.startsWith('@view-transition')).map(rule => rule.cssText)) : [],
+        activeTransition: Boolean(document?.activeViewTransition)
+    });
+    if (navigationTrace.length > 60) navigationTrace.shift();
+}
+Cypress.on('command:start', command => recordNavigation('command:' + command.attributes.name));
+Cypress.on('window:before:load', win => {
+    recordNavigation('before-load', win);
+    for (const name of ['pagereveal', 'pageswap', 'load', 'DOMContentLoaded']) {
+        win.addEventListener(name, event => recordNavigation(name + ':' + Boolean(event.viewTransition), win));
+    }
+});
+Cypress.on('fail', error => {
+    error.message += '\nNavigation trace: ' + JSON.stringify(navigationTrace);
+    throw error;
+});
+
 beforeEach(() => {
     const run = Cypress.expose('coverageRun');
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);

@@ -7,11 +7,21 @@ on:
     inputs:
       investigation:
         type: choice
-        options: [cookie, images, navigation]
+        options: [cookie, images, navigation, mageos-navigation]
         default: cookie
 permissions:
   contents: read
+  actions: read
 jobs:
+  mageos-navigation:
+    if: inputs.investigation == 'mageos-navigation'
+    uses: ./.github/workflows/e2e-case.yml
+    with:
+      os: ubuntu-latest
+      platform: mageos
+      theme: luma
+      runner: cypress
+      sha: ${{ github.sha }}
   cookie:
     if: inputs.investigation == 'cookie'
     name: Validate primary-origin cookie fix in Cypress 16.2.1 source
