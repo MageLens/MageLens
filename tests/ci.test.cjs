@@ -11,6 +11,7 @@ const {spawnSync} = require('node:child_process');
 const {cases} = require('./ci/cases.cjs');
 const {verifyCase} = require('./ci/gate.cjs');
 const {sanitizedCoverage} = require('./ci/evidence.cjs');
+const {writeCoverage} = require('./ci-coverage-fixture.cjs');
 const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
 const titles = [
     'creates a category and illustrated article, publishes, moderates comments, and deletes records',
@@ -29,11 +30,8 @@ function fixture(t) {
     write('run.json', {id: 'fresh', runner: entry.runner, sources: {private: 'SECRET'}});
     write('installation.json', {...entry, version: pins.MAGENTO_VERSION, credential: 'SECRET'});
     write(`${entry.runner}-results.json`, {run: 'fresh', ...counts, tests: titles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
-    write('summary.json', {run: 'fresh', metrics: Object.fromEntries(['php', 'js', 'templates'].map(type => [type, {percent: 50}]))});
     write('project-fixtures.json', {Application_Blog: {themePaths: ['Magento/luma'], password: 'SECRET'}});
-    write('php/line-coverage.json', {'/shop/app/code/Application/Blog/Model/Article.php': {'1': 1}, '/shop/vendor/private/SECRET.php': {'1': 0}});
-    write('js/coverage-final.json', {'/shop/app/code/Application/Blog/view/adminhtml/web/js/admin.js': {s: {'0': 1}, statementMap: {'0': {start: {line: 1}}}, code: 'SECRET'}, '/vendor/private/SECRET.js': {}});
-    write('templates/coverage-summary.json', {templates: [{path: 'app/code/Application/Blog/view/frontend/templates/blog.phtml', source: 'SECRET', statements: [{start: {line: 1}, syntax: 'html', hits: 1, source: 'SECRET'}]}, {path: 'vendor/private/SECRET.phtml', source: 'SECRET'}]});
+    writeCoverage(directory);
     const evidence = {...entry, sha: 'candidate', workflowRun: '123', attempt: '1', host: 'Linux', image: 'ubuntu', imageVersion: 'today', architecture: 'x64', passed: true,
         feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts};
     return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1'}};
@@ -114,7 +112,7 @@ test('case gate rejects stale collection reports and missing coverage evidence',
     assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
 });
 
-for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templates/coverage-summary.json']) {
+for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templates/coverage-summary.json', 'equivalence.json']) {
     test(`every host case requires ${file}`, t => {
         const {directory, entry, evidence, context} = fixture(t);
         fs.rmSync(path.join(directory, file));

@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {cases} = require('./cases.cjs');
+const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 function verifyCase(entry, evidence, directory, context) {
     for (const key of ['id', 'os', 'platform', 'theme', 'runner']) assert.equal(evidence[key], entry[key], key);
@@ -39,6 +40,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.ok(Object.keys(read(path.join(directory, 'php/line-coverage.json'))).length, 'Missing PHP coverage');
     assert.ok(Object.keys(read(path.join(directory, 'js/coverage-final.json'))).length, 'Missing JavaScript coverage');
     assert.ok(read(path.join(directory, 'templates/coverage-summary.json')).templates.length, 'Missing template coverage');
+    validateSnapshot(read(path.join(directory, 'equivalence.json')), run.id, summary);
     execFileSync(process.execPath, ['tests/verify-scenarios.cjs', directory], {stdio: 'inherit'});
     return run.id;
 }
@@ -49,7 +51,7 @@ function gate() {
     for (const name of ['static', 'integration', 'copyright', 'e2e', 'magento']) {
         if (needs[name]?.result !== 'success') errors.push(`${name}: ${needs[name]?.result || 'missing'}`);
     }
-    const reports = [], runIds = new Set();
+    const reports = [], themeReports = [], runIds = new Set();
     for (const entry of cases) {
         try {
             const artifact = `case-${entry.id}-attempt-${process.env.GITHUB_RUN_ATTEMPT}`;
@@ -58,6 +60,7 @@ function gate() {
                 {sha: process.env.CI_SHA, run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT});
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
+            themeReports.push({...entry, snapshot: read(path.join(directory, 'equivalence.json'))});
             if (entry.os === 'ubuntu-latest') reports.push(directory);
         } catch (error) { errors.push(`${entry.id}: ${error.message}`); }
     }
@@ -68,8 +71,11 @@ function gate() {
         } catch { errors.push('Eight-way Linux coverage comparison failed'); }
     } else errors.push(`Linux comparison incomplete: ${reports.length}/8 reports`);
     fs.mkdirSync('ci-gate', {recursive: true});
+    const themes = compareThemes(themeReports, cases);
+    fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');
+    errors.push(...themes.errors);
     const report = {sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
-        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: 70, passed: errors.length === 0, errors};
+        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: 70, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
     fs.writeFileSync('ci-gate/qualification.json', JSON.stringify(report, null, 2) + '\n');
     const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/10 complete cases; 70 acceptance tests required.\n${errors.join('\n')}`;
     console.log(summary);

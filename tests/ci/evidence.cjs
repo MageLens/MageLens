@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const {cases} = require('./cases.cjs');
+const {snapshot} = require('./report-equivalence.cjs');
 const {execFileSync} = require('node:child_process');
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => key in value).map(key => [key, value[key]]));
 const blog = file => file.includes('/Application/Blog/');
@@ -20,6 +21,7 @@ function sanitizedCoverage(source) {
     const templates = read(path.join(source, 'templates/coverage-summary.json'));
     // Project fixture credentials, vendor source, inline code and request URLs never leave the runner.
     return {
+        'equivalence.json': snapshot(source),
         'run.json': pick(run, ['id', 'runner']),
         'installation.json': pick(read(path.join(source, 'installation.json')), ['platform', 'version', 'phpVersion', 'nodeVersion', 'theme', 'runner']),
         'project-fixtures.json': {Application_Blog: {themePaths: read(path.join(source, 'project-fixtures.json')).Application_Blog.themePaths}},

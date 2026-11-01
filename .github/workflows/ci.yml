@@ -162,7 +162,7 @@ jobs:
         with:
           pattern: case-*-attempt-${{ github.run_attempt }}
           path: ci-artifacts
-      - name: Verify ten cases, every report and the eight-way Linux comparison
+      - name: Verify ten cases, same-theme report equality and the eight-way Linux comparison
         if: always()
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
