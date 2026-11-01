@@ -18,6 +18,17 @@ module.exports = defineConfig({
         specPattern: specPatterns(),
         supportFile: 'cypress/support/e2e.js',
         setupNodeEvents(on, config) {
+            on('before:browser:launch', (browser, launchOptions) => {
+                if (browser.name === 'electron') {
+                    // Electron downloads dictionaries independently of the application.
+                    // Disable its native spellchecker in both warm-up and collection;
+                    // application requests and validation remain fully observable.
+                    launchOptions.preferences.webPreferences = {
+                        ...launchOptions.preferences.webPreferences, spellcheck: false
+                    };
+                }
+                return launchOptions;
+            });
             if (config.expose.warmup) {
                 const fs = require('node:fs');
                 on('task', {

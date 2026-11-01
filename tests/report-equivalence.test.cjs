@@ -68,6 +68,21 @@ test('same-theme comparisons include the Windows and macOS host reports', t => {
         assert.equal(result.themes[entry.theme].differences[0].case, entry.id);
     }
 });
+test('JavaScript report groups, required execution and exclusions cannot differ behind identical counters', t => {
+    const {directory} = fixture(t);
+    const original = snapshot(directory);
+    for (const mutate of [
+        value => {value.js.inventory[Object.keys(value.js.inventory)[0]] = 'libraries';},
+        value => {value.js.requiredExecuted.pop();},
+        value => {value.js.excluded[0][1] = 'changed-exclusion';}
+    ]) {
+        const all = reports(original);
+        mutate(all[1].snapshot);
+        const result = compareThemes(all, cases);
+        assert.equal(result.passed, false);
+        assert.ok(result.themes.luma.differences.some(difference => difference.section === 'js'));
+    }
+});
 test('equal percentages cannot conceal different executed files, statements, functions, branches or DOM observations', t => {
     const {directory} = fixture(t);
     const original = snapshot(directory);
