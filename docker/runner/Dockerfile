@@ -21,7 +21,7 @@ CMD ["bash", "/opt/magelens/desktop.sh"]
 
 FROM ${RUNNER_IMAGE} AS cypress
 COPY docker/runner/ /opt/magelens/
-RUN bash /opt/magelens/install-desktop.sh && bash /opt/magelens/install-cypress-dictionary.sh
+RUN bash /opt/magelens/install-desktop.sh curl unzip && bash /opt/magelens/install-cypress-dictionary.sh
 ENV CYPRESS_CACHE_FOLDER=/opt/cypress DISPLAY=:99 MAGELENS_RUNNER=cypress
 WORKDIR /workspace
 COPY package.json package-lock.json ./
