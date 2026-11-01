@@ -75,7 +75,7 @@ jobs:
         if: runner.os == 'macOS'
         timeout-minutes: 10
         run: |
-          brew install colima docker docker-compose bash
+          brew install colima qemu docker docker-compose bash
           mkdir -p "$HOME/.docker/cli-plugins"
           ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
@@ -85,6 +85,7 @@ jobs:
         run: bash tests/ci/prepare-disk.sh
       - id: probe
         name: Validate actual host, Linux engine, mounts and networking
+        timeout-minutes: 15
         run: bash tests/ci/on-host.sh node tests/ci/probe.cjs
       - name: Require reviewed credential access
         id: credentials
@@ -151,7 +152,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: case-${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}
+          name: case-${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}-attempt-${{ github.run_attempt }}
           path: ci-reports/${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}/
           retention-days: 1
           if-no-files-found: error

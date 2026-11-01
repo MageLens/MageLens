@@ -35,10 +35,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
           QUALIFIED_RUN: ${{ github.event.workflow_run.id }}
           QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+          QUALIFIED_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
-          gh run download "$QUALIFIED_RUN" --repo "$GH_REPO" --name qualification --dir qualification
-          jq -e --arg sha "$QUALIFIED_SHA" --arg run "$QUALIFIED_RUN" \
-            '.passed == true and .sha == $sha and .workflowRun == $run and .expectedCases == 10 and .completedCases == 10 and .expectedAcceptanceTests == 70 and (.errors | length) == 0' qualification/qualification.json
+          gh run download "$QUALIFIED_RUN" --repo "$GH_REPO" --name "qualification-$QUALIFIED_ATTEMPT" --dir qualification
+          jq -e --arg sha "$QUALIFIED_SHA" --arg run "$QUALIFIED_RUN" --arg attempt "$QUALIFIED_ATTEMPT" \
+            '.passed == true and .sha == $sha and .workflowRun == $run and .attempt == $attempt and .expectedCases == 10 and .completedCases == 10 and .expectedAcceptanceTests == 70 and (.errors | length) == 0' qualification/qualification.json
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

@@ -75,6 +75,34 @@ test('final gate fails when reports are missing even if all job results claim su
     assert.match(result.stdout, /Linux comparison incomplete/);
 });
 
+test('final gate consumes only artifacts from the current workflow attempt', t => {
+    const {directory, entry, evidence} = fixture(t);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-attempt-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(root, 'dependencies.yaml'));
+    fs.mkdirSync(path.join(root, 'tests'));
+    fs.copyFileSync(path.join(__dirname, 'verify-scenarios.cjs'), path.join(root, 'tests/verify-scenarios.cjs'));
+    const install = attempt => {
+        const artifact = path.join(root, 'ci-artifacts', `case-${entry.id}-attempt-${attempt}`);
+        fs.cpSync(directory, path.join(artifact, 'coverage'), {recursive: true});
+        fs.writeFileSync(path.join(artifact, 'evidence.json'), JSON.stringify({...evidence, attempt}));
+    };
+    const run = () => {
+        const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/gate.cjs')], {cwd: root, encoding: 'utf8', env: {...process.env,
+            CI_SHA: 'candidate', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2', GITHUB_STEP_SUMMARY: '',
+            CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'copyright', 'e2e', 'magento'].map(job => [job, {result: 'success'}])))}});
+        assert.equal(result.status, 1, 'A single report must never qualify the full matrix');
+        return JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/qualification.json')));
+    };
+    install('1');
+    assert.equal(run().completedCases, 0, 'An older artifact cannot satisfy a rerun');
+    install('2');
+    const report = run();
+    assert.equal(report.completedCases, 1, 'The current attempt must be found and verified');
+    assert.equal(report.attempt, '2');
+    assert.equal(report.passed, false);
+});
+
 test('case gate rejects stale collection reports and missing coverage evidence', t => {
     const {directory, entry, evidence, context} = fixture(t);
     const summaryFile = path.join(directory, 'summary.json');
