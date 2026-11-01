@@ -16,7 +16,11 @@ export function waitForStorefront() {
 export function storefrontMessage(type, text) {
     cy.get(`.message-${type}, .message.${type}`).should('contain', text);
     waitForStorefront();
-    return cy.get(`.message-${type}, .message.${type}`).should('have.length', 1).and('contain', text);
+    return cy.get(`.message-${type}, .message.${type}`).should(elements => {
+        const messages = [...elements].map(element => element.textContent.trim());
+        expect(messages, `Exactly one ${type} response: ${JSON.stringify(messages)}`).to.have.length(1);
+        expect(messages[0]).to.contain(text);
+    });
 }
 export function waitForBlog() {
     waitForStorefront();

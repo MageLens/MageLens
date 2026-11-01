@@ -10,18 +10,18 @@ permissions:
   actions: read
 jobs:
   e2e:
-    name: Diagnose Hyva report parity
+    name: Diagnose storefront message delivery
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        runner: [cypress, playwright]
+        theme: [luma, hyva]
     uses: ./.github/workflows/e2e-case.yml
     with:
       os: ubuntu-latest
       platform: mageos
-      theme: hyva
-      runner: ${{ matrix.runner }}
+      theme: ${{ matrix.theme }}
+      runner: cypress
       sha: ${{ github.sha }}
   compare:
     name: Diagnose both reports without qualifying a partial matrix
