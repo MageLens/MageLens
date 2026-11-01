@@ -21,7 +21,6 @@ function sanitizedCoverage(source) {
     const templates = read(path.join(source, 'templates/coverage-summary.json'));
     // Project fixture credentials, vendor source, inline code and request URLs never leave the runner.
     return {
-        'equivalence.json': snapshot(source),
         'run.json': pick(run, ['id', 'runner']),
         'installation.json': pick(read(path.join(source, 'installation.json')), ['platform', 'version', 'phpVersion', 'nodeVersion', 'theme', 'runner']),
         'project-fixtures.json': {Application_Blog: {themePaths: read(path.join(source, 'project-fixtures.json')).Application_Blog.themePaths}},
@@ -68,12 +67,15 @@ function writeEvidence() {
             fs.mkdirSync(path.dirname(target), {recursive: true});
             fs.writeFileSync(target, JSON.stringify(value) + '\n');
         }
-        execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
         report.counts = pick(read(`${directory}/coverage/${entry.runner}-results.json`), ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']);
+        fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(snapshot(source)) + '\n');
+        execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
         report.passed = !report.diagnostics && ['probe', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {
         // Errors can contain arbitrary subprocess output; publish a fixed diagnostic.
         report.incomplete = 'Missing or invalid completed harness report. Inspect the failed step in Actions.';
+        // Public script locations identify projection failures without exposing values.
+        report.diagnosticLocations = [...new Set((error.stack || '').match(/tests[\\/]ci[\\/](?:report-equivalence|evidence)\.cjs:\d+:\d+/g) || [])];
     }
     // Diagnostics are structured outcomes and resource facts, never raw service/install logs.
     fs.writeFileSync(`${directory}/evidence.json`, JSON.stringify(report, null, 2) + '\n');
@@ -88,6 +90,7 @@ function writeEvidence() {
     }
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
         `## ${entry.id}\n\n${report.passed ? 'PASS: 7/7 acceptance scenarios and all harness checks.' : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
+    if (report.steps.e2e?.outcome === 'success' && !report.passed) process.exitCode = 1;
 }
 module.exports = {sanitizedCoverage, testResults};
 if (require.main === module) writeEvidence();
