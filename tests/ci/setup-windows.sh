@@ -10,7 +10,7 @@ sha=$2
 [[ "$repository" == MageLens/MageLens && "$sha" =~ ^[0-9a-f]{40}$ ]]
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y --no-install-recommends docker.io docker-compose-v2 git wget curl ca-certificates xz-utils
+apt-get install -y --no-install-recommends docker.io docker-compose-v2 docker-buildx git wget curl ca-certificates xz-utils
 # The harness must run with a non-root application UID.
 if ! id magelens >/dev/null 2>&1; then useradd --create-home --shell /bin/bash magelens; fi
 usermod -aG docker magelens
