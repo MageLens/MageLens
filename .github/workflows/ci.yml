@@ -47,7 +47,21 @@ jobs:
         run: yarn install --frozen-lockfile --network-concurrency 4
       - name: Apply the source fix and its regression tests
         working-directory: cypress
-        run: git apply ../magelens/tests/ci/cypress-primary-cookie.patch
+        run: |
+          git apply ../magelens/tests/ci/cypress-primary-cookie.patch
+          # Temporary tracing is limited to this credential-free fixture.
+          python3 - <<'PY'
+          from pathlib import Path
+          for name, anchor in (
+              ('attach-cross-origin-cookies', '  const currentAUTUrl = mw.getAUTUrl()'),
+              ('copy-cookies-from-response', '  const doesTopNeedSimulating = doesTopNeedToBeSimulated(mw)'),
+          ):
+              path = Path('packages/proxy/lib/adapters') / f'{name}.ts'
+              source = path.read_text()
+              trace = "\n  console.log('COOKIE_DIAG ' + JSON.stringify({ phase: '" + name + "', aut: mw.getAUTUrl(), url: mw.req.proxiedUrl, primary: mw.remoteStates.isPrimarySuperDomainOrigin(mw.getAUTUrl() || ''), frame: mw.req.isAUTFrame, fetchSite: mw.req.headers['sec-fetch-site'], referer: mw.req.headers.referer, cookie: mw.req.headers.cookie }))\n"
+              assert source.count(anchor) == 1
+              path.write_text(source.replace(anchor, anchor + trace))
+          PY
       - name: Build Cypress with two workers
         id: build
         working-directory: cypress
@@ -80,16 +94,12 @@ jobs:
         working-directory: cypress
         env:
           COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-electron.json
-          DEBUG: cypress:cli*,cypress:electron*,cypress:server:util:process_profiler
-          ELECTRON_ENABLE_LOGGING: '1'
         run: yarn cypress:run --project ../magelens --browser electron --config-file tests/ci/cookie-diagnosis-config.cjs
       - name: Verify browser cookie handling in Chrome
         if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
         working-directory: cypress
         env:
           COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-chrome.json
-          DEBUG: cypress:cli*,cypress:electron*,cypress:server:util:process_profiler
-          ELECTRON_ENABLE_LOGGING: '1'
         run: yarn cypress:run --project ../magelens --browser chrome --config-file tests/ci/cookie-diagnosis-config.cjs
       - name: Inspect every browser result
         if: ${{ !cancelled() }}
@@ -109,3 +119,6 @@ jobs:
                   errors.append(f'{browser}: incomplete regression tests')
           assert not errors, errors
           PY
+      - name: Inspect fixture requests
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
+        run: cat "$RUNNER_TEMP/cookie-fixture.log"
