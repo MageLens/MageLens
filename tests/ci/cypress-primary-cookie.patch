@@ -284,7 +284,7 @@ index 7353c32..1e5a858 100644
      if (params.response.fromDiskCache || (params.response.fromServiceWorker && params.response.encodedDataLength <= 0)) {
        this.automation.onRemoveBrowserPreRequest?.(params.requestId)
 diff --git a/packages/server/test/unit/browsers/cdp_automation.spec.ts b/packages/server/test/unit/browsers/cdp_automation.spec.ts
-index c809d35..7acdfc6 100644
+index c809d35..23b3b16 100644
 --- a/packages/server/test/unit/browsers/cdp_automation.spec.ts
 +++ b/packages/server/test/unit/browsers/cdp_automation.spec.ts
 @@ -290,6 +290,40 @@ describe('lib/browsers/cdp_automation', () => {
@@ -294,8 +294,8 @@ index c809d35..7acdfc6 100644
 +      it('tracks origin changes across every redirect hop without mixing requests', () => {
 +        const request = (requestId, url, redirectUrl?) => {
 +          onFn.withArgs('Network.requestWillBeSent').yield({
-+            requestId, request: {url, method: 'GET', headers: {}}, type: 'Document',
-+            ...(redirectUrl ? {redirectResponse: {url: redirectUrl}} : {}),
++            requestId, request: { url, method: 'GET', headers: {} }, type: 'Document',
++            ...(redirectUrl ? { redirectResponse: { url: redirectUrl } } : {}),
 +          })
 +
 +          return automation.onBrowserPreRequest.mock.calls.at(-1)[0].hasCrossOriginRedirect
@@ -311,15 +311,15 @@ index c809d35..7acdfc6 100644
 +
 +      it.each(['Network.loadingFinished', 'Network.loadingFailed', 'Network.requestServedFromCache'])('clears redirect state on %s', (event) => {
 +        onFn.withArgs('Network.requestWillBeSent').yield({
-+          requestId: 'request', request: {url: 'https://secondary.test', method: 'GET', headers: {}},
-+          redirectResponse: {url: 'https://primary.test'},
++          requestId: 'request', request: { url: 'https://secondary.test', method: 'GET', headers: {} },
++          redirectResponse: { url: 'https://primary.test' },
 +        })
 +
 +        expect(automation.onBrowserPreRequest.mock.calls.at(-1)[0].hasCrossOriginRedirect).toBe(true)
-+        onFn.withArgs(event).yield({requestId: 'request'})
++        onFn.withArgs(event).yield({ requestId: 'request' })
 +        onFn.withArgs('Network.requestWillBeSent').yield({
-+          requestId: 'request', request: {url: 'https://primary.test/next', method: 'GET', headers: {}},
-+          redirectResponse: {url: 'https://primary.test/start'},
++          requestId: 'request', request: { url: 'https://primary.test/next', method: 'GET', headers: {} },
++          redirectResponse: { url: 'https://primary.test/start' },
 +        })
 +
 +        expect(automation.onBrowserPreRequest.mock.calls.at(-1)[0].hasCrossOriginRedirect).toBe(false)
@@ -328,3 +328,23 @@ index c809d35..7acdfc6 100644
        it('ignore events with data urls', () => {
          onFn
          .withArgs('Network.requestWillBeSent')
+@@ -320,8 +354,7 @@ describe('lib/browsers/cdp_automation', () => {
+             requestId: browserResponseReceived.requestId,
+             status: browserResponseReceived.response.status,
+             headers: browserResponseReceived.response.headers,
+-          },
+-        )
++          })
+       })
+ 
+       it('triggers onRequestEvent when response is cached from service worker but data length is > 0', () => {
+@@ -344,8 +377,7 @@ describe('lib/browsers/cdp_automation', () => {
+             requestId: browserResponseReceived.requestId,
+             status: browserResponseReceived.response.status,
+             headers: browserResponseReceived.response.headers,
+-          },
+-        )
++          })
+       })
+ 
+       it('cleans up prerequests when response is cached from disk', () => {
