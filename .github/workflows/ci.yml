@@ -37,6 +37,8 @@ jobs:
           echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libgtk-3-0t64 libgbm1 libasound2t64 libnss3 libatk-bridge2.0-0t64 libxss1 xvfb xauth
+          # Required by Cypress's source-development setup on Ubuntu 24.04+.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           npm install -g yarn@1.22.22 --ignore-scripts --no-audit --no-fund
           df -h .
           free -h
@@ -47,6 +49,7 @@ jobs:
         working-directory: cypress
         run: git apply ../magelens/tests/ci/cypress-primary-cookie.patch
       - name: Build Cypress with two workers
+        id: build
         working-directory: cypress
         run: |
           yarn lerna run build --stream --concurrency 2
@@ -56,6 +59,8 @@ jobs:
         working-directory: cypress
         run: yarn workspace @packages/proxy test --maxWorkers=2 --minWorkers=1
       - name: Start the isolated cookie fixture
+        id: fixture
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           node magelens/tests/ci/cookie-diagnosis.cjs > "$RUNNER_TEMP/cookie-fixture.log" 2>&1 &
           for attempt in {1..30}; do
@@ -64,14 +69,20 @@ jobs:
           done
           exit 1
       - name: Verify browser cookie handling in Electron
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
         working-directory: cypress
         env:
           COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-electron.json
+          DEBUG: cypress:cli*,cypress:electron*,cypress:server:util:process_profiler
+          ELECTRON_ENABLE_LOGGING: '1'
         run: yarn cypress:run --project ../magelens --browser electron --config-file tests/ci/cookie-diagnosis-config.cjs
       - name: Verify browser cookie handling in Chrome
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
         working-directory: cypress
         env:
           COOKIE_RESULT_PATH: ${{ runner.temp }}/cookie-chrome.json
+          DEBUG: cypress:cli*,cypress:electron*,cypress:server:util:process_profiler
+          ELECTRON_ENABLE_LOGGING: '1'
         run: yarn cypress:run --project ../magelens --browser chrome --config-file tests/ci/cookie-diagnosis-config.cjs
       - name: Inspect every browser result
         if: ${{ !cancelled() }}
@@ -79,9 +90,15 @@ jobs:
           python3 - <<'PY'
           import json, os
           from pathlib import Path
+          errors = []
           for browser in ('electron', 'chrome'):
-              result = json.loads((Path(os.environ['RUNNER_TEMP']) / f'cookie-{browser}.json').read_text())
+              report = Path(os.environ['RUNNER_TEMP']) / f'cookie-{browser}.json'
+              if not report.is_file():
+                  errors.append(f'{browser}: missing report')
+                  continue
+              result = json.loads(report.read_text())
               print(browser, result)
-              assert result['totalTests'] == result['totalPassed'] == 6
-              assert result['totalFailed'] == result['totalPending'] == result['totalSkipped'] == 0
+              if result['totalTests'] != 6 or result['totalPassed'] != 6 or any(result[key] != 0 for key in ('totalFailed', 'totalPending', 'totalSkipped')):
+                  errors.append(f'{browser}: incomplete regression tests')
+          assert not errors, errors
           PY
