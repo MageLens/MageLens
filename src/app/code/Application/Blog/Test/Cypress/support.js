@@ -14,9 +14,16 @@ export function waitForStorefront() {
     }
 }
 export function storefrontMessage(type, text) {
-    cy.get(`.message-${type}, .message.${type}`).should('contain', text);
+    // Hyva also has an unrelated hidden authentication-popup .message.error.
+    // Use the same storefront message identifiers as the Playwright suite.
+    const selector = `.message-${type}, [ui-id="message-${type}"]`;
+    cy.get(selector).should('contain', text);
     waitForStorefront();
-    return cy.get(`.message-${type}, .message.${type}`).should('have.length', 1).and('contain', text);
+    return cy.get(selector).should(elements => {
+        const messages = [...elements].map(element => element.textContent.trim());
+        expect(messages, `Exactly one ${type} response: ${JSON.stringify(messages)}`).to.have.length(1);
+        expect(messages[0]).to.contain(text);
+    });
 }
 export function waitForBlog() {
     waitForStorefront();
