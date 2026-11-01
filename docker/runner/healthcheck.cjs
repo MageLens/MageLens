@@ -5,10 +5,7 @@
 const net = require('node:net');
 const fs = require('node:fs');
 
-if (process.env.MAGELENS_RUNNER === 'playwright' &&
-    !fs.existsSync(require('/workspace/node_modules/@playwright/test').chromium.executablePath())) {
-    throw new Error('Playwright Chromium is missing. Rerun ./install.sh --playwright.');
-}
+fs.accessSync('/opt/google/chrome/chrome', fs.constants.X_OK);
 
 const desktop = new Promise((resolve, reject) => {
     const socket = net.connect({host: '127.0.0.1', port: 5900});

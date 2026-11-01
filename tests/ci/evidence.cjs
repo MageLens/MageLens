@@ -13,6 +13,7 @@ const blog = file => file.includes('/Application/Blog/');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const countKeys = ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending'];
 const testResults = results => ({...pick(results, ['run', ...countKeys]),
+    browser: results.browser ? pick(results.browser, ['name', 'version']) : null,
     tests: (results.tests || []).map(test => pick(test, ['title', 'status']))});
 function sanitizedCoverage(source) {
     const run = read(path.join(source, 'run.json'));
@@ -54,6 +55,7 @@ function writeEvidence() {
             if (fs.existsSync(results)) {
                 const safe = testResults(read(results));
                 report.counts = pick(safe, countKeys);
+                report.browser = safe.browser;
                 fs.writeFileSync(`${directory}/browser-results.json`, JSON.stringify(safe, null, 2) + '\n');
             }
         }
@@ -68,6 +70,7 @@ function writeEvidence() {
             fs.writeFileSync(target, JSON.stringify(value) + '\n');
         }
         report.counts = pick(read(`${directory}/coverage/${entry.runner}-results.json`), ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']);
+        report.browser = read(`${directory}/coverage/${entry.runner}-results.json`).browser;
         fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(snapshot(source)) + '\n');
         execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
         report.passed = !report.diagnostics && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');

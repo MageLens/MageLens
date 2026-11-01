@@ -17,6 +17,7 @@ module.exports = defineConfig({
     outputDir: 'coverage/playwright-artifacts',
     use: {
         browserName: 'chromium',
+        channel: 'chrome',
         baseURL: process.env.PLAYWRIGHT_BASE_URL || process.env.CYPRESS_BASE_URL || 'https://magelens.test',
         ignoreHTTPSErrors: true,
         viewport: {width: 1100, height: 900},

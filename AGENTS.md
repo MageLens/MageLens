@@ -70,6 +70,8 @@ Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. A
 
 Both browser runners and their warm-up browsers are visible through the same read-only viewer at `https://<domain>:6080/` by default. `RUNNER_VIEW_PORT` overrides the port; the older `CYPRESS_VIEW_PORT` remains a fallback. Host Node, browsers and a graphical desktop are not required.
 
+Use the pinned Chrome for Testing build for every Cypress and Playwright journey, warm-up and browser recovery check. Do not substitute Electron or bundled Chromium. Record the actual browser name and version in reports; changing the browser requires fresh CI qualification.
+
 Automated browser scenarios disable page-change animations. Uncaught application errors still fail the run.
 
 Open `coverage/index.html` after a successful run. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. Read measurement warnings before interpreting template percentages.

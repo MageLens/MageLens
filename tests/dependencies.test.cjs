@@ -96,6 +96,10 @@ test('dependency YAML rejects missing, duplicate, unknown and unsafe values', t 
         yaml + 'TYPO_VERSION: "1.2.3"\n',
         select(yaml, {MAGENTO_VERSION: '$(touch /tmp/magelens-must-not-execute)'}),
         select(yaml, {CYPRESS_VERSION: 'latest'}),
+        select(yaml, {CHROME_VERSION: 'latest'}),
+        select(yaml, {CHROME_VERSION: '156.0.8078'}),
+        select(yaml, {CHROME_LINUX_X64_SHA256: '1234'}),
+        yaml.replace(/^CHROME_LINUX_ARM64_SHA256:.*\n/m, ''),
         yaml.replace(/^MAGEOS_VERSION:.*\n/m, ''),
         yaml.replace(/^PHP_IMAGE:.*\n/m, ''),
         select(yaml, {MAGEOS_VERSION: '^2.3.0'}),
@@ -322,7 +326,7 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
     assert.match(fs.readFileSync(path.join(directory, '.env'), 'utf8'), /^APPLICATION_DOMAIN=shop\.magelens\.test$/m);
     assert.equal(calls.some(call => call.args.includes('exec') && call.args.includes('runner') && call.args.includes('cypress') && call.args.includes('verify')), runner === 'cypress');
     assert.ok(calls.some(call => call.args.includes('--print-viewer')), 'Every runner advertises the viewer');
-    if (runner === 'playwright') assert.ok(calls.some(call => call.args.some(arg => arg.includes('chromium.launch({headless:false})'))));
+    assert.ok(calls.some(call => call.args.includes('/opt/magelens/browser-smoke.cjs')));
     assert.equal(fs.readFileSync(path.join(directory, '.runtime/installed'), 'utf8'), '3\n');
 });
 }

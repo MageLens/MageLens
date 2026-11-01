@@ -29,11 +29,12 @@ function fixture(t) {
     const entry = cases[0];
     write('run.json', {id: 'fresh', runner: entry.runner, sources: {private: 'SECRET'}});
     write('installation.json', {...entry, version: pins.MAGENTO_VERSION, credential: 'SECRET'});
-    write(`${entry.runner}-results.json`, {run: 'fresh', ...counts, tests: titles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
+    const browser = {name: 'chrome-for-testing', version: pins.CHROME_VERSION};
+    write(`${entry.runner}-results.json`, {run: 'fresh', browser, ...counts, tests: titles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
     write('project-fixtures.json', {Application_Blog: {themePaths: ['Magento/luma'], password: 'SECRET'}});
     writeCoverage(directory);
     const evidence = {...entry, sha: 'candidate', workflowRun: '123', attempt: '1', host: 'Linux', image: 'ubuntu', imageVersion: 'today', architecture: 'x64', passed: true,
-        feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'resources', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts};
+        feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'resources', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts, browser};
     return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1'}};
 }
 test('required matrix is eight Linux modes and Windows while macOS is deferred', () => {
@@ -55,6 +56,7 @@ test('case gate accepts complete evidence and rejects stale, skipped, canceled a
     const {directory, entry, evidence, context} = fixture(t);
     assert.equal(verifyCase(entry, evidence, directory, context), 'fresh');
     for (const patch of [{passed: false}, {sha: 'older'}, {attempt: '0'}, {workflowRun: 'other'}, {host: 'Windows'},
+        {browser: null}, {browser: {name: 'electron', version: pins.CHROME_VERSION}},
         {counts: {...counts, totalSkipped: 1}}, {feasibility: {passed: false}}, {steps: {...evidence.steps, cleanup: {outcome: 'cancelled'}}},
         {steps: {...evidence.steps, resources: undefined}}, {steps: {...evidence.steps, resources: {outcome: 'failure'}}}]) {
         assert.throws(() => verifyCase(entry, {...evidence, ...patch}, directory, context));
@@ -72,6 +74,16 @@ test('final gate fails when reports are missing even if all job results claim su
     assert.equal(report.expectedCases, 9);
     assert.equal(report.expectedAcceptanceTests, 63);
     assert.match(result.stdout, /Linux comparison incomplete/);
+});
+test('case gate rejects missing, different or unpinned browser results', t => {
+    const {directory, entry, evidence, context} = fixture(t);
+    const file = path.join(directory, `${entry.runner}-results.json`);
+    const results = JSON.parse(fs.readFileSync(file));
+    for (const browser of [null, {name: 'electron', version: pins.CHROME_VERSION},
+        {name: 'chrome-for-testing', version: '0.0.0.0'}]) {
+        fs.writeFileSync(file, JSON.stringify({...results, browser}));
+        assert.throws(() => verifyCase(entry, {...evidence, browser}, directory, context), /Chrome browser/);
+    }
 });
 
 test('final gate consumes only artifacts from the current workflow attempt', t => {

@@ -34,12 +34,14 @@ test('Playwright report distinguishes failed, skipped and unexecuted tests from 
     const states = ['passed', 'failed', 'timedOut', 'interrupted', 'skipped', null];
     const reporter = new Reporter();
     reporter.onBegin({}, {allTests: () => states.map((status, index) => ({
-        title: `scenario ${index}`, results: status ? [{status}] : [], location: {file: `spec-${index}.js`}
+        title: `scenario ${index}`, results: status ? [{status}] : [], location: {file: `spec-${index}.js`},
+        annotations: [{type: 'magelens-browser', description: JSON.stringify({name: 'chrome', version: '156.0.8078.80'})}]
     }))});
     reporter.onEnd({status: 'failed'});
     const result = JSON.parse(fs.readFileSync('coverage/playwright-results.json'));
     assert.equal(result.run, 'current-run');
     assert.equal(result.runner, 'playwright');
+    assert.deepEqual(result.browser, {name: 'chrome', version: '156.0.8078.80'});
     assert.equal(result.totalTests, 6);
     assert.equal(result.totalPassed, 1);
     assert.equal(result.totalFailed, 3);

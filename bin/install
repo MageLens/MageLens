@@ -150,8 +150,9 @@ dc exec -T phpfpm bash /application/docker/php/refresh-assets.sh
 if [[ "$MAGELENS_RUNNER" == cypress ]]; then
     dc exec -T runner cypress verify
 else
-    dc exec -T runner node -e "require('@vitaliiboiko/magento-template-coverage/playwright');require('@playwright/test').chromium.launch({headless:false}).then(browser=>browser.close()).catch(error=>{console.error(error);process.exitCode=1})"
+    dc exec -T runner node -e "require('@vitaliiboiko/magento-template-coverage/playwright')"
 fi
+dc exec -T runner timeout --signal=TERM --kill-after=10s 120s node /opt/magelens/browser-smoke.cjs
 dc exec -T app sh -c 'curl --fail --silent --show-error --insecure --retry 30 --retry-connrefused \
     --retry-delay 2 --max-time 5 --output /dev/null "https://localhost:$APPLICATION_HTTPS_PORT/"'
 printf '3\n' > .runtime/installed
