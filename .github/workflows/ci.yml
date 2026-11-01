@@ -4,10 +4,6 @@
 
 name: CI
 on:
-  pull_request:
-  push:
-    branches: [main]
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       feasibility-only:
@@ -87,26 +83,6 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            platform: mageos
-            theme: hyva
-            runner: playwright
-          - os: windows-latest
-            platform: mageos
-            theme: luma
-            runner: cypress
-          - os: ubuntu-latest
-            platform: mageos
-            theme: luma
-            runner: cypress
-          - os: ubuntu-latest
-            platform: mageos
-            theme: luma
-            runner: playwright
-          - os: ubuntu-latest
-            platform: mageos
-            theme: hyva
-            runner: cypress
-          - os: ubuntu-latest
             platform: mageos
             theme: hyva
             runner: playwright

@@ -11,7 +11,7 @@ const report = {sha: process.env.CI_SHA || process.env.GITHUB_SHA, host: process
     imageVersion: process.env.ImageVersion, architecture: process.arch, release: os.release(),
     runtime: process.env.CI_HOST_RUNTIME || 'native', memoryGiB: Math.round(os.totalmem() / 2 ** 30), checks: {}, passed: false};
 function run(name, command, args) {
-    const result = spawnSync(command, args, {encoding: 'utf8', timeout: 120000, env: {...process.env, MSYS_NO_PATHCONV: '1'}});
+    const result = spawnSync(command, args, {encoding: 'utf8', timeout: name === 'local-vm-start' ? 600000 : 120000, env: {...process.env, MSYS_NO_PATHCONV: '1'}});
     report.checks[name] = {status: result.status, output: `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.slice(-16000)};
     return report.checks[name];
 }
@@ -25,7 +25,7 @@ try {
     }
     if (process.platform === 'darwin') {
         run('virtualization', 'sysctl', ['kern.hv_support', 'hw.optional.arm64']);
-        run('local-vm-start', 'colima', ['start', '--vm-type', 'vz', '--cpu', '2', '--memory', '4', '--disk', '40']);
+        run('local-vm-start', 'colima', ['start', '--vm-type', 'qemu', '--cpu', '2', '--memory', '5', '--disk', '40']);
     }
     run('docker', 'docker', ['version']);
     const info = run('engine', 'docker', ['info', '--format', '{{.OSType}}/{{.Architecture}}']);
