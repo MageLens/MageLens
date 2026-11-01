@@ -66,7 +66,7 @@ test('final gate fails when reports are missing even if all job results claim su
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-gate-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/gate.cjs'), 'absent'], {cwd: directory, encoding: 'utf8', env: {...process.env,
-        CI_SHA: 'candidate', CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'copyright', 'e2e', 'magento'].map(job => [job, {result: 'success'}])))}});
+        CI_SHA: 'candidate', GITHUB_STEP_SUMMARY: '', CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'copyright', 'e2e', 'magento'].map(job => [job, {result: 'success'}])))}});
     assert.equal(result.status, 1);
     const report = JSON.parse(fs.readFileSync(`${directory}/ci-gate/qualification.json`));
     assert.equal(report.passed, false);
