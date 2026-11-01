@@ -10,7 +10,18 @@ const file = path.join(cache, '16.2.1/Cypress/resources/app/packages/proxy/lib/a
 if (!fs.existsSync(file)) {
   const root = path.join(cache, '16.2.1/Cypress/resources/app');
   console.log('Packaged app entries:', fs.readdirSync(root));
-  console.log('Proxy entries:', fs.readdirSync(path.join(root, 'packages/proxy/lib'), {recursive:true}));
+  function inspect(dir) {
+    for (const entry of fs.readdirSync(dir, {withFileTypes:true})) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== 'node_modules') inspect(file);
+      else if (entry.isFile() && entry.name.endsWith('.js')) {
+        const code = fs.readFileSync(file, 'utf8');
+        const index = code.indexOf('should cookies be attached to request?');
+        if (index >= 0) console.log('Cookie source:', file, 'SHA256:',createHash('sha256').update(code).digest('hex'), code.slice(Math.max(0,index - 1800), index + 1000));
+      }
+    }
+  }
+  inspect(root);
   process.exit(1);
 }
 const source = fs.readFileSync(file, 'utf8');
