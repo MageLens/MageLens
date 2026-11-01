@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
-name: Cookie diagnosis
+name: Cookie diagnosis in Chrome
 on:
   workflow_dispatch:
 permissions:
@@ -16,8 +16,7 @@ jobs:
           persist-credentials: false
       - name: Reproduce browser-cleared cookie handling independently of Magento
         run: |
-          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e cypress/included:16.2.1 -ec '
-            node tests/ci/patch-cookie-diagnosis.cjs
+          docker run --rm --entrypoint bash -v "$PWD:/e2e" -w /e2e cypress/included:16.2.1 -c '
             node tests/ci/cookie-diagnosis.cjs &
-            cypress run --config-file tests/ci/cookie-diagnosis-config.cjs
+            cypress run --browser chrome --config-file tests/ci/cookie-diagnosis-config.cjs
           '
