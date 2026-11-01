@@ -5,13 +5,12 @@
 name: Publish release
 
 on:
-  push:
-    branches: [main]
-    paths: ['package.json', 'CHANGELOG.md', '.github/workflows/release.yml']
-    tags: ['v*']
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -19,33 +18,54 @@ concurrency:
 
 jobs:
   publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    permissions:
+      contents: write
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Verify the exact upstream qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          QUALIFIED_RUN: ${{ github.event.workflow_run.id }}
+          QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh run download "$QUALIFIED_RUN" --repo "$GH_REPO" --name qualification --dir qualification
+          jq -e --arg sha "$QUALIFIED_SHA" --arg run "$QUALIFIED_RUN" \
+            '.passed == true and .sha == $sha and .workflowRun == $run and .expectedCases == 10 and .completedCases == 10 and .expectedAcceptanceTests == 70 and (.errors | length) == 0' qualification/qualification.json
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
       - name: Publish notes from the changelog
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_REF: ${{ github.ref_name }}
-          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          gh repo clone "$GH_REPO" release -- --depth 1 --branch "$RELEASE_REF"
-          cd release
+          # Checkout and qualification refer to the immutable event commit, never a moving branch.
+          [[ "$(git rev-parse HEAD)" == "$QUALIFIED_SHA" ]]
           RELEASE_TAG="v$(jq -r .version package.json)"
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          if [[ "$RELEASE_REF_TYPE" == tag ]]; then
-            [[ "$RELEASE_REF" == "$RELEASE_TAG" ]]
-          fi
           awk -v version="${RELEASE_TAG#v}" '
             /^## / { if (selected) exit; selected = ($2 == version); next }
             selected { print }
-          ' CHANGELOG.md > ../release-notes.md
-          [[ -s ../release-notes.md ]]
+          ' CHANGELOG.md > release-notes.md
+          [[ -s release-notes.md ]]
+          # Never publish or edit a tag pointing to a different, unqualified commit.
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then exit 0; fi
+          [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$QUALIFIED_SHA" ]]
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --notes-file ../release-notes.md
+            gh release edit "$RELEASE_TAG" --notes-file release-notes.md
             exit 0
           fi
           # A version commit can arrive before its tag; the tag push will publish it.
           if ! git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null; then exit 0; fi
-          gh release create "$RELEASE_TAG" --verify-tag --notes-file ../release-notes.md \
+          gh release create "$RELEASE_TAG" --verify-tag --notes-file release-notes.md \
             --title "MageLens $RELEASE_TAG" --latest

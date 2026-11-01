@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+name: E2E case
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      platform:
+        required: true
+        type: string
+      theme:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  case:
+    name: ${{ inputs.os }} / ${{ inputs.platform }} / ${{ inputs.theme }} / ${{ inputs.runner }}
+    if: inputs.platform != 'magento' || github.event_name != 'pull_request'
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 150
+    environment: ${{ inputs.platform == 'magento' && 'magento-e2e' || 'public-e2e' }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI_SHA: ${{ inputs.sha }}
+      CI_CASE: ${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}
+      MAGELENS_E2E_PLATFORM: ${{ inputs.platform }}
+      MAGELENS_E2E_THEME: ${{ inputs.theme }}
+      MAGELENS_E2E_RUNNER: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - id: probe
+        name: Validate actual host, Linux engine, mounts and networking
+        run: node tests/ci/probe.cjs
+      - name: Require reviewed credential access
+        if: inputs.platform == 'magento'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+        run: |
+          gh api "repos/$GH_REPO/environments/magento-e2e" > "$RUNNER_TEMP/environment.json"
+          node - <<'NODE'
+          const fs = require('fs');
+          const env = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/environment.json'));
+          if (!env.protection_rules?.some(rule => rule.type === 'required_reviewers' && rule.reviewers?.length)) {
+            throw new Error('magento-e2e must require reviewers before any credentialed code runs');
+          }
+          if (!process.env.COMPOSER_AUTH) throw new Error('INCOMPLETE: missing protected COMPOSER_AUTH');
+          let auth;
+          try { auth = JSON.parse(process.env.COMPOSER_AUTH); }
+          catch { throw new Error('Invalid COMPOSER_AUTH JSON'); }
+          for (const value of Object.values(auth['http-basic']?.['repo.magento.com'] || {})) {
+            if (typeof value === 'string') console.log('::add-mask::' + value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A'));
+          }
+          if (!auth['http-basic']?.['repo.magento.com']?.username || !auth['http-basic']['repo.magento.com'].password) {
+            throw new Error('INCOMPLETE: Marketplace credentials absent');
+          }
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/auth.json', JSON.stringify({'http-basic': {'repo.magento.com': auth['http-basic']['repo.magento.com']}}), {mode: 0o600});
+          NODE
+          echo "MAGELENS_COMPOSER_AUTH_FILE=$RUNNER_TEMP/auth.json" >> "$GITHUB_ENV"
+      - name: Check available resources
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const os = require('os');
+          const disk = fs.statfsSync('/tmp');
+          const free = disk.bavail * disk.bsize / 2 ** 30;
+          console.log(`Available disk: ${free.toFixed(1)} GiB; memory: ${(os.totalmem()/2**30).toFixed(1)} GiB`);
+          if (free < 25 || os.totalmem() < 6 * 2 ** 30) throw new Error('Insufficient resources for one isolated installation');
+          NODE
+      - id: isolation
+        name: Verify independent Compose projects
+        run: bash tests/project-isolation.sh
+      - id: e2e
+        name: Install and run the complete acceptance harness
+        timeout-minutes: 130
+        env:
+          MAGELENS_E2E_RESULT_FILE: ${{ runner.temp }}/magelens-result
+          MAGELENS_E2E_RESOURCE_FILE: ${{ runner.temp }}/magelens-resource
+        run: bash tests/e2e-isolated.sh
+      - id: cleanup
+        name: Remove only this installation and credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/auth.json"
+          bash tests/ci/cleanup.sh
+      - name: Prepare sanitized evidence and failure diagnostics
+        if: always()
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        run: node tests/ci/evidence.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: case-${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}
+          path: ci-reports/${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 9

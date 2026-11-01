@@ -7,6 +7,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,14 +15,22 @@ concurrency:
   group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  feasibility:
-    name: Runner feasibility (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  static:
+    name: Static syntax and workflow checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: node tests/ci/static.cjs
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
+  integration:
+    name: Integration and PHP unit checks
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -30,12 +39,119 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
-      - name: Prove the actual host can run MageLens containers
-        run: node tests/ci/probe.cjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run every integration test and reject skipped tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test --test-concurrency=2 --test-reporter=tap tests/*.test.cjs | tee "$RUNNER_TEMP/integration.tap"
+          grep -qx '# fail 0' "$RUNNER_TEMP/integration.tap"
+          grep -qx '# cancelled 0' "$RUNNER_TEMP/integration.tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/integration.tap"
+          grep -qx '# todo 0' "$RUNNER_TEMP/integration.tap"
+      - name: PHP unit checks
+        run: |
+          for file in tests/env.test.php tests/theme.test.php tests/source.test.php; do php "$file"; done
+          # Collection test uses fixed container paths; this runner is disposable.
+          sudo mkdir /coverage /pcov-state
+          sudo chown "$(id -u):$(id -g)" /coverage /pcov-state
+          php tests/collection.test.php
+          # PCOV/report tests run in each E2E case with the production PHP image.
+  copyright:
+    name: Copyright and license notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: npm run check:copyright
+      - run: node --test tests/copyright.test.cjs
+  e2e:
+    name: Public E2E
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mageos
+            theme: hyva
+            runner: playwright
+          - os: windows-latest
+            platform: mageos
+            theme: luma
+            runner: cypress
+          - os: ubuntu-latest
+            platform: mageos
+            theme: luma
+            runner: cypress
+          - os: ubuntu-latest
+            platform: mageos
+            theme: luma
+            runner: playwright
+          - os: ubuntu-latest
+            platform: mageos
+            theme: hyva
+            runner: cypress
+          - os: ubuntu-latest
+            platform: mageos
+            theme: hyva
+            runner: playwright
+    uses: ./.github/workflows/e2e-case.yml
+    with:
+      os: ${{ matrix.os }}
+      platform: ${{ matrix.platform }}
+      theme: ${{ matrix.theme }}
+      runner: ${{ matrix.runner }}
+      sha: ${{ github.sha }}
+  magento:
+    name: Reviewed Magento E2E
+    # A PR never gets credentials, even when its branch is in this repository.
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        theme: [luma, hyva]
+        runner: [cypress, playwright]
+    uses: ./.github/workflows/e2e-case.yml
+    with:
+      os: ubuntu-latest
+      platform: magento
+      theme: ${{ matrix.theme }}
+      runner: ${{ matrix.runner }}
+      sha: ${{ github.sha }}
+  gate:
+    name: Required CI gate
+    if: always()
+    needs: [static, integration, copyright, e2e, magento]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: case-*
+          path: ci-artifacts
+      - name: Verify ten cases, every report and the eight-way Linux comparison
+        if: always()
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_SHA: ${{ github.sha }}
+        run: node tests/ci/gate.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: feasibility-${{ matrix.os }}
-          path: ci-reports/feasibility.json
+          name: qualification
+          path: ci-gate/
           retention-days: 1
           if-no-files-found: error
