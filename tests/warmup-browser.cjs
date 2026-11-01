@@ -59,7 +59,8 @@ const server = http.createServer((request, response) => {
             };
         }, 500));
     </script></body></html>`);
-    send('<html><body>Fresh storefront</body></html>');
+    const next = request.url === '/fresh' ? '/fresh-next' : '/fresh';
+    send('<html><body>Fresh storefront <a data-cy="native-next" href="' + next + '">Next page</a></body></html>');
 });
 
 function write(file, text) {
@@ -117,6 +118,18 @@ async function browser(warmup, shouldFail = false) {
         cy.getCookie('application_coverage').its('value').should('equal', '${'a'.repeat(32)}');
         expect(Cypress.config('pageLoadTimeout')).to.equal(60000);
         expect(Cypress.config('defaultCommandTimeout')).to.equal(15000);
+        for (let navigation = 0; navigation < 4; navigation++) {
+            cy.get('[data-cy="native-next"]').click();
+            cy.location('pathname').should('equal', navigation % 2 ? '/fresh' : '/fresh-next');
+            cy.window().then(win => {
+                const rules = win.document.adoptedStyleSheets.flatMap(sheet => [...sheet.cssRules]);
+                expect(rules.some(rule => /navigation:\\s*none/.test(rule.cssText)), 'page-change animations disabled').to.equal(true);
+            });
+        }
+        cy.go('back');
+        cy.location('pathname').should('equal', '/fresh-next');
+        cy.go('forward');
+        cy.location('pathname').should('equal', '/fresh');
     });`);
     await browser(false);
     assert.equal(read('coverage/cypress-results.json').totalPassed, 1);
