@@ -3,16 +3,24 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
-const {test, expect} = require('../../../../../../../playwright/support.cjs');
+const {test: base, expect} = require('../../../../../../../playwright/support.cjs');
 const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
-test.beforeEach(async ({context}) => { await context.addInitScript(observeStorefrontReadiness); });
+// A shared module's beforeEach belongs only to its first importing spec.
+// Extend the context fixture so every spec and every new page observes events.
+const test = base.extend({
+    context: async ({context}, use) => {
+        await context.addInitScript(observeStorefrontReadiness);
+        await use(context);
+    }
+});
 const fixtures = () => JSON.parse(fs.readFileSync('coverage/project-fixtures.json')).Application_Blog;
 const headers = () => ({'x-application-coverage': JSON.parse(fs.readFileSync('coverage/run.json')).id});
 const get = (page, name) => page.locator(`[data-cy="${name}"]`);
 const message = (page, type) => page.locator(`.message-${type}, [ui-id="message-${type}"]`);
 async function waitForStorefront(page) {
     if (fixtures().themePaths[0] === 'Hyva/default-csp') {
-        await page.waitForFunction(() => window.__magelensStorefrontReady?.messages && window.__magelensStorefrontReady?.privateContent);
+        await expect.poll(() => page.evaluate(() => window.__magelensStorefrontReady),
+            {message: 'Hyva cookie messages and private content initialized'}).toEqual({messages: true, privateContent: true});
     }
 }
 async function storefrontMessage(page, type, text) {
