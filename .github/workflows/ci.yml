@@ -7,7 +7,7 @@ on:
     inputs:
       investigation:
         type: choice
-        options: [cookie, images]
+        options: [cookie, images, navigation]
         default: cookie
 permissions:
   contents: read
@@ -114,7 +114,7 @@ jobs:
         if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
         run: cat "$RUNNER_TEMP/cookie-fixture.log"
   chrome-images:
-    if: inputs.investigation == 'images'
+    if: inputs.investigation == 'images' || inputs.investigation == 'navigation'
     name: Chrome installation and recovery / ${{ matrix.runner }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -122,7 +122,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        runner: [cypress, playwright]
+        runner: ${{ inputs.investigation == 'navigation' && fromJSON('["cypress"]') || fromJSON('["cypress", "playwright"]') }}
     env:
       MAGELENS_RUNNER: ${{ matrix.runner }}
     steps:
@@ -150,14 +150,17 @@ jobs:
             --build-arg CHROME_LINUX_X64_SHA256 --build-arg CHROME_LINUX_ARM64_SHA256 \
             --tag "magelens-chrome:$MAGELENS_RUNNER" .
       - name: Verify actual Chrome through every desktop restart
+        if: inputs.investigation == 'images'
         timeout-minutes: 8
         run: bash tests/runner-container.sh "magelens-chrome:$MAGELENS_RUNNER"
-      - name: Verify Cypress TLS, decompression and artifact isolation in Chrome
+      - name: Verify Cypress runtime or warm-up navigation in Chrome
         if: matrix.runner == 'cypress'
-        timeout-minutes: 5
+        timeout-minutes: 7
+        env:
+          INVESTIGATION: ${{ inputs.investigation }}
         run: |
           docker run --rm --name magelens-chrome-runtime --init --shm-size=1g --user "$(id -u):$(id -g)" \
-            --env HOME=/tmp --env DISPLAY=:99 --mount "type=bind,source=$PWD,target=/workspace" \
+            --env HOME=/tmp --env DISPLAY=:99 --env INVESTIGATION --mount "type=bind,source=$PWD,target=/workspace" \
             --volume /workspace/node_modules "magelens-chrome:cypress" bash -c '
               set -euo pipefail
               bash /opt/magelens/desktop.sh > /tmp/desktop.log 2>&1 &
@@ -166,7 +169,11 @@ jobs:
                 sleep 1
               done
               node /opt/magelens/healthcheck.cjs
-              node tests/cypress-runtime.cjs
+              if [[ "$INVESTIGATION" == navigation ]]; then
+                node tests/warmup-browser.cjs
+              else
+                node tests/cypress-runtime.cjs
+              fi
             '
       - name: Clean owned runtime
         if: always()
