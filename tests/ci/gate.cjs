@@ -52,8 +52,9 @@ function gate() {
     const reports = [], runIds = new Set();
     for (const entry of cases) {
         try {
-            const directory = path.join(root, `case-${entry.id}`,  'coverage');
-            const id = verifyCase(entry, read(path.join(root, `case-${entry.id}`,  'evidence.json')), directory,
+            const artifact = `case-${entry.id}-attempt-${process.env.GITHUB_RUN_ATTEMPT}`;
+            const directory = path.join(root, artifact, 'coverage');
+            const id = verifyCase(entry, read(path.join(root, artifact, 'evidence.json')), directory,
                 {sha: process.env.CI_SHA, run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT});
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
