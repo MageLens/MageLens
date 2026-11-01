@@ -6,17 +6,23 @@ http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://localhost:8123').pathname;
   console.log(JSON.stringify({phase: 'fixture', method: req.method, path: pathname, cookie: req.headers.cookie, fetchSite: req.headers['sec-fetch-site'], referer: req.headers.referer}));
   res.setHeader('content-type', 'text/html');
-  if (pathname === '/start') {
-    res.end('<form method="post" action="/set"><button>Set message</button></form>');
-  } else if (['/set', '/set-update', '/set-delete'].includes(pathname)) {
+  if (pathname === '/start' || pathname === '/start-redirect-set') {
+    const action = pathname === '/start' ? '/set' : '/redirect-set';
+    res.end('<form method="post" action="' + action + '"><button>Set message</button></form>');
+  } else if (['/redirect-set', '/redirect-next', '/return-hop'].includes(pathname)) {
+    const destination = {'/redirect-set': '/set', '/redirect-next': '/next', '/return-hop': '/oauth-callback'}[pathname];
+    res.writeHead(302, {location: destination});
+    res.end();
+  } else if (['/set', '/set-update', '/set-delete', '/set-redirect-next'].includes(pathname)) {
     res.setHeader('set-cookie', 'message=previous; Path=/; SameSite=Strict');
     const value = pathname === '/set-update' ? 'message=updated; Path=/; SameSite=Strict'
       : pathname === '/set-delete' ? 'message=; Path=/; SameSite=Strict; Max-Age=0'
         : 'message=; Path=/; SameSite=Strict';
-    res.end('<form method="post" action="/next"><button>Continue</button></form><script>document.cookie=' + JSON.stringify(value) + ';</script>');
-  } else if (['/oauth-login', '/oauth-fast-login'].includes(pathname)) {
+    const action = pathname === '/set-redirect-next' ? '/redirect-next' : '/next';
+    res.end('<form method="post" action="' + action + '"><button>Continue</button></form><script>document.cookie=' + JSON.stringify(value) + ';</script>');
+  } else if (['/oauth-login', '/oauth-fast-login', '/oauth-multi-login'].includes(pathname)) {
     res.setHeader('set-cookie', 'oauth_state=csrf-token; Path=/; HttpOnly; SameSite=Lax');
-    const destination = pathname === '/oauth-login' ? '/authorize' : '/redirect';
+    const destination = pathname === '/oauth-login' ? '/authorize' : pathname === '/oauth-multi-login' ? '/redirect-multi' : '/redirect';
     res.end('<a href="http://127.0.0.1:8124' + destination + '">Authorize</a>');
   } else if (pathname === '/oauth-callback') {
     const state = (req.headers.cookie || '').split('; ').find(cookie => cookie.startsWith('oauth_state='));
@@ -29,8 +35,8 @@ http.createServer((req, res) => {
 http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://127.0.0.1:8124').pathname;
   console.log(JSON.stringify({phase: 'authorization', method: req.method, path: pathname, cookie: req.headers.cookie, fetchSite: req.headers['sec-fetch-site']}));
-  if (pathname === '/redirect') {
-    res.writeHead(302, {location: 'http://localhost:8123/oauth-callback'});
+  if (pathname === '/redirect' || pathname === '/redirect-multi') {
+    res.writeHead(302, {location: 'http://localhost:8123' + (pathname === '/redirect-multi' ? '/return-hop' : '/oauth-callback')});
     res.end();
   } else {
     res.setHeader('content-type', 'text/html');

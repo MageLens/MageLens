@@ -65,12 +65,16 @@ jobs:
           yarn build-v8-snapshot-dev
       - name: Run proxy unit regressions
         working-directory: cypress
-        run: yarn workspace @packages/proxy test --maxWorkers=2 --minWorkers=1
+        run: |
+          yarn workspace @packages/proxy test --maxWorkers=2 --minWorkers=1
+          yarn workspace @packages/server test-unit test/unit/browsers/cdp_automation.spec.ts --maxWorkers=2 --minWorkers=1
       - name: Check the changed Cypress source
         working-directory: cypress
         run: |
           yarn workspace @packages/proxy eslint lib/http/util/top-simulation.ts test/unit/http/request-middleware.spec.ts test/unit/http/response-middleware.spec.ts test/unit/http/util/top-simulation.spec.ts
           yarn workspace @packages/proxy check-ts
+          yarn workspace @packages/server eslint lib/browsers/cdp-protocol/cdp_automation.ts test/unit/browsers/cdp_automation.spec.ts
+          yarn workspace @packages/server check-ts
       - name: Start the isolated cookie fixture
         id: fixture
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
@@ -102,7 +106,7 @@ jobs:
                   continue
               result = json.loads(report.read_text())
               print(browser, result)
-              if result['totalTests'] != 6 or result['totalPassed'] != 6 or any(result[key] != 0 for key in ('totalFailed', 'totalPending', 'totalSkipped')):
+              if result['browserName'] != 'chrome' or result['totalTests'] != 9 or result['totalPassed'] != 9 or any(result[key] != 0 for key in ('totalFailed', 'totalPending', 'totalSkipped')):
                   errors.append(f'{browser}: incomplete regression tests')
           assert not errors, errors
           PY

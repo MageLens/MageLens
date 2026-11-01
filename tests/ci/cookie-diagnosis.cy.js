@@ -39,3 +39,21 @@ it('preserves login state through a cross-site server redirect chain', () => {
   cy.get('a').click();
   cy.get('#received').should('have.text', 'oauth_state=csrf-token');
 });
+it('preserves a page-cleared cookie after a same-origin server redirect', () => {
+  cy.visit('/start-redirect-set');
+  cy.get('button').click();
+  cy.getCookie('message').its('value').should('equal', '');
+  cy.get('button').click();
+  cy.get('#received').should('have.text', 'message=');
+});
+it('does not replay a cleared cookie on a later same-origin redirect hop', () => {
+  cy.visit('/set-redirect-next');
+  cy.getCookie('message').its('value').should('equal', '');
+  cy.get('button').click();
+  cy.get('#received').should('have.text', 'message=');
+});
+it('retains cross-site login state after additional same-origin redirect hops', () => {
+  cy.visit('/oauth-multi-login');
+  cy.get('a').click();
+  cy.get('#received').should('have.text', 'oauth_state=csrf-token');
+});
