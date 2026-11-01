@@ -80,6 +80,8 @@ Run installation and coverage one at a time. Do not bypass `.runtime/workflow.lo
 
 ## Validate changes
 
+CI exists to expose real gaps and problems in the user journey: installation, daily commands, storefront and Admin flows, coverage collection, and recovery. Investigate failures and fix their root causes in the product or test harness. Do not add CI-only workarounds that hide defects, bypass real user paths, weaken assertions or coverage, skip required cases, suppress application errors, or retry away functional failures. Runner setup and resource adaptations must preserve those journeys and acceptance checks. If a supported journey cannot run under the allowed infrastructure constraints, report incomplete coverage and the demonstrated blocker.
+
 For host-side integration checks, install the locked dependencies with `npm ci --ignore-scripts`, then run `npm run test:integration`. Target an existing relevant test first; use the full integration suite for shared orchestration changes. PHP checks live in `tests/*.test.php`; inspect their prerequisites before selecting host or container execution. Use `bash -n`, `node --check` and `php -l` for changed scripts.
 
 All E2E execution and debugging belongs in GitHub Actions. Do not run E2E locally unless the user explicitly requests it. Static and unit/integration checks remain available locally; cap integration concurrency on memory-constrained machines with `node --test --test-concurrency=2 tests/*.test.cjs`.

@@ -20,6 +20,7 @@ License: see LICENSE in the repository root.
 - Add or update automated regression tests for behavior changes, including equivalent entry points and existing workflows. Run relevant checks during development and any broader checks required by the project; inspect the final diff for unintended changes.
 - Execute all E2E tests and E2E debugging in GitHub Actions. Local static and unit/integration checks remain available. Run E2E locally only when the user explicitly requests it; never start local Docker installations to work around a CI blocker.
 - Investigate failures and fix their root causes. Never ignore, skip, suppress, delete, or weaken failing tests to manufacture a passing result.
+- CI must expose real gaps and problems in complete user journeys. Exercise the supported installation, daily workflows, storefront/Admin behavior, coverage and recovery as users experience them. Reject CI-only workarounds that conceal defects, bypass real flows or validations, replace required integration behavior with mocks, weaken assertions or coverage, or retry away functional failures. Infrastructure adaptations must preserve the same journeys and acceptance checks; demonstrated infrastructure limitations remain explicit blockers.
 
 ## User-facing documentation
 
