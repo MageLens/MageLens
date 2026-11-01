@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, search, visitBlog, waitForBlog} from './support';
+import {fixtures, headers, get, search, visitBlog, waitForBlog, storefrontMessage} from './support';
 
 describe('Blog storefront', () => {
     it('searches, filters, paginates, reads articles, and retains favorites', () => {
@@ -85,7 +85,7 @@ describe('Blog storefront', () => {
             form.submit();
         });
         cy.wait('@rejectedComment').its('response.statusCode').should('equal', 302);
-        cy.get('.message-error, .message.error').should('contain', 'Invalid Form Key');
+        storefrontMessage('error', 'Invalid Form Key');
         get('no-comments').should('be.visible');
         get('comment-form').within(() => {
             cy.get('[name="name"]').type('Reader');
@@ -94,7 +94,7 @@ describe('Blog storefront', () => {
             cy.get('[name="email"]').invoke('val', 'invalid');
         }).invoke('attr', 'novalidate', 'novalidate');
         get('comment-submit').click();
-        cy.get('.message-error, .message.error').should('contain', 'valid email');
+        storefrontMessage('error', 'valid email');
         get('approved-comment').should('not.exist');
         visitBlog();
         cy.intercept('GET', /\/blog\/index\/posts[/?]/, {statusCode: 503, body: {error: 'Unavailable'}}).as('unavailable');
