@@ -82,6 +82,13 @@ jobs:
           brew install colima docker docker-compose bash
           mkdir -p "$HOME/.docker/cli-plugins"
           ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+          # Homebrew no longer bottles Buildx for Intel macOS. Install Docker's
+          # pinned official binary instead of compiling another tool on the host.
+          curl --fail --location --max-time 120 \
+            https://github.com/docker/buildx/releases/download/v0.38.1/buildx-v0.38.1.darwin-amd64 \
+            -o "$HOME/.docker/cli-plugins/docker-buildx"
+          echo "76e7a809cc98d34a4c1b7db23feac673def5b8dcdddd9e713ef26598689aa796  $HOME/.docker/cli-plugins/docker-buildx" | shasum -a 256 --check
+          chmod +x "$HOME/.docker/cli-plugins/docker-buildx"
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
       - name: Reclaim unused hosted Linux SDK space
         if: runner.os == 'Linux'
