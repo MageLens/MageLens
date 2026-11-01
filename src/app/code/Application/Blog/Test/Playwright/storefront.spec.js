@@ -68,12 +68,16 @@ test.describe('Blog storefront', () => {
             expect((await page.request.get('/blog/post/view/slug/' + f.prefix + slug, {headers: headers()})).status()).toBe(404);
         }
         await page.goto('/blog/post/view/slug/' + f.prefix + 'article-1');
-        const response = await page.request.post(await get(page, 'comment-form').getAttribute('action'), {
-            headers: headers(), maxRedirects: 0,
-            form: {form_key: 'invalid', name: 'Rejected reader', email: 'reader@example.test', body: 'Must not appear'}
+        const action = await get(page, 'comment-form').getAttribute('action');
+        // Keep the forged POST, redirect and rejection cookie in one browser navigation.
+        const response = page.waitForResponse(response => response.url() === action && response.request().method() === 'POST');
+        await get(page, 'comment-form').evaluate(form => {
+            for (const [name, value] of Object.entries({form_key: 'invalid', name: 'Rejected reader', email: 'reader@example.test', body: 'Must not appear'})) {
+                form.elements.namedItem(name).value = value;
+            }
+            form.submit();
         });
-        expect(response.status()).toBe(302);
-        await page.reload();
+        expect((await response).status()).toBe(302);
         await expect(message(page, 'error')).toContainText('Invalid Form Key');
         await expect(get(page, 'no-comments')).toBeVisible();
         await fillComment(page, 'Reader', 'invalid', 'A comment with an invalid email');

@@ -74,11 +74,17 @@ describe('Blog storefront', () => {
         }
         cy.visit('/blog/post/view/slug/' + f.prefix + 'article-1');
         get('comment-form').invoke('attr', 'action').then(url => {
-            // Keep the rejection message for the browser instead of consuming it on a followed redirect.
-            cy.request({url, method: 'POST', form: true, followRedirect: false, headers: headers(), body: {form_key: 'invalid', name: 'Rejected reader', email: 'reader@example.test', body: 'Must not appear'}})
-                .its('status').should('equal', 302);
+            cy.intercept('POST', url).as('rejectedComment');
         });
-        cy.reload();
+        // Use one browser navigation for the forged POST and its rejection cookie.
+        // A background HTTP request can race the current page's message consumer.
+        get('comment-form').then(([form]) => {
+            for (const [name, value] of Object.entries({form_key: 'invalid', name: 'Rejected reader', email: 'reader@example.test', body: 'Must not appear'})) {
+                form.elements.namedItem(name).value = value;
+            }
+            form.submit();
+        });
+        cy.wait('@rejectedComment').its('response.statusCode').should('equal', 302);
         cy.get('.message-error, .message.error').should('contain', 'Invalid Form Key');
         get('no-comments').should('be.visible');
         get('comment-form').within(() => {

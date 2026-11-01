@@ -10,6 +10,9 @@ const {execFileSync} = require('node:child_process');
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => key in value).map(key => [key, value[key]]));
 const blog = file => file.includes('/Application/Blog/');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
+const countKeys = ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending'];
+const testResults = results => ({...pick(results, ['run', ...countKeys]),
+    tests: (results.tests || []).map(test => pick(test, ['title', 'status']))});
 function sanitizedCoverage(source) {
     const run = read(path.join(source, 'run.json'));
     const runner = run.runner || 'cypress';
@@ -20,8 +23,7 @@ function sanitizedCoverage(source) {
         'run.json': pick(run, ['id', 'runner']),
         'installation.json': pick(read(path.join(source, 'installation.json')), ['platform', 'version', 'phpVersion', 'nodeVersion', 'theme', 'runner']),
         'project-fixtures.json': {Application_Blog: {themePaths: read(path.join(source, 'project-fixtures.json')).Application_Blog.themePaths}},
-        [`${runner}-results.json`]: {...pick(results, ['run', 'totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']),
-            tests: results.tests.map(test => pick(test, ['title', 'status']))},
+        [`${runner}-results.json`]: testResults(results),
         'summary.json': pick(read(path.join(source, 'summary.json')), ['run', 'generatedAt', 'metrics']),
         'php/line-coverage.json': Object.fromEntries(Object.entries(read(path.join(source, 'php/line-coverage.json'))).filter(([file]) => blog(file))),
         'js/coverage-final.json': Object.fromEntries(Object.entries(read(path.join(source, 'js/coverage-final.json'))).filter(([file]) => blog(file)).map(([file, data]) =>
@@ -40,7 +42,21 @@ function writeEvidence() {
         attempt: process.env.GITHUB_RUN_ATTEMPT, host: process.env.RUNNER_OS, architecture: process.arch,
         runtime: process.env.CI_HOST_RUNTIME || 'native', image: process.env.ImageOS, imageVersion: process.env.ImageVersion, memoryGiB: Math.round(os.totalmem() / 2 ** 30),
         dependencies: Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(match => [match[1], match[2]])),
-        steps: Object.fromEntries(Object.entries(JSON.parse(process.env.CI_STEPS)).map(([key, value]) => [key, pick(value, ['outcome', 'conclusion'])])), passed: false};
+        counts: null, steps: Object.fromEntries(Object.entries(JSON.parse(process.env.CI_STEPS)).map(([key, value]) => [key, pick(value, ['outcome', 'conclusion'])])), passed: false};
+    // Failed harnesses still retain their browser results under the owned project.
+    const registry = path.join(process.env.RUNNER_TEMP, 'magelens-resource');
+    try {
+        if (fs.existsSync(registry)) {
+            const project = fs.readFileSync(registry, 'utf8').trim().split(' ')[0];
+            if (!/^magelens-e2e-[a-z0-9]+$/.test(project)) throw new Error('Invalid project evidence path');
+            const results = `.runtime/e2e/${project}/coverage/${entry.runner}-results.json`;
+            if (fs.existsSync(results)) {
+                const safe = testResults(read(results));
+                report.counts = pick(safe, countKeys);
+                fs.writeFileSync(`${directory}/browser-results.json`, JSON.stringify(safe, null, 2) + '\n');
+            }
+        }
+    } catch { report.diagnostics = 'Browser results were incomplete or unreadable.'; }
     try {
         if (fs.existsSync('ci-reports/feasibility.json')) report.feasibility = read('ci-reports/feasibility.json');
         const source = fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'magelens-result'), 'utf8').trim();
@@ -52,7 +68,7 @@ function writeEvidence() {
         }
         execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
         report.counts = pick(read(`${directory}/coverage/${entry.runner}-results.json`), ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']);
-        report.passed = ['probe', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
+        report.passed = !report.diagnostics && ['probe', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {
         // Errors can contain arbitrary subprocess output; publish a fixed diagnostic.
         report.incomplete = 'Missing or invalid completed harness report. Inspect the failed step in Actions.';
@@ -71,5 +87,5 @@ function writeEvidence() {
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
         `## ${entry.id}\n\n${report.passed ? 'PASS: 7/7 acceptance scenarios and all harness checks.' : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
 }
-module.exports = {sanitizedCoverage};
+module.exports = {sanitizedCoverage, testResults};
 if (require.main === module) writeEvidence();

@@ -93,3 +93,29 @@ for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templat
         assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
     });
 }
+
+test('failed harness uploads sanitized failing test counts without completed report pointers', t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-failed-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
+    const project = 'magelens-e2e-fixture';
+    const coverage = path.join(directory, '.runtime/e2e', project, 'coverage');
+    fs.mkdirSync(coverage, {recursive: true});
+    fs.writeFileSync(path.join(directory, 'magelens-resource'), `${project} /tmp/magelens-e2e.fixture\n`);
+    fs.writeFileSync(path.join(coverage, 'cypress-results.json'), JSON.stringify({
+        run: 'failed-run', ...counts, totalPassed: 6, totalFailed: 1, message: 'SECRET',
+        tests: [{title: titles[0], status: 'failed', error: 'SECRET', screenshot: '/private/SECRET'}]
+    }));
+    const entry = cases[0];
+    const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/evidence.cjs')], {cwd: directory, encoding: 'utf8', env: {...process.env,
+        CI_CASE: entry.id, CI_SHA: 'candidate', RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: '',
+        CI_STEPS: JSON.stringify({e2e: {outcome: 'failure'}, cleanup: {outcome: 'success'}})}});
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(fs.readFileSync(path.join(directory, 'ci-reports', entry.id, 'evidence.json')));
+    assert.equal(report.passed, false);
+    assert.equal(report.counts.totalFailed, 1);
+    assert.equal(report.counts.totalPassed, 6);
+    const browser = fs.readFileSync(path.join(directory, 'ci-reports', entry.id, 'browser-results.json'), 'utf8');
+    assert.doesNotMatch(browser, /SECRET|private|screenshot/);
+    assert.match(browser, /failed/);
+});
