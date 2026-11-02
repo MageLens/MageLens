@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 Run the fast integration checks with `npm run test:integration`.
 
-All E2E execution and debugging uses **GitHub Actions**. Do not run E2E locally unless the user explicitly requests it. This includes the isolated installation harness, matrix, project isolation, browser recovery and container acceptance scripts. Local syntax, PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
+The full E2E matrix and release qualification use **GitHub Actions**. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Local results do not replace final CI qualification. Local syntax, PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
 
 ## Run CI
 
@@ -68,7 +68,7 @@ Dependabot checks GitHub Actions, npm and the PHP report Composer manifest weekl
 
 ## Existing harness
 
-The workflow reuses `tests/e2e-isolated.sh` unchanged in its acceptance behavior. `npm run test:e2e` and `npm run test:e2e:matrix` remain available for CI or an explicitly requested local investigation. Magento uses `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`; Mage-OS never copies those credentials.
+The workflow reuses `tests/e2e-isolated.sh` unchanged in its acceptance behavior. `npm run test:e2e` is available for focused local investigation; the full `npm run test:e2e:matrix` belongs in CI unless explicitly requested locally. Magento uses `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`; Mage-OS never copies those credentials.
 
 By default, the test installs Luma with Cypress using the versions in `dependencies.yaml`, runs the bundled browser suites, and verifies PHP, JavaScript, and template coverage reports. It also checks that reports belong to the current run, original source files are unchanged, and test data is cleaned up. The installer uses `--container-only` to generate HTTPS inside Docker; it does not edit host DNS or certificate trust.
 
@@ -76,7 +76,7 @@ Each invocation has its own Compose project, image tags, database, credentials, 
 
 Reports, screenshots, and logs are retained under `.runtime/e2e/<project>/`, including `coverage/index.html`. Containers, named volumes, and temporary source are removed on success, failure, or a handled interruption. A failed Docker cleanup retains the temporary workspace and reports its location. Built images and Docker build cache remain available for subsequent runs. Forced process termination may require manual cleanup of that test's project.
 
-Only during an explicitly requested local investigation, `MAGELENS_E2E_KEEP_ON_FAILURE=1` retains a failed test's workspace and running services. The failure output includes its location and Compose cleanup command; remove that temporary directory after stopping its services and volumes.
+For focused local investigation, `MAGELENS_E2E_KEEP_ON_FAILURE=1` retains a failed test's workspace and running services. The failure output includes its location and Compose cleanup command; remove that temporary directory after stopping its services and volumes.
 
 These E2E checks validate fresh installations. The integration suite also checks upgrades of existing installations and recovery of patches left by interrupted runs.
 
@@ -106,4 +106,4 @@ Omitting these settings selects Magento Open Source/Luma/Cypress. The full matri
 
 ## Test a local template coverage package
 
-Test unpublished collector changes in a reviewed CI branch: pack the library in the runner workspace and pass `MAGELENS_TEMPLATE_COVERAGE_PACKAGE` to the existing harness. Record the tarball digest in the run evidence and do not replace the final published-pin qualification with an unpublished-package run. Local packing is permitted; local E2E still requires an explicit user request.
+Test unpublished collector changes in a reviewed CI branch: pack the library in the runner workspace and pass `MAGELENS_TEMPLATE_COVERAGE_PACKAGE` to the existing harness. Record the tarball digest in the run evidence and do not replace the final published-pin qualification with an unpublished-package run. Local packing and focused browser debugging are permitted; the full matrix remains in CI.
