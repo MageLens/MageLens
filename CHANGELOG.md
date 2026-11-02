@@ -6,6 +6,16 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.7.0 - 2026-11-02
+
+- Update Magento Open Source to 2.4.9 and Mage-OS to 3.6.0, including the platform security updates.
+- Use the same pinned Chrome for Testing build for Cypress, Playwright, warm-up and browser recovery.
+- Fix Cypress cookie preservation across navigation and redirects, initialization before application scripts, and configured response timeouts. Local development and CI use the same repaired runner.
+- Qualify releases with nine CI installations: all eight Linux combinations plus Mage-OS/Luma/Cypress on Windows. Require complete same-theme report equality, source preservation, isolation and recovery checks before automatic publication. macOS qualification remains deferred.
+- Add Dependabot updates for GitHub Actions, npm and PHP report dependencies.
+
+Back up application data before updating. Rerun `./install.sh` with your saved platform, theme and runner flags to rebuild the images, then regenerate reports with `./bin/run-coverage`. An existing application's Composer lock continues to control its platform dependencies.
+
 ## 1.6.1 - 2026-10-31
 
 - Update PIE to 1.5.5, fixing unsafe temporary-file handling of failed build output ([GHSA-4538-pqqf-mv67](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67)). PCOV remains pinned to 2.1.2.
