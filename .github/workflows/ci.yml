@@ -7,7 +7,7 @@ on:
     inputs:
       investigation:
         type: choice
-        options: [cookie, images, navigation, mageos-navigation, windows-warmup]
+        options: [packaged, cookie, images, navigation, mageos-navigation, windows-warmup]
         default: cookie
 permissions:
   contents: read
@@ -192,3 +192,49 @@ jobs:
             docker logs magelens-chrome-runtime
             docker rm -fv magelens-chrome-runtime
           fi
+
+  packaged:
+    if: inputs.investigation == 'packaged'
+    name: Packaged Cypress cookie fix / production Chrome runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare bounded build resources
+        run: bash tests/ci/prepare-disk.sh
+      - name: Build the shared production runner
+        timeout-minutes: 65
+        run: |
+          set -euo pipefail
+          source bin/dependencies
+          load_dependencies dependencies.yaml
+          mkdir -p .runtime/template-package
+          docker build --file docker/runner/Dockerfile --target cypress \
+            --build-arg RUNNER_IMAGE --build-arg PLAYWRIGHT_RUNNER_IMAGE --build-arg CHROME_VERSION \
+            --build-arg CHROME_LINUX_X64_SHA256 --build-arg CHROME_LINUX_ARM64_SHA256 \
+            --tag magelens-cookie:source .
+      - name: Run all nine cookie regressions in the packaged runner
+        timeout-minutes: 5
+        run: |
+          mkdir -p cookie-evidence
+          docker run --rm --name magelens-packaged-cookie --init --memory=4g --memory-swap=4g --cpus=2 --pids-limit=768 --shm-size=1g \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp \
+            --mount "type=bind,source=$PWD/tests/ci,target=/workspace/tests/ci,readonly" \
+            --mount "type=bind,source=$PWD/cookie-evidence,target=/evidence" \
+            magelens-cookie:source bash tests/ci/packaged-cookie.sh
+      - name: Clean owned runtime
+        if: always()
+        run: |
+          if docker container inspect magelens-packaged-cookie > /dev/null 2>&1; then
+            docker rm -fv magelens-packaged-cookie
+          fi
+      - name: Upload synthetic regression evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: packaged-cookie-evidence
+          path: cookie-evidence/*.json
+          retention-days: 1
+          if-no-files-found: error

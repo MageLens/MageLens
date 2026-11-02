@@ -4,6 +4,17 @@
 
 ARG RUNNER_IMAGE
 ARG PLAYWRIGHT_RUNNER_IMAGE
+FROM node:24.15.0-bookworm AS cypress-source
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git python3 make g++ libgtk-3-0 libgbm1 libasound2 libnss3 libatk-bridge2.0-0 \
+    libxss1 libxtst6 xvfb xauth zip unzip \
+    && rm -rf /var/lib/apt/lists/*
+ENV CI=true CYPRESS_INSTALL_BINARY=0 CHILD_CONCURRENCY=2 \
+    NODE_OPTIONS=--max-old-space-size=4096 TMPDIR=/build/tmp
+COPY package.json /input/package.json
+COPY docker/runner/cypress-source/ /input/
+RUN bash /input/build.sh
+
 FROM ${PLAYWRIGHT_RUNNER_IMAGE} AS playwright
 ARG CHROME_VERSION
 ARG CHROME_LINUX_X64_SHA256
@@ -32,10 +43,11 @@ RUN bash /opt/magelens/install-desktop.sh curl unzip \
     && bash /opt/magelens/install-chrome.sh \
     && bash /opt/magelens/install-cypress-dictionary.sh
 ENV CYPRESS_CACHE_FOLDER=/opt/cypress DISPLAY=:99 MAGELENS_RUNNER=cypress
+COPY --from=cypress-source /output/Cypress/ /opt/cypress/16.2.1/Cypress/
 WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY .runtime/template-package/ .runtime/
-RUN npm ci --no-audit --no-fund && chmod -R a+rwX /opt/cypress
+RUN CYPRESS_INSTALL_BINARY=0 npm ci --no-audit --no-fund && chmod -R a+rwX /opt/cypress
 ENV PATH=/workspace/node_modules/.bin:$PATH
 HEALTHCHECK --interval=3s --timeout=3s --start-period=10s --retries=20 \
     CMD xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && node /opt/magelens/healthcheck.cjs
