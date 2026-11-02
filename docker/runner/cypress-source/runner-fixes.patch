@@ -86,6 +86,26 @@ index 1b76edc..363a905 100644
        return ctx
      },
 
+diff --git a/packages/proxy/lib/http/util/rewriter.ts b/packages/proxy/lib/http/util/rewriter.ts
+index ac72974..0282d75 100644
+--- a/packages/proxy/lib/http/util/rewriter.ts
++++ b/packages/proxy/lib/http/util/rewriter.ts
+@@ -119,9 +119,12 @@ export async function html (html: string, opts: SecurityOpts & InjectionOpts) {
+     return insertAfter(html, htmlMatch, `<head> ${htmlToInject} </head>`)
+   }
+
+-  // if only <!DOCTYPE> content, inject <head> after doctype
+-  if (doctypeRe.test(html)) {
+-    return `${html}<head> ${htmlToInject} </head>`
++  // Documents may omit explicit html/head/body tags. The bootstrap must still
++  // precede their application scripts rather than being appended after them.
++  const doctypeMatch = html.match(doctypeRe)
++
++  if (doctypeMatch) {
++    return insertAfter(html, doctypeMatch, `<head> ${htmlToInject} </head>`)
+   }
+
+   return `<head> ${htmlToInject} </head>${html}`
 diff --git a/packages/proxy/lib/http/util/top-simulation.ts b/packages/proxy/lib/http/util/top-simulation.ts
 index 36e1384..eafec22 100644
 --- a/packages/proxy/lib/http/util/top-simulation.ts
@@ -299,6 +319,30 @@ index 0ba751a..40d42a0 100644
      it('appends cookies on the response when an array', async function () {
        const { appendStub, ctx } = prepareSameOriginContext({
          incomingRes: {
+diff --git a/packages/proxy/test/unit/http/util/rewriter.spec.ts b/packages/proxy/test/unit/http/util/rewriter.spec.ts
+index f608e0b..2000a3b 100644
+--- a/packages/proxy/test/unit/http/util/rewriter.spec.ts
++++ b/packages/proxy/test/unit/http/util/rewriter.spec.ts
+@@ -3,6 +3,19 @@ import * as rewriter from '../../../../lib/http/util/rewriter'
+
+ describe('http/util/rewriter', () => {
+   describe('html', () => {
++    it.each(['<!doctype html>', '<!DOCTYPE HTML>'])('initializes before application code when %s has no explicit document tags', async (doctype) => {
++      const body = '<h1>Application</h1><script>window.observedCypress = !!window.Cypress</script>'
++      const result = await rewriter.html(doctype + body, {
++        domainName: 'localhost',
++        wantsInjection: 'full',
++        shouldInjectDocumentDomain: false,
++      } as any)
++
++      expect(result.startsWith(`${doctype} <head> <script`)).toBe(true)
++      expect(result.endsWith(body)).toBe(true)
++      expect(result.indexOf('</head>')).toBeLessThan(result.indexOf('<h1>'))
++    })
++
+     it('injects into head by default', async () => {
+       const html = '<html><head></head><body></body></html>'
+       const opts = {
 diff --git a/packages/proxy/test/unit/http/util/top-simulation.spec.ts b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
 index 10454fb..1908262 100644
 --- a/packages/proxy/test/unit/http/util/top-simulation.spec.ts
