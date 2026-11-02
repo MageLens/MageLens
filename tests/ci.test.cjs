@@ -167,6 +167,10 @@ test('failed harness uploads sanitized failing test counts without completed rep
         run: 'failed-run', ...counts, totalPassed: 6, totalFailed: 1, message: 'SECRET',
         tests: [{title: titles[0], status: 'failed', error: 'SECRET', screenshot: '/private/SECRET'}]
     }));
+    fs.writeFileSync(path.join(coverage, 'cypress-runner-results.json'), JSON.stringify({
+        ...counts, totalTests: 10, totalPassed: 9, totalFailed: 1, error: 'SECRET',
+        build: {...provenance('x64'), credentials: 'SECRET'}
+    }));
     const entry = cases[0];
     const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/evidence.cjs')], {cwd: directory, encoding: 'utf8', env: {...process.env,
         CI_CASE: entry.id, CI_SHA: 'candidate', RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: '',
@@ -176,6 +180,10 @@ test('failed harness uploads sanitized failing test counts without completed rep
     assert.equal(report.passed, false);
     assert.equal(report.counts.totalFailed, 1);
     assert.equal(report.counts.totalPassed, 6);
+    assert.equal(report.runnerRegressionCounts.totalFailed, 1);
+    assert.equal(report.runnerRegressionCounts.totalPassed, 9);
+    const regressions = fs.readFileSync(path.join(directory, 'ci-reports', entry.id, 'cypress-runner-results.json'), 'utf8');
+    assert.doesNotMatch(regressions, /SECRET|credentials/);
     const browser = fs.readFileSync(path.join(directory, 'ci-reports', entry.id, 'browser-results.json'), 'utf8');
     assert.doesNotMatch(browser, /SECRET|private|screenshot/);
     assert.match(browser, /failed/);

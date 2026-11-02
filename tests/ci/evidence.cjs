@@ -16,6 +16,8 @@ const buildKeys = ['version', 'commit', 'buildNode', 'distribution', 'repository
 const testResults = results => ({...pick(results, ['run', ...countKeys]),
     browser: results.browser ? pick(results.browser, ['name', 'version']) : null,
     tests: (results.tests || []).map(test => pick(test, ['title', 'status']))});
+const runnerResults = results => ({...pick(results, ['browserName', 'browserVersion', 'cypressVersion', ...countKeys]),
+    build: pick(results.build || {}, buildKeys)});
 function sanitizedCoverage(source) {
     const run = read(path.join(source, 'run.json'));
     const runner = run.runner || 'cypress';
@@ -38,9 +40,7 @@ function sanitizedCoverage(source) {
         }))}
     };
     if (runner === 'cypress') {
-        const cookies = read(path.join(source, 'cypress-runner-results.json'));
-        projected['cypress-runner-results.json'] = {...pick(cookies, ['browserName', 'browserVersion', 'cypressVersion', ...countKeys]),
-            build: pick(cookies.build || {}, buildKeys)};
+        projected['cypress-runner-results.json'] = runnerResults(read(path.join(source, 'cypress-runner-results.json')));
     }
     return projected;
 }
@@ -66,6 +66,12 @@ function writeEvidence() {
                 report.counts = pick(safe, countKeys);
                 report.browser = safe.browser;
                 fs.writeFileSync(`${directory}/browser-results.json`, JSON.stringify(safe, null, 2) + '\n');
+            }
+            const regressions = `.runtime/e2e/${project}/coverage/cypress-runner-results.json`;
+            if (entry.runner === 'cypress' && fs.existsSync(regressions)) {
+                const safe = runnerResults(read(regressions));
+                report.runnerRegressionCounts = pick(safe, countKeys);
+                fs.writeFileSync(`${directory}/cypress-runner-results.json`, JSON.stringify(safe, null, 2) + '\n');
             }
         }
     } catch { report.diagnostics = 'Browser results were incomplete or unreadable.'; }
