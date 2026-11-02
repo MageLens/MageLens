@@ -12,6 +12,7 @@ const pick = (value, keys) => Object.fromEntries(keys.filter(key => key in value
 const blog = file => file.includes('/Application/Blog/');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const countKeys = ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending'];
+const buildKeys = ['version', 'commit', 'buildNode', 'distribution', 'repository', 'architecture', 'patchSha256'];
 const testResults = results => ({...pick(results, ['run', ...countKeys]),
     browser: results.browser ? pick(results.browser, ['name', 'version']) : null,
     tests: (results.tests || []).map(test => pick(test, ['title', 'status']))});
@@ -21,9 +22,11 @@ function sanitizedCoverage(source) {
     const results = read(path.join(source, `${runner}-results.json`));
     const templates = read(path.join(source, 'templates/coverage-summary.json'));
     // Project fixture credentials, vendor source, inline code and request URLs never leave the runner.
-    return {
+    const installation = read(path.join(source, 'installation.json'));
+    const projected = {
         'run.json': pick(run, ['id', 'runner']),
-        'installation.json': pick(read(path.join(source, 'installation.json')), ['platform', 'version', 'phpVersion', 'nodeVersion', 'theme', 'runner']),
+        'installation.json': {...pick(installation, ['platform', 'version', 'phpVersion', 'nodeVersion', 'theme', 'runner']),
+            ...(installation.runnerBuild ? {runnerBuild: pick(installation.runnerBuild, buildKeys)} : {})},
         'project-fixtures.json': {Application_Blog: {themePaths: read(path.join(source, 'project-fixtures.json')).Application_Blog.themePaths}},
         [`${runner}-results.json`]: testResults(results),
         'summary.json': pick(read(path.join(source, 'summary.json')), ['run', 'generatedAt', 'metrics']),
@@ -34,6 +37,12 @@ function sanitizedCoverage(source) {
             path: entry.path, statements: entry.statements.map(statement => pick(statement, ['start', 'syntax', 'hits']))
         }))}
     };
+    if (runner === 'cypress') {
+        const cookies = read(path.join(source, 'cypress-runner-results.json'));
+        projected['cypress-runner-results.json'] = {...pick(cookies, ['browserName', 'browserVersion', 'cypressVersion', ...countKeys]),
+            build: pick(cookies.build || {}, buildKeys)};
+    }
+    return projected;
 }
 function writeEvidence() {
     const entry = cases.find(entry => entry.id === process.env.CI_CASE);

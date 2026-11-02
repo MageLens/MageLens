@@ -9,4 +9,5 @@
 
 # Bash entry points must also be executable from WSL after a Windows checkout.
 *.sh text eol=lf
+*.patch text eol=lf
 /bin/* text eol=lf

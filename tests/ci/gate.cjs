@@ -8,6 +8,7 @@ const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {cases} = require('./cases.cjs');
 const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
+const {provenance} = require('../../docker/runner/cypress-source/provenance.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 function verifyCase(entry, evidence, directory, context) {
     for (const key of ['id', 'os', 'platform', 'theme', 'runner']) assert.equal(evidence[key], entry[key], key);
@@ -34,6 +35,13 @@ function verifyCase(entry, evidence, directory, context) {
     assert.deepEqual(evidence.dependencies, pins, 'Dependency provenance differs');
     assert.deepEqual(results.browser, {name: entry.runner === 'cypress' ? 'chrome-for-testing' : 'chrome', version: pins.CHROME_VERSION}, 'Wrong or missing Chrome browser');
     assert.deepEqual(evidence.browser, results.browser, 'Browser evidence differs');
+    if (entry.runner === 'cypress') {
+        assert.deepEqual(installation.runnerBuild, provenance(evidence.architecture), 'Wrong or missing Cypress source build');
+        const cookies = read(path.join(directory, 'cypress-runner-results.json'));
+        assert.deepEqual(cookies, {browserName: 'chrome-for-testing', browserVersion: pins.CHROME_VERSION,
+            cypressVersion: pins.CYPRESS_VERSION, totalTests: 10, totalPassed: 10, totalFailed: 0, totalSkipped: 0, totalPending: 0,
+            build: installation.runnerBuild}, 'Incomplete runner regressions or stale source build');
+    }
     assert.equal(installation.version, pins[entry.platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION']);
     for (const type of ['php', 'js', 'templates']) {
         const percent = summary.metrics[type]?.percent;

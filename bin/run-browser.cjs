@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const cypress = require('cypress');
+require('../docker/runner/cypress-source/provenance.cjs').verifyInstalled();
 const {specPatterns, warmupPaths} = require('./project.cjs');
 const warmup = process.argv.includes('--warmup');
 const run = JSON.parse(fs.readFileSync('coverage/run.json'));

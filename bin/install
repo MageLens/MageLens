@@ -155,7 +155,7 @@ fi
 dc exec -T runner timeout --signal=TERM --kill-after=10s 120s node /opt/magelens/browser-smoke.cjs
 dc exec -T app sh -c 'curl --fail --silent --show-error --insecure --retry 30 --retry-connrefused \
     --retry-delay 2 --max-time 5 --output /dev/null "https://localhost:$APPLICATION_HTTPS_PORT/"'
-printf '4\n' > .runtime/installed
+printf '5\n' > .runtime/installed
 say "MageLens is ready. Open $(dc exec -T phpfpm bash /application/docker/php/base-url.sh --print)"
 say "Watch tests at $(dc exec -T phpfpm bash /application/docker/php/base-url.sh --print-viewer)"
 printf 'Installed %s %s, %s with %s. Run ./bin/run-coverage (no host Node required).\n' "$MAGELENS_PLATFORM_NAME" "$MAGELENS_PLATFORM_VERSION" "$MAGELENS_THEME" "$MAGELENS_RUNNER"

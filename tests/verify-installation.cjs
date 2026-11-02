@@ -12,6 +12,10 @@ const manifest = JSON.parse(fs.readFileSync('package.json'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json'));
 const selected = runner === 'cypress' ? ['cypress', '@cypress/code-coverage'] : ['@playwright/test', 'playwright', 'playwright-core'];
 const rejected = runner === 'cypress' ? ['@playwright/test', 'playwright', 'playwright-core'] : ['cypress', '@cypress/code-coverage'];
+let runnerBuild;
+if (runner === 'cypress') {
+    runnerBuild = require('../docker/runner/cypress-source/provenance.cjs').verifyInstalled();
+}
 for (const name of selected) assert.ok(fs.existsSync(`node_modules/${name}/package.json`), `Missing selected runner package: ${name}`);
 for (const name of rejected) {
     assert.equal(manifest.devDependencies[name], undefined, `Unselected dependency in manifest: ${name}`);
@@ -53,5 +57,5 @@ assert.ok(fs.existsSync(`src/vendor/${vendor}/framework/Component/ComponentRegis
 assert.equal(JSON.parse(fs.readFileSync('src/.magelens-source.json')).platform, platform);
 assert.equal(composer.packages.some(pkg => pkg.name === 'hyva-themes/magento2-default-theme'), false);
 assert.equal(composer.packages.some(pkg => pkg.name === 'hyva-themes/magento2-default-theme-csp'), theme === 'hyva');
-fs.writeFileSync('.runtime/e2e-installation.json', JSON.stringify({platform, version, phpVersion, nodeVersion, theme, runner}) + '\n');
+fs.writeFileSync('.runtime/e2e-installation.json', JSON.stringify({platform, version, phpVersion, nodeVersion, theme, runner, runnerBuild}) + '\n');
 console.log(`Verified isolated ${platform}/${theme}/${runner} installation, Node.js ${nodeVersion}, packages, browsers and persisted selection.`);

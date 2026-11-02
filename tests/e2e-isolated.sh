@@ -159,7 +159,10 @@ fi
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
-    if [[ "$runner" == cypress ]]; then ./bin/runner node tests/cypress-runtime.cjs; fi
+    if [[ "$runner" == cypress ]]; then
+        ./bin/runner node tests/cypress-runtime.cjs
+        ./bin/runner node tests/cypress-regressions.cjs
+    fi
     cp .runtime/e2e-installation.json coverage/installation.json
     mkdir -p "$artifacts/$runner"
     cp -a coverage "$artifacts/$runner/"

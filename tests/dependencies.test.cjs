@@ -327,7 +327,7 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
     assert.equal(calls.some(call => call.args.includes('exec') && call.args.includes('runner') && call.args.includes('cypress') && call.args.includes('verify')), runner === 'cypress');
     assert.ok(calls.some(call => call.args.includes('--print-viewer')), 'Every runner advertises the viewer');
     assert.ok(calls.some(call => call.args.includes('/opt/magelens/browser-smoke.cjs')));
-    assert.equal(fs.readFileSync(path.join(directory, '.runtime/installed'), 'utf8'), '4\n');
+    assert.equal(fs.readFileSync(path.join(directory, '.runtime/installed'), 'utf8'), '5\n');
 });
 }
 }

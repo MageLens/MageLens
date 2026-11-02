@@ -12,6 +12,7 @@ const {cases} = require('./ci/cases.cjs');
 const {verifyCase} = require('./ci/gate.cjs');
 const {sanitizedCoverage} = require('./ci/evidence.cjs');
 const {writeCoverage} = require('./ci-coverage-fixture.cjs');
+const {provenance} = require('../docker/runner/cypress-source/provenance.cjs');
 const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
 const titles = [
     'creates a category and illustrated article, publishes, moderates comments, and deletes records',
@@ -28,7 +29,10 @@ function fixture(t) {
     const write = (file, data) => {fs.mkdirSync(path.dirname(`${directory}/${file}`), {recursive: true}); fs.writeFileSync(`${directory}/${file}`, JSON.stringify(data));};
     const entry = cases[0];
     write('run.json', {id: 'fresh', runner: entry.runner, sources: {private: 'SECRET'}});
-    write('installation.json', {...entry, version: pins.MAGENTO_VERSION, credential: 'SECRET'});
+    write('installation.json', {...entry, version: pins.MAGENTO_VERSION, credential: 'SECRET', runnerBuild: provenance('x64')});
+    write('cypress-runner-results.json', {browserName: 'chrome-for-testing', browserVersion: pins.CHROME_VERSION,
+        cypressVersion: pins.CYPRESS_VERSION, totalTests: 10, totalPassed: 10, totalFailed: 0, totalSkipped: 0, totalPending: 0,
+        build: provenance('x64')});
     const browser = {name: 'chrome-for-testing', version: pins.CHROME_VERSION};
     write(`${entry.runner}-results.json`, {run: 'fresh', browser, ...counts, tests: titles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
     write('project-fixtures.json', {Application_Blog: {themePaths: ['Magento/luma'], password: 'SECRET'}});
@@ -74,6 +78,24 @@ test('final gate fails when reports are missing even if all job results claim su
     assert.equal(report.expectedCases, 9);
     assert.equal(report.expectedAcceptanceTests, 63);
     assert.match(result.stdout, /Linux comparison incomplete/);
+});
+test('case gate rejects missing or incomplete runner regressions and stale source builds', t => {
+    const {directory, entry, evidence, context} = fixture(t);
+    const file = path.join(directory, 'cypress-runner-results.json');
+    const complete = JSON.parse(fs.readFileSync(file));
+    for (const patch of [{totalTests: 0}, {totalPassed: 8}, {totalFailed: 1}, {totalPending: 1}, {totalSkipped: 1},
+        {cypressVersion: '16.2.0'}, {browserName: 'electron'}, {build: {...complete.build, patchSha256: 'stale'}}]) {
+        fs.writeFileSync(file, JSON.stringify({...complete, ...patch}));
+        assert.throws(() => verifyCase(entry, evidence, directory, context), /runner regressions|source build/);
+    }
+    fs.rmSync(file);
+    assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
+    fs.writeFileSync(file, JSON.stringify(complete));
+    const installationFile = path.join(directory, 'installation.json');
+    const installation = JSON.parse(fs.readFileSync(installationFile));
+    delete installation.runnerBuild;
+    fs.writeFileSync(installationFile, JSON.stringify(installation));
+    assert.throws(() => verifyCase(entry, evidence, directory, context), /Cypress source build/);
 });
 test('case gate rejects missing, different or unpinned browser results', t => {
     const {directory, entry, evidence, context} = fixture(t);
