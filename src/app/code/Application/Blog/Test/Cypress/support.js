@@ -2,10 +2,31 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+Cypress.on('window:before:load', observeStorefrontReadiness);
+
 export const fixtures = () => Cypress.expose('projectFixtures').Application_Blog;
 export const headers = () => ({'x-application-coverage': Cypress.expose('coverageRun')});
 export const get = (name) => cy.get(`[data-cy="${name}"]`);
+export function waitForStorefront() {
+    if (fixtures().themePaths[0] === 'Hyva/default-csp') {
+        cy.window().its('__magelensStorefrontReady').should('deep.equal', {messages: true, privateContent: true});
+    }
+}
+export function storefrontMessage(type, text) {
+    // Hyva also has an unrelated hidden authentication-popup .message.error.
+    // Use the same storefront message identifiers as the Playwright suite.
+    const selector = `.message-${type}, [ui-id="message-${type}"]`;
+    cy.get(selector).should('contain', text);
+    waitForStorefront();
+    return cy.get(selector).should(elements => {
+        const messages = [...elements].map(element => element.textContent.trim());
+        expect(messages, `Exactly one ${type} response: ${JSON.stringify(messages)}`).to.have.length(1);
+        expect(messages[0]).to.contain(text);
+    });
+}
 export function waitForBlog() {
+    waitForStorefront();
     // Magento loads AMD components and Knockout templates after window:load.
     // Treat that bootstrap as page loading; ordinary interactions keep their
     // shorter timeout. Cached pages resolve this check immediately.

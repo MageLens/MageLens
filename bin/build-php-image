@@ -15,7 +15,24 @@ expected="FROM php:$series-fpm-bookworm AS base"
 mkdir -p "$ROOT/.runtime"
 generated="$ROOT/.runtime/php-base.Dockerfile"
 awk -v expected="$expected" -v image="$PHP_IMAGE" \
-    '{ if ($0 == expected) print "FROM " image " AS base"; else print }' "$recipe" > "$generated"
+    '
+    $0 == expected { print "FROM " image " AS base"; next }
+    /^RUN pecl channel-update pecl.php.net && pecl install \\$/ {
+        # PECL can return success for a batch when one package was not installed.
+        # Check each pinned extension in the same layer, before it can be cached.
+        print "RUN pecl channel-update pecl.php.net \\"; extensions = 1; next
+    }
+    extensions && /^    [a-zA-Z0-9_]+-[0-9][^[:space:]]* \\$/ {
+        name = $1; sub(/-[0-9].*$/, "", name)
+        print "  && pecl install " $1 " \\"
+        print "  && test -s \"$(php-config --extension-dir)/" name ".so\" \\"
+        next
+    }
+    extensions && /^  && pecl clear-cache/ { extensions = 0 }
+    extensions { print "Unsupported upstream PECL installation recipe" > "/dev/stderr"; exit 1 }
+    { print }
+    END { if (extensions) exit 1 }
+    ' "$recipe" > "$generated"
 say "Rebuilding Mark Shust PHP $series with official PHP $PHP_VERSION"
-download_with_retry docker build --pull --target base --file "$generated" \
+docker build --pull --target base --file "$generated" \
     --tag "$APPLICATION_PHP_IMAGE" "$context"

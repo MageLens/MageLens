@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      coverage-tooling:
+        patterns: ['*']
+  - package-ecosystem: composer
+    directory: /docker/php
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2

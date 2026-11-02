@@ -70,6 +70,8 @@ Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. A
 
 Both browser runners and their warm-up browsers are visible through the same read-only viewer at `https://<domain>:6080/` by default. `RUNNER_VIEW_PORT` overrides the port; the older `CYPRESS_VIEW_PORT` remains a fallback. Host Node, browsers and a graphical desktop are not required.
 
+Use the pinned Chrome for Testing build for every Cypress and Playwright journey, warm-up and browser recovery check. Do not substitute Electron or bundled Chromium. Record the actual browser name and version in reports; changing the browser requires fresh CI qualification.
+
 Automated browser scenarios disable page-change animations. Uncaught application errors still fail the run.
 
 Open `coverage/index.html` after a successful run. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. Read measurement warnings before interpreting template percentages.
@@ -80,19 +82,21 @@ Run installation and coverage one at a time. Do not bypass `.runtime/workflow.lo
 
 ## Validate changes
 
+CI exists to expose real gaps and problems in the user journey: installation, daily commands, storefront and Admin flows, coverage collection, and recovery. Investigate failures and fix their root causes in the product or test harness. Do not add CI-only workarounds that hide defects, bypass real user paths, weaken assertions or coverage, skip required cases, suppress application errors, or retry away functional failures. Runner setup and resource adaptations must preserve those journeys and acceptance checks. If a supported journey cannot run under the allowed infrastructure constraints, report incomplete coverage and the demonstrated blocker.
+
 For host-side integration checks, install the locked dependencies with `npm ci --ignore-scripts`, then run `npm run test:integration`. Target an existing relevant test first; use the full integration suite for shared orchestration changes. PHP checks live in `tests/*.test.php`; inspect their prerequisites before selecting host or container execution. Use `bash -n`, `node --check` and `php -l` for changed scripts.
 
-For an isolated Mage-OS installation and real browser tests without Marketplace credentials:
+Run the full E2E matrix and release qualification in GitHub Actions. Focused local browser reproductions, development and debugging are allowed; use isolated resources, bound RAM/disk use and preserve existing applications. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Static and unit/integration checks remain available locally; `npm run test:integration` limits concurrency to two workers to bound memory use.
 
-```bash
-MAGELENS_E2E_PLATFORM=mageos bash tests/e2e-isolated.sh
-```
+The CI workflow checks all eight Linux combinations (two platforms, two storefronts and two runners), plus Mage-OS/Luma/Cypress on `windows-latest`. macOS CI is explicitly deferred because the hosted installation is too slow; Apple Silicon also awaits a self-hosted Mac. Do not claim macOS qualification. Actual host feasibility is required; a Linux job cannot stand in for Windows. The final `Required CI gate` requires all nine active cases, 63 acceptance scenarios, every report and the eight-way Linux coverage comparison. Missing, skipped, canceled and incomplete required checks block qualification.
 
-Select `MAGELENS_E2E_THEME=luma|hyva` and `MAGELENS_E2E_RUNNER=cypress|playwright` for a particular combination. The default platform is Magento Open Source. Supply its credentials using `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`, as described in [tests/README.md](tests/README.md).
+Compare complete coverage outcomes within each theme across platforms, browser runners and operating systems: Luma with Luma and Hyvä CSP with Hyvä CSP. Include every measured application, theme and vendor file, PHP lines, JavaScript statements/functions/branches, template execution, DOM observations, source fingerprints and measurement warnings. Equal headline percentages are insufficient. Normalize only host paths, line endings, ordering, run metadata and repeated-hit frequencies; covered/uncovered outcomes, inventories and totals must match. Investigate discrepancies rather than excluding files or allowing a tolerance. Inspect `coverage/equivalence.json` and `theme-report-comparison.json` alongside the original eight-way comparison before declaring CI complete.
 
-`npm run test:e2e:matrix` checks all eight combinations: two platforms, two storefronts and two runners. It checks the installed platform/version, the same acceptance scenarios, coverage reports, source preservation, viewer access and browser recovery after graceful and forced stops. It also compares coverage outcomes for shared application code. Use the full matrix for changes affecting shared installation or coverage behavior. The GitHub workflow publishes releases; it does not automatically run this matrix for pull requests.
+Local development and CI use the same runner Dockerfile and harness. Cypress 16.2.1 is rebuilt from its pinned upstream source with the cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`; do not duplicate it in CI scripts or application code. Each Cypress case must pass the eleven runner regressions (nine cookie/authorization journeys, document initialization and a delayed-response check) and record matching source/patch provenance. Review the patch when updating Cypress; remove the source build after an upstream release passes the retained regressions. Existing installations must rerun installation with their saved selections to rebuild the runner.
 
-Isolated checks retain reports and logs under `.runtime/e2e/` and remove only their own temporary Compose projects and volumes. See [tests/README.md](tests/README.md) for port overrides, retained failure environments and testing an unpublished template-coverage package.
+Fork pull request runs are uncredentialed. Same-repository PRs require protected-environment approval of their exact merge candidate before Magento tests run. For full qualification, review the exact branch commit, then dispatch `gh workflow run ci.yml --ref BRANCH` and approve the protected `magento-e2e` environment for that SHA. Unreviewed PRs must never receive Marketplace secrets; do not approve their environment deployment. Never approve an unreviewed commit. Retrieve the sanitized `case-*-attempt-N` and `qualification-N` artifacts from the run; see [tests/README.md](tests/README.md) for setup and diagnostics. Do not copy CI credentials or failed installations back to the local machine.
+
+Fix failures and push a new candidate to run CI again. Rerun all jobs on the final candidate: artifacts from different attempts cannot be combined. Automatic publishing consumes successful exact-commit CI evidence and verifies the release tag targets that commit. Do not merge or publish unless requested.
 
 ## Preserve application data and report integrity
 

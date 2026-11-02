@@ -1,0 +1,708 @@
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+
+diff --git a/packages/network-interception/lib/core/document-preparation.ts b/packages/network-interception/lib/core/document-preparation.ts
+index b464348..cd5ccb3 100644
+--- a/packages/network-interception/lib/core/document-preparation.ts
++++ b/packages/network-interception/lib/core/document-preparation.ts
+@@ -53,7 +53,11 @@ function resolveInjectionLevelInner (facts: InjectionLevelFacts): InjectionLevel
+     return false
+   }
+
+-  if (facts.isInitial && isHTMLLike) {
++  // The browser identifies actual document requests in the AUT frame. Its
++  // identity remains authoritative when the shared initial cookie is absent
++  // or cleared during navigation; partial injection would omit the driver and
++  // window:before:load hooks from the new application document.
++  if ((facts.isInitial || facts.isAUTFrame) && isHTMLLike) {
+     return 'full'
+   }
+
+diff --git a/packages/network-interception/lib/ports/http-interception.ts b/packages/network-interception/lib/ports/http-interception.ts
+index 0eea440..0de1732 100644
+--- a/packages/network-interception/lib/ports/http-interception.ts
++++ b/packages/network-interception/lib/ports/http-interception.ts
+@@ -12,6 +12,7 @@ export type HttpRequest = {
+   headers?: HttpHeaders
+   body?: HttpBody
+   resourceType?: ResourceType
++  responseTimeout?: number
+   // Request-stage route-match result, threaded through to the response pause
+   // so classification agrees with the interception that actually ran.
+   hadMatchingRoutes?: boolean
+diff --git a/packages/network-interception/test/unit/document-preparation.spec.ts b/packages/network-interception/test/unit/document-preparation.spec.ts
+index 6e81c43..2c02f19 100644
+--- a/packages/network-interception/test/unit/document-preparation.spec.ts
++++ b/packages/network-interception/test/unit/document-preparation.spec.ts
+@@ -3,6 +3,27 @@ import { resolveInjectionLevel, resolveWantsSecurityRemoved } from '../../lib/co
+
+ describe('core/document-preparation', () => {
+   describe('resolveInjectionLevel', () => {
++    const documentFacts = {
++      hasFileServerError: false,
++      isInitial: false,
++      isHTML: true,
++      isRenderedHTML: true,
++      isReqMatchSuperDomainOrigin: true,
++      isAUTFrame: true,
++      urlDoesNotMatchPolicyBasedOnDomain: false,
++    }
++
++    it('fully initializes an identified AUT document without the initial cookie', () => {
++      expect(resolveInjectionLevel(documentFacts)).toBe('full')
++      expect(resolveInjectionLevel({ ...documentFacts, isRenderedHTML: false })).toBe('full')
++    })
++
++    it('does not add the AUT bootstrap to child frames or HTML fetch responses', () => {
++      expect(resolveInjectionLevel({ ...documentFacts, isAUTFrame: false })).toBe('partial')
++      expect(resolveInjectionLevel({ ...documentFacts, isAUTFrame: false, isRenderedHTML: false })).toBe(false)
++      expect(resolveInjectionLevel({ ...documentFacts, isAUTFrame: false, isReqMatchSuperDomainOrigin: false })).toBe(false)
++    })
++
+     it('returns partial for file-server errors on non-initial loads', () => {
+       expect(resolveInjectionLevel({
+         hasFileServerError: true,
+diff --git a/packages/proxy/lib/adapters/http-codec.ts b/packages/proxy/lib/adapters/http-codec.ts
+index 1b76edc..363a905 100644
+--- a/packages/proxy/lib/adapters/http-codec.ts
++++ b/packages/proxy/lib/adapters/http-codec.ts
+@@ -47,6 +47,7 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
+         headers: ctx.req.headers as HttpRequest['headers'],
+         body: ctx.req.body,
+         resourceType: ctx.req.resourceType,
++        ...(ctx.req.responseTimeout === undefined ? {} : { responseTimeout: ctx.req.responseTimeout }),
+       }
+     },
+
+@@ -67,6 +68,10 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
+         ctx.req.body = request.body
+       }
+
++      if (request.responseTimeout !== undefined) {
++        ctx.req.responseTimeout = request.responseTimeout
++      }
++
+       return ctx
+     },
+
+diff --git a/packages/proxy/lib/http/util/rewriter.ts b/packages/proxy/lib/http/util/rewriter.ts
+index ac72974..0282d75 100644
+--- a/packages/proxy/lib/http/util/rewriter.ts
++++ b/packages/proxy/lib/http/util/rewriter.ts
+@@ -119,9 +119,12 @@ export async function html (html: string, opts: SecurityOpts & InjectionOpts) {
+     return insertAfter(html, htmlMatch, `<head> ${htmlToInject} </head>`)
+   }
+
+-  // if only <!DOCTYPE> content, inject <head> after doctype
+-  if (doctypeRe.test(html)) {
+-    return `${html}<head> ${htmlToInject} </head>`
++  // Documents may omit explicit html/head/body tags. The bootstrap must still
++  // precede their application scripts rather than being appended after them.
++  const doctypeMatch = html.match(doctypeRe)
++
++  if (doctypeMatch) {
++    return insertAfter(html, doctypeMatch, `<head> ${htmlToInject} </head>`)
+   }
+
+   return `<head> ${htmlToInject} </head>${html}`
+diff --git a/packages/proxy/lib/http/util/top-simulation.ts b/packages/proxy/lib/http/util/top-simulation.ts
+index 36e1384..eafec22 100644
+--- a/packages/proxy/lib/http/util/top-simulation.ts
++++ b/packages/proxy/lib/http/util/top-simulation.ts
+@@ -1,4 +1,5 @@
+ import type { HttpMiddlewareThis } from '../index'
++import { urlOriginsMatch } from '@packages/network-tools'
+
+ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean => {
+   const currentAUTUrl = ctx.getAUTUrl()
+@@ -8,7 +9,23 @@ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean
+     return false
+   }
+
+-  // only simulate top if the AUT is NOT the primary super domain origin, meaning that we should treat the AUT as top
+-  // or the request is the AUT frame, which is common for redirects and navigations.
+-  return !ctx.remoteStates.isPrimarySuperDomainOrigin(currentAUTUrl) || ctx.req.isAUTFrame
++  if (!ctx.remoteStates.isPrimarySuperDomainOrigin(currentAUTUrl)) {
++    return true
++  }
++
++  if (!ctx.req.isAUTFrame) {
++    return false
++  }
++
++  // A direct navigation within the primary origin already has the browser's
++  // native cookie policy. Simulating it would overwrite document.cookie changes
++  // with stale jar values, on both the request and the page-load response.
++  // Chrome's Fetch interception omits Fetch Metadata headers. Its correlated
++  // pre-request tracks the whole redirect chain, so same-origin redirects can
++  // stay native while chains that visited another origin retain simulation.
++  const fetchSite = ctx.req.headers?.['sec-fetch-site']
++  const isDirectPrimaryNavigation = fetchSite === 'same-origin'
++    || (fetchSite === undefined && ctx.req.browserPreRequest?.hasCrossOriginRedirect === false)
++
++  return !(isDirectPrimaryNavigation && urlOriginsMatch(currentAUTUrl, ctx.req.proxiedUrl))
+ }
+diff --git a/packages/proxy/lib/types.ts b/packages/proxy/lib/types.ts
+index 27f8435..1401e9f 100644
+--- a/packages/proxy/lib/types.ts
++++ b/packages/proxy/lib/types.ts
+@@ -90,6 +90,8 @@ export type BrowserPreRequest = {
+   initiator?: Protocol.Network.Initiator
+   documentURL?: string
+   hasRedirectResponse?: boolean
++  // True if any hop in this browser request's redirect chain changed origin.
++  hasCrossOriginRedirect?: boolean
+   cdpRequestWillBeSentTimestamp?: number
+   cdpRequestWillBeSentReceivedTimestamp?: number
+ }
+diff --git a/packages/proxy/test/unit/adapters/http-codec.spec.ts b/packages/proxy/test/unit/adapters/http-codec.spec.ts
+index 04fe5bf..6311321 100644
+--- a/packages/proxy/test/unit/adapters/http-codec.spec.ts
++++ b/packages/proxy/test/unit/adapters/http-codec.spec.ts
+@@ -22,6 +22,18 @@ describe('proxyHttpCodec', () => {
+     expect(ctx.id).to.equal(request.id)
+   })
+
++  it('preserves the configured response timeout through the middleware bridge', () => {
++    const ctx = createCtx()
++
++    ctx.req.responseTimeout = 60000
++    const request = proxyHttpCodec.decodeRequest(ctx)
++
++    expect(request.responseTimeout).to.equal(60000)
++    request.responseTimeout = 1000
++    proxyHttpCodec.encodeRequest(request)
++    expect(ctx.req.responseTimeout).to.equal(1000)
++  })
++
+   it('copies resourceType from the middleware request onto the neutral request', () => {
+     const ctx = createCtx()
+
+diff --git a/packages/proxy/test/unit/http/request-middleware.spec.ts b/packages/proxy/test/unit/http/request-middleware.spec.ts
+index cbd6c28..be85b2e 100644
+--- a/packages/proxy/test/unit/http/request-middleware.spec.ts
++++ b/packages/proxy/test/unit/http/request-middleware.spec.ts
+@@ -430,6 +430,73 @@ describe('http/request-middleware', () => {
+   describe('MaybeAttachCrossOriginCookies', () => {
+     const { MaybeAttachCrossOriginCookies } = RequestMiddleware
+
++    it.each([
++      ['message=updated'],
++      ['message='],
++      [],
++      ['message=path-specific', 'message=domain-wide'],
++    ])('preserves primary-origin browser cookies %j instead of replaying the jar', async (...browserCookies) => {
++      const ctx = await getContext(browserCookies, ['message=previous'])
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++      ctx.req.headers['sec-fetch-site'] = 'same-origin'
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toEqual(browserCookies.join('; ') || undefined)
++    })
++
++    it.each(['cross-site', 'same-site', 'none', undefined])('retains simulated cookies on a %s redirect chain', async (fetchSite) => {
++      const ctx = await getContext([], ['message=previous'])
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++      ctx.req.headers['sec-fetch-site'] = fetchSite
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toEqual('message=previous')
++    })
++
++    it('preserves browser cookies for a direct primary navigation without Fetch Metadata', async () => {
++      const ctx = await getContext([], ['message=previous'])
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++      ctx.req.browserPreRequest = { hasCrossOriginRedirect: false }
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toBeUndefined()
++    })
++
++    it('retains cookie simulation for a correlated redirect without Fetch Metadata', async () => {
++      const ctx = await getContext([], ['message=previous'])
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++      ctx.req.browserPreRequest = { hasCrossOriginRedirect: true }
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toEqual('message=previous')
++    })
++
++    it('still attaches cookies when navigating away from the primary origin', async () => {
++      const ctx = await getContext([], ['message=previous'], 'http://primary.test', 'http://secondary.test')
++
++      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toEqual('message=previous')
++    })
++
++    it('still attaches cookies when returning from a secondary origin', async () => {
++      const ctx = await getContext([], ['message=previous'], 'http://secondary.test', 'http://primary.test')
++
++      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
++
++      expect(ctx.req.headers.cookie).toEqual('message=previous')
++    })
++
+     it('is a noop if no current AUT URL', async () => {
+       const ctx = await getContext()
+
+diff --git a/packages/proxy/test/unit/http/response-middleware.spec.ts b/packages/proxy/test/unit/http/response-middleware.spec.ts
+index 0ba751a..40d42a0 100644
+--- a/packages/proxy/test/unit/http/response-middleware.spec.ts
++++ b/packages/proxy/test/unit/http/response-middleware.spec.ts
+@@ -738,7 +738,7 @@ describe('http/response-middleware', function () {
+       expect(ctx.res.wantsInjection).toEqual('full')
+     })
+
+-    it('otherwise, partial injection is set', async function () {
++    it('retains partial injection for rendered HTML outside the AUT frame', async function () {
+       prepareContext({
+         renderedHTMLOrigins: {},
+         getRenderedHTMLOrigins () {
+@@ -746,7 +746,7 @@ describe('http/response-middleware', function () {
+         },
+         req: {
+           proxiedUrl: 'http://127.0.0.1:3501/',
+-          isAUTFrame: true,
++          isAUTFrame: false,
+           cookies: {},
+           headers: {
+             'accept': [
+@@ -766,7 +766,7 @@ describe('http/response-middleware', function () {
+       expect(ctx.res.wantsInjection).toEqual('partial')
+     })
+
+-    it('injects partial when request is for top-level origin', async function () {
++    it('fully initializes the identified AUT document without the initial cookie', async function () {
+       prepareContext({
+         renderedHTMLOrigins: {},
+         getRenderedHTMLOrigins () {
+@@ -791,7 +791,7 @@ describe('http/response-middleware', function () {
+       })
+
+       await testMiddleware([SetInjectionLevel], ctx)
+-      expect(ctx.res.wantsInjection).toEqual('partial')
++      expect(ctx.res.wantsInjection).toEqual('full')
+     })
+
+     it('does not set Origin-Agent-Cluster header to false when injection is not expected', async function () {
+@@ -1236,6 +1236,21 @@ describe('http/response-middleware', function () {
+   describe('MaybeCopyCookiesFromIncomingRes', function () {
+     const { MaybeCopyCookiesFromIncomingRes } = ResponseMiddleware
+
++    it.each(['same-origin', undefined])('leaves native primary-navigation cookie application to the browser with Fetch Metadata %s', async function (fetchSite) {
++      const { appendStub, ctx } = prepareSameOriginContext({
++        req: {
++          isAUTFrame: true,
++          headers: { 'sec-fetch-site': fetchSite },
++          browserPreRequest: { hasCrossOriginRedirect: false },
++        },
++      })
++
++      await testMiddleware([MaybeCopyCookiesFromIncomingRes], ctx)
++
++      expect(appendStub).toHaveBeenCalledExactlyOnceWith('Set-Cookie', 'cookie=value')
++      expect(ctx.serverBus.emit).not.toHaveBeenCalled()
++    })
++
+     it('appends cookies on the response when an array', async function () {
+       const { appendStub, ctx } = prepareSameOriginContext({
+         incomingRes: {
+diff --git a/packages/proxy/test/unit/http/util/rewriter.spec.ts b/packages/proxy/test/unit/http/util/rewriter.spec.ts
+index f608e0b..2000a3b 100644
+--- a/packages/proxy/test/unit/http/util/rewriter.spec.ts
++++ b/packages/proxy/test/unit/http/util/rewriter.spec.ts
+@@ -3,6 +3,19 @@ import * as rewriter from '../../../../lib/http/util/rewriter'
+
+ describe('http/util/rewriter', () => {
+   describe('html', () => {
++    it.each(['<!doctype html>', '<!DOCTYPE HTML>'])('initializes before application code when %s has no explicit document tags', async (doctype) => {
++      const body = '<h1>Application</h1><script>window.observedCypress = !!window.Cypress</script>'
++      const result = await rewriter.html(doctype + body, {
++        domainName: 'localhost',
++        wantsInjection: 'full',
++        shouldInjectDocumentDomain: false,
++      } as any)
++
++      expect(result.startsWith(`${doctype} <head> <script`)).toBe(true)
++      expect(result.endsWith(body)).toBe(true)
++      expect(result.indexOf('</head>')).toBeLessThan(result.indexOf('<h1>'))
++    })
++
+     it('injects into head by default', async () => {
+       const html = '<html><head></head><body></body></html>'
+       const opts = {
+diff --git a/packages/proxy/test/unit/http/util/top-simulation.spec.ts b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
+index 10454fb..1908262 100644
+--- a/packages/proxy/test/unit/http/util/top-simulation.spec.ts
++++ b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
+@@ -5,6 +5,48 @@ import { doesTopNeedToBeSimulated } from '../../../../lib/http/util/top-simulati
+ describe('.doesTopNeedToBeSimulated', () => {
+   const autUrl = 'http://localhost:8080'
+
++  it.each([
++    ['same-origin', undefined, false],
++    [undefined, false, false],
++    [undefined, true, true],
++    [undefined, undefined, true],
++    ['cross-site', false, true],
++    ['same-site', false, true],
++    ['none', false, true],
++  ])('handles primary navigation with fetch site %s and redirect state %s', (fetchSite, hasCrossOriginRedirect, expected) => {
++    const ctx: HttpMiddlewareThis<any> = {
++      getAUTUrl: vi.fn().mockReturnValue(autUrl),
++      req: {
++        proxiedUrl: `${autUrl}/next`,
++        isAUTFrame: true,
++        headers: { 'sec-fetch-site': fetchSite },
++        browserPreRequest: { hasCrossOriginRedirect },
++      },
++      remoteStates: {
++        isPrimarySuperDomainOrigin: vi.fn().mockReturnValue(true),
++      },
++    }
++
++    expect(doesTopNeedToBeSimulated(ctx)).toBe(expected)
++  })
++
++  it('simulates a direct navigation to a different origin', () => {
++    const ctx: HttpMiddlewareThis<any> = {
++      getAUTUrl: vi.fn().mockReturnValue(autUrl),
++      req: {
++        proxiedUrl: 'http://secondary.test/next',
++        isAUTFrame: true,
++        headers: {},
++        browserPreRequest: { hasCrossOriginRedirect: false },
++      },
++      remoteStates: {
++        isPrimarySuperDomainOrigin: vi.fn().mockReturnValue(true),
++      },
++    }
++
++    expect(doesTopNeedToBeSimulated(ctx)).toBe(true)
++  })
++
+   it('returns false when URL matches the AUT Url origin and the AUT Url exists and is NOT the AUT frame', () => {
+     const mockCtx: HttpMiddlewareThis<any> = {
+       getAUTUrl: vi.fn().mockReturnValue(autUrl),
+diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
+index ac4cd75..b681f09 100644
+--- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
++++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
+@@ -292,6 +292,7 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
+         headers: transportRequest.headers,
+         body: transportRequest.pausePostDataBuffer ?? transportRequest.postData,
+         resourceType: transportRequest.resourceType,
++        ...(transportRequest.responseTimeout === undefined ? {} : { responseTimeout: transportRequest.responseTimeout }),
+       }
+     },
+
+@@ -350,6 +351,10 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
+         transportRequest.hadMatchingRoutes = httpRequest.hadMatchingRoutes
+       }
+
++      if (httpRequest.responseTimeout !== undefined) {
++        transportRequest.responseTimeout = httpRequest.responseTimeout
++      }
++
+       return transportRequest
+     },
+
+diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
+index 07a0bb8..b967042 100644
+--- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
++++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
+@@ -20,7 +20,7 @@ const debug = debugModule('cypress:server:browsers:cdp-fetch-transport')
+ type CdpFetchClient = Pick<ICriClient, 'send' | 'on' | 'off'>
+
+ type CdpFetchRequest = Protocol.Fetch.RequestPausedEvent['request']
+-const RESPONSE_PAUSE_TIMEOUT_MS = 30000
++const DEFAULT_RESPONSE_PAUSE_TIMEOUT_MS = 30000
+ const REDIRECT_STATUS_CODES = [301, 302, 303, 307, 308]
+
+ // Shared by every session this transport enables so none of them can drift
+@@ -77,6 +77,9 @@ const partitionInternalMarkers = (headers: Protocol.Network.Headers) => {
+ let extraTargetTransportCount = 0
+
+ type CdpFetchTransportOptions = {
++  // Read at request time; per-request cy.intercept overrides take precedence.
++  responseTimeout?: () => number
++
+   isAUTFrame?: (frameId: string) => Promise<boolean>
+   /**
+    * When true, mark every paused request with X-Cypress-Is-From-Extra-Target
+@@ -139,6 +142,7 @@ export interface CdpFetchTransportRequest extends CdpFetchRequest {
+   pausePostDataBuffer?: Buffer
+   requestId?: string
+   resourceType?: ResourceType
++  responseTimeout?: number
+   sessionId?: string
+   // Request-stage route-match result, threaded from the neutral request —
+   // see the `next` callback in `interceptRequest`.
+@@ -165,7 +169,7 @@ export interface CdpFetchTransportResponse extends CdpFetchTransportRequest {
+
+ /**
+  * `headersReady` settles once the response pause has arrived and its headers
+- * are resolved. RESPONSE_PAUSE_TIMEOUT_MS is bounded on that rather than on the
++ * are resolved. The configured response timeout is bounded on that rather than on the
+  * whole response so the body transfer, which can legitimately outlast the time
+  * the browser took to respond, is not charged against a pause that arrived.
+  */
+@@ -637,7 +641,7 @@ export class CdpFetchTransport {
+             new Promise<never>((_resolve, reject) => {
+               timeout = setTimeout(() => {
+                 reject(new Error(`Timed out waiting for CDP Fetch response pause for ${event.request.url}`))
+-              }, RESPONSE_PAUSE_TIMEOUT_MS)
++              }, outbound.responseTimeout ?? this.options.responseTimeout?.() ?? DEFAULT_RESPONSE_PAUSE_TIMEOUT_MS)
+             }),
+           ])
+
+diff --git a/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts b/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
+index 7353c32..1e5a858 100644
+--- a/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
++++ b/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
+@@ -3,7 +3,7 @@
+ import _ from 'lodash'
+ import type { Protocol } from 'devtools-protocol'
+ import type ProtocolMapping from 'devtools-protocol/types/protocol-mapping'
+-import { isLocalhost as isLocalhostNetworkTools } from '@packages/network-tools'
++import { isLocalhost as isLocalhostNetworkTools, urlOriginsMatch } from '@packages/network-tools'
+ import debugModule from 'debug'
+ import { URL } from 'url'
+ import { performance } from 'perf_hooks'
+@@ -78,6 +78,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
+   private autFrameId: string | undefined
+   private autFrameNavigatedListener: ((url: string) => void) | undefined
+   private cachedDataUrlRequestIds: Set<string> = new Set()
++  private crossOriginRedirects: Set<string> = new Set()
+   private executionContexts: Map<Protocol.Runtime.ExecutionContextId, Protocol.Runtime.ExecutionContextDescription> = new Map()
+
+   private constructor (private sendDebuggerCommandFn: SendDebuggerCommand, private onFn: OnFn, private offFn: OffFn, private sendCloseCommandFn: SendCloseCommand, private automation: Automation, private focusTabOnScreenshot: boolean = false, private isHeadless: boolean = false) {
+@@ -85,6 +86,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
+     onFn('Network.responseReceived', this.onResponseReceived)
+     onFn('Network.requestServedFromCache', this.onRequestServedFromCache)
+     onFn('Network.loadingFailed', this.onRequestFailed)
++    onFn('Network.loadingFinished', this.onRequestFinished)
+     onFn('ServiceWorker.workerRegistrationUpdated', this.onServiceWorkerRegistrationUpdated)
+     onFn('ServiceWorker.workerVersionUpdated', this.onServiceWorkerVersionUpdated)
+
+@@ -184,6 +186,17 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
+       return
+     }
+
++    // A request id is shared by every redirect hop. Remember an earlier origin
++    // change even if the final hops redirect only within the primary origin.
++    const hasCrossOriginRedirect = params.redirectResponse != null
++      && (this.crossOriginRedirects.has(params.requestId) || !urlOriginsMatch(params.redirectResponse.url, url))
++
++    if (hasCrossOriginRedirect) {
++      this.crossOriginRedirects.add(params.requestId)
++    } else {
++      this.crossOriginRedirects.delete(params.requestId)
++    }
++
+     // Firefox: https://searchfox.org/mozilla-central/rev/98a9257ca2847fad9a19631ac76199474516b31e/remote/cdp/domains/parent/Network.jsm#397
+     // Firefox lacks support for urlFragment and initiator, two nice-to-haves
+     const browserPreRequest: BrowserPreRequest = {
+@@ -196,6 +209,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
+       initiator: params.initiator,
+       documentURL: params.documentURL,
+       hasRedirectResponse: params.redirectResponse != null,
++      hasCrossOriginRedirect,
+       // wallTime is in seconds: https://vanilla.aslushnikov.com/?Network.TimeSinceEpoch
+       // normalize to milliseconds to be comparable to everything else we're gathering
+       cdpRequestWillBeSentTimestamp: params.wallTime * 1000,
+@@ -206,6 +220,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
+   }
+
+   private onRequestServedFromCache = (params: Protocol.Network.RequestServedFromCacheEvent) => {
++    this.crossOriginRedirects.delete(params.requestId)
+     debugVerbose('received onRequestServedFromCache %o', params)
+
+     // Filter out "data:" urls; they don't have a stored browserPreRequest
+@@ -221,9 +236,14 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
+   }
+
+   private onRequestFailed = (params: Protocol.Network.LoadingFailedEvent) => {
++    this.crossOriginRedirects.delete(params.requestId)
+     this.automation.onRemoveBrowserPreRequest?.(params.requestId)
+   }
+
++  private onRequestFinished = (params: Protocol.Network.LoadingFinishedEvent) => {
++    this.crossOriginRedirects.delete(params.requestId)
++  }
++
+   private onResponseReceived = (params: Protocol.Network.ResponseReceivedEvent) => {
+     if (params.response.fromDiskCache || (params.response.fromServiceWorker && params.response.encodedDataLength <= 0)) {
+       this.automation.onRemoveBrowserPreRequest?.(params.requestId)
+diff --git a/packages/server/lib/network-runtime.ts b/packages/server/lib/network-runtime.ts
+index 678ee2e..3a44f4e 100644
+--- a/packages/server/lib/network-runtime.ts
++++ b/packages/server/lib/network-runtime.ts
+@@ -323,6 +323,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
+   }
+
+   const fetchTransport = new CdpFetchTransport(deps.client, networkInterception, {
++    responseTimeout: () => deps.config.responseTimeout,
+     isAUTFrame: deps.isAUTFrame,
+     // Download-manager pauses omit networkId and never emit requestWillBeSent;
+     // pre-register so CorrelateBrowserPreRequest does not wait the full timeout.
+@@ -372,6 +373,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
+       }
+
+       const extraTransport = new CdpFetchTransport(client, networkInterception, {
++        responseTimeout: () => deps.config.responseTimeout,
+         isFromExtraTarget: true,
+         resolveOriginRedirect,
+         onRequestCanceled,
+diff --git a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
+index 2c03ed7..834045f 100644
+--- a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
++++ b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
+@@ -117,6 +117,7 @@ function createNetworkExtraInfo () {
+
+ function createTransport (client: ReturnType<typeof createClient>, options: {
+   httpIntercept?: HttpIntercept<any, any>
++  responseTimeout?: () => number
+   isAUTFrame?: (frameId: string) => Promise<boolean>
+   isFromExtraTarget?: boolean
+   addPendingUrlWithoutPreRequest?: (url: string) => void
+@@ -136,6 +137,7 @@ function createTransport (client: ReturnType<typeof createClient>, options: {
+     return shouldStreamResponseBody(event, { modifyObstructiveCode: true, hasMatchingRoute: () => hasMatchingRoute })
+   }
+   const transport = new CdpFetchTransport(client as any, options.httpIntercept, {
++    responseTimeout: options.responseTimeout,
+     isAUTFrame: options.isAUTFrame,
+     isFromExtraTarget: options.isFromExtraTarget,
+     addPendingUrlWithoutPreRequest: options.addPendingUrlWithoutPreRequest,
+@@ -3015,6 +3017,54 @@ describe('CdpFetchTransport', () => {
+       })
+     })
+
++    it.each([
++      [60000, undefined, 31000, false],
++      [30000, 60000, 31000, false],
++      [60000, 1000, 1001, true],
++      [undefined, undefined, 30001, true],
++    ] as const)('honors configured %s and per-request %s response timeouts at %s ms', async (configured, override, elapsed, timesOut) => {
++      const client = createClient()
++      const httpIntercept = new HttpIntercept(createCdpFetchCodec())
++      const { transport } = createTransport(client, {
++        httpIntercept,
++        responseTimeout: configured === undefined ? undefined : () => configured,
++      })
++      const onRequestPaused = await startTransport(transport, client)
++      const onError = vi.fn()
++
++      httpIntercept.use(async (req, next) => {
++        try {
++          return await next({ ...req, responseTimeout: override })
++        } catch (err) {
++          onError(err)
++          throw err
++        }
++      })
++
++      vi.useFakeTimers({ shouldAdvanceTime: false })
++
++      try {
++        const handled = onRequestPaused(createPausedRequest({ requestId: 'fetch-timeout', networkId: 'network-timeout' }))
++
++        await vi.advanceTimersByTimeAsync(0)
++        await vi.advanceTimersByTimeAsync(elapsed)
++
++        if (timesOut) {
++          await handled
++          expect(onError).toHaveBeenCalledOnce()
++          expect(onError.mock.calls[0][0].message).toContain('Timed out waiting for CDP Fetch response pause')
++        } else {
++          expect(onError).not.toHaveBeenCalled()
++          await onRequestPaused(createPausedRequest({ requestId: 'fetch-timeout', networkId: 'network-timeout', responseStatusCode: 200 }))
++          await handled
++          expectCalledWith(client.send, 'Fetch.continueResponse', { requestId: 'fetch-timeout', responseCode: 200 })
++        }
++      } finally {
++        transport.reset()
++        vi.useRealTimers()
++      }
++    })
++
+     it('does not charge the response body transfer against the response pause timeout', async () => {
+       const client = createClient()
+       const httpIntercept = new HttpIntercept(createCdpFetchCodec())
+diff --git a/packages/server/test/unit/browsers/cdp_automation.spec.ts b/packages/server/test/unit/browsers/cdp_automation.spec.ts
+index c809d35..23b3b16 100644
+--- a/packages/server/test/unit/browsers/cdp_automation.spec.ts
++++ b/packages/server/test/unit/browsers/cdp_automation.spec.ts
+@@ -290,6 +290,40 @@ describe('lib/browsers/cdp_automation', () => {
+         expect(arg.cdpRequestWillBeSentReceivedTimestamp).toBeTypeOf('number')
+       })
+
++      it('tracks origin changes across every redirect hop without mixing requests', () => {
++        const request = (requestId, url, redirectUrl?) => {
++          onFn.withArgs('Network.requestWillBeSent').yield({
++            requestId, request: { url, method: 'GET', headers: {} }, type: 'Document',
++            ...(redirectUrl ? { redirectResponse: { url: redirectUrl } } : {}),
++          })
++
++          return automation.onBrowserPreRequest.mock.calls.at(-1)[0].hasCrossOriginRedirect
++        }
++
++        expect(request('first', 'https://primary.test/start')).toBe(false)
++        expect(request('first', 'https://primary.test/next', 'https://primary.test/start')).toBe(false)
++        expect(request('first', 'https://secondary.test/login', 'https://primary.test/next')).toBe(true)
++        expect(request('second', 'https://primary.test/unrelated')).toBe(false)
++        expect(request('first', 'https://primary.test/return', 'https://secondary.test/login')).toBe(true)
++        expect(request('first', 'https://primary.test/final', 'https://primary.test/return')).toBe(true)
++      })
++
++      it.each(['Network.loadingFinished', 'Network.loadingFailed', 'Network.requestServedFromCache'])('clears redirect state on %s', (event) => {
++        onFn.withArgs('Network.requestWillBeSent').yield({
++          requestId: 'request', request: { url: 'https://secondary.test', method: 'GET', headers: {} },
++          redirectResponse: { url: 'https://primary.test' },
++        })
++
++        expect(automation.onBrowserPreRequest.mock.calls.at(-1)[0].hasCrossOriginRedirect).toBe(true)
++        onFn.withArgs(event).yield({ requestId: 'request' })
++        onFn.withArgs('Network.requestWillBeSent').yield({
++          requestId: 'request', request: { url: 'https://primary.test/next', method: 'GET', headers: {} },
++          redirectResponse: { url: 'https://primary.test/start' },
++        })
++
++        expect(automation.onBrowserPreRequest.mock.calls.at(-1)[0].hasCrossOriginRedirect).toBe(false)
++      })
++
+       it('ignore events with data urls', () => {
+         onFn
+         .withArgs('Network.requestWillBeSent')
+@@ -320,8 +354,7 @@ describe('lib/browsers/cdp_automation', () => {
+             requestId: browserResponseReceived.requestId,
+             status: browserResponseReceived.response.status,
+             headers: browserResponseReceived.response.headers,
+-          },
+-        )
++          })
+       })
+
+       it('triggers onRequestEvent when response is cached from service worker but data length is > 0', () => {
+@@ -344,8 +377,7 @@ describe('lib/browsers/cdp_automation', () => {
+             requestId: browserResponseReceived.requestId,
+             status: browserResponseReceived.response.status,
+             headers: browserResponseReceived.response.headers,
+-          },
+-        )
++          })
+       })
+
+       it('cleans up prerequests when response is cached from disk', () => {

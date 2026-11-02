@@ -101,7 +101,7 @@ download_with_retry dc pull app db redis opensearch
 "$ROOT/bin/build-php-image"
 # The base was just built locally with --pull; it is not a registry image.
 dc build phpfpm
-download_with_retry dc build --pull runner
+dc build --pull runner
 # Docker initializes this dependencies volume from the image; refresh it on reruns too.
 dc run --rm --no-deps --user root runner chown -R "$LOCAL_UID:$LOCAL_GID" /workspace/node_modules
 dc run --rm --no-deps runner npm ci --ignore-scripts --no-audit --no-fund
@@ -150,11 +150,12 @@ dc exec -T phpfpm bash /application/docker/php/refresh-assets.sh
 if [[ "$MAGELENS_RUNNER" == cypress ]]; then
     dc exec -T runner cypress verify
 else
-    dc exec -T runner node -e "require('@vitaliiboiko/magento-template-coverage/playwright');require('@playwright/test').chromium.launch({headless:false}).then(browser=>browser.close()).catch(error=>{console.error(error);process.exitCode=1})"
+    dc exec -T runner node -e "require('@vitaliiboiko/magento-template-coverage/playwright')"
 fi
+dc exec -T runner timeout --signal=TERM --kill-after=10s 120s node /opt/magelens/browser-smoke.cjs
 dc exec -T app sh -c 'curl --fail --silent --show-error --insecure --retry 30 --retry-connrefused \
     --retry-delay 2 --max-time 5 --output /dev/null "https://localhost:$APPLICATION_HTTPS_PORT/"'
-printf '3\n' > .runtime/installed
+printf '5\n' > .runtime/installed
 say "MageLens is ready. Open $(dc exec -T phpfpm bash /application/docker/php/base-url.sh --print)"
 say "Watch tests at $(dc exec -T phpfpm bash /application/docker/php/base-url.sh --print-viewer)"
 printf 'Installed %s %s, %s with %s. Run ./bin/run-coverage (no host Node required).\n' "$MAGELENS_PLATFORM_NAME" "$MAGELENS_PLATFORM_VERSION" "$MAGELENS_THEME" "$MAGELENS_RUNNER"

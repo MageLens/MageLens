@@ -29,6 +29,6 @@ Fixture preparation returns one JSON value on stdout; send diagnostics to stderr
 
 ## Validation
 
-Run the root integration suite for tooling and fixture changes. Use the root `npm run test:e2e` with the platform, theme and runner settings in [the testing guide](../../../../../tests/README.md) to check application behavior. There is no standalone Composer or npm test package inside this module.
+Run the root integration suite for tooling and fixture changes. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Run the full E2E matrix and release qualification in GitHub Actions using [the testing guide](../../../../../tests/README.md); do not run the full CI suite locally unless explicitly requested. There is no standalone Composer or npm test package inside this module.
 
 Edit tracked files here, never their `.runtime/app/` copies. Module/schema/theme installation changes need the normal installer with the same profile flags; use isolated E2E installations to avoid mutating an existing project's database. Source-only coverage runs must still preserve original bytes and PHP line numbers.

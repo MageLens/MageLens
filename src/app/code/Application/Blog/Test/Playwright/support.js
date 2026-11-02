@@ -3,12 +3,36 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
-const {test, expect} = require('../../../../../../../playwright/support.cjs');
+const {test: base, expect} = require('../../../../../../../playwright/support.cjs');
+const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+// A shared module's beforeEach belongs only to its first importing spec.
+// Extend the context fixture so every spec and every new page observes events.
+const test = base.extend({
+    context: async ({context}, use) => {
+        await context.addInitScript(observeStorefrontReadiness);
+        await use(context);
+    }
+});
 const fixtures = () => JSON.parse(fs.readFileSync('coverage/project-fixtures.json')).Application_Blog;
 const headers = () => ({'x-application-coverage': JSON.parse(fs.readFileSync('coverage/run.json')).id});
 const get = (page, name) => page.locator(`[data-cy="${name}"]`);
 const message = (page, type) => page.locator(`.message-${type}, [ui-id="message-${type}"]`);
+async function waitForStorefront(page) {
+    if (fixtures().themePaths[0] === 'Hyva/default-csp') {
+        await expect.poll(() => page.evaluate(() => window.__magelensStorefrontReady),
+            {message: 'Hyva cookie messages and private content initialized'}).toEqual({messages: true, privateContent: true});
+    }
+}
+async function storefrontMessage(page, type, text) {
+    // Locate the new response before checking readiness, so an old document's
+    // completed initialization cannot satisfy a post-navigation assertion.
+    await expect(message(page, type)).toContainText(text);
+    await waitForStorefront(page);
+    await expect(message(page, type)).toHaveCount(1);
+    await expect(message(page, type)).toContainText(text);
+}
 async function waitForBlog(page) {
+    await waitForStorefront(page);
     await expect(get(page, 'status')).toHaveText(/^[0-9]+ articles$/);
     await expect(get(page, 'search-submit')).toBeEnabled();
 }
@@ -17,7 +41,10 @@ async function visitBlog(page, query = '') {
     await waitForBlog(page);
 }
 async function search(page, query, category = '') {
-    await get(page, 'search').fill(query);
+    await get(page, 'search').fill('');
+    // Match the keyboard search journey exercised by Cypress, including theme
+    // shortcut listeners; fill alone does not emit keyboard events.
+    if (query) await get(page, 'search').pressSequentially(query);
     await get(page, 'category').selectOption(category);
     const response = page.waitForResponse(response => response.url().includes('/blog/index/posts'));
     await get(page, 'search-submit').click();
@@ -65,4 +92,4 @@ async function fillComment(page, name, email, body) {
     const form = get(page, 'comment-form');
     for (const [field, value] of Object.entries({name, email, body})) await form.locator(`[name="${field}"]`).fill(value);
 }
-module.exports = {test, expect, fixtures, headers, get, message, waitForBlog, visitBlog, search, login, section, findRecord, save, remove, fillPost, fillComment};
+module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForBlog, visitBlog, search, login, section, findRecord, save, remove, fillPost, fillComment};

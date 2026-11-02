@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const cypress = require('cypress');
+require('../docker/runner/cypress-source/provenance.cjs').verifyInstalled();
 const {specPatterns, warmupPaths} = require('./project.cjs');
 const warmup = process.argv.includes('--warmup');
 const run = JSON.parse(fs.readFileSync('coverage/run.json'));
@@ -19,9 +20,10 @@ const options = warmup ? {
     }
 } : {expose: {warmup: false, coverageRun: run.id, projectFixtures}};
 const resultsFile = warmup ? 'coverage/warmup-results.json' : 'coverage/cypress-results.json';
-cypress.run({browser: 'electron', headed: true, ...options}).then(results => {
+cypress.run({browser: 'chrome-for-testing', headed: true, ...options}).then(results => {
     fs.writeFileSync(resultsFile, JSON.stringify({
-        run: run.id, totalTests: results.totalTests, totalPassed: results.totalPassed,
+        run: run.id, browser: {name: results.browserName, version: results.browserVersion},
+        totalTests: results.totalTests, totalPassed: results.totalPassed,
         totalFailed: results.totalFailed, totalPending: results.totalPending,
         totalSkipped: results.totalSkipped, failures: results.failures,
         status: results.status, message: results.message,

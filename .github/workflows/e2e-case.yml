@@ -1,0 +1,169 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+name: E2E case
+on:
+  workflow_call:
+    secrets:
+      COMPOSER_AUTH:
+        # Public cases omit it; Magento validates the protected environment value.
+        required: false
+    inputs:
+      feasibility-only:
+        type: boolean
+        default: false
+      os:
+        required: true
+        type: string
+      platform:
+        required: true
+        type: string
+      theme:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  case:
+    name: ${{ inputs.os }} / ${{ inputs.platform }} / ${{ inputs.theme }} / ${{ inputs.runner }}
+    # Repository-branch commits become trusted only after environment review.
+    # Standard pull_request events cannot grant environment secrets to forks.
+    if: >-
+      inputs.platform != 'magento' || github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 150
+    environment: ${{ inputs.platform == 'magento' && 'magento-e2e' || 'public-e2e' }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI_SHA: ${{ inputs.sha }}
+      CI_CASE: ${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}
+      MAGELENS_E2E_PLATFORM: ${{ inputs.platform }}
+      MAGELENS_E2E_THEME: ${{ inputs.theme }}
+      MAGELENS_E2E_RUNNER: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Prepare Windows WSL2 Linux engine
+        if: runner.os == 'Windows'
+        id: windows
+        timeout-minutes: 12
+        shell: pwsh
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          wsl --install --distribution Ubuntu-24.04 --no-launch --location "$env:RUNNER_TEMP/magelens-wsl"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = (wsl --distribution Ubuntu-24.04 --exec wslpath -u "$env:GITHUB_WORKSPACE/tests/ci/setup-windows.sh").Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wsl --distribution Ubuntu-24.04 --user root --exec bash "$setup" "$env:REPOSITORY" "$env:CI_SHA"
+          exit $LASTEXITCODE
+      - name: Prepare macOS local VM tools
+        id: macos
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        run: |
+          brew install colima docker docker-compose bash
+          mkdir -p "$HOME/.docker/cli-plugins"
+          ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+          # Homebrew no longer bottles Buildx for Intel macOS. Install Docker's
+          # pinned official binary instead of compiling another tool on the host.
+          curl --fail --location --max-time 120 \
+            https://github.com/docker/buildx/releases/download/v0.38.1/buildx-v0.38.1.darwin-amd64 \
+            -o "$HOME/.docker/cli-plugins/docker-buildx"
+          echo "76e7a809cc98d34a4c1b7db23feac673def5b8dcdddd9e713ef26598689aa796  $HOME/.docker/cli-plugins/docker-buildx" | shasum -a 256 --check
+          chmod +x "$HOME/.docker/cli-plugins/docker-buildx"
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Reclaim unused hosted Linux SDK space
+        if: runner.os == 'Linux'
+        id: disk
+        run: bash tests/ci/prepare-disk.sh
+      - id: probe
+        name: Validate actual host, Linux engine, mounts and networking
+        timeout-minutes: 15
+        run: bash tests/ci/on-host.sh node tests/ci/probe.cjs
+      - name: Require reviewed credential access
+        id: credentials
+        if: inputs.platform == 'magento'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+        run: |
+          gh api "repos/$GH_REPO/environments/magento-e2e" > "$RUNNER_TEMP/environment.json"
+          node - <<'NODE'
+          const fs = require('fs');
+          const env = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/environment.json'));
+          if (!env.protection_rules?.some(rule => rule.type === 'required_reviewers' && rule.reviewers?.length)) {
+            throw new Error('magento-e2e must require reviewers before any credentialed code runs');
+          }
+          if (!process.env.COMPOSER_AUTH) throw new Error('INCOMPLETE: missing protected COMPOSER_AUTH');
+          let auth;
+          try { auth = JSON.parse(process.env.COMPOSER_AUTH); }
+          catch { throw new Error('Invalid COMPOSER_AUTH JSON'); }
+          for (const value of Object.values(auth['http-basic']?.['repo.magento.com'] || {})) {
+            if (typeof value === 'string') console.log('::add-mask::' + value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A'));
+          }
+          if (!auth['http-basic']?.['repo.magento.com']?.username || !auth['http-basic']['repo.magento.com'].password) {
+            throw new Error('INCOMPLETE: Marketplace credentials absent');
+          }
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/auth.json', JSON.stringify({'http-basic': {'repo.magento.com': auth['http-basic']['repo.magento.com']}}), {mode: 0o600});
+          NODE
+          echo "MAGELENS_COMPOSER_AUTH_FILE=$RUNNER_TEMP/auth.json" >> "$GITHUB_ENV"
+      - name: Check available resources
+        id: resources
+        run: bash tests/ci/on-host.sh node tests/ci/resources.cjs
+      - id: isolation
+        if: inputs.feasibility-only != true
+        name: Verify independent Compose projects
+        run: bash tests/ci/on-host.sh bash tests/project-isolation.sh
+      - id: e2e
+        if: inputs.feasibility-only != true
+        name: Install and run the complete acceptance harness
+        timeout-minutes: 130
+        env:
+          MAGELENS_E2E_RESULT_FILE: ${{ runner.temp }}/magelens-result
+          MAGELENS_E2E_RESOURCE_FILE: ${{ runner.temp }}/magelens-resource
+        run: bash tests/ci/on-host.sh bash tests/e2e-isolated.sh
+      - id: cleanup
+        name: Remove only this installation and credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/auth.json"
+          if [[ "$RUNNER_OS" != Windows || "${{ steps.windows.outcome }}" == success ]]; then
+            bash tests/ci/on-host.sh bash tests/ci/cleanup.sh
+          fi
+      - name: Prepare sanitized evidence and failure diagnostics
+        if: always()
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        run: |
+          if [[ "$RUNNER_OS" == Windows && "${{ steps.windows.outcome }}" != success ]]; then
+            node tests/ci/evidence.cjs
+          else
+            bash tests/ci/on-host.sh node tests/ci/evidence.cjs
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: case-${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}-attempt-${{ github.run_attempt }}
+          path: ci-reports/${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 9

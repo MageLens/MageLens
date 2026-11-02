@@ -33,10 +33,13 @@ else
     auth_path=/auth.json
 fi
 original_root=$ROOT
-scratch=$(mktemp -d /tmp/magelens-e2e.XXXXXX)
+scratch=$(mktemp -d "${MAGELENS_TEST_TMPDIR:-/tmp}/magelens-e2e.XXXXXX")
 project="magelens-e2e-$(basename "$scratch" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 artifacts="$original_root/.runtime/e2e/$project"
 mkdir -p "$artifacts"
+if [[ -n "${MAGELENS_E2E_RESOURCE_FILE:-}" ]]; then
+    printf '%s %s\n' "$project" "$scratch" > "$MAGELENS_E2E_RESOURCE_FILE"
+fi
 # Override inherited Compose settings so creation and cleanup target only this run.
 export COMPOSE_PROJECT_NAME="$project" APPLICATION_DOMAIN="$project.test"
 export APPLICATION_PORT=${MAGELENS_TEST_PORT:-18080}
@@ -156,7 +159,10 @@ fi
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
-    if [[ "$runner" == cypress ]]; then ./bin/runner node tests/cypress-runtime.cjs; fi
+    if [[ "$runner" == cypress ]]; then
+        ./bin/runner node tests/cypress-runtime.cjs
+        ./bin/runner node tests/cypress-regressions.cjs
+    fi
     cp .runtime/e2e-installation.json coverage/installation.json
     mkdir -p "$artifacts/$runner"
     cp -a coverage "$artifacts/$runner/"

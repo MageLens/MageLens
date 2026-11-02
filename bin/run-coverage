@@ -39,7 +39,9 @@ done
 [[ "$runner" == "${MAGELENS_RUNNER:-cypress}" ]] || fail 'This runner is not installed. Rerun ./install.sh with the required runner selection.'
 preflight
 [[ -f .runtime/installed ]] || fail 'Run ./install.sh first.'
-[[ "$(cat .runtime/installed)" == 3 ]] || fail 'Rerun ./install.sh with your platform, theme and runner flags to update the coverage runtime and live viewer.'
+installed_runtime=$(cat .runtime/installed)
+[[ "$installed_runtime" == 5 || ( "$MAGELENS_RUNNER" == playwright && "$installed_runtime" == 4 ) ]] \
+    || fail 'Rerun ./install.sh with your saved platform, theme and runner flags to install the current browser runner.'
 lock_workflow
 if (( start_services )); then
     if ! dc up -d --wait --wait-timeout 180 db redis opensearch phpfpm app runner; then

@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '3') {
+function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '5') {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-workflow-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const name of ['bin', '.runtime', 'coverage']) fs.mkdirSync(path.join(directory, name));
@@ -95,12 +95,21 @@ test(`${runner}: warm-up timeout cleans hooks before collection and does not run
 });
 
 test(`${runner}: old installations require an update before launching a headed browser`, t => {
-    const result = workflow(t, [], '', false, runner, '2');
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /theme and runner flags/);
-    assert.equal(result.calls, '');
+    for (const version of runner === 'cypress' ? ['2', '3', '4'] : ['2', '3']) {
+        const result = workflow(t, [], '', false, runner, version);
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /saved platform, theme and runner flags/);
+        assert.match(result.stderr, /current browser runner/);
+        assert.equal(result.calls, '');
+    }
 });
 }
+
+test('the Cypress cookie update does not require rebuilding an existing Chrome Playwright runner', t => {
+    const result = workflow(t, [], '', false, 'playwright', '4');
+    assert.equal(result.status, 0);
+    assert.match(result.calls, /run-playwright.cjs/);
+});
 
 test('help and invalid options do not touch the environment', t => {
     assert.equal(workflow(t, ['--help']).calls, '');

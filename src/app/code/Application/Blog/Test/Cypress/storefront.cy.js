@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, search, visitBlog, waitForBlog} from './support';
+import {fixtures, headers, get, search, visitBlog, waitForBlog, storefrontMessage} from './support';
 
 describe('Blog storefront', () => {
     it('searches, filters, paginates, reads articles, and retains favorites', () => {
@@ -74,12 +74,18 @@ describe('Blog storefront', () => {
         }
         cy.visit('/blog/post/view/slug/' + f.prefix + 'article-1');
         get('comment-form').invoke('attr', 'action').then(url => {
-            // Keep the rejection message for the browser instead of consuming it on a followed redirect.
-            cy.request({url, method: 'POST', form: true, followRedirect: false, headers: headers(), body: {form_key: 'invalid', name: 'Rejected reader', email: 'reader@example.test', body: 'Must not appear'}})
-                .its('status').should('equal', 302);
+            cy.intercept('POST', url).as('rejectedComment');
         });
-        cy.reload();
-        cy.get('.message-error, .message.error').should('contain', 'Invalid Form Key');
+        // Use one browser navigation for the forged POST and its rejection cookie.
+        // A background HTTP request can race the current page's message consumer.
+        get('comment-form').then(([form]) => {
+            for (const [name, value] of Object.entries({form_key: 'invalid', name: 'Rejected reader', email: 'reader@example.test', body: 'Must not appear'})) {
+                form.elements.namedItem(name).value = value;
+            }
+            form.submit();
+        });
+        cy.wait('@rejectedComment').its('response.statusCode').should('equal', 302);
+        storefrontMessage('error', 'Invalid Form Key');
         get('no-comments').should('be.visible');
         get('comment-form').within(() => {
             cy.get('[name="name"]').type('Reader');
@@ -88,7 +94,7 @@ describe('Blog storefront', () => {
             cy.get('[name="email"]').invoke('val', 'invalid');
         }).invoke('attr', 'novalidate', 'novalidate');
         get('comment-submit').click();
-        cy.get('.message-error, .message.error').should('contain', 'valid email');
+        storefrontMessage('error', 'valid email');
         get('approved-comment').should('not.exist');
         visitBlog();
         cy.intercept('GET', /\/blog\/index\/posts[/?]/, {statusCode: 503, body: {error: 'Unavailable'}}).as('unavailable');

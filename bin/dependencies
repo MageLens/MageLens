@@ -25,6 +25,14 @@ load_dependencies() {
                 [[ "$value" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] || {
                     printf '%s: %s must be an exact release version.\n' "$file" "$key" >&2; return 1;
                 } ;;
+            CHROME_VERSION)
+                [[ "$value" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+                    printf '%s: CHROME_VERSION must be an exact four-part release version.\n' "$file" >&2; return 1;
+                } ;;
+            CHROME_LINUX_X64_SHA256|CHROME_LINUX_ARM64_SHA256)
+                [[ "$value" =~ ^[a-f0-9]{64}$ ]] || {
+                    printf '%s: %s must be a SHA-256 checksum.\n' "$file" "$key" >&2; return 1;
+                } ;;
             PHP_IMAGE)
                 [[ "$value" =~ ^php:([0-9]+\.[0-9]+\.[0-9]+)-fpm-bookworm(@sha256:[a-f0-9]{64})?$ ]] || {
                     printf '%s: PHP_IMAGE must be an exact official php:X.Y.Z-fpm-bookworm image, optionally pinned by sha256 digest.\n' "$file" >&2; return 1;
@@ -40,7 +48,7 @@ load_dependencies() {
         seen+="$key "
         export "$key=$value"
     done < "$file"
-    for required in MAGENTO_VERSION MAGEOS_VERSION MARKSHUST_DOCKER_MAGENTO_VERSION PHP_IMAGE PCOV_VERSION PIE_VERSION CYPRESS_VERSION PLAYWRIGHT_VERSION HYVA_VERSION TEMPLATE_COVERAGE_VERSION CYPRESS_CODE_COVERAGE_VERSION ISTANBUL_LIB_COVERAGE_VERSION ISTANBUL_LIB_INSTRUMENT_VERSION ISTANBUL_LIB_REPORT_VERSION ISTANBUL_REPORTS_VERSION NYC_VERSION RUNNER_IMAGE PLAYWRIGHT_RUNNER_IMAGE; do
+    for required in MAGENTO_VERSION MAGEOS_VERSION MARKSHUST_DOCKER_MAGENTO_VERSION PHP_IMAGE PCOV_VERSION PIE_VERSION CYPRESS_VERSION PLAYWRIGHT_VERSION CHROME_VERSION CHROME_LINUX_X64_SHA256 CHROME_LINUX_ARM64_SHA256 HYVA_VERSION TEMPLATE_COVERAGE_VERSION CYPRESS_CODE_COVERAGE_VERSION ISTANBUL_LIB_COVERAGE_VERSION ISTANBUL_LIB_INSTRUMENT_VERSION ISTANBUL_LIB_REPORT_VERSION ISTANBUL_REPORTS_VERSION NYC_VERSION RUNNER_IMAGE PLAYWRIGHT_RUNNER_IMAGE; do
         [[ "$seen" == *" $required "* ]] || { printf '%s: missing dependency %s.\n' "$file" "$required" >&2; return 1; }
     done
 }

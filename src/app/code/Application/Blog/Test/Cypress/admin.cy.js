@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, login, section, findRecord, save, remove, visitBlog} from './support';
+import {fixtures, headers, get, login, section, findRecord, save, remove, visitBlog, storefrontMessage} from './support';
 
 function fillPost(title, slug, category) {
     cy.get('#blog-title').clear().type(title);
@@ -60,7 +60,7 @@ describe('Blog Admin and publishing', () => {
             cy.get('[name="body"]').type('Thoughtful article. <img src=x onerror=alert(1)>');
         });
         get('comment-submit').click();
-        cy.get('.message-success, .message.success').should('contain', 'awaiting moderation');
+        storefrontMessage('success', 'awaiting moderation');
         get('approved-comment').should('not.exist');
         get('comment-form').within(() => {
             cy.get('[name="name"]').type('Another reader');
@@ -68,7 +68,7 @@ describe('Blog Admin and publishing', () => {
             cy.get('[name="body"]').type('Too soon');
         });
         get('comment-submit').click();
-        cy.get('.message-error, .message.error').should('contain', 'wait a minute');
+        storefrontMessage('error', 'wait a minute');
         cy.visit('/admin/');
         section('comments');
         findRecord(query + ' Reader');
