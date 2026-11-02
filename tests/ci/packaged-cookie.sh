@@ -10,4 +10,4 @@ for attempt in {1..30}; do
 done
 node /opt/magelens/healthcheck.cjs
 # The fixture runs in the same common harness as full installation qualification.
-node tests/cypress-cookies.cjs
+node tests/cypress-regressions.cjs

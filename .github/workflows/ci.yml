@@ -195,7 +195,7 @@ jobs:
 
   packaged:
     if: inputs.investigation == 'packaged'
-    name: Packaged Cypress cookie fix / production Chrome runner
+    name: Packaged Cypress fixes / production Chrome runner
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
@@ -215,13 +215,14 @@ jobs:
             --build-arg RUNNER_IMAGE --build-arg PLAYWRIGHT_RUNNER_IMAGE --build-arg CHROME_VERSION \
             --build-arg CHROME_LINUX_X64_SHA256 --build-arg CHROME_LINUX_ARM64_SHA256 \
             --tag magelens-cookie:source .
-      - name: Run all nine cookie regressions in the packaged runner
+      - name: Run all ten shared runner regressions
         timeout-minutes: 5
         run: |
           mkdir -p cookie-evidence
           docker run --rm --name magelens-packaged-cookie --init --memory=4g --memory-swap=4g --cpus=2 --pids-limit=768 --shm-size=1g \
             --user "$(id -u):$(id -g)" --env HOME=/tmp \
             --mount "type=bind,source=$PWD/tests,target=/workspace/tests,readonly" \
+            --mount "type=bind,source=$PWD/docker/runner,target=/workspace/docker/runner,readonly" \
             --mount "type=bind,source=$PWD/cookie-evidence,target=/workspace/coverage" \
             magelens-cookie:source bash tests/ci/packaged-cookie.sh
       - name: Clean owned runtime

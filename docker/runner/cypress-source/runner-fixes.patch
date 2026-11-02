@@ -2,6 +2,41 @@ SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 
+diff --git a/packages/network-interception/lib/ports/http-interception.ts b/packages/network-interception/lib/ports/http-interception.ts
+index 0eea440..0de1732 100644
+--- a/packages/network-interception/lib/ports/http-interception.ts
++++ b/packages/network-interception/lib/ports/http-interception.ts
+@@ -12,6 +12,7 @@ export type HttpRequest = {
+   headers?: HttpHeaders
+   body?: HttpBody
+   resourceType?: ResourceType
++  responseTimeout?: number
+   // Request-stage route-match result, threaded through to the response pause
+   // so classification agrees with the interception that actually ran.
+   hadMatchingRoutes?: boolean
+diff --git a/packages/proxy/lib/adapters/http-codec.ts b/packages/proxy/lib/adapters/http-codec.ts
+index 1b76edc..f3b7151 100644
+--- a/packages/proxy/lib/adapters/http-codec.ts
++++ b/packages/proxy/lib/adapters/http-codec.ts
+@@ -47,6 +47,7 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
+         headers: ctx.req.headers as HttpRequest['headers'],
+         body: ctx.req.body,
+         resourceType: ctx.req.resourceType,
++        responseTimeout: ctx.req.responseTimeout,
+       }
+     },
+
+@@ -67,6 +68,10 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
+         ctx.req.body = request.body
+       }
+
++      if (request.responseTimeout !== undefined) {
++        ctx.req.responseTimeout = request.responseTimeout
++      }
++
+       return ctx
+     },
+
 diff --git a/packages/proxy/lib/http/util/top-simulation.ts b/packages/proxy/lib/http/util/top-simulation.ts
 index 36e1384..eafec22 100644
 --- a/packages/proxy/lib/http/util/top-simulation.ts
@@ -52,6 +87,29 @@ index 27f8435..1401e9f 100644
    cdpRequestWillBeSentTimestamp?: number
    cdpRequestWillBeSentReceivedTimestamp?: number
  }
+diff --git a/packages/proxy/test/unit/adapters/http-codec.spec.ts b/packages/proxy/test/unit/adapters/http-codec.spec.ts
+index 04fe5bf..6311321 100644
+--- a/packages/proxy/test/unit/adapters/http-codec.spec.ts
++++ b/packages/proxy/test/unit/adapters/http-codec.spec.ts
+@@ -22,6 +22,18 @@ describe('proxyHttpCodec', () => {
+     expect(ctx.id).to.equal(request.id)
+   })
+
++  it('preserves the configured response timeout through the middleware bridge', () => {
++    const ctx = createCtx()
++
++    ctx.req.responseTimeout = 60000
++    const request = proxyHttpCodec.decodeRequest(ctx)
++
++    expect(request.responseTimeout).to.equal(60000)
++    request.responseTimeout = 1000
++    proxyHttpCodec.encodeRequest(request)
++    expect(ctx.req.responseTimeout).to.equal(1000)
++  })
++
+   it('copies resourceType from the middleware request onto the neutral request', () => {
+     const ctx = createCtx()
+
 diff --git a/packages/proxy/test/unit/http/request-middleware.spec.ts b/packages/proxy/test/unit/http/request-middleware.spec.ts
 index cbd6c28..be85b2e 100644
 --- a/packages/proxy/test/unit/http/request-middleware.spec.ts
@@ -209,6 +267,78 @@ index 10454fb..1908262 100644
    it('returns false when URL matches the AUT Url origin and the AUT Url exists and is NOT the AUT frame', () => {
      const mockCtx: HttpMiddlewareThis<any> = {
        getAUTUrl: vi.fn().mockReturnValue(autUrl),
+diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
+index ac4cd75..d337e72 100644
+--- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
++++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
+@@ -292,6 +292,7 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
+         headers: transportRequest.headers,
+         body: transportRequest.pausePostDataBuffer ?? transportRequest.postData,
+         resourceType: transportRequest.resourceType,
++        responseTimeout: transportRequest.responseTimeout,
+       }
+     },
+
+@@ -350,6 +351,10 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
+         transportRequest.hadMatchingRoutes = httpRequest.hadMatchingRoutes
+       }
+
++      if (httpRequest.responseTimeout !== undefined) {
++        transportRequest.responseTimeout = httpRequest.responseTimeout
++      }
++
+       return transportRequest
+     },
+
+diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
+index 07a0bb8..b967042 100644
+--- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
++++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
+@@ -20,7 +20,7 @@ const debug = debugModule('cypress:server:browsers:cdp-fetch-transport')
+ type CdpFetchClient = Pick<ICriClient, 'send' | 'on' | 'off'>
+
+ type CdpFetchRequest = Protocol.Fetch.RequestPausedEvent['request']
+-const RESPONSE_PAUSE_TIMEOUT_MS = 30000
++const DEFAULT_RESPONSE_PAUSE_TIMEOUT_MS = 30000
+ const REDIRECT_STATUS_CODES = [301, 302, 303, 307, 308]
+
+ // Shared by every session this transport enables so none of them can drift
+@@ -77,6 +77,9 @@ const partitionInternalMarkers = (headers: Protocol.Network.Headers) => {
+ let extraTargetTransportCount = 0
+
+ type CdpFetchTransportOptions = {
++  // Read at request time; per-request cy.intercept overrides take precedence.
++  responseTimeout?: () => number
++
+   isAUTFrame?: (frameId: string) => Promise<boolean>
+   /**
+    * When true, mark every paused request with X-Cypress-Is-From-Extra-Target
+@@ -139,6 +142,7 @@ export interface CdpFetchTransportRequest extends CdpFetchRequest {
+   pausePostDataBuffer?: Buffer
+   requestId?: string
+   resourceType?: ResourceType
++  responseTimeout?: number
+   sessionId?: string
+   // Request-stage route-match result, threaded from the neutral request —
+   // see the `next` callback in `interceptRequest`.
+@@ -165,7 +169,7 @@ export interface CdpFetchTransportResponse extends CdpFetchTransportRequest {
+
+ /**
+  * `headersReady` settles once the response pause has arrived and its headers
+- * are resolved. RESPONSE_PAUSE_TIMEOUT_MS is bounded on that rather than on the
++ * are resolved. The configured response timeout is bounded on that rather than on the
+  * whole response so the body transfer, which can legitimately outlast the time
+  * the browser took to respond, is not charged against a pause that arrived.
+  */
+@@ -637,7 +641,7 @@ export class CdpFetchTransport {
+             new Promise<never>((_resolve, reject) => {
+               timeout = setTimeout(() => {
+                 reject(new Error(`Timed out waiting for CDP Fetch response pause for ${event.request.url}`))
+-              }, RESPONSE_PAUSE_TIMEOUT_MS)
++              }, outbound.responseTimeout ?? this.options.responseTimeout?.() ?? DEFAULT_RESPONSE_PAUSE_TIMEOUT_MS)
+             }),
+           ])
+
 diff --git a/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts b/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
 index 7353c32..1e5a858 100644
 --- a/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
@@ -287,6 +417,109 @@ index 7353c32..1e5a858 100644
    private onResponseReceived = (params: Protocol.Network.ResponseReceivedEvent) => {
      if (params.response.fromDiskCache || (params.response.fromServiceWorker && params.response.encodedDataLength <= 0)) {
        this.automation.onRemoveBrowserPreRequest?.(params.requestId)
+diff --git a/packages/server/lib/network-runtime.ts b/packages/server/lib/network-runtime.ts
+index 678ee2e..3a44f4e 100644
+--- a/packages/server/lib/network-runtime.ts
++++ b/packages/server/lib/network-runtime.ts
+@@ -323,6 +323,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
+   }
+
+   const fetchTransport = new CdpFetchTransport(deps.client, networkInterception, {
++    responseTimeout: () => deps.config.responseTimeout,
+     isAUTFrame: deps.isAUTFrame,
+     // Download-manager pauses omit networkId and never emit requestWillBeSent;
+     // pre-register so CorrelateBrowserPreRequest does not wait the full timeout.
+@@ -372,6 +373,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
+       }
+
+       const extraTransport = new CdpFetchTransport(client, networkInterception, {
++        responseTimeout: () => deps.config.responseTimeout,
+         isFromExtraTarget: true,
+         resolveOriginRedirect,
+         onRequestCanceled,
+diff --git a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
+index 2c03ed7..450db8a 100644
+--- a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
++++ b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
+@@ -117,6 +117,7 @@ function createNetworkExtraInfo () {
+
+ function createTransport (client: ReturnType<typeof createClient>, options: {
+   httpIntercept?: HttpIntercept<any, any>
++  responseTimeout?: () => number
+   isAUTFrame?: (frameId: string) => Promise<boolean>
+   isFromExtraTarget?: boolean
+   addPendingUrlWithoutPreRequest?: (url: string) => void
+@@ -136,6 +137,7 @@ function createTransport (client: ReturnType<typeof createClient>, options: {
+     return shouldStreamResponseBody(event, { modifyObstructiveCode: true, hasMatchingRoute: () => hasMatchingRoute })
+   }
+   const transport = new CdpFetchTransport(client as any, options.httpIntercept, {
++    responseTimeout: options.responseTimeout,
+     isAUTFrame: options.isAUTFrame,
+     isFromExtraTarget: options.isFromExtraTarget,
+     addPendingUrlWithoutPreRequest: options.addPendingUrlWithoutPreRequest,
+@@ -308,6 +310,7 @@ describe('CdpFetchTransport', () => {
+         method: 'GET',
+         url: 'https://example.test/',
+         resourceType: undefined,
++        responseTimeout: undefined,
+       })
+     })
+
+@@ -3015,6 +3018,54 @@ describe('CdpFetchTransport', () => {
+       })
+     })
+
++    it.each([
++      [60000, undefined, 31000, false],
++      [30000, 60000, 31000, false],
++      [60000, 1000, 1001, true],
++      [undefined, undefined, 30001, true],
++    ] as const)('honors configured %s and per-request %s response timeouts at %s ms', async (configured, override, elapsed, timesOut) => {
++      const client = createClient()
++      const httpIntercept = new HttpIntercept(createCdpFetchCodec())
++      const { transport } = createTransport(client, {
++        httpIntercept,
++        responseTimeout: configured === undefined ? undefined : () => configured,
++      })
++      const onRequestPaused = await startTransport(transport, client)
++      const onError = vi.fn()
++
++      httpIntercept.use(async (req, next) => {
++        try {
++          return await next({ ...req, responseTimeout: override })
++        } catch (err) {
++          onError(err)
++          throw err
++        }
++      })
++
++      vi.useFakeTimers({ shouldAdvanceTime: false })
++
++      try {
++        const handled = onRequestPaused(createPausedRequest({ requestId: 'fetch-timeout', networkId: 'network-timeout' }))
++
++        await vi.advanceTimersByTimeAsync(0)
++        await vi.advanceTimersByTimeAsync(elapsed)
++
++        if (timesOut) {
++          await handled
++          expect(onError).toHaveBeenCalledOnce()
++          expect(onError.mock.calls[0][0].message).toContain('Timed out waiting for CDP Fetch response pause')
++        } else {
++          expect(onError).not.toHaveBeenCalled()
++          await onRequestPaused(createPausedRequest({ requestId: 'fetch-timeout', networkId: 'network-timeout', responseStatusCode: 200 }))
++          await handled
++          expectCalledWith(client.send, 'Fetch.continueResponse', { requestId: 'fetch-timeout', responseCode: 200 })
++        }
++      } finally {
++        transport.reset()
++        vi.useRealTimers()
++      }
++    })
++
+     it('does not charge the response body transfer against the response pause timeout', async () => {
+       const client = createClient()
+       const httpIntercept = new HttpIntercept(createCdpFetchCodec())
 diff --git a/packages/server/test/unit/browsers/cdp_automation.spec.ts b/packages/server/test/unit/browsers/cdp_automation.spec.ts
 index c809d35..23b3b16 100644
 --- a/packages/server/test/unit/browsers/cdp_automation.spec.ts
