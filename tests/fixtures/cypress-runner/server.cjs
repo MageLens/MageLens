@@ -10,7 +10,16 @@ async function startFixture() {
     const application = http.createServer((req, res) => {
         const pathname = new URL(req.url, baseUrl).pathname;
         res.setHeader('content-type', 'text/html');
-        if (pathname === '/slow.svg') {
+        if (pathname === '/bootstrap-start') {
+            res.end('<!doctype html><form method="post" action="/bootstrap-redirect"><button>Continue</button></form>');
+        } else if (pathname === '/bootstrap-redirect') {
+            res.writeHead(302, {location: '/bootstrap-landing'});
+            res.end();
+        } else if (pathname === '/bootstrap-landing') {
+            const initial = (req.headers.cookie || '').split('; ').includes('__cypress.initial=true');
+            res.end(`<!doctype html><h1>Initialized</h1><script>window.fixtureInitialization={
+                bootstrap:!!window.Cypress,beforeLoad:!!window.fixtureBeforeLoad,receivedInitial:${initial}};</script>`);
+        } else if (pathname === '/slow.svg') {
             const timer = setTimeout(() => {
                 delays.delete(timer);
                 res.setHeader('content-type', 'image/svg+xml');

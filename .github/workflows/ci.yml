@@ -215,12 +215,12 @@ jobs:
             --build-arg RUNNER_IMAGE --build-arg PLAYWRIGHT_RUNNER_IMAGE --build-arg CHROME_VERSION \
             --build-arg CHROME_LINUX_X64_SHA256 --build-arg CHROME_LINUX_ARM64_SHA256 \
             --tag magelens-cookie:source .
-      - name: Run all ten shared runner regressions
+      - name: Run all eleven shared runner regressions
         timeout-minutes: 5
         run: |
           mkdir -p cookie-evidence
           docker run --rm --name magelens-packaged-cookie --init --memory=4g --memory-swap=4g --cpus=2 --pids-limit=768 --shm-size=1g \
-            --user "$(id -u):$(id -g)" --env HOME=/tmp \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp --env CYPRESS_BASE_URL=https://unrelated-shop.invalid \
             --mount "type=bind,source=$PWD/tests,target=/workspace/tests,readonly" \
             --mount "type=bind,source=$PWD/docker/runner,target=/workspace/docker/runner,readonly" \
             --mount "type=bind,source=$PWD/cookie-evidence,target=/workspace/coverage" \
