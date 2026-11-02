@@ -9,13 +9,13 @@ index 36e1384..eafec22 100644
 @@ -1,4 +1,5 @@
  import type { HttpMiddlewareThis } from '../index'
 +import { urlOriginsMatch } from '@packages/network-tools'
- 
+
  export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean => {
    const currentAUTUrl = ctx.getAUTUrl()
 @@ -8,7 +9,23 @@ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean
      return false
    }
- 
+
 -  // only simulate top if the AUT is NOT the primary super domain origin, meaning that we should treat the AUT as top
 -  // or the request is the AUT frame, which is common for redirects and navigations.
 -  return !ctx.remoteStates.isPrimarySuperDomainOrigin(currentAUTUrl) || ctx.req.isAUTFrame
@@ -59,7 +59,7 @@ index cbd6c28..be85b2e 100644
 @@ -430,6 +430,73 @@ describe('http/request-middleware', () => {
    describe('MaybeAttachCrossOriginCookies', () => {
      const { MaybeAttachCrossOriginCookies } = RequestMiddleware
- 
+
 +    it.each([
 +      ['message=updated'],
 +      ['message='],
@@ -129,7 +129,7 @@ index cbd6c28..be85b2e 100644
 +
      it('is a noop if no current AUT URL', async () => {
        const ctx = await getContext()
- 
+
 diff --git a/packages/proxy/test/unit/http/response-middleware.spec.ts b/packages/proxy/test/unit/http/response-middleware.spec.ts
 index 0ba751a..80d12ab 100644
 --- a/packages/proxy/test/unit/http/response-middleware.spec.ts
@@ -137,7 +137,7 @@ index 0ba751a..80d12ab 100644
 @@ -1236,6 +1236,21 @@ describe('http/response-middleware', function () {
    describe('MaybeCopyCookiesFromIncomingRes', function () {
      const { MaybeCopyCookiesFromIncomingRes } = ResponseMiddleware
- 
+
 +    it.each(['same-origin', undefined])('leaves native primary-navigation cookie application to the browser with Fetch Metadata %s', async function (fetchSite) {
 +      const { appendStub, ctx } = prepareSameOriginContext({
 +        req: {
@@ -163,7 +163,7 @@ index 10454fb..1908262 100644
 @@ -5,6 +5,48 @@ import { doesTopNeedToBeSimulated } from '../../../../lib/http/util/top-simulati
  describe('.doesTopNeedToBeSimulated', () => {
    const autUrl = 'http://localhost:8080'
- 
+
 +  it.each([
 +    ['same-origin', undefined, false],
 +    [undefined, false, false],
@@ -228,7 +228,7 @@ index 7353c32..1e5a858 100644
    private cachedDataUrlRequestIds: Set<string> = new Set()
 +  private crossOriginRedirects: Set<string> = new Set()
    private executionContexts: Map<Protocol.Runtime.ExecutionContextId, Protocol.Runtime.ExecutionContextDescription> = new Map()
- 
+
    private constructor (private sendDebuggerCommandFn: SendDebuggerCommand, private onFn: OnFn, private offFn: OffFn, private sendCloseCommandFn: SendCloseCommand, private automation: Automation, private focusTabOnScreenshot: boolean = false, private isHeadless: boolean = false) {
 @@ -85,6 +86,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
      onFn('Network.responseReceived', this.onResponseReceived)
@@ -237,11 +237,11 @@ index 7353c32..1e5a858 100644
 +    onFn('Network.loadingFinished', this.onRequestFinished)
      onFn('ServiceWorker.workerRegistrationUpdated', this.onServiceWorkerRegistrationUpdated)
      onFn('ServiceWorker.workerVersionUpdated', this.onServiceWorkerVersionUpdated)
- 
+
 @@ -184,6 +186,17 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
        return
      }
- 
+
 +    // A request id is shared by every redirect hop. Remember an earlier origin
 +    // change even if the final hops redirect only within the primary origin.
 +    const hasCrossOriginRedirect = params.redirectResponse != null
@@ -266,20 +266,20 @@ index 7353c32..1e5a858 100644
        cdpRequestWillBeSentTimestamp: params.wallTime * 1000,
 @@ -206,6 +220,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
    }
- 
+
    private onRequestServedFromCache = (params: Protocol.Network.RequestServedFromCacheEvent) => {
 +    this.crossOriginRedirects.delete(params.requestId)
      debugVerbose('received onRequestServedFromCache %o', params)
- 
+
      // Filter out "data:" urls; they don't have a stored browserPreRequest
 @@ -221,9 +236,14 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
    }
- 
+
    private onRequestFailed = (params: Protocol.Network.LoadingFailedEvent) => {
 +    this.crossOriginRedirects.delete(params.requestId)
      this.automation.onRemoveBrowserPreRequest?.(params.requestId)
    }
- 
+
 +  private onRequestFinished = (params: Protocol.Network.LoadingFinishedEvent) => {
 +    this.crossOriginRedirects.delete(params.requestId)
 +  }
@@ -294,7 +294,7 @@ index c809d35..23b3b16 100644
 @@ -290,6 +290,40 @@ describe('lib/browsers/cdp_automation', () => {
          expect(arg.cdpRequestWillBeSentReceivedTimestamp).toBeTypeOf('number')
        })
- 
+
 +      it('tracks origin changes across every redirect hop without mixing requests', () => {
 +        const request = (requestId, url, redirectUrl?) => {
 +          onFn.withArgs('Network.requestWillBeSent').yield({
@@ -340,7 +340,7 @@ index c809d35..23b3b16 100644
 -        )
 +          })
        })
- 
+
        it('triggers onRequestEvent when response is cached from service worker but data length is > 0', () => {
 @@ -344,8 +377,7 @@ describe('lib/browsers/cdp_automation', () => {
              requestId: browserResponseReceived.requestId,
@@ -350,5 +350,5 @@ index c809d35..23b3b16 100644
 -        )
 +          })
        })
- 
+
        it('cleans up prerequests when response is cached from disk', () => {

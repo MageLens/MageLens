@@ -13,7 +13,7 @@ ENV CI=true CYPRESS_INSTALL_BINARY=0 CHILD_CONCURRENCY=2 \
     NODE_OPTIONS=--max-old-space-size=4096 TMPDIR=/build/tmp
 COPY package.json /input/package.json
 COPY docker/runner/cypress-source/ /input/
-RUN bash /input/build.sh
+RUN taskset -c "$(python3 -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0))[:2])))')" bash /input/build.sh
 
 FROM ${PLAYWRIGHT_RUNNER_IMAGE} AS playwright
 ARG CHROME_VERSION
@@ -43,7 +43,7 @@ RUN bash /opt/magelens/install-desktop.sh curl unzip \
     && bash /opt/magelens/install-chrome.sh \
     && bash /opt/magelens/install-cypress-dictionary.sh
 ENV CYPRESS_CACHE_FOLDER=/opt/cypress DISPLAY=:99 MAGELENS_RUNNER=cypress
-COPY --from=cypress-source /output/Cypress/ /opt/cypress/16.2.1/Cypress/
+COPY --from=cypress-source /output/ /opt/cypress/
 WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY .runtime/template-package/ .runtime/

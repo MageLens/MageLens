@@ -221,8 +221,8 @@ jobs:
           mkdir -p cookie-evidence
           docker run --rm --name magelens-packaged-cookie --init --memory=4g --memory-swap=4g --cpus=2 --pids-limit=768 --shm-size=1g \
             --user "$(id -u):$(id -g)" --env HOME=/tmp \
-            --mount "type=bind,source=$PWD/tests/ci,target=/workspace/tests/ci,readonly" \
-            --mount "type=bind,source=$PWD/cookie-evidence,target=/evidence" \
+            --mount "type=bind,source=$PWD/tests,target=/workspace/tests,readonly" \
+            --mount "type=bind,source=$PWD/cookie-evidence,target=/workspace/coverage" \
             magelens-cookie:source bash tests/ci/packaged-cookie.sh
       - name: Clean owned runtime
         if: always()
