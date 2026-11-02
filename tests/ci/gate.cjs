@@ -39,7 +39,7 @@ function verifyCase(entry, evidence, directory, context) {
         assert.deepEqual(installation.runnerBuild, provenance(evidence.architecture), 'Wrong or missing Cypress source build');
         const cookies = read(path.join(directory, 'cypress-runner-results.json'));
         assert.deepEqual(cookies, {browserName: 'chrome-for-testing', browserVersion: pins.CHROME_VERSION,
-            cypressVersion: pins.CYPRESS_VERSION, totalTests: 10, totalPassed: 10, totalFailed: 0, totalSkipped: 0, totalPending: 0,
+            cypressVersion: pins.CYPRESS_VERSION, totalTests: 11, totalPassed: 11, totalFailed: 0, totalSkipped: 0, totalPending: 0,
             build: installation.runnerBuild}, 'Incomplete runner regressions or stale source build');
     }
     assert.equal(installation.version, pins[entry.platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION']);

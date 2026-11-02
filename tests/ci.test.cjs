@@ -31,7 +31,7 @@ function fixture(t) {
     write('run.json', {id: 'fresh', runner: entry.runner, sources: {private: 'SECRET'}});
     write('installation.json', {...entry, version: pins.MAGENTO_VERSION, credential: 'SECRET', runnerBuild: provenance('x64')});
     write('cypress-runner-results.json', {browserName: 'chrome-for-testing', browserVersion: pins.CHROME_VERSION,
-        cypressVersion: pins.CYPRESS_VERSION, totalTests: 10, totalPassed: 10, totalFailed: 0, totalSkipped: 0, totalPending: 0,
+        cypressVersion: pins.CYPRESS_VERSION, totalTests: 11, totalPassed: 11, totalFailed: 0, totalSkipped: 0, totalPending: 0,
         build: provenance('x64')});
     const browser = {name: 'chrome-for-testing', version: pins.CHROME_VERSION};
     write(`${entry.runner}-results.json`, {run: 'fresh', browser, ...counts, tests: titles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
@@ -168,7 +168,7 @@ test('failed harness uploads sanitized failing test counts without completed rep
         tests: [{title: titles[0], status: 'failed', error: 'SECRET', screenshot: '/private/SECRET'}]
     }));
     fs.writeFileSync(path.join(coverage, 'cypress-runner-results.json'), JSON.stringify({
-        ...counts, totalTests: 10, totalPassed: 9, totalFailed: 1, error: 'SECRET',
+        ...counts, totalTests: 11, totalPassed: 10, totalFailed: 1, error: 'SECRET',
         build: {...provenance('x64'), credentials: 'SECRET'}
     }));
     const entry = cases[0];
@@ -181,7 +181,7 @@ test('failed harness uploads sanitized failing test counts without completed rep
     assert.equal(report.counts.totalFailed, 1);
     assert.equal(report.counts.totalPassed, 6);
     assert.equal(report.runnerRegressionCounts.totalFailed, 1);
-    assert.equal(report.runnerRegressionCounts.totalPassed, 9);
+    assert.equal(report.runnerRegressionCounts.totalPassed, 10);
     const regressions = fs.readFileSync(path.join(directory, 'ci-reports', entry.id, 'cypress-runner-results.json'), 'utf8');
     assert.doesNotMatch(regressions, /SECRET|credentials/);
     const browser = fs.readFileSync(path.join(directory, 'ci-reports', entry.id, 'browser-results.json'), 'utf8');

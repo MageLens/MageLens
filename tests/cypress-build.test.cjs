@@ -25,3 +25,30 @@ test('Cypress upgrades require reviewing the source patch before changing the pi
     const dependencies = fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8');
     assert.equal(source.version, dependencies.match(/^CYPRESS_VERSION: "([^"]+)"$/m)[1]);
 });
+test('isolated runner regressions override and restore the shop URL on success and failure', async () => {
+    const {runAgainstFixture} = require('./cypress-regressions.cjs');
+    const original = process.env.CYPRESS_BASE_URL;
+    try {
+        for (const previous of [undefined, 'https://shop.example.test']) {
+            for (const failure of [false, true]) {
+                if (previous === undefined) delete process.env.CYPRESS_BASE_URL;
+                else process.env.CYPRESS_BASE_URL = previous;
+                const cypress = {async run(options) {
+                    await Promise.resolve();
+                    assert.equal(process.env.CYPRESS_BASE_URL, 'http://localhost:8123');
+                    assert.equal(options.project, '/isolated-project');
+                    assert.equal(options.browser, 'chrome-for-testing');
+                    if (failure) throw new Error('browser failed');
+                    return {totalPassed: 11};
+                }};
+                const run = runAgainstFixture(cypress, {baseUrl: 'http://localhost:8123'}, '/isolated-project');
+                if (failure) await assert.rejects(run, /browser failed/);
+                else assert.deepEqual(await run, {totalPassed: 11});
+                assert.equal(process.env.CYPRESS_BASE_URL, previous);
+            }
+        }
+    } finally {
+        if (original === undefined) delete process.env.CYPRESS_BASE_URL;
+        else process.env.CYPRESS_BASE_URL = original;
+    }
+});

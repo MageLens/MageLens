@@ -8,6 +8,18 @@ const os = require('node:os');
 const path = require('node:path');
 const {startFixture} = require('./fixtures/cypress-runner/server.cjs');
 const {verifyInstalled, source} = require('../docker/runner/cypress-source/provenance.cjs');
+async function runAgainstFixture(cypress, fixture, project) {
+    const previous = process.env.CYPRESS_BASE_URL;
+    try {
+        // Compose points at the shop. This separate runner regression project
+        // must use its own server, including Cypress's environment resolution.
+        process.env.CYPRESS_BASE_URL = fixture.baseUrl;
+        return await cypress.run({project, browser: 'chrome-for-testing', headed: true});
+    } finally {
+        if (previous === undefined) delete process.env.CYPRESS_BASE_URL;
+        else process.env.CYPRESS_BASE_URL = previous;
+    }
+}
 async function main() {
     const fixture = await startFixture();
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-regressions-'));
@@ -23,22 +35,22 @@ async function main() {
             e2e: {supportFile: false, specPattern: 'runner.cy.js'}
         }));
         const build = verifyInstalled();
-        const result = await require('cypress').run({project, browser: 'chrome-for-testing', headed: true,
-            config: {baseUrl: fixture.baseUrl}});
+        const result = await runAgainstFixture(require('cypress'), fixture, project);
         const report = {...Object.fromEntries(['browserName', 'browserVersion', 'cypressVersion',
             'totalTests', 'totalPassed', 'totalFailed', 'totalPending', 'totalSkipped'].map(key => [key, result[key]])), build};
         fs.writeFileSync(output, JSON.stringify(report, null, 2) + '\n');
-        assert.equal(result.totalTests, 10);
-        assert.equal(result.totalPassed, 10);
+        assert.equal(result.totalTests, 11);
+        assert.equal(result.totalPassed, 11);
         assert.equal(result.totalFailed, 0);
         assert.equal(result.totalPending, 0);
         assert.equal(result.totalSkipped, 0);
         assert.ok(!result.failures);
         assert.equal(result.cypressVersion, source.version);
-        console.log(`PASS: 10/10 native cookie, authorization and response-timeout regressions: ${output}`);
+        console.log(`PASS: 11/11 native cookie, authorization, document initialization and response-timeout regressions: ${output}`);
     } finally {
         await fixture.close();
         fs.rmSync(project, {recursive: true, force: true});
     }
 }
-main().catch(error => {console.error(error); process.exitCode = 1;});
+if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});
+module.exports = {runAgainstFixture};

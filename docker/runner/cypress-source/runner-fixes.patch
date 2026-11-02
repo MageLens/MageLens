@@ -2,6 +2,23 @@ SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 
+diff --git a/packages/network-interception/lib/core/document-preparation.ts b/packages/network-interception/lib/core/document-preparation.ts
+index b464348..cd5ccb3 100644
+--- a/packages/network-interception/lib/core/document-preparation.ts
++++ b/packages/network-interception/lib/core/document-preparation.ts
+@@ -53,7 +53,11 @@ function resolveInjectionLevelInner (facts: InjectionLevelFacts): InjectionLevel
+     return false
+   }
+
+-  if (facts.isInitial && isHTMLLike) {
++  // The browser identifies actual document requests in the AUT frame. Its
++  // identity remains authoritative when the shared initial cookie is absent
++  // or cleared during navigation; partial injection would omit the driver and
++  // window:before:load hooks from the new application document.
++  if ((facts.isInitial || facts.isAUTFrame) && isHTMLLike) {
+     return 'full'
+   }
+
 diff --git a/packages/network-interception/lib/ports/http-interception.ts b/packages/network-interception/lib/ports/http-interception.ts
 index 0eea440..0de1732 100644
 --- a/packages/network-interception/lib/ports/http-interception.ts
@@ -14,6 +31,38 @@ index 0eea440..0de1732 100644
    // Request-stage route-match result, threaded through to the response pause
    // so classification agrees with the interception that actually ran.
    hadMatchingRoutes?: boolean
+diff --git a/packages/network-interception/test/unit/document-preparation.spec.ts b/packages/network-interception/test/unit/document-preparation.spec.ts
+index 6e81c43..2c02f19 100644
+--- a/packages/network-interception/test/unit/document-preparation.spec.ts
++++ b/packages/network-interception/test/unit/document-preparation.spec.ts
+@@ -3,6 +3,27 @@ import { resolveInjectionLevel, resolveWantsSecurityRemoved } from '../../lib/co
+
+ describe('core/document-preparation', () => {
+   describe('resolveInjectionLevel', () => {
++    const documentFacts = {
++      hasFileServerError: false,
++      isInitial: false,
++      isHTML: true,
++      isRenderedHTML: true,
++      isReqMatchSuperDomainOrigin: true,
++      isAUTFrame: true,
++      urlDoesNotMatchPolicyBasedOnDomain: false,
++    }
++
++    it('fully initializes an identified AUT document without the initial cookie', () => {
++      expect(resolveInjectionLevel(documentFacts)).toBe('full')
++      expect(resolveInjectionLevel({ ...documentFacts, isRenderedHTML: false })).toBe('full')
++    })
++
++    it('does not add the AUT bootstrap to child frames or HTML fetch responses', () => {
++      expect(resolveInjectionLevel({ ...documentFacts, isAUTFrame: false })).toBe('partial')
++      expect(resolveInjectionLevel({ ...documentFacts, isAUTFrame: false, isRenderedHTML: false })).toBe(false)
++      expect(resolveInjectionLevel({ ...documentFacts, isAUTFrame: false, isReqMatchSuperDomainOrigin: false })).toBe(false)
++    })
++
+     it('returns partial for file-server errors on non-initial loads', () => {
+       expect(resolveInjectionLevel({
+         hasFileServerError: true,
 diff --git a/packages/proxy/lib/adapters/http-codec.ts b/packages/proxy/lib/adapters/http-codec.ts
 index 1b76edc..363a905 100644
 --- a/packages/proxy/lib/adapters/http-codec.ts
@@ -189,9 +238,45 @@ index cbd6c28..be85b2e 100644
        const ctx = await getContext()
 
 diff --git a/packages/proxy/test/unit/http/response-middleware.spec.ts b/packages/proxy/test/unit/http/response-middleware.spec.ts
-index 0ba751a..80d12ab 100644
+index 0ba751a..40d42a0 100644
 --- a/packages/proxy/test/unit/http/response-middleware.spec.ts
 +++ b/packages/proxy/test/unit/http/response-middleware.spec.ts
+@@ -738,7 +738,7 @@ describe('http/response-middleware', function () {
+       expect(ctx.res.wantsInjection).toEqual('full')
+     })
+
+-    it('otherwise, partial injection is set', async function () {
++    it('retains partial injection for rendered HTML outside the AUT frame', async function () {
+       prepareContext({
+         renderedHTMLOrigins: {},
+         getRenderedHTMLOrigins () {
+@@ -746,7 +746,7 @@ describe('http/response-middleware', function () {
+         },
+         req: {
+           proxiedUrl: 'http://127.0.0.1:3501/',
+-          isAUTFrame: true,
++          isAUTFrame: false,
+           cookies: {},
+           headers: {
+             'accept': [
+@@ -766,7 +766,7 @@ describe('http/response-middleware', function () {
+       expect(ctx.res.wantsInjection).toEqual('partial')
+     })
+
+-    it('injects partial when request is for top-level origin', async function () {
++    it('fully initializes the identified AUT document without the initial cookie', async function () {
+       prepareContext({
+         renderedHTMLOrigins: {},
+         getRenderedHTMLOrigins () {
+@@ -791,7 +791,7 @@ describe('http/response-middleware', function () {
+       })
+
+       await testMiddleware([SetInjectionLevel], ctx)
+-      expect(ctx.res.wantsInjection).toEqual('partial')
++      expect(ctx.res.wantsInjection).toEqual('full')
+     })
+
+     it('does not set Origin-Agent-Cluster header to false when injection is not expected', async function () {
 @@ -1236,6 +1236,21 @@ describe('http/response-middleware', function () {
    describe('MaybeCopyCookiesFromIncomingRes', function () {
      const { MaybeCopyCookiesFromIncomingRes } = ResponseMiddleware

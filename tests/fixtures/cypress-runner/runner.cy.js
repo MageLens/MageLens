@@ -57,6 +57,22 @@ it('retains cross-site login state after additional same-origin redirect hops', 
   cy.get('a').click();
   cy.get('#received').should('have.text', 'oauth_state=csrf-token');
 });
+it('initializes redirected application documents even when the navigation marker is false', () => {
+  cy.on('window:before:load', win => { win.fixtureBeforeLoad = true; });
+  cy.visit('/bootstrap-start');
+  cy.window().then(win => {
+    // Reproduce the missing internal marker observed on real Mage-OS redirects.
+    // This changes only the failing test condition, never application cookies.
+    win.addEventListener('beforeunload', () => {
+      win.document.cookie = '__cypress.initial=false; Path=/';
+    });
+  });
+  cy.get('button').click();
+  cy.get('h1').should('have.text', 'Initialized');
+  cy.window().its('fixtureInitialization').should('deep.equal', {
+    bootstrap: true, beforeLoad: true, receivedInitial: false
+  });
+});
 it('reports completion for a decoded image within the configured response timeout', {
   pageLoadTimeout: 60000, responseTimeout: 60000
 }, () => {

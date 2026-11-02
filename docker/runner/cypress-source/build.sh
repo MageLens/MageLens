@@ -31,9 +31,11 @@ export PATH="$PWD/node_modules/.bin:$PATH"
 # builder derives its worker count from that affinity, including build-prod.
 node -e 'const fs=require("fs"); const p=require("./package.json"); p.version=process.argv[1]; fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$version"
 yarn lerna run build --stream --concurrency 2
+yarn workspace @packages/network-interception test run --maxWorkers=2 --minWorkers=1
 yarn workspace @packages/proxy test --maxWorkers=2 --minWorkers=1
 yarn workspace @packages/server test-unit test/unit/browsers/cdp_automation.spec.ts test/unit/browsers/cdp-fetch-transport.spec.ts test/unit/network-runtime.spec.ts --maxWorkers=2 --minWorkers=1
 yarn workspace @packages/proxy check-ts
+yarn workspace @packages/network-interception check-ts
 yarn workspace @packages/server check-ts
 env -u ELECTRON_RUN_AS_NODE node scripts/binary.js build --version "$version" --platform linux
 xvfb-run -a env -u ELECTRON_RUN_AS_NODE node scripts/binary.js package --version "$version" --platform linux
