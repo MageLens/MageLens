@@ -220,7 +220,7 @@ jobs:
         run: |
           mkdir -p cookie-evidence
           docker run --rm --name magelens-packaged-cookie --init --memory=4g --memory-swap=4g --cpus=2 --pids-limit=768 --shm-size=1g \
-            --user "$(id -u):$(id -g)" --env HOME=/tmp --env CYPRESS_BASE_URL=https://unrelated-shop.invalid \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp --env CYPRESS_BASE_URL=https://unrelated-shop.invalid --env 'DEBUG=cypress:network-interception:document,cypress:proxy:http:inject' \
             --mount "type=bind,source=$PWD/tests,target=/workspace/tests,readonly" \
             --mount "type=bind,source=$PWD/docker/runner,target=/workspace/docker/runner,readonly" \
             --mount "type=bind,source=$PWD/cookie-evidence,target=/workspace/coverage" \
