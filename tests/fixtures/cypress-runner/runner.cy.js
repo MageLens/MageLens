@@ -29,7 +29,7 @@ it('does not restore a cookie deleted by application JavaScript', () => {
 it('preserves login state through a cross-origin authorization page', () => {
   cy.visit('/oauth-login');
   cy.get('a').click();
-  cy.origin(Cypress.env('authorizationOrigin'), () => {
+  cy.origin(Cypress.expose('authorizationOrigin'), () => {
     cy.get('button').click();
   });
   cy.get('#received').should('have.text', 'oauth_state=csrf-token');

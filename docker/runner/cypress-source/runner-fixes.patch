@@ -15,14 +15,14 @@ index 0eea440..0de1732 100644
    // so classification agrees with the interception that actually ran.
    hadMatchingRoutes?: boolean
 diff --git a/packages/proxy/lib/adapters/http-codec.ts b/packages/proxy/lib/adapters/http-codec.ts
-index 1b76edc..f3b7151 100644
+index 1b76edc..363a905 100644
 --- a/packages/proxy/lib/adapters/http-codec.ts
 +++ b/packages/proxy/lib/adapters/http-codec.ts
 @@ -47,6 +47,7 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
          headers: ctx.req.headers as HttpRequest['headers'],
          body: ctx.req.body,
          resourceType: ctx.req.resourceType,
-+        responseTimeout: ctx.req.responseTimeout,
++        ...(ctx.req.responseTimeout === undefined ? {} : { responseTimeout: ctx.req.responseTimeout }),
        }
      },
 
@@ -268,14 +268,14 @@ index 10454fb..1908262 100644
      const mockCtx: HttpMiddlewareThis<any> = {
        getAUTUrl: vi.fn().mockReturnValue(autUrl),
 diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
-index ac4cd75..d337e72 100644
+index ac4cd75..b681f09 100644
 --- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
 +++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
 @@ -292,6 +292,7 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
          headers: transportRequest.headers,
          body: transportRequest.pausePostDataBuffer ?? transportRequest.postData,
          resourceType: transportRequest.resourceType,
-+        responseTimeout: transportRequest.responseTimeout,
++        ...(transportRequest.responseTimeout === undefined ? {} : { responseTimeout: transportRequest.responseTimeout }),
        }
      },
 
@@ -438,7 +438,7 @@ index 678ee2e..3a44f4e 100644
          resolveOriginRedirect,
          onRequestCanceled,
 diff --git a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
-index 2c03ed7..450db8a 100644
+index 2c03ed7..834045f 100644
 --- a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
 +++ b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
 @@ -117,6 +117,7 @@ function createNetworkExtraInfo () {
@@ -457,15 +457,7 @@ index 2c03ed7..450db8a 100644
      isAUTFrame: options.isAUTFrame,
      isFromExtraTarget: options.isFromExtraTarget,
      addPendingUrlWithoutPreRequest: options.addPendingUrlWithoutPreRequest,
-@@ -308,6 +310,7 @@ describe('CdpFetchTransport', () => {
-         method: 'GET',
-         url: 'https://example.test/',
-         resourceType: undefined,
-+        responseTimeout: undefined,
-       })
-     })
-
-@@ -3015,6 +3018,54 @@ describe('CdpFetchTransport', () => {
+@@ -3015,6 +3017,54 @@ describe('CdpFetchTransport', () => {
        })
      })
 

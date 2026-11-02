@@ -19,7 +19,7 @@ async function main() {
         fs.writeFileSync(path.join(project, 'cypress.config.cjs'), 'module.exports = ' + JSON.stringify({
             video: false, retries: 0, pageLoadTimeout: 20000,
             screenshotsFolder: path.resolve('coverage/cypress-runner-screenshots'),
-            env: {authorizationOrigin: fixture.authorizationOrigin},
+            expose: {authorizationOrigin: fixture.authorizationOrigin},
             e2e: {supportFile: false, specPattern: 'runner.cy.js'}
         }));
         const build = verifyInstalled();
