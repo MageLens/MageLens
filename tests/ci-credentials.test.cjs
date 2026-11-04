@@ -18,7 +18,7 @@ function prepare(t, auth) {
     return {result, file: path.join(directory, 'auth.json')};
 }
 
-test('CI prepares only Marketplace auth without requiring environment-review metadata', t => {
+test('CI prepares Marketplace auth from shared configuration', t => {
     const marketplace = {username: 'test-public-key', password: 'test-private-key'};
     const {result, file} = prepare(t, JSON.stringify({'http-basic': {
         'repo.magento.com': marketplace, 'unrelated.example': {username: 'unrelated', password: 'exclude-me'}
