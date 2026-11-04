@@ -94,9 +94,9 @@ Compare complete coverage outcomes within each theme across platforms, browser r
 
 Local development and CI use the same runner Dockerfile and harness. Cypress 16.2.1 is rebuilt from its pinned upstream source with the cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`; do not duplicate it in CI scripts or application code. Each Cypress case must pass the eleven runner regressions (nine cookie/authorization journeys, document initialization and a delayed-response check) and record matching source/patch provenance. Review the patch when updating Cypress; remove the source build after an upstream release passes the retained regressions. Existing installations must rerun installation with their saved selections to rebuild the runner.
 
-CI runs the same matrix for all pull requests, including forks, against the exact merge candidate. For manual qualification, dispatch `gh workflow run ci.yml --ref BRANCH`. Retrieve the `case-*-attempt-N` and `qualification-N` artifacts; see [tests/README.md](tests/README.md) for setup and diagnostics.
+CI runs only on pull requests, including forks, against the exact merge candidate. Merges and release tags do not rerun the matrix. Retrieve the `case-*-attempt-N` and `qualification-N` artifacts; see [tests/README.md](tests/README.md) for setup and diagnostics.
 
-Fix failures and push a new candidate to run CI again. Rerun all jobs on the final candidate: artifacts from different attempts cannot be combined. Automatic publishing consumes successful exact-commit CI evidence and verifies the release tag targets that commit. Do not merge or publish unless requested.
+Fix failures and push a new candidate to run CI again. Rerun all jobs on the final candidate: artifacts from different attempts cannot be combined. The manually dispatched release publisher consumes the successful PR qualification and requires the release commit to have the same Git tree as the tested candidate. Identical files after merging do not require another CI run; changed files require a new qualified PR. Do not merge or publish unless requested.
 
 ## Preserve application data and report integrity
 
