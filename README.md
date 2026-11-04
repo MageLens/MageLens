@@ -160,7 +160,7 @@ This is the single place to choose the main dependency versions:
 | Cypress runner's Node and browser system dependencies | `RUNNER_IMAGE` |
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
 
-Use exact release versions and keep values quoted. `RUNNER_IMAGE` is an image with a version tag. `PHP_IMAGE` uses `php:X.Y.Z-fpm-bookworm`, optionally pinned with `@sha256:<digest>`. Choose a PHP version supported by both the selected Mark Shust release and your platform. The defaults pair Magento Open Source 2.4.9 and Mage-OS 3.6.0, which share the same Magento foundation.
+Use exact release versions and keep values quoted. `RUNNER_IMAGE` is an image with a version tag. `PHP_IMAGE` uses `php:X.Y.Z-fpm-bookworm`, optionally pinned with `@sha256:<digest>`. Choose a PHP version supported by both the selected Mark Shust release and your platform. The defaults pair Magento Open Source 2.4.9 and Mage-OS 4.0.0, which share the same Magento foundation.
 
 The PHP image uses PIE 1.5.5 to install PCOV 2.1.2, including the [PIE installer security fix](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67). After updating MageLens, rerun the installer with your existing platform, theme and runner flags to rebuild the PHP image.
 

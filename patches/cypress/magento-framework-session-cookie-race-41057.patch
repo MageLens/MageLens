@@ -4,7 +4,7 @@ License: see LICENSE in the repository root.
 
 Subject: Follow regenerated sessions when a request starts with a stale cookie
 Upstream: https://github.com/magento/magento2/issues/41057
-Target: Magento Open Source 2.4.9 and Mage-OS 3.6.0 framework
+Target: Magento Open Source 2.4.9 and Mage-OS 4.0.0 framework
 
 Cypress CI-only workaround for the upstream session-cookie race; review on Magento upgrades.
 Applied only around Cypress runs by docker/php/cypress-patches.sh.
@@ -39,10 +39,18 @@ one pointer before validation, and renew the response cookie with the adopted ID
                  if (isset($_SESSION['destroyed'])
                      && $_SESSION['destroyed'] < time() - $this->sessionConfig->getCookieLifetime()
                  ) {
-@@ -195 +202 @@
+@@ -192,7 +199,7 @@
+                 }
+
+                 $this->validator->validate($this);
 -                $this->renewCookie(null);
 +                $this->renewCookie($newSessionId);
-@@ -523,5 +530,4 @@
+
+                 $this->registerShutdown();
+
+@@ -521,9 +528,8 @@
+         }
+
          if ($this->isSessionExists()) {
 -            // Regenerate the session
 -            session_regenerate_id();
@@ -50,12 +58,23 @@ one pointer before validation, and renew the response cookie with the adopted ID
 +            $oldSession = $_SESSION;
 +            $newSessionId = session_create_id();
              $_SESSION['new_session_id'] = $newSessionId;
-@@ -535,3 +541,0 @@
+
+             // Set destroy timestamp
+@@ -532,17 +538,10 @@
+             // Write and close current session;
+             session_commit();
+
 -            // Called after destroy()
 -            $oldSession = $_SESSION;
 -
-@@ -542,4 +545,0 @@
+             // Start session with new session ID
+             session_id($newSessionId);
+             session_start();
+             $_SESSION = $oldSession;
 -
 -            // New session does not need them
 -            unset($_SESSION['destroyed']);
 -            unset($_SESSION['new_session_id']);
+         } else {
+             session_start();
+         }
