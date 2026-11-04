@@ -116,8 +116,8 @@ jobs:
       feasibility-only: ${{ inputs.feasibility-only == true }}
   magento:
     name: Magento E2E
-    # Forks never receive credentials. Repository branches require environment
-    # approval of the exact commit (including the PR merge candidate).
+    # Forks never receive credentials. Repository branches run automatically
+    # against the exact commit (including the PR merge candidate).
     if: >-
       inputs.feasibility-only != true &&
       (github.event_name != 'pull_request' ||
@@ -130,7 +130,7 @@ jobs:
         runner: [cypress, playwright]
     uses: ./.github/workflows/e2e-case.yml
     # Explicit forwarding enables environment-secret resolution in the called job.
-    # The protected environment supplies the value after review; public cases omit it.
+    # The environment supplies the value; public cases omit it.
     secrets:
       COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
     with:

@@ -7,7 +7,7 @@ on:
   workflow_call:
     secrets:
       COMPOSER_AUTH:
-        # Public cases omit it; Magento validates the protected environment value.
+        # Public cases omit it; Magento validates the environment value.
         required: false
     inputs:
       feasibility-only:
@@ -34,7 +34,7 @@ permissions:
 jobs:
   case:
     name: ${{ inputs.os }} / ${{ inputs.platform }} / ${{ inputs.theme }} / ${{ inputs.runner }}
-    # Repository-branch commits become trusted only after environment review.
+    # Credentialed jobs run only for repository branches and tags.
     # Standard pull_request events cannot grant environment secrets to forks.
     if: >-
       inputs.platform != 'magento' || github.event_name != 'pull_request' ||
@@ -98,33 +98,13 @@ jobs:
         name: Validate actual host, Linux engine, mounts and networking
         timeout-minutes: 15
         run: bash tests/ci/on-host.sh node tests/ci/probe.cjs
-      - name: Require reviewed credential access
+      - name: Prepare Marketplace credentials
         id: credentials
         if: inputs.platform == 'magento'
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
         run: |
-          gh api "repos/$GH_REPO/environments/magento-e2e" > "$RUNNER_TEMP/environment.json"
-          node - <<'NODE'
-          const fs = require('fs');
-          const env = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/environment.json'));
-          if (!env.protection_rules?.some(rule => rule.type === 'required_reviewers' && rule.reviewers?.length)) {
-            throw new Error('magento-e2e must require reviewers before any credentialed code runs');
-          }
-          if (!process.env.COMPOSER_AUTH) throw new Error('INCOMPLETE: missing protected COMPOSER_AUTH');
-          let auth;
-          try { auth = JSON.parse(process.env.COMPOSER_AUTH); }
-          catch { throw new Error('Invalid COMPOSER_AUTH JSON'); }
-          for (const value of Object.values(auth['http-basic']?.['repo.magento.com'] || {})) {
-            if (typeof value === 'string') console.log('::add-mask::' + value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A'));
-          }
-          if (!auth['http-basic']?.['repo.magento.com']?.username || !auth['http-basic']['repo.magento.com'].password) {
-            throw new Error('INCOMPLETE: Marketplace credentials absent');
-          }
-          fs.writeFileSync(process.env.RUNNER_TEMP + '/auth.json', JSON.stringify({'http-basic': {'repo.magento.com': auth['http-basic']['repo.magento.com']}}), {mode: 0o600});
-          NODE
+          node tests/ci/credentials.cjs
           echo "MAGELENS_COMPOSER_AUTH_FILE=$RUNNER_TEMP/auth.json" >> "$GITHUB_ENV"
       - name: Check available resources
         id: resources
