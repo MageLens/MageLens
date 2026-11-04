@@ -12,7 +12,7 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 ## Run CI
 
-[CI](https://github.com/MageLens/MageLens/actions/workflows/ci.yml) runs on pull requests, pushes to `main`, release tags and manual dispatch. The required matrix is:
+[CI](https://github.com/MageLens/MageLens/actions/workflows/ci.yml) runs only on pull requests. Merging and creating release tags do not rerun the matrix. The required matrix is:
 
 | Host | Platform | Theme | Runner | Cases |
 | --- | --- | --- | --- | --- |
@@ -21,20 +21,17 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 The host probe records the actual runner image, architecture, Bash and Docker/Compose versions. It requires Linux containers, writable host mounts, symlinks, container DNS and a published port reachable from the host before installation. A failed probe leaves the required case incomplete; it never substitutes a Linux runner.
 
-To qualify a branch, use **Actions → CI → Run workflow**, select the branch, or:
+Open or update a pull request to qualify its merge candidate. Inspect the run and download its evidence with:
 
 ```bash
-gh workflow run ci.yml --ref BRANCH
 gh run list --workflow ci.yml --branch BRANCH
 gh run view RUN_ID
 gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 ```
 
-For inexpensive host diagnosis, dispatch with `-f feasibility-only=true`. This executes probes without installations and deliberately cannot pass the required gate. Leave the option off for final qualification.
+After fixing a failure, push the new candidate. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Dispatch uses that branch's exact commit. New workflows must be registered with GitHub before manual dispatch is available; the initial PR run registers CI. After changes, push and dispatch the new candidate. Use **Re-run all jobs** for final verification; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
-
-Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate. Manual dispatch qualifies the selected branch head.
+Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
@@ -44,15 +41,19 @@ Set the repository Actions variable **COMPOSER_AUTH** to the Composer `auth.json
 
 Each `case-OS-PLATFORM-THEME-RUNNER-attempt-N` artifact contains `evidence.json` and sanitized `coverage/` JSON. Evidence records commit SHA, workflow run/attempt, OS image, architecture, memory, dependency pins, matrix case, step outcomes and test counts. Coverage includes the shared application counters needed for the original comparison, plus `equivalence.json` with every measured file's coverage outcomes and aggregate totals. Private paths, source and warning text are represented by stable hashes. `qualification-N` contains `qualification.json`, `theme-report-comparison.json` and, when all eight Linux reports exist, `linux-matrix-comparison.json`.
 
-The gate compares all five Luma reports with each other (including Windows) and all four Hyvä CSP reports with each other. It checks PHP lines, JavaScript statements/functions/branches, template statements/functions/branches, DOM observations, source fingerprints, generated-script links, inventories, warnings and totals. Host paths, line endings, ordering and per-run metadata are normalized. Hit counts become covered/uncovered outcomes because repeated event/render execution can vary; differing coverage outcomes still fail. Missing snapshots and any same-theme difference block qualification and automatic publishing. The comparison lists differing files and coordinates; diagnostics are bounded without limiting what is compared.
+The gate compares all five Luma reports with each other (including Windows) and all four Hyvä CSP reports with each other. It checks PHP lines, JavaScript statements/functions/branches, template statements/functions/branches, DOM observations, source fingerprints, generated-script links, inventories, warnings and totals. Host paths, line endings, ordering and per-run metadata are normalized. Hit counts become covered/uncovered outcomes because repeated event/render execution can vary; differing coverage outcomes still fail. Missing snapshots and any same-theme difference block qualification and release publishing. The comparison lists differing files and coordinates; diagnostics are bounded without limiting what is compared.
 
 Cypress uses the same source-built 16.2.1 binary locally and in CI, with the pinned cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`. `coverage/installation.json` records its upstream commit and patch digest. Each Cypress case also runs eleven isolated regressions (nine cookie/authorization journeys, document initialization and a delayed-response check); `cypress-runner-results.json` is included in its sanitized artifact and required by the final gate. For focused local investigation in an isolated installed runner, use `./bin/runner node tests/cypress-regressions.cjs`. This does not replace the final CI matrix. The source build runs upstream document-classifier, proxy and CDP unit tests and preserves Cypress's packaging and integrity checks; its build inputs and dependencies are discarded before the final image is produced.
 
-Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case is limited to **5 MiB**. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded, and no test result is reused.
+Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case is limited to **5 MiB**. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. Release publication reuses the successful PR qualification when the released files are identical.
 
 Every job runs one installation, with at most four Mage-OS and two Magento jobs in parallel on separate standard hosted VMs. E2E jobs have a 150-minute timeout and a 130-minute harness limit, allowing time for cleanup and uploads. CI stores installations under `MAGELENS_TEST_TMPDIR` on disk, avoiding Ubuntu 26’s RAM-backed `/tmp`. Disposable hosted Linux jobs remove unused Android/.NET/GHC/CodeQL SDK directories. Before installation, both the host and its Linux Docker engine must provide at least 25 GiB free disk and 6 GiB RAM; a sparse VM disk cannot hide an exhausted Windows host drive. Docker resources are never globally pruned. No local RAM or disk is consumed by installations. Cleanup addresses only the registered test project and volumes. Canceled/force-terminated jobs cannot qualify, and GitHub disposes of the hosted VM.
 
-The automatic publisher runs after successful CI, downloads the exact qualification artifact, and verifies the release tag resolves to the qualified SHA before creating or updating release notes. Manual runs never publish. No release is published by this PR.
+After an authorized release PR is merged, run **Actions → Publish release → Run workflow** on `main`, supplying the successful PR CI run ID and the full merged commit SHA. The publisher checks the exact run attempt's qualification and requires identical Git trees for the tested candidate and released commit, then creates the tag and publishes changelog notes. It does not run tests again. Publish while the qualification artifact is still available.
+
+```bash
+gh workflow run release.yml --ref main -f ci-run=RUN_ID -f release-sha=MERGED_COMMIT_SHA
+```
 
 ## Hosted runner feasibility and cost
 

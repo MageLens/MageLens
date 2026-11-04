@@ -5,21 +5,12 @@
 name: CI
 on:
   pull_request:
-  push:
-    branches: [main]
-    tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      feasibility-only:
-        description: 'Diagnose hosts only (cannot qualify a commit)'
-        type: boolean
-        default: false
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   static:
     name: Static syntax and workflow checks
@@ -113,10 +104,8 @@ jobs:
       theme: ${{ matrix.theme }}
       runner: ${{ matrix.runner }}
       sha: ${{ github.sha }}
-      feasibility-only: ${{ inputs.feasibility-only == true }}
   magento:
     name: Magento E2E
-    if: inputs.feasibility-only != true
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -132,7 +121,6 @@ jobs:
       theme: ${{ matrix.theme }}
       runner: ${{ matrix.runner }}
       sha: ${{ github.sha }}
-      feasibility-only: ${{ inputs.feasibility-only == true }}
   gate:
     name: Required CI gate
     if: always()
