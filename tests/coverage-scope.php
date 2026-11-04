@@ -65,8 +65,8 @@ $coverage = new SebastianBergmann\CodeCoverage\CodeCoverage(
     (new SebastianBergmann\CodeCoverage\Driver\Selector)->forLineCoverage($filter), $filter
 );
 $coverage->includeUncoveredFiles();
-$coverage->append(SebastianBergmann\CodeCoverage\Data\RawCodeCoverageData::fromXdebugWithoutPathCoverage($hits), 'scope regression');
-(new SebastianBergmann\CodeCoverage\Report\Clover)->process($coverage, '/tmp/scope-clover.xml');
+$coverage->append(SebastianBergmann\CodeCoverage\Data\RawCodeCoverageData::fromLineCoverage($hits), 'scope regression');
+(new SebastianBergmann\CodeCoverage\Report\Clover)->process($coverage->getReport(), '/tmp/scope-clover.xml');
 $clover = simplexml_load_file('/tmp/scope-clover.xml');
 foreach ($excluded as $file) check(!$clover->xpath('//file[@name="' . $file . '"]'), "PHP report includes excluded file: $file");
 foreach ($scope as $file) {

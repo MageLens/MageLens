@@ -68,9 +68,9 @@ if ($state['manifest']) {
 }
 $runner = ($runData['runner'] ?? 'cypress') === 'playwright' ? 'Playwright' : 'Cypress';
 $coverage = applicationPhpReportData($state['scope'], $merged, $runData['sources'], "$runner HTTP run $run");
-(new Facade)->process($coverage, '/coverage/php');
-(new Clover)->process($coverage, '/coverage/php/clover.xml');
 $report = $coverage->getReport();
+(new Facade)->process($report, '/coverage/php');
+(new Clover)->process($report, '/coverage/php/clover.xml');
 $total = $report->numberOfExecutableLines();
 $covered = $report->numberOfExecutedLines();
 file_put_contents('/coverage/php/coverage-summary.json', json_encode([
