@@ -98,7 +98,7 @@ Open the live runner before starting `./bin/run-coverage` to watch either runner
 ## Requirements
 
 - Docker Engine/Desktop with Compose **2.24.4+**, running Linux containers; Git, Bash, wget, and tar.
-- See the [platform roadmap](ROADMAP.md) for official host support and the configurations tested in CI.
+- See the [wiki roadmap](https://github.com/MageLens/MageLens/wiki/Roadmap) for official host support and the configurations tested in CI.
 - Allocate at least **6 GB RAM** to Docker (8 GB recommended) and roughly **15 GB free disk** for the first build.
 - Internet access for container images, Composer/npm dependencies, and the selected browser download.
 - Magento Marketplace public/private keys for `repo.magento.com` when installing Magento Open Source. Mage-OS does not require them. Copied projects may require credentials for their own private packages.
