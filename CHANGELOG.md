@@ -12,7 +12,7 @@ License: see LICENSE in the repository root.
 - Restore the original session handling source after Cypress coverage runs on both platforms.
 - Update Cypress code coverage to 4.1.2 and PHP code coverage to 14.5.0, with compatible HTML, Clover, and PHP line reports.
 - Document the tested Windows WSL2 setup for Mage-OS, Luma, and Cypress.
-- Run credentialed CI automatically for repository branches without repeated environment approval; fork PRs remain uncredentialed.
+- Simplify CI configuration and run the full matrix for fork pull requests.
 
 For an existing installation, back up application data and rerun `./install.sh` with your saved platform, theme and runner flags. The existing application's Composer lock continues to control its platform dependencies.
 
