@@ -1,6 +1,6 @@
 {
   "name": "magelens",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "private": true,
   "license": "Elastic-2.0",
   "description": "Quickly bootstrap Magento with PHP, JavaScript, and HTML template code coverage",
@@ -13,7 +13,7 @@
     "test:e2e:matrix": "bash tests/e2e-matrix.sh"
   },
   "devDependencies": {
-    "@cypress/code-coverage": "4.0.3",
+    "@cypress/code-coverage": "4.1.2",
     "@vitaliiboiko/magento-template-coverage": "1.5.3",
     "cypress": "16.2.1",
     "istanbul-lib-coverage": "3.2.2",

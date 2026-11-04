@@ -55,13 +55,17 @@ function applicationPhpReportData(array $scope, array $merged, array $sourceHash
     }
     $coverage = new CodeCoverage((new Selector)->forLineCoverage($filter), $filter);
     $coverage->includeUncoveredFiles();
-    // PCOV uses the same -1/1 line format as this standard raw-data API.
-    $coverage->append(RawCodeCoverageData::fromXdebugWithoutPathCoverage($raw), $testId);
+    $coverage->append(RawCodeCoverageData::fromLineCoverage($raw), $testId);
     // php-code-coverage expands executable ranges, including T_INLINE_HTML.
     // Filter after expansion and discovery, so neither can reintroduce markup.
     $data = $coverage->getData();
     $lines = $data->lineCoverage();
-    foreach ($lines as $file => $hits) $lines[$file] = array_intersect_key($hits, $allowed[$file]);
+    foreach ($lines as $file => $hits) {
+        $lines[$file] = array_filter(
+            array_intersect_key($hits, $allowed[$file]),
+            static fn(?array $tests): bool => $tests !== null
+        );
+    }
     $data->setLineCoverage($lines);
     $coverage->setData($data);
     $coverage->excludeUncoveredFiles();

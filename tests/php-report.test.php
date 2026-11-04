@@ -29,8 +29,11 @@ try {
 <?php
 declare(strict_types=1);
 $label = 'visible';
-if (false) {
+if ($label === 'hidden') {
     $label = 'never-php';
+}
+if (false) {
+    $label = 'dead-php';
 }
 ?>
 <section>Static markup</section>
@@ -75,17 +78,20 @@ PHTML;
     $data = $coverage->getData()->lineCoverage();
     $lines = $data[$root . '/original/app/code/Fixture/mixed.phtml'];
     check(!empty($lines[lineOf($source, "\$label = 'visible'")]), 'Executed PHP is missing');
-    check($lines[lineOf($source, "\$label = 'never-php'")] === [], 'Unexecuted PHP was covered');
+    $unexecuted = lineOf($source, "\$label = 'never-php'");
+    check(($lines[$unexecuted] ?? null) === [], 'Unexecuted PHP is missing or marked covered');
+    check(!array_key_exists(lineOf($source, 'dead-php'), $lines), 'Dead PHP line counted');
     check(!empty($lines[lineOf($source, '<p><?=')]), 'PHP embedded in markup is missing');
     check(!empty($lines[lineOf($source, '$multiline =')]), 'Multiline PHP is missing');
     foreach (['Static markup', '<script>', 'unusedBrowserFunction', 'never-javascript', '</script>', '// This comment'] as $needle) {
         check(!array_key_exists(lineOf($source, $needle), $lines), "Non-PHP line counted: $needle");
     }
     check($data[$root . '/original/app/code/Fixture/static.phtml'] === [], 'Markup-only file has PHP lines');
-    check($data[$root . '/original/app/code/Fixture/unused.phtml'][2] === [], 'Unvisited PHP is missing from denominator');
+    check(($data[$root . '/original/app/code/Fixture/unused.phtml'][2] ?? null) === [], 'Unvisited PHP is missing from denominator');
     check(!empty($data[$root . '/original/app/code/Fixture/only.php'][2]), 'PHP-only file is missing');
-    (new Facade)->process($coverage, $root . '/report');
-    $xml = (new Clover)->process($coverage);
+    $report = $coverage->getReport();
+    (new Facade)->process($report, $root . '/report');
+    $xml = (new Clover)->process($report);
     check(str_contains($xml, '/original/app/code/Fixture/unused.phtml'), 'Unvisited file absent from Clover');
     $html = file_get_contents($root . '/report/mixed.phtml.html');
     check(!str_contains($html, '__mtcTemplateHit'), 'HTML shows injected instrumentation');

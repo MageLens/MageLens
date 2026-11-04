@@ -21,7 +21,7 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 The host probe records the actual runner image, architecture, Bash and Docker/Compose versions. It requires Linux containers, writable host mounts, symlinks, container DNS and a published port reachable from the host before installation. A failed probe leaves the required case incomplete; it never substitutes a Linux runner.
 
-To qualify a reviewed branch, use **Actions → CI → Run workflow**, select the branch, or:
+To qualify a branch, use **Actions → CI → Run workflow**, select the branch, or:
 
 ```bash
 gh workflow run ci.yml --ref BRANCH
@@ -32,15 +32,13 @@ gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 
 For inexpensive host diagnosis, dispatch with `-f feasibility-only=true`. This executes probes without installations and deliberately cannot pass the required gate. Leave the option off for final qualification.
 
-Dispatch uses that branch's exact commit. New workflows must be registered with GitHub before manual dispatch is available; the initial PR run registers CI. Inspect the SHA before approving credential access. After changes, push and dispatch the new candidate. Use **Re-run all jobs** for final verification; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
+Dispatch uses that branch's exact commit. New workflows must be registered with GitHub before manual dispatch is available; the initial PR run registers CI. After changes, push and dispatch the new candidate. Use **Re-run all jobs** for final verification; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. Same-repository PRs require environment approval of their exact merge candidate to run Magento; this lets the required gate qualify the same commit GitHub evaluates for merging. Fork PRs remain incomplete until their reviewed changes are placed on a repository branch. Manual dispatch also qualifies a reviewed branch head.
+Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate. Manual dispatch qualifies the selected branch head.
 
 ## Marketplace credentials
 
-Create the GitHub environment `magento-e2e` with required reviewers and an environment secret **COMPOSER_AUTH** containing Marketplace `http-basic` credentials for `repo.magento.com`. Use a dedicated account/key with only the required package access. Restrict deployments to reviewed branches/tags, prevent self-review where feasible, and approve only after reviewing the exact candidate including workflow/script changes. Store no Marketplace secrets at repository scope. The job checks required-reviewer protection and copies only Marketplace auth to a temporary mode-0600 file; the harness copies it to its own temporary volume. Cleanup removes both.
-
-Fork pull requests never run the credentialed job. Same-repository PRs run it only after the protected environment reviewer approves the exact merge candidate; merely being a repository contributor is not approval. Dependabot receives no Actions secrets and cannot complete Magento qualification without a separately reviewed maintainer branch. `pull_request_target` is not used. Public Mage-OS jobs do not receive Composer auth. Missing credentials or protection are incomplete coverage and block full qualification. The `public-e2e` environment must contain no secrets.
+Set the repository Actions variable **COMPOSER_AUTH** to the Composer `auth.json` JSON for `repo.magento.com`. This shared test account is used by CI, including fork pull requests.
 
 ## Reports and debugging
 
@@ -52,7 +50,7 @@ Cypress uses the same source-built 16.2.1 binary locally and in CI, with the pin
 
 Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case is limited to **5 MiB**. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded, and no test result is reused.
 
-Every job runs one installation, with at most four public and two credentialed jobs in parallel on separate standard hosted VMs. E2E jobs have a 150-minute timeout and a 130-minute harness limit, allowing time for cleanup and uploads. CI stores installations under `MAGELENS_TEST_TMPDIR` on disk, avoiding Ubuntu 26’s RAM-backed `/tmp`. Disposable hosted Linux jobs remove unused Android/.NET/GHC/CodeQL SDK directories. Before installation, both the host and its Linux Docker engine must provide at least 25 GiB free disk and 6 GiB RAM; a sparse VM disk cannot hide an exhausted Windows host drive. Docker resources are never globally pruned. No local RAM or disk is consumed by installations. Cleanup addresses only the registered test project and volumes. Canceled/force-terminated jobs cannot qualify, and GitHub disposes of the hosted VM.
+Every job runs one installation, with at most four Mage-OS and two Magento jobs in parallel on separate standard hosted VMs. E2E jobs have a 150-minute timeout and a 130-minute harness limit, allowing time for cleanup and uploads. CI stores installations under `MAGELENS_TEST_TMPDIR` on disk, avoiding Ubuntu 26’s RAM-backed `/tmp`. Disposable hosted Linux jobs remove unused Android/.NET/GHC/CodeQL SDK directories. Before installation, both the host and its Linux Docker engine must provide at least 25 GiB free disk and 6 GiB RAM; a sparse VM disk cannot hide an exhausted Windows host drive. Docker resources are never globally pruned. No local RAM or disk is consumed by installations. Cleanup addresses only the registered test project and volumes. Canceled/force-terminated jobs cannot qualify, and GitHub disposes of the hosted VM.
 
 The automatic publisher runs after successful CI, downloads the exact qualification artifact, and verifies the release tag resolves to the qualified SHA before creating or updating release notes. Manual runs never publish. No release is published by this PR.
 
