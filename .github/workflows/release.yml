@@ -5,9 +5,16 @@
 name: Publish release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ci-run:
+        description: 'Successful PR CI run ID'
+        required: true
+        type: string
+      release-sha:
+        description: 'Full merged commit SHA to release'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -18,41 +25,46 @@ concurrency:
 
 jobs:
   publish:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.path == '.github/workflows/ci.yml' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
       actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      QUALIFIED_RUN: ${{ inputs.ci-run }}
+      RELEASE_SHA: ${{ inputs.release-sha }}
     steps:
-      - name: Verify the exact upstream qualification
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          QUALIFIED_RUN: ${{ github.event.workflow_run.id }}
-          QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
-          QUALIFIED_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      - name: Verify successful PR qualification and identical release files
         run: |
+          [[ "$QUALIFIED_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$QUALIFIED_RUN" > ci-run.json
+          jq -e --arg repo "$GH_REPO" '
+            .status == "completed" and .conclusion == "success" and
+            .event == "pull_request" and .path == ".github/workflows/ci.yml" and
+            .repository.full_name == $repo
+          ' ci-run.json
+          QUALIFIED_ATTEMPT="$(jq -r .run_attempt ci-run.json)"
           gh run download "$QUALIFIED_RUN" --repo "$GH_REPO" --name "qualification-$QUALIFIED_ATTEMPT" --dir qualification
-          jq -e --arg sha "$QUALIFIED_SHA" --arg run "$QUALIFIED_RUN" --arg attempt "$QUALIFIED_ATTEMPT" \
-            '.passed == true and .themeReportsEqual == true and .sha == $sha and .workflowRun == $run and .attempt == $attempt and .expectedCases == 9 and .completedCases == 9 and .expectedAcceptanceTests == 63 and (.errors | length) == 0' qualification/qualification.json
+          jq -e --arg run "$QUALIFIED_RUN" --arg attempt "$QUALIFIED_ATTEMPT" \
+            '.passed == true and .themeReportsEqual == true and .workflowRun == $run and .attempt == $attempt and .expectedCases == 9 and .completedCases == 9 and .expectedAcceptanceTests == 63 and (.errors | length) == 0' qualification/qualification.json
+          QUALIFIED_SHA="$(jq -r .sha qualification/qualification.json)"
+          [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          QUALIFIED_TREE="$(gh api "repos/$GH_REPO/git/commits/$QUALIFIED_SHA" --jq .tree.sha)"
+          RELEASE_TREE="$(gh api "repos/$GH_REPO/git/commits/$RELEASE_SHA" --jq .tree.sha)"
+          [[ -n "$QUALIFIED_TREE" && "$QUALIFIED_TREE" == "$RELEASE_TREE" ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ inputs.release-sha }}
       - name: Publish notes from the changelog
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          # Checkout and qualification refer to the immutable event commit, never a moving branch.
-          [[ "$(git rev-parse HEAD)" == "$QUALIFIED_SHA" ]]
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
           RELEASE_TAG="v$(jq -r .version package.json)"
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           awk -v version="${RELEASE_TAG#v}" '
@@ -60,17 +72,15 @@ jobs:
             selected { print }
           ' CHANGELOG.md > release-notes.md
           [[ -s release-notes.md ]]
-          # Never publish or edit a tag pointing to a different, unqualified commit.
-          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then exit 0; fi
-          if [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" != "$QUALIFIED_SHA" ]]; then
-            echo 'No release tag targets this qualified commit; publication deferred.'
-            exit 0
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$RELEASE_SHA" ]]
+          else
+            # GITHUB_TOKEN creates the tag without starting another CI run.
+            gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$RELEASE_SHA"
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --notes-file release-notes.md
-            exit 0
+            gh release edit "$RELEASE_TAG" --draft=false --latest --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --notes-file release-notes.md \
+              --title "MageLens $RELEASE_TAG" --latest
           fi
-          # A version commit can arrive before its tag; the tag push will publish it.
-          if ! git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null; then exit 0; fi
-          gh release create "$RELEASE_TAG" --verify-tag --notes-file release-notes.md \
-            --title "MageLens $RELEASE_TAG" --latest
