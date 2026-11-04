@@ -32,7 +32,7 @@ It makes those gaps visible across PHP, JavaScript and templates, with **low cov
 
 ## Quick start
 
-Run this inside the empty directory you want to use for MageLens:
+On Linux, run this inside the empty directory you want to use for MageLens:
 
 ```bash
 wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.7.0.tar.gz | tar -xz --strip-components=1 && ./install.sh
@@ -40,7 +40,7 @@ wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.7.0.tar.gz |
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
 
-The command above installs Magento Open Source with Luma and Cypress. Add `--mageos` to install Mage-OS instead. Both platforms support every storefront and browser runner combination:
+The command above installs Magento Open Source with Luma and Cypress. Add `--mageos` to install Mage-OS instead. On Linux, both platforms are tested with every storefront and browser runner combination:
 
 | Magento Open Source | Mage-OS | Storefront | Browser runner |
 | --- | --- | --- | --- |
@@ -48,6 +48,8 @@ The command above installs Magento Open Source with Luma and Cypress. Add `--mag
 | `./install.sh --hyva` | `./install.sh --mageos --hyva` | Hyvä CSP | Cypress |
 | `./install.sh --playwright` | `./install.sh --mageos --playwright` | Luma | Playwright |
 | `./install.sh --hyva --playwright` | `./install.sh --mageos --hyva --playwright` | Hyvä CSP | Playwright |
+
+On Windows, run the commands from Ubuntu 24.04 under WSL2 and keep the project in the Linux filesystem. Use the download command above with `./install.sh --mageos --container-only` as the final step to select the Mage-OS, Luma, and Cypress profile tested in Windows CI.
 
 Each installation includes its selected runner and browser, with the same live viewer for Cypress and Playwright. Both run entirely in Docker. The installer saves the platform, theme and runner; `./bin/run-coverage` uses them automatically. Repeat the same flags when rerunning installation; omitted flags select Magento Open Source/Luma/Cypress.
 
@@ -96,14 +98,15 @@ Open the live runner before starting `./bin/run-coverage` to watch either runner
 ## Requirements
 
 - Docker Engine/Desktop with Compose **2.24.4+**, running Linux containers; Git, Bash, wget, and tar.
-- Linux or macOS. Allocate at least **6 GB RAM** to Docker (8 GB recommended) and roughly **15 GB free disk** for the first build.
+- Linux or Windows with WSL2. See the [platform roadmap](ROADMAP.md) for tested configurations and macOS status.
+- Allocate at least **6 GB RAM** to Docker (8 GB recommended) and roughly **15 GB free disk** for the first build.
 - Internet access for container images, Composer/npm dependencies, and the selected browser download.
 - Magento Marketplace public/private keys for `repo.magento.com` when installing Magento Open Source. Mage-OS does not require them. Copied projects may require credentials for their own private packages.
 - Free local ports **80** and **443**, plus **6080** for the live test viewer. Configure `APPLICATION_PORT`, `APPLICATION_HTTPS_PORT`, and `RUNNER_VIEW_PORT` in `.env` to use different ports. Existing `CYPRESS_VIEW_PORT` settings still work for both runners; `RUNNER_VIEW_PORT` takes precedence when set.
 
 Magento Open Source installation uses Mark Shust's `bin/setup-composer-auth`. It reuses Composer credentials from the container or host, or asks for **Username** (public key) and **Password** (private key). Credentials are stored in the local `composerdata` Docker volume. Mage-OS skips this step. To configure Marketplace credentials separately after the PHP service starts, run `bin/setup-composer-auth`.
 
-The installer adds the domain to your hosts file and uses Mark Shust's SSL tools to configure a trusted local HTTPS certificate. These steps request your system password when needed. The application and live viewer bind to `127.0.0.1`.
+By default, the installer adds the domain to your hosts file and uses Mark Shust's SSL tools to configure a trusted local HTTPS certificate. These steps request your system password when needed. With `--container-only`, the installer creates a self-signed certificate for the containers. The application and live viewer bind to `127.0.0.1`.
 
 ## Coverage reports
 

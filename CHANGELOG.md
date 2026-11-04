@@ -10,6 +10,8 @@ License: see LICENSE in the repository root.
 
 - Use Mage-OS 4.0.0 for new Mage-OS installations. It retains the Magento Open Source 2.4.9 foundation and supports the existing PHP 8.4 image.
 - Restore the original session handling source after Cypress coverage runs on both platforms.
+- Update Cypress code coverage to 4.1.2 and PHP code coverage to 14.5.0, with compatible HTML, Clover, and PHP line reports.
+- Document the tested Windows WSL2 setup for Mage-OS, Luma, and Cypress.
 
 For an existing installation, back up application data and rerun `./install.sh` with your saved platform, theme and runner flags. The existing application's Composer lock continues to control its platform dependencies.
 
