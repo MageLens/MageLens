@@ -117,7 +117,7 @@ PHTML;
         check(!empty($lines[$line]), "PHP data lost match boundary $line");
         $cloverLine = $cloverFile[0]->xpath('line[@num="' . $line . '" and @type="stmt"]');
         check(count($cloverLine) === 1 && (int) $cloverLine[0]['count'] > 0, "Clover lost match boundary $line");
-        $htmlLine = $xpath->query('//*[@id="' . $line . '"]/ancestor::tr[contains(@class, "success")]');
+        $htmlLine = $xpath->query('//*[@id="' . $line . '"]/ancestor::tr[contains(@class, "covered-by-")]');
         check($htmlLine->length === 1, "HTML lost covered match boundary $line");
     }
     $reported = (int) $node->project->metrics['statements'];
