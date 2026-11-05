@@ -49,6 +49,10 @@ $multiline = strtoupper(
     $label
 );
 echo $multiline;
+$classes = array_filter(array_map(static fn(mixed $value): ?string => match (true) {
+    is_object($value) => $value::class,
+    default => null,
+}, [new stdClass, 1]), static fn(?string $class): bool => $class !== null);
 PHTML;
     $sources = [
         'app/code/Fixture/mixed.phtml' => $source,
@@ -74,6 +78,9 @@ PHTML;
     pcov\stop();
     $raw = pcov\collect(pcov\inclusive, array_keys($scope));
     check(isset($raw[$mixed]), 'PCOV did not collect the fixture');
+    $matchLines = [lineOf($source, '$classes = array_filter'), lineOf($source, '}, [new stdClass')];
+    foreach ($matchLines as $line) check(($raw[$mixed][$line] ?? 0) > 0, "PCOV missed match boundary $line");
+    check($classes === [stdClass::class], 'Match fixture did not execute its callbacks');
     $coverage = applicationPhpReportData($scope, $raw, $hashes, 'Playwright HTTP fixture', $root . '/original', $root . '/runtime');
     $data = $coverage->getData()->lineCoverage();
     $lines = $data[$root . '/original/app/code/Fixture/mixed.phtml'];
@@ -98,6 +105,21 @@ PHTML;
     check(str_contains($html, 'Playwright HTTP fixture'), 'Runner label is missing');
     check(str_contains($html, 'never-javascript'), 'Original source is not displayed');
     $node = new SimpleXMLElement($xml);
+    $cloverFile = $node->xpath('//file[@name="' . $mixed . '"]');
+    // Reports must use original paths, not disposable runtime paths.
+    check($cloverFile === [], 'Clover leaked the runtime path');
+    $cloverFile = $node->xpath('//file[@name="' . $root . '/original/app/code/Fixture/mixed.phtml"]');
+    check(count($cloverFile) === 1, 'Original fixture missing from Clover');
+    $dom = new DOMDocument;
+    @$dom->loadHTML($html);
+    $xpath = new DOMXPath($dom);
+    foreach ($matchLines as $line) {
+        check(!empty($lines[$line]), "PHP data lost match boundary $line");
+        $cloverLine = $cloverFile[0]->xpath('line[@num="' . $line . '" and @type="stmt"]');
+        check(count($cloverLine) === 1 && (int) $cloverLine[0]['count'] > 0, "Clover lost match boundary $line");
+        $htmlLine = $xpath->query('//*[@id="' . $line . '"]/ancestor::tr[contains(@class, "success")]');
+        check($htmlLine->length === 1, "HTML lost covered match boundary $line");
+    }
     $reported = (int) $node->project->metrics['statements'];
     check($reported === array_sum(array_map('count', $data)), 'Clover denominator differs from filtered data');
     $tokens = applicationPhpTokenLines("<?php\r\n/* comment */\r\necho 'yes';\r\n?>\r\n<script>never()</script>");
