@@ -6,6 +6,13 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.8.1 - 2026-11-05
+
+### Fixed
+
+- Update PHP code coverage to 14.5.1 so executable statements sharing the opening or closing line of a multiline `match` remain in PHP, HTML and Clover reports.
+- Verify both boundaries with real PCOV hits in every E2E installation. Rerun installation with your saved platform, theme and runner selections to rebuild the PHP image.
+
 ## 1.8.0 - 2026-11-04
 
 - Use Mage-OS 4.0.0 for new Mage-OS installations. It retains the Magento Open Source 2.4.9 foundation and supports the existing PHP 8.4 image.
