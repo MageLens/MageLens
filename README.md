@@ -32,11 +32,13 @@ It makes those gaps visible across PHP, JavaScript and templates, with **low cov
 
 ## Quick start
 
-On Linux, run this inside the empty directory you want to use for MageLens:
+On Linux, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
 
 ```bash
-wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.8.1.tar.gz | tar -xz --strip-components=1 && ./install.sh
+bash -c "$(wget -qO- https://raw.githubusercontent.com/MageLens/MageLens/main/bootstrap.sh)" --
 ```
+
+To install a specific release, prefix the command with `MAGELENS_VERSION=v1.8.2`, replacing the tag as needed. Append installer options after `--`, for example `--mageos --hyva --playwright`.
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
 
@@ -49,7 +51,7 @@ The command above installs Magento Open Source with Luma and Cypress. Add `--mag
 | `./install.sh --playwright` | `./install.sh --mageos --playwright` | Luma | Playwright |
 | `./install.sh --hyva --playwright` | `./install.sh --mageos --hyva --playwright` | Hyvä CSP | Playwright |
 
-On Windows, run the commands from Ubuntu 24.04 under WSL2 and keep the project in the Linux filesystem. Use the download command above with `./install.sh --mageos --container-only` as the final step to select the Mage-OS, Luma, and Cypress profile tested in Windows CI.
+On Windows, run the commands from Ubuntu 24.04 under WSL2 and keep the project in the Linux filesystem. Append `--mageos --container-only` to the bootstrap command above to select the Mage-OS, Luma, and Cypress profile tested in Windows CI.
 
 Each installation includes its selected runner and browser, with the same live viewer for Cypress and Playwright. Both run entirely in Docker. The installer saves the platform, theme and runner; `./bin/run-coverage` uses them automatically. Repeat the same flags when rerunning installation; omitted flags select Magento Open Source/Luma/Cypress.
 
