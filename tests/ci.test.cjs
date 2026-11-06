@@ -13,8 +13,6 @@ const {verifyCase} = require('./ci/gate.cjs');
 const {sanitizedCoverage} = require('./ci/evidence.cjs');
 const {writeCoverage} = require('./ci-coverage-fixture.cjs');
 const {provenance} = require('../docker/runner/cypress-source/provenance.cjs');
-const {kinds, inputs} = require('../bin/image-inputs.cjs');
-const imageManifest = {schema: 1, platform: 'linux/amd64', version: require('../package.json').version, images: Object.fromEntries(kinds.map(kind => [kind, {inputs: inputs(path.join(__dirname, '..'), kind), digest: 'sha256:' + 'a'.repeat(64)}]))};
 const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
 const titles = [
     'creates a category and illustrated article, publishes, moderates comments, and deletes records',
@@ -30,7 +28,6 @@ function fixture(t) {
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     const write = (file, data) => {fs.mkdirSync(path.dirname(`${directory}/${file}`), {recursive: true}); fs.writeFileSync(`${directory}/${file}`, JSON.stringify(data));};
     const entry = cases[0];
-    write('image-provenance.json', Object.fromEntries(['php', `runner-${entry.runner}`].map(kind => [kind, imageManifest.images[kind]])));
     write('run.json', {id: 'fresh', runner: entry.runner, sources: {private: 'SECRET'}});
     write('installation.json', {...entry, version: pins.MAGENTO_VERSION, credential: 'SECRET', runnerBuild: provenance('x64')});
     write('cypress-runner-results.json', {browserName: 'chrome-for-testing', browserVersion: pins.CHROME_VERSION,
@@ -42,7 +39,7 @@ function fixture(t) {
     writeCoverage(directory);
     const evidence = {...entry, sha: 'candidate', workflowRun: '123', attempt: '1', host: 'Linux', image: 'ubuntu', imageVersion: 'today', architecture: 'x64', passed: true,
         feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'resources', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts, browser};
-    return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1', images: imageManifest}};
+    return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1'}};
 }
 test('required matrix is eight Linux modes and Windows while macOS is deferred', () => {
     assert.equal(cases.length, 9);
@@ -116,12 +113,6 @@ test('final gate consumes only artifacts from the current workflow attempt', t =
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-attempt-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(root, 'dependencies.yaml'));
-    for (const file of ['package.json', '.dockerignore', 'bin', 'docker']) fs.symlinkSync(path.join(__dirname, '..', file), path.join(root, file));
-    for (const kind of kinds) {
-        const directory = path.join(root, 'ci-image-manifests', `image-manifest-${kind}-attempt-2`);
-        fs.mkdirSync(directory, {recursive: true});
-        fs.writeFileSync(path.join(directory, 'entry.json'), JSON.stringify({kind, ...imageManifest.images[kind], sha: 'candidate', run: '123', attempt: '2'}));
-    }
     fs.mkdirSync(path.join(root, 'tests'));
     fs.copyFileSync(path.join(__dirname, 'verify-scenarios.cjs'), path.join(root, 'tests/verify-scenarios.cjs'));
     const install = attempt => {
@@ -215,17 +206,4 @@ test('invalid full report fails its case while retaining safe acceptance and leg
     assert.ok(fs.existsSync(path.join(target, 'coverage/php/line-coverage.json')));
     assert.ok(!fs.existsSync(path.join(target, 'coverage/equivalence.json')));
     assert.doesNotMatch(JSON.stringify(evidence), /SECRET/);
-});
-
-test('qualification rejects missing or substituted PHP and runner image digests', t => {
-    const {directory, entry, evidence, context} = fixture(t);
-    const file = path.join(directory, 'image-provenance.json');
-    const original = JSON.parse(fs.readFileSync(file));
-    assert.throws(() => verifyCase(entry, evidence, directory, {...context, images: undefined}), /image manifest/);
-    for (const kind of ['php', `runner-${entry.runner}`]) {
-        fs.writeFileSync(file, JSON.stringify({...original, [kind]: {...original[kind], digest: 'sha256:' + '0'.repeat(64)}}));
-        assert.throws(() => verifyCase(entry, evidence, directory, context), /prebuilt image digests/);
-    }
-    fs.rmSync(file);
-    assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
 });

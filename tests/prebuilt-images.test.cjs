@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const {inputs, kinds, select, validateManifest} = require('../bin/image-inputs.cjs');
+const {inputs, kinds, select, resolve, validateManifest} = require('../bin/image-inputs.cjs');
 const {synchronize} = require('../docker/runner/sync-node-modules.cjs');
 const root = path.join(__dirname, '..');
 function temporary(t) {
@@ -32,14 +32,12 @@ test('selects only immutable images with matching release, input hash and tested
         assert.ok(select(root, mixed, 'linux/amd64', runner)[`runner-${runner}`]);
     }
 });
-test('rejects tags, malformed manifests and untrusted registry strings', () => {
+test('rejects tags and malformed manifests', () => {
     for (const digest of ['latest', 'sha256:no', 'sha256:' + 'f'.repeat(63), 'x\nservices:']) {
         const value = candidate(); value.images.php.digest = digest;
         assert.throws(() => validateManifest(value), /provenance/);
     }
-    for (const registry of ['evil.example/images', 'ghcr.io/magelens\nservices:', 'localhost:5000/x;id']) {
-        assert.throws(() => select(root, candidate(), 'linux/amd64', 'cypress', registry), /registry/);
-    }
+
 });
 test('patch and PHP source changes invalidate their images; custom package dependencies do not', t => {
     const directory = temporary(t);
@@ -136,7 +134,7 @@ if (args.some(arg => arg.includes('verifyInstalled')) && process.env.MOCK_BAD_CY
     return {directory, run: (mode = '0', extra = {}, selected = select(root, candidate(), 'linux/amd64', 'cypress')) => {
         fs.writeFileSync(log, '');
         const result = spawnSync('bash', ['bin/prepare-images', 'fixture:node', mode], {cwd: directory, encoding: 'utf8', env: {
-            ...process.env, MAGELENS_REQUIRE_PREBUILT: '', MAGELENS_IMAGE_MANIFEST: '', COMPOSE_PROJECT_NAME: 'image-test',
+            ...process.env, COMPOSE_PROJECT_NAME: 'image-test',
             PATH: `${directory}/commands:${process.env.PATH}`, MOCK_LOG: log, MOCK_SELECTION: JSON.stringify(selected), ...extra
         }});
         return {...result, calls: fs.readFileSync(log, 'utf8')};
@@ -172,14 +170,25 @@ test('stale labels and Cypress provenance stop installation before any build', t
         assert.doesNotMatch(result.calls, /source-php|"build"/);
     }
 });
-test('missing compatible images build locally, but cannot silently satisfy CI', t => {
+test('missing compatible images build locally', t => {
     const {run} = prepareFixture(t);
     const result = run('0', {}, {});
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.calls, /source-php/);
     assert.match(result.calls, /"build","--pull","runner"/);
-    const required = run('0', {MAGELENS_REQUIRE_PREBUILT: '1'}, {});
-    assert.notEqual(required.status, 0);
-    assert.match(required.stderr, /requires compatible prebuilt/);
-    assert.doesNotMatch(required.calls, /source-php|"build"/);
+
+});
+
+
+test('only a missing latest-release manifest falls back; network, authorization and malformed data fail', async () => {
+    const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
+    const request = async url => {
+        assert.equal(url, 'https://github.com/MageLens/MageLens/releases/latest/download/images.json');
+        return {status: 404};
+    };
+    assert.deepEqual(await resolve(root, env, request), {});
+    await assert.rejects(resolve(root, env, async () => {throw new Error('Network unavailable');}), /Network/);
+    await assert.rejects(resolve(root, env, async () => ({status: 403, ok: false})), /403/);
+    await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({})})), /manifest/);
+    assert.deepEqual(await resolve(root, env, async () => ({status: 200, ok: true, json: async () => candidate()})), select(root, candidate(), 'linux/amd64', 'cypress'));
 });

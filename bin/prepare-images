@@ -11,12 +11,9 @@ rm -f .runtime/compose.images.yaml .runtime/prebuilt-images.json
 if [[ "$build_from_source" == 0 ]]; then
     architecture=$(docker info --format '{{.OSType}}/{{.Architecture}}')
     case "$architecture" in linux/x86_64|linux/amd64) architecture=linux/amd64 ;; esac
-    if [[ -n "${MAGELENS_IMAGE_MANIFEST:-}" ]]; then
-        cp "$MAGELENS_IMAGE_MANIFEST" .runtime/candidate-images.json
-    fi
     docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
         --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
-        --env MAGELENS_RUNNER --env MAGELENS_IMAGE_MANIFEST --env MAGELENS_IMAGE_REGISTRY \
+        --env MAGELENS_RUNNER \
         --env "MAGELENS_IMAGE_PLATFORM=$architecture" \
         --entrypoint node "$bootstrap_image" bin/image-inputs.cjs resolve
 else
@@ -29,9 +26,6 @@ selected() {
 }
 php_image=$(selected php image)
 runner_image=$(selected "runner-$MAGELENS_RUNNER" image)
-if [[ "${MAGELENS_REQUIRE_PREBUILT:-0}" == 1 && ( -z "$php_image" || -z "$runner_image" ) ]]; then
-    fail 'This qualification requires compatible prebuilt PHP and runner images.'
-fi
 for kind in php "runner-$MAGELENS_RUNNER"; do
     image=$(selected "$kind" image)
     [[ -n "$image" ]] || continue

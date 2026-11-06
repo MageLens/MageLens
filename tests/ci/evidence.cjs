@@ -25,10 +25,7 @@ function sanitizedCoverage(source) {
     const templates = read(path.join(source, 'templates/coverage-summary.json'));
     // Project fixture credentials, vendor source, inline code and request URLs never leave the runner.
     const installation = read(path.join(source, 'installation.json'));
-    const imagesFile = path.join(source, 'image-provenance.json');
-    const images = fs.existsSync(imagesFile) ? read(imagesFile) : {};
     const projected = {
-        'image-provenance.json': Object.fromEntries(Object.entries(images).map(([kind, entry]) => [kind, entry ? pick(entry, ['inputs', 'digest']) : null])),
         'run.json': pick(run, ['id', 'runner']),
         'installation.json': {...pick(installation, ['platform', 'version', 'phpVersion', 'nodeVersion', 'theme', 'runner']),
             ...(installation.runnerBuild ? {runnerBuild: pick(installation.runnerBuild, buildKeys)} : {})},
