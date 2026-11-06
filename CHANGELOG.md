@@ -6,6 +6,12 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.8.2 - 2026-11-06
+
+- Update Playwright to 1.65.0 and template coverage to 1.5.4, with compatibility checks for inert controls, accessible names and authenticated CSP fixtures on Chrome for Testing 156.0.8078.80.
+
+Rerun installation with your saved platform, theme and runner selections to update the runner dependencies, then regenerate reports with `./bin/run-coverage`.
+
 ## 1.8.1 - 2026-11-05
 
 ### Fixed
