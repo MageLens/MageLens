@@ -14,6 +14,7 @@ platform=${MAGELENS_E2E_PLATFORM:-magento}
 [[ "$runner" == cypress || "$runner" == playwright ]] || fail 'MAGELENS_E2E_RUNNER must be cypress or playwright.'
 [[ "$platform" == magento || "$platform" == mageos ]] || fail 'MAGELENS_E2E_PLATFORM must be magento or mageos.'
 install_options=()
+[[ "${MAGELENS_BUILD_FROM_SOURCE:-0}" != 1 ]] || install_options+=(--build-from-source)
 [[ "$platform" != mageos ]] || install_options+=(--mageos)
 [[ "$theme" != hyva ]] || install_options+=(--hyva)
 [[ "$runner" != playwright ]] || install_options+=(--playwright)

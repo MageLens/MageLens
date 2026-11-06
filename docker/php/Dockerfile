@@ -3,7 +3,7 @@
 # License: see LICENSE in the repository root.
 
 ARG PHP_IMAGE
-FROM ${PHP_IMAGE}
+FROM ${PHP_IMAGE} AS portable
 USER root
 ENV COMPOSER_ALLOW_SUPERUSER=1
 ARG EXPECTED_PHP_VERSION
@@ -27,15 +27,19 @@ RUN composer install --no-dev --prefer-dist --no-interaction --no-progress
 COPY docker/php/coverage.ini /usr/local/etc/php/conf.d/zz-application-coverage.ini
 COPY docker/php/collect.php /opt/application/collect.php
 COPY docker/php/collection.php /opt/application/collection.php
+COPY docker/php/configure-user.sh /opt/application/configure-user.sh
 # Upstream's main FPM config does not include php-fpm.d/*.conf.
 # The private socket volume is shared with nginx's upstream UID.
 RUN printf '\nphp_admin_value[auto_prepend_file] = /opt/application/collect.php\npm = static\npm.max_children = 1\nlisten.mode = 0666\n' >> /usr/local/etc/php-fpm.conf
 WORKDIR /var/www/html
+USER app:app
+RUN php-fpm -tt
+
+FROM portable AS local
+USER root
 # Bind-mounted Magento files must remain editable by the host developer.
 ARG APPLICATION_UID=1000
 ARG APPLICATION_GID=1000
-RUN groupmod -o -g "$APPLICATION_GID" app \
-    && usermod -o -u "$APPLICATION_UID" -g "$APPLICATION_GID" app \
-    && chown -R app:app /var/www
+RUN bash /opt/application/configure-user.sh
 USER app:app
 RUN php-fpm -tt

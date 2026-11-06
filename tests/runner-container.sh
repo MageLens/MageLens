@@ -5,7 +5,7 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[[ $# == 1 ]] || { echo "Usage: $0 RUNNER_IMAGE" >&2; exit 1; }
+[[ $# == 1 || ( $# == 2 && "$2" == --cypress-regressions ) ]] || { echo "Usage: $0 RUNNER_IMAGE [--cypress-regressions]" >&2; exit 1; }
 container="magelens-runner-check-$$"
 cleanup() {
     local result=$?
@@ -15,11 +15,18 @@ cleanup() {
     exit "$result"
 }
 trap cleanup EXIT
+mounts=()
+if [[ "${2:-}" == --cypress-regressions ]]; then
+    mkdir -p coverage
+    mounts=(--mount "type=bind,source=$PWD/tests,target=/workspace/tests,readonly"
+        --mount "type=bind,source=$PWD/docker/runner,target=/workspace/docker/runner,readonly"
+        --mount "type=bind,source=$PWD/coverage,target=/workspace/coverage")
+fi
 docker run -d --name "$container" --init --user "$(id -u):$(id -g)" \
     --env HOME=/tmp --env DISPLAY=:107 --env CYPRESS_BASE_URL=https://storefront.invalid --shm-size=1g \
     --mount "type=bind,source=$PWD/docker/runner/desktop.sh,target=/opt/magelens/desktop.sh,readonly" \
     --mount "type=bind,source=$PWD/docker/runner/healthcheck.cjs,target=/opt/magelens/healthcheck.cjs,readonly" \
-    "$1" >/dev/null
+    "${mounts[@]}" "$1" >/dev/null
 ready() {
     local state
     for attempt in {1..30}; do
@@ -83,3 +90,6 @@ for shutdown in graceful forced forced; do
     docker exec "$container" timeout --signal=TERM --kill-after=10s 120s node /opt/magelens/browser-smoke.cjs
     echo "PASS: desktop, VNC, viewer, and selected browser recovered after $shutdown shutdown."
 done
+if [[ "${2:-}" == --cypress-regressions ]]; then
+    docker exec "$container" node tests/cypress-regressions.cjs
+fi

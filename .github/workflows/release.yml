@@ -25,12 +25,13 @@ concurrency:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.repository == 'MageLens/MageLens'
     permissions:
       contents: write
       actions: read
+      packages: write
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -61,7 +62,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ inputs.release-sha }}
-      - name: Publish notes from the changelog
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Validate release version and prepare notes
         run: |
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
@@ -74,13 +79,32 @@ jobs:
           [[ -s release-notes.md ]]
           if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
             [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$RELEASE_SHA" ]]
-          else
-            # GITHUB_TOKEN creates the tag without starting another CI run.
+          fi
+      - name: Prepare disposable image builder
+        run: |
+          bash tests/ci/prepare-disk.sh
+          sudo apt-get update -qq
+          sudo apt-get install -y skopeo
+          printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+      - name: Remove leftovers from previous failed releases
+        run: node tests/release/prune-images.cjs
+      - name: Build, test and publish public tooling images
+        id: images
+        run: bash tests/release/build-images.sh
+      - name: Publish release and image manifest
+        run: |
+          RELEASE_TAG="v$(jq -r .version package.json)"
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
             gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$RELEASE_SHA"
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --draft=false --latest --notes-file release-notes.md
+            gh release edit "$RELEASE_TAG" --notes-file release-notes.md
           else
             gh release create "$RELEASE_TAG" --verify-tag --notes-file release-notes.md \
-              --title "MageLens $RELEASE_TAG" --latest
+              --title "MageLens $RELEASE_TAG" --draft
           fi
+          gh release upload "$RELEASE_TAG" .runtime/release-images/images.json --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Retain only images referenced by the latest published release
+        if: always() && steps.images.outcome != 'skipped'
+        run: node tests/release/prune-images.cjs

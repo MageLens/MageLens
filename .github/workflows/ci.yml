@@ -145,8 +145,12 @@ jobs:
           CI_NEEDS: ${{ toJSON(needs) }}
           CI_SHA: ${{ github.sha }}
         run: node tests/ci/gate.cjs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Bound qualification artifact storage
+        id: artifact-size
         if: always()
+        run: node tests/ci/artifact-size.cjs ci-gate
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.artifact-size.outcome == 'success'
         with:
           name: qualification-${{ github.run_attempt }}
           path: ci-gate/

@@ -40,9 +40,10 @@ dc() {
     resolve_compose_command_project "$@" || return
     # PHP is rebuilt from the upstream recipe on the pinned official security
     # release. Other service images are inherited directly by Compose.
-    local sources=()
+    local sources=() images=()
     [[ ! -f "$ROOT/.runtime/compose.sources.json" ]] || sources=(-f "$ROOT/.runtime/compose.sources.json")
-    MAGELENS_PHP_IMAGE="$APPLICATION_PHP_IMAGE" docker compose --project-directory "$ROOT" -f "$ROOT/compose.yaml" "${sources[@]}" "$@"
+    [[ ! -f "$ROOT/.runtime/compose.images.yaml" ]] || images=(-f "$ROOT/.runtime/compose.images.yaml")
+    MAGELENS_PHP_IMAGE="$APPLICATION_PHP_IMAGE" docker compose --project-directory "$ROOT" -f "$ROOT/compose.yaml" "${sources[@]}" "${images[@]}" "$@"
 }
 say() { printf '\n==> %s\n' "$*"; }
 fail() { printf '\nError: %s\n' "$*" >&2; exit 1; }

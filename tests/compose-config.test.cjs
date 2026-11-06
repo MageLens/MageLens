@@ -73,3 +73,34 @@ test('Compose inherits upstream services and uses the rebuilt PHP base with the 
     }
     }
 });
+
+test('saved prebuilt overrides disable runner builds and retain the portable PHP parent for workspace jobs', t => {
+    const directory = workspace(t);
+    for (const file of ['compose.yaml', 'dependencies.yaml', 'bin/common', 'bin/compose-project', 'bin/dependencies', 'bin/application-compose']) {
+        fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
+        fs.copyFileSync(path.join(root, file), path.join(directory, file));
+    }
+    const upstream = path.join(directory, '.runtime/docker-magento/compose');
+    fs.mkdirSync(upstream, {recursive: true});
+    fs.writeFileSync(path.join(upstream, 'compose.yaml'), JSON.stringify({services: Object.fromEntries(
+        ['app', 'phpfpm', 'db', 'redis', 'opensearch'].map(name => [name, {image: `fixture/${name}:1`}]))}));
+    const digest = 'sha256:' + 'a'.repeat(64);
+    fs.writeFileSync(path.join(directory, '.runtime/compose.images.yaml'), `services:
+  phpfpm: &portable-php
+    build:
+      dockerfile: docker/php/uid.Dockerfile
+      args:
+        PHP_IMAGE: ghcr.io/magelens/php@${digest}
+  workspace: *portable-php
+  runner:
+    build: !reset null
+    image: ghcr.io/magelens/runner-cypress@${digest}
+`);
+    const config = JSON.parse(execFileSync('bash', ['bin/application-compose', '--profile', 'tools', 'config', '--format', 'json'], {cwd: directory, encoding: 'utf8'}));
+    assert.equal(config.services.runner.build, undefined);
+    assert.equal(config.services.runner.image, `ghcr.io/magelens/runner-cypress@${digest}`);
+    for (const service of ['phpfpm', 'workspace']) {
+        assert.equal(config.services[service].build.dockerfile, 'docker/php/uid.Dockerfile');
+        assert.equal(config.services[service].build.args.PHP_IMAGE, `ghcr.io/magelens/php@${digest}`);
+    }
+});

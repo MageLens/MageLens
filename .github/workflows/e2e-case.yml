@@ -39,6 +39,7 @@ jobs:
       run:
         shell: bash
     env:
+      MAGELENS_BUILD_FROM_SOURCE: '1'
       CI_SHA: ${{ inputs.sha }}
       CI_CASE: ${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}
       MAGELENS_E2E_PLATFORM: ${{ inputs.platform }}
@@ -132,8 +133,12 @@ jobs:
           else
             bash tests/ci/on-host.sh node tests/ci/evidence.cjs
           fi
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Bound case artifact storage
+        id: artifact-size
         if: always()
+        run: node tests/ci/artifact-size.cjs "ci-reports/$CI_CASE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.artifact-size.outcome == 'success'
         with:
           name: case-${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}-attempt-${{ github.run_attempt }}
           path: ci-reports/${{ inputs.os }}-${{ inputs.platform }}-${{ inputs.theme }}-${{ inputs.runner }}/

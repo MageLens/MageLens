@@ -29,6 +29,10 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
     && npx --no-install playwright install-deps chromium \
     && bash /opt/magelens/install-chrome.sh \
     && rm -rf /var/lib/apt/lists/*
+RUN mkdir /opt/magelens-dependencies \
+    && cp package.json package-lock.json /opt/magelens-dependencies/ \
+    && cp -a .runtime /opt/magelens-dependencies/ \
+    && tar czf /opt/magelens-dependencies/node_modules.tar.gz node_modules
 ENV PATH=/workspace/node_modules/.bin:$PATH
 HEALTHCHECK --interval=3s --timeout=3s --start-period=10s --retries=20 \
     CMD xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && node /opt/magelens/healthcheck.cjs
@@ -48,6 +52,10 @@ WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY .runtime/template-package/ .runtime/
 RUN CYPRESS_INSTALL_BINARY=0 npm ci --no-audit --no-fund && chmod -R a+rwX /opt/cypress
+RUN mkdir /opt/magelens-dependencies \
+    && cp package.json package-lock.json /opt/magelens-dependencies/ \
+    && cp -a .runtime /opt/magelens-dependencies/ \
+    && tar czf /opt/magelens-dependencies/node_modules.tar.gz node_modules
 ENV PATH=/workspace/node_modules/.bin:$PATH
 HEALTHCHECK --interval=3s --timeout=3s --start-period=10s --retries=20 \
     CMD xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && node /opt/magelens/healthcheck.cjs

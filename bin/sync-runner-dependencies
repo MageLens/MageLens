@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+# Sourced by installation and the isolated image builder.
+say 'Synchronizing browser coverage versions and dependency locks'
+bootstrap_image=$RUNNER_IMAGE
+[[ "$MAGELENS_RUNNER" != playwright ]] || bootstrap_image=$PLAYWRIGHT_RUNNER_IMAGE
+download_with_retry docker pull "$bootstrap_image"
+docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
+    --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
+    --env CYPRESS_VERSION --env PLAYWRIGHT_VERSION --env TEMPLATE_COVERAGE_VERSION --env CYPRESS_CODE_COVERAGE_VERSION \
+    --env MAGELENS_RUNNER --env TEMPLATE_COVERAGE_PACKAGE \
+    --env ISTANBUL_LIB_COVERAGE_VERSION --env ISTANBUL_LIB_INSTRUMENT_VERSION --env ISTANBUL_LIB_REPORT_VERSION --env ISTANBUL_REPORTS_VERSION --env NYC_VERSION \
+    --env npm_config_cache=/tmp/npm-cache \
+    --entrypoint node "$bootstrap_image" bin/sync-dependencies.cjs

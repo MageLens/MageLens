@@ -18,6 +18,7 @@ summary=$(wsl.exe --distribution Ubuntu-24.04 --exec wslpath -u "$GITHUB_STEP_SU
 host_workspace=$(wsl.exe --distribution Ubuntu-24.04 --exec wslpath -u "$(pwd -W)")
 result=0
 wsl.exe --distribution Ubuntu-24.04 --user magelens --exec env \
+    MAGELENS_BUILD_FROM_SOURCE="${MAGELENS_BUILD_FROM_SOURCE:-0}" \
     CI_SHA="$CI_SHA" CI_CASE="$CI_CASE" CI_STEPS="${CI_STEPS:-}" \
     RUNNER_OS=Windows CI_HOST_RUNTIME=WSL2 RUNNER_TEMP=/tmp/magelens-ci MAGELENS_TEST_TMPDIR=/home/magelens/e2e-tmp \
     ImageOS="$ImageOS" ImageVersion="$ImageVersion" \
