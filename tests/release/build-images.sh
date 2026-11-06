@@ -42,7 +42,9 @@ for kind in php runner-cypress runner-playwright; do
     fi
     [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" == linux/amd64 ]] || fail 'Only qualified Linux amd64 images may be published.'
     # Push directly: Docker/OCI archives never enter Actions artifact storage.
-    reference="ghcr.io/magelens/$kind:$version-linux-amd64"
+    # A retry must not move the tag off the currently published digest. GHCR
+    # requires a tagged version to remain when deleting a failed candidate.
+    reference="ghcr.io/magelens/$kind:$version-linux-amd64-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
     skopeo copy --format oci --digestfile "$output/$kind.digest" "docker-daemon:$image" "docker://$reference"
     digest=$(cat "$output/$kind.digest")
     node tests/release/images.cjs record "$kind" "$fingerprint" "$digest" "$output/$kind.json"
