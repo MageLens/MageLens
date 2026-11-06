@@ -28,6 +28,9 @@
 !/bin/expose-tools
 !/bin/finalize.cjs
 !/bin/install
+!/bin/image-inputs.cjs
+!/bin/prepare-images
+!/bin/sync-runner-dependencies
 !/bin/prepare.cjs
 !/bin/project.cjs
 !/bin/javascript-scope.cjs

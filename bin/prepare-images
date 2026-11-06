@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+source "$(dirname "$0")/common"
+bootstrap_image=$1
+build_from_source=$2
+# Never let a previous installation's override redirect a new source build.
+rm -f .runtime/compose.images.yaml .runtime/prebuilt-images.json
+if [[ "$build_from_source" == 0 ]]; then
+    architecture=$(docker info --format '{{.OSType}}/{{.Architecture}}')
+    case "$architecture" in linux/x86_64|linux/amd64) architecture=linux/amd64 ;; esac
+    if [[ -n "${MAGELENS_IMAGE_MANIFEST:-}" ]]; then
+        cp "$MAGELENS_IMAGE_MANIFEST" .runtime/candidate-images.json
+    fi
+    docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
+        --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
+        --env MAGELENS_RUNNER --env MAGELENS_IMAGE_MANIFEST --env MAGELENS_IMAGE_REGISTRY \
+        --env "MAGELENS_IMAGE_PLATFORM=$architecture" \
+        --entrypoint node "$bootstrap_image" bin/image-inputs.cjs resolve
+else
+    printf '{}\n' > .runtime/prebuilt-images.json
+fi
+# Read validated data through Node, never source downloaded shell code.
+selected() {
+    docker run --rm --pull never --mount "type=bind,source=$ROOT/.runtime/prebuilt-images.json,target=/images.json,readonly" \
+        --entrypoint node "$bootstrap_image" -e 'console.log(require("/images.json")[process.argv[1]]?.[process.argv[2]] || "")' "$1" "$2"
+}
+php_image=$(selected php image)
+runner_image=$(selected "runner-$MAGELENS_RUNNER" image)
+if [[ "${MAGELENS_REQUIRE_PREBUILT:-0}" == 1 && ( -z "$php_image" || -z "$runner_image" ) ]]; then
+    fail 'This qualification requires compatible prebuilt PHP and runner images.'
+fi
+for kind in php "runner-$MAGELENS_RUNNER"; do
+    image=$(selected "$kind" image)
+    [[ -n "$image" ]] || continue
+    say "Pulling qualified $kind image $image"
+    download_with_retry docker pull "$image"
+    actual=$(docker image inspect --format '{{index .Config.Labels "org.magelens.inputs"}}' "$image")
+    [[ "$actual" == "$(selected "$kind" inputs)" ]] || fail "The $kind image has incorrect build provenance."
+done
+if [[ -n "$runner_image" && "$MAGELENS_RUNNER" == cypress ]]; then
+    docker run --rm --entrypoint node \
+        --mount "type=bind,source=$ROOT/docker/runner/cypress-source,target=/expected,readonly" \
+        "$runner_image" -e 'require("/expected/provenance.cjs").verifyInstalled()'
+fi
+if [[ -n "$php_image" ]]; then
+    # Only account ownership is local; no PHP extensions or Composer packages rebuild.
+    cat > .runtime/compose.images.yaml <<YAML
+services:
+  phpfpm: &portable-php
+    image: \${COMPOSE_PROJECT_NAME}-php:local
+    build:
+      dockerfile: docker/php/uid.Dockerfile
+      args:
+        PHP_IMAGE: $php_image
+  workspace: *portable-php
+YAML
+else
+    say 'No compatible prebuilt PHP image selected; building PHP/PCOV from source.'
+    "$ROOT/bin/build-php-image"
+fi
+dc build phpfpm
+if [[ -n "$runner_image" ]]; then
+    [[ -f .runtime/compose.images.yaml ]] || printf 'services:\n' > .runtime/compose.images.yaml
+    cat >> .runtime/compose.images.yaml <<YAML
+  runner:
+    build: !reset null
+    image: $runner_image
+YAML
+else
+    say "No compatible prebuilt $MAGELENS_RUNNER image selected; building from source."
+    dc build --pull runner
+fi

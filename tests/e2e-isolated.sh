@@ -131,6 +131,11 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
+    if [[ "${MAGELENS_REQUIRE_PREBUILT:-0}" == 1 ]]; then
+        expected=$(node -p 'require("./.runtime/prebuilt-images.json")["runner-" + process.env.MAGELENS_E2E_RUNNER].image')
+        actual=$(docker inspect --format '{{.Config.Image}}' "$(./bin/application-compose ps -q runner)")
+        [[ "$actual" == "$expected" ]] || fail 'The running image differs from the qualified digest.'
+    fi
     bash tests/runner-container.sh "$(./bin/application-compose images -q runner)"
     # Verify HTTPS routing through nginx, including the read-only viewer redirect.
     ./bin/application-compose exec -T phpfpm bash -c '
@@ -163,6 +168,7 @@ fi
         ./bin/runner node tests/cypress-runtime.cjs
         ./bin/runner node tests/cypress-regressions.cjs
     fi
+    cp .runtime/prebuilt-images.json coverage/image-provenance.json
     cp .runtime/e2e-installation.json coverage/installation.json
     mkdir -p "$artifacts/$runner"
     cp -a coverage "$artifacts/$runner/"

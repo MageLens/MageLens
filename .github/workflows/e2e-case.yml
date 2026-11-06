@@ -53,6 +53,26 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-php-attempt-${{ github.run_attempt }}
+          path: ci-images/php
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-runner-${{ inputs.runner }}-attempt-${{ github.run_attempt }}
+          path: ci-images/runner-${{ inputs.runner }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-manifest-php-attempt-${{ github.run_attempt }}
+          path: ci-images/php
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-manifest-runner-cypress-attempt-${{ github.run_attempt }}
+          path: ci-images/runner-cypress
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-manifest-runner-playwright-attempt-${{ github.run_attempt }}
+          path: ci-images/runner-playwright
       - name: Prepare Windows WSL2 Linux engine
         if: runner.os == 'Windows'
         id: windows
@@ -91,6 +111,14 @@ jobs:
         name: Validate actual host, Linux engine, mounts and networking
         timeout-minutes: 15
         run: bash tests/ci/on-host.sh node tests/ci/probe.cjs
+      - name: Load the candidate images on the actual host engine
+        id: images
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y skopeo
+          fi
+          bash tests/ci/on-host.sh bash tests/ci/images.sh load ci-images "$MAGELENS_E2E_RUNNER"
       - name: Prepare Marketplace credentials
         id: credentials
         if: inputs.platform == 'magento'
@@ -111,6 +139,9 @@ jobs:
         name: Install and run the complete acceptance harness
         timeout-minutes: 130
         env:
+          MAGELENS_IMAGE_MANIFEST: ${{ github.workspace }}/ci-images/images.json
+          MAGELENS_IMAGE_REGISTRY: localhost:5000/magelens
+          MAGELENS_REQUIRE_PREBUILT: '1'
           MAGELENS_E2E_RESULT_FILE: ${{ runner.temp }}/magelens-result
           MAGELENS_E2E_RESOURCE_FILE: ${{ runner.temp }}/magelens-resource
         run: bash tests/ci/on-host.sh bash tests/e2e-isolated.sh
@@ -121,6 +152,7 @@ jobs:
           rm -f "$RUNNER_TEMP/auth.json"
           if [[ "$RUNNER_OS" != Windows || "${{ steps.windows.outcome }}" == success ]]; then
             bash tests/ci/on-host.sh bash tests/ci/cleanup.sh
+            bash tests/ci/on-host.sh docker rm -f magelens-image-registry
           fi
       - name: Prepare sanitized evidence and failure diagnostics
         if: always()

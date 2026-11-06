@@ -213,7 +213,7 @@ for (const [theme, runner] of [['luma', 'cypress'], ['hyva', 'cypress'], ['luma'
 for (const containerOnly of [false, true]) {
 test(`installer selects ${platform}/${theme}/${runner} with ${containerOnly ? 'container-only' : 'host'} HTTPS`, t => {
     const directory = workspace(t);
-    for (const file of ['install.sh', 'bin/install', 'bin/common', 'bin/compose-project', 'bin/dependencies', 'bin/build-php-image', 'bin/expose-tools', 'bin/application-domain']) {
+    for (const file of ['install.sh', 'bin/install', 'bin/common', 'bin/compose-project', 'bin/dependencies', 'bin/build-php-image', 'bin/prepare-images', 'bin/sync-runner-dependencies', 'bin/expose-tools', 'bin/application-domain']) {
         fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
         fs.copyFileSync(path.join(root, file), path.join(directory, file));
     }

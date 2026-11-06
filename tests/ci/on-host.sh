@@ -16,8 +16,13 @@ fi
 export MSYS_NO_PATHCONV=1
 summary=$(wsl.exe --distribution Ubuntu-24.04 --exec wslpath -u "$GITHUB_STEP_SUMMARY")
 host_workspace=$(wsl.exe --distribution Ubuntu-24.04 --exec wslpath -u "$(pwd -W)")
+if [[ "$1" == bash && "$2" == tests/ci/images.sh ]]; then
+    wsl.exe --distribution Ubuntu-24.04 --user magelens --exec cp -R "$host_workspace/ci-images" /home/magelens/project/
+fi
 result=0
 wsl.exe --distribution Ubuntu-24.04 --user magelens --exec env \
+    MAGELENS_IMAGE_MANIFEST=/home/magelens/project/ci-images/images.json \
+    MAGELENS_IMAGE_REGISTRY=localhost:5000/magelens MAGELENS_REQUIRE_PREBUILT=1 \
     CI_SHA="$CI_SHA" CI_CASE="$CI_CASE" CI_STEPS="${CI_STEPS:-}" \
     RUNNER_OS=Windows CI_HOST_RUNTIME=WSL2 RUNNER_TEMP=/tmp/magelens-ci MAGELENS_TEST_TMPDIR=/home/magelens/e2e-tmp \
     ImageOS="$ImageOS" ImageVersion="$ImageVersion" \

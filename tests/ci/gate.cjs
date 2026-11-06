@@ -9,6 +9,7 @@ const {execFileSync} = require('node:child_process');
 const {cases} = require('./cases.cjs');
 const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
 const {provenance} = require('../../docker/runner/cypress-source/provenance.cjs');
+const {manifest} = require('./images.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 function verifyCase(entry, evidence, directory, context) {
     for (const key of ['id', 'os', 'platform', 'theme', 'runner']) assert.equal(evidence[key], entry[key], key);
@@ -17,6 +18,8 @@ function verifyCase(entry, evidence, directory, context) {
     assert.equal(evidence.attempt, context.attempt, 'Stale artifact from an earlier attempt');
     assert.equal(evidence.host, {'ubuntu-latest': 'Linux', 'macos-26-intel': 'macOS', 'windows-latest': 'Windows'}[entry.os]);
     assert.ok(evidence.image && evidence.imageVersion && evidence.architecture, 'Missing runner provenance');
+    assert.ok(context.images, 'Missing qualified image manifest');
+    assert.deepEqual(read(path.join(directory, 'image-provenance.json')), Object.fromEntries(['php', `runner-${entry.runner}`].map(kind => [kind, context.images.images[kind]])), 'Wrong or missing prebuilt image digests');
     assert.equal(evidence.passed, true, 'Incomplete harness');
     assert.equal(evidence.feasibility?.passed, true, 'Host feasibility not proven');
     assert.equal(evidence.feasibility.sha, context.sha);
@@ -58,16 +61,26 @@ function gate() {
     const root = process.argv[2] || 'ci-artifacts';
     const needs = JSON.parse(process.env.CI_NEEDS);
     const errors = [];
-    for (const name of ['static', 'integration', 'copyright', 'e2e', 'magento']) {
+    for (const name of ['static', 'integration', 'copyright', 'images', 'e2e', 'magento']) {
         if (needs[name]?.result !== 'success') errors.push(`${name}: ${needs[name]?.result || 'missing'}`);
     }
+    let images;
+    try {
+        const directory = 'ci-gate/image-inputs';
+        for (const kind of ['php', 'runner-cypress', 'runner-playwright']) {
+            fs.mkdirSync(path.join(directory, kind), {recursive: true});
+            fs.copyFileSync(`ci-image-manifests/image-manifest-${kind}-attempt-${process.env.GITHUB_RUN_ATTEMPT}/entry.json`, path.join(directory, kind, 'entry.json'));
+        }
+        images = manifest(directory);
+        fs.writeFileSync('ci-gate/images.json', JSON.stringify(images, null, 2) + '\n');
+    } catch (error) { errors.push(`Image qualification: ${error.message}`); }
     const reports = [], themeReports = [], runIds = new Set();
     for (const entry of cases) {
         try {
             const artifact = `case-${entry.id}-attempt-${process.env.GITHUB_RUN_ATTEMPT}`;
             const directory = path.join(root, artifact, 'coverage');
             const id = verifyCase(entry, read(path.join(root, artifact, 'evidence.json')), directory,
-                {sha: process.env.CI_SHA, run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT});
+                {sha: process.env.CI_SHA, run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT, images});
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
             themeReports.push({...entry, snapshot: read(path.join(directory, 'equivalence.json'))});
@@ -85,7 +98,7 @@ function gate() {
     fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');
     errors.push(...themes.errors);
     const report = {sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
-        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 7, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
+        imagesQualified: Boolean(images) && runIds.size === cases.length, expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 7, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
     fs.writeFileSync('ci-gate/qualification.json', JSON.stringify(report, null, 2) + '\n');
     const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/${cases.length} complete cases; ${report.expectedAcceptanceTests} acceptance tests required.\n${errors.join('\n')}`;
     console.log(summary);
