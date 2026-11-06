@@ -32,11 +32,19 @@ It makes those gaps visible across PHP, JavaScript and templates, with **low cov
 
 ## Quick start
 
-On Linux, run this inside the empty directory you want to use for MageLens:
+On Linux, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
 
 ```bash
-wget -qO- https://github.com/MageLens/MageLens/archive/refs/tags/v1.8.1.tar.gz | tar -xz --strip-components=1 && ./install.sh
+(
+  set -euo pipefail
+  version="${MAGELENS_VERSION:-$(wget -qO- https://api.github.com/repos/MageLens/MageLens/releases/latest | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')}"
+  test -n "$version"
+  wget -qO- "https://github.com/MageLens/MageLens/archive/refs/tags/$version.tar.gz" | tar -xz --strip-components=1
+  ./install.sh
+)
 ```
+
+To install a specific release, run `export MAGELENS_VERSION=v1.8.2` before the command, replacing the tag as needed. Run `unset MAGELENS_VERSION` to use the latest release again.
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
 
