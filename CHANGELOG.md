@@ -6,6 +6,15 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.0 - 2026-11-06
+
+- Install compatible, digest-pinned Cypress, Playwright and PHP/PCOV images from GHCR, with Cypress patch verification and local PHP user mapping. Use `--build-from-source` to compile locally; older releases and modified image inputs also build from source.
+- Reuse bundled runner dependencies when the project lock matches, avoiding a second npm installation.
+- Publish images only during releases and retain only the latest successful release. PR builds are discarded, and small CI reports expire after one day.
+- Add a one-line bootstrap command that downloads the latest stable MageLens release into an empty directory.
+
+For an existing installation, back up application data and rerun installation with your saved platform, theme and runner flags, then regenerate reports with `./bin/run-coverage`.
+
 ## 1.8.2 - 2026-11-06
 
 - Update Playwright to 1.65.0 and template coverage to 1.5.4, with compatibility checks for inert controls, accessible names and authenticated CSP fixtures on Chrome for Testing 156.0.8078.80.
