@@ -107,4 +107,12 @@ Omitting these settings selects Magento Open Source/Luma/Cypress. The full matri
 
 ## Test a local template coverage package
 
+### Dependent library PRs
+
+Dependent MageLens drafts can include `.github/dependency-previews.json` with schema `1` and `templateCoverage` and/or `pcov` entries. Each entry contains the fixed upstream `repository`, source `pullRequest`, full 40-character `sha`, and planned stable `version` matching `dependencies.yaml`. Only `VitaliyBoyko/magento-template-coverage` and `VitaliyBoyko/pcov` are accepted.
+
+Draft PRs run the existing complete CI matrix. In disposable Actions workspaces, template previews are packed from the exact source commit without package scripts and installed through the existing local-tarball path. PCOV previews compile that exact extension source in the normal PHP image and use report tools from the same tree. Windows prepares previews inside its own WSL2 checkout. The nine cases retain their existing acceptance checks, source preservation, report comparisons and required gate. Source commits, trees and archive digests are recorded and must match across all cases; missing or stale preview evidence fails the gate.
+
+A preview pass is integration feedback, not release qualification. The publisher rejects qualification containing preview dependencies. After the library PR is merged and its version is actually published, remove its preview entry (and remove the file and license sidecar when empty), resolve the real version into all manifests and lockfiles, and rerun the entire matrix before publication. Concurrent dependent drafts share MageLens's single planned next version.
+
 Test unpublished collector changes in a reviewed CI branch: pack the library in the runner workspace and pass `MAGELENS_TEMPLATE_COVERAGE_PACKAGE` to the existing harness. Record the tarball digest in the run evidence and do not replace the final published-pin qualification with an unpublished-package run. Local packing and focused browser debugging are permitted; the full matrix remains in CI.

@@ -6,6 +6,13 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.1 - 2026-11-07
+
+- Update template coverage to 1.5.5 for Acorn 8.19 parsing fixes and Unicode 17/18 identifiers in Alpine, Knockout and template expressions.
+- Exercise unpublished template coverage and PCOV changes from pinned source commits in the full draft-PR CI matrix, with matching source provenance and a separate published-package release gate.
+
+Rerun installation with your saved platform, theme and runner selections to update the runner dependencies, then regenerate reports with `./bin/run-coverage`.
+
 ## 1.9.0 - 2026-11-06
 
 - Install compatible, digest-pinned Cypress, Playwright and PHP/PCOV images from GHCR, with Cypress patch verification and local PHP user mapping. Use `--build-from-source` to compile locally; older releases and modified image inputs also build from source.
