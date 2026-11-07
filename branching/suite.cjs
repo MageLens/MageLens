@@ -60,7 +60,7 @@ async function runSuite(options) {
 
     const report = {schemaVersion: 1, kind: 'full-native-suite', mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
         setupDiagnostics: {nativeCollectionMs: inventory.wallMs},
-        diagnostics: manifest.diagnostics, decision, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
+        diagnostics: manifest.diagnostics, assessment: manifest.assessment, decision, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
         routing: {checkpoint: checkpoint.map(t => t.id), native: inventory.tests.filter(t => !checkpoint.some(c => c.id === t.id)).map(t => t.id)}};
     async function native(tests, options = {}) {
         const result = await runner.run(project.native.config, directory, {...options, ...(tests ? {tests} : {})});

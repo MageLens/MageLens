@@ -14,9 +14,11 @@ use serde::Serialize;
 // Small local sample: estimates, not hardware-independent guarantees. Native
 // Playwright does not reset the database between tests. Prefetch is not assumed
 // to hide imports: it depends on suffix length and must not fabricate savings.
-// One unit is one reviewed awaited browser operation/assertion in source;
-// constructors and locator construction are not units. Helper bodies need an
-// adapter estimate. This is an indicative Playwright baseline, not Cypress.
+// Source weights in points.rs now express operations in 125 ms points. Those
+// weights are static heuristics, not separately measured operation timings.
+// The measured checkpoint overheads above are unchanged; forecasts need
+// validation against representative suites before changing these constants.
+// This is an indicative Playwright baseline, not Cypress.
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Baseline {
@@ -33,7 +35,7 @@ pub struct Baseline {
 }
 
 pub const PLAYWRIGHT_BRANCHING: Baseline = Baseline {
-    version: "pw1.65-retained-native-2026-11-07-v2",
+    version: "pw1.65-retained-points-2026-11-07-v3",
     unit_ms: 125.0,
     capture_ms: 4100.0,
     restore_ms: 8500.0,
