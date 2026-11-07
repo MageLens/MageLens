@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const messages = require('./configs/messages.cjs');
+
+const config = require('./configs/runtime.cjs');
+
 const fs = require('node:fs');
 const path = require('node:path');
 const {buildWorkflow} = require('./automatic.cjs');
@@ -10,7 +14,7 @@ const {fileDigest} = require('./engine.cjs');
 const {orchestrate} = require('./costs.cjs');
 async function run() {
     const [manifestPath, configPath, storage, approach, ...selected] = process.argv.slice(2);
-    if (!['AUTO','P0','L0'].includes(approach)) throw new Error('Expected manifest, configuration, CoW storage and AUTO, P0 or L0');
+    if (!config.costModes.includes(approach)) throw new Error(messages.automaticUsage);
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     const supplied = require(path.resolve(configPath));
     const project = typeof supplied === 'function' ? await supplied(manifest) : supplied;

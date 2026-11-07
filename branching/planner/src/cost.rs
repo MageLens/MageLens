@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-use crate::baseline::{Baseline, PLAYWRIGHT_P0};
+use crate::baseline::{Baseline, PLAYWRIGHT_BRANCHING};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -63,7 +63,7 @@ pub fn checkpoint_limit() -> usize {
 }
 
 pub fn select(input: Input) -> Result<Plan, String> {
-    select_with(input, PLAYWRIGHT_P0)
+    select_with(input, PLAYWRIGHT_BRANCHING)
 }
 fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
     if input.stages.is_empty() || input.parents.is_empty() {
@@ -132,7 +132,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
             .iter()
             .all(|path| path.iter().filter(|i| chosen.contains(i)).count() <= limit)
     };
-    // Ordered traversal matches P0: continue the first branch, restore the
+    // Ordered traversal matches branching: continue the first branch, restore the
     // deepest available ancestor later, pay capture and last-consumer release
     // once. Nested checkpoints cannot claim the same saved prefix twice.
     // Unknown stage costs cancel out: no selected checkpoint can skip them.

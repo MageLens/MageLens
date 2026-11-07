@@ -18,7 +18,7 @@ function clone(source, destination) {
 }
 function probe(root) {
     if (fs.realpathSync(root) !== path.resolve(root)) throw new Error('Storage path must not contain symlinks');
-    const directory = fs.mkdtempSync(path.join(root, '.p0-probe-'));
+    const directory = fs.mkdtempSync(path.join(root, '.branching-probe-'));
     try {
         const original = path.join(directory, 'original'), copy = path.join(directory, 'copy');
         fs.writeFileSync(original, Buffer.alloc(65536, 17));
@@ -27,7 +27,7 @@ function probe(root) {
         try { fs.writeSync(fd, Buffer.from([42]), 0, 1, 0); } finally { fs.closeSync(fd); }
         if (fs.readFileSync(original)[0] !== 17 || fs.readFileSync(copy)[0] !== 42) throw new Error('CoW isolation failed');
     } catch (error) {
-        throw new Error('P0 requires working filesystem reflinks (XFS with reflink or Btrfs); no full-copy checkpoint fallback.', {cause: error});
+        throw new Error('branching requires working filesystem reflinks (XFS with reflink or Btrfs); no full-copy checkpoint fallback.', {cause: error});
     } finally { fs.rmSync(directory, {recursive: true}); }
 }
 function replace(source, destination, ownerRoot) {

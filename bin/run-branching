@@ -7,10 +7,10 @@ source "$(dirname "$0")/common"
 [[ "${1:-}" == --branching || "${1:-}" == --help ]] || fail 'Checkpoint execution requires --branching. Use bin/run-coverage for the normal linear run.'
 [[ "${1:-}" != --branching ]] || shift
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching --disposable WORKFLOW.cjs COW_STORAGE [P0|L0] [SPEC_ID ...]\n       ./bin/run-coverage --branching --disposable --auto MANIFEST.json CONFIG.cjs COW_STORAGE [AUTO|P0|L0] [TEST_ID ...]\nBranching produces execution reports; coverage collection is not supported yet.\nSee docs/branching.md.\n'
+    printf 'Usage: ./bin/run-coverage --branching --disposable WORKFLOW.cjs COW_STORAGE [branching|L0] [SPEC_ID ...]\n       ./bin/run-coverage --branching --disposable --auto MANIFEST.json CONFIG.cjs COW_STORAGE [AUTO|branching|L0] [TEST_ID ...]\nBranching produces execution reports; coverage collection is not supported yet.\n'
     exit 0
 fi
-[[ "${1:-}" == --disposable && $# -ge 3 ]] || fail 'Use --disposable WORKFLOW.cjs COW_STORAGE [P0|L0] [SPEC_ID ...]. See docs/branching.md.'
+[[ "${1:-}" == --disposable && $# -ge 3 ]] || fail 'Use --disposable WORKFLOW.cjs COW_STORAGE [branching|L0] [SPEC_ID ...].'
 [[ "$MAGELENS_RUNNER" == playwright ]] || fail "Branching for $MAGELENS_RUNNER is not implemented yet. Use the normal linear run without --branching."
 shift
 automatic=false
@@ -25,9 +25,9 @@ if [[ "${1:-}" == --auto ]]; then
     set -- "$manifest" "$@"
 fi
 [[ -f .runtime/installed ]] || fail 'Install a dedicated test checkout first.'
-[[ ! -e .runtime/workflow.lock && ! -e .runtime/branching-recovery.json ]] || fail 'An active or interrupted workflow needs recovery first. See docs/branching.md.'
+[[ ! -e .runtime/workflow.lock && ! -e .runtime/branching-recovery.json ]] || fail 'An active or interrupted workflow needs recovery first.'
 preflight
-[[ "$(docker info --format '{{.OSType}}')" == linux ]] || fail 'P0 currently supports native Linux Docker only.'
+[[ "$(docker info --format '{{.OSType}}')" == linux ]] || fail 'branching currently supports native Linux Docker only.'
 workflow=$(realpath -e "$1")
 storage=$(realpath -e "$2")
 shift 2
@@ -59,7 +59,7 @@ docker run --rm --init --memory 2g --memory-swap 2g --shm-size 512m \
     --network "$network" --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
     --mount "$modules" \
     --mount "type=bind,source=$ROOT,target=$ROOT" --mount "type=bind,source=$storage,target=$storage" \
-    --workdir "$ROOT" --env "MAGELENS_P0_IMAGE=$image" \
+    --workdir "$ROOT" --env "MAGELENS_BRANCHING_IMAGE=$image" \
     --env MAGELENS_RUNNER --env "MAGELENS_ORCHESTRATOR_CONTAINER=$controller" \
     --env "MAGELENS_HOST_UID=$LOCAL_UID" --env "MAGELENS_HOST_GID=$LOCAL_GID" \
     --env "LOCAL_UID=$LOCAL_UID" --env "LOCAL_GID=$LOCAL_GID" \

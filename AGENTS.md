@@ -58,7 +58,7 @@ Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. A
 | Command | Purpose |
 | --- | --- |
 | `./bin/run-coverage` | Run the installed browser suite and generate fresh reports |
-| `./bin/run-coverage --branching ...` | Opt into the experimental checkpoint workflow; see [branching](docs/branching.md) |
+| `./bin/run-coverage --branching ...` | Run the checkpoint workflow; use `--branching --help` for arguments |
 | `./bin/run-coverage --start` | Start stopped services, then run coverage |
 | `./bin/run-coverage --refresh-cache` | Clean caches before collection |
 | `./bin/run-coverage --refresh-assets` | Refresh static assets and caches before collection |

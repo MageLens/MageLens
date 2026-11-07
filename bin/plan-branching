@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ ${1:-} == --help ]]; then
-    printf 'Usage: ./bin/plan-branching SOURCE_ROOT [MANIFEST.json]\nSee docs/branching.md.\n'
+    printf 'Usage: ./bin/plan-branching SOURCE_ROOT [MANIFEST.json]\n'
     exit 0
 fi
 [[ $# -ge 1 && $# -le 2 ]] || { echo 'Expected SOURCE_ROOT [MANIFEST.json]' >&2; exit 1; }

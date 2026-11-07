@@ -145,6 +145,16 @@ test('dashboard serves metadata only and restores a complete snapshot on reconne
     assert.equal((await fetch(app.url)).status, 200);
     assert.match((await fetch(app.url)).headers.get('content-security-policy'), /frame-ancestors 'none'/);
     assert.equal((await fetch(app.url + '/engine.cjs')).status, 404);
+    assert.equal((await fetch(app.url + '/assets.cjs')).status, 404);
+    assert.equal((await fetch(app.url + '/server.cjs')).status, 404);
+    const {assets} = require('../branching/configs/dashboard-assets.cjs');
+    for (const [route, [file, type]] of Object.entries(assets)) {
+        const response = await fetch(app.url + (route === '/' ? '' : route));
+        assert.equal(response.status, 200, route);
+        assert.equal(response.headers.get('content-type'), type + '; charset=utf-8');
+        assert.equal(await response.text(), fs.readFileSync(path.join(__dirname, '../branching/dashboard', file), 'utf8'));
+    }
+    assert.match(await (await fetch(app.url)).text(), /src="\/app.js" type="module"/);
     assert.equal((await fetch(app.url + '/api/state', {method: 'POST'})).status, 405);
     assert.equal((await fetch(app.url, {headers: {origin: 'http://unrelated.example'}})).status, 403);
     const snapshot = await (await fetch(app.url + '/api/state')).json(); assert.equal(snapshot.runs[0].id, report.run);
@@ -158,4 +168,57 @@ test('dashboard serves metadata only and restores a complete snapshot on reconne
     fs.appendFileSync(file, '{"partial":'); await app.scan(); assert.equal(app.snapshot().runs[0].status, 'passed');
     fs.appendFileSync(file, 'true}\n'); await app.scan(); assert.equal(app.snapshot().warnings.length, 1);
     fs.writeFileSync(file, original); await app.scan(); assert.equal(app.snapshot().warnings.length, 0);
+});
+
+test('dashboard selection preserves pinned history and clears stale nodes when a run disappears', async () => {
+    const {DashboardState} = await import('../branching/dashboard/state.mjs');
+    const state = new DashboardState('#run=older&node=checkpoint&history=1');
+    const older = {id: 'older'}, newer = {id: 'newer'};
+    state.update({runs: [newer, older], plan: null, warnings: []});
+    assert.equal(state.current, older);
+    assert.equal(state.selectedNode, 'checkpoint');
+    assert.equal(new DashboardState(state.toHash()).selectedNode, 'checkpoint');
+    state.hoveredNode = 'another-checkpoint';
+    state.update({runs: [newer], plan: null, warnings: []});
+    assert.equal(state.current, newer);
+    assert.equal(state.selectedNode, null);
+    assert.equal(state.hoveredNode, null);
+    state.followLatest();
+    state.update({runs: [older, newer], plan: null, warnings: []});
+    assert.equal(state.current, older);
+    assert.equal(state.pinned, false);
+});
+
+test('source-plan selection stays pinned as live runs arrive', async () => {
+    const {DashboardState} = await import('../branching/dashboard/state.mjs');
+    const state = new DashboardState('');
+    const plan = {id: 'source-plan'};
+    state.update({runs: [], plan, warnings: []});
+    assert.equal(state.current, plan);
+    state.chooseRun('source-plan');
+    const run = {id: 'live'};
+    state.update({runs: [run], plan, warnings: []});
+    assert.equal(state.current, plan);
+    assert.equal(state.pinned, true);
+    state.chooseRun('live');
+    assert.equal(state.current, run);
+    assert.equal(state.pinned, false);
+});
+
+test('graph layout follows execution order without mutating nodes or schedule', async () => {
+    const {layout} = await import('../branching/dashboard/layout.mjs');
+    const nodes = [
+        {id: 'second'}, {id: 'second-test', parent: 'second'},
+        {id: 'first'}, {id: 'first-right', parent: 'first'}, {id: 'first-left', parent: 'first'}
+    ].map(Object.freeze);
+    const schedule = Object.freeze(['first-left', 'first-right', 'second-test']);
+    const {points, dimensions} = layout(Object.freeze(nodes), schedule);
+    assert.ok(points.get('first-left').x < points.get('first-right').x);
+    assert.equal(points.get('first').x, (points.get('first-left').x + points.get('first-right').x) / 2);
+    assert.ok(points.get('first-left').y > points.get('first').y);
+    assert.ok(points.get('second').y > points.get('first-right').y + 124);
+    for (const point of points.values()) {
+        assert.ok(point.x + 222 <= dimensions.width);
+        assert.ok(point.y + 124 <= dimensions.height);
+    }
 });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-// Focused Linux integration reproduction. Run explicitly in the P0 driver image
+// Focused Linux integration reproduction. Run explicitly in the branching driver image
 // with a private CoW directory mounted at its host path and the Docker socket.
 // This is a real MariaDB/Chrome check, not the Magento release E2E matrix.
 const fs = require('node:fs');
@@ -13,13 +13,13 @@ const {execFileSync} = require('node:child_process');
 const {setTimeout: delay} = require('node:timers/promises');
 const {randomUUID} = require('node:crypto');
 const {chromium} = require('@playwright/test');
-const {P0Provider} = require('../branching/provider.cjs');
+const {BranchingProvider} = require('../branching/provider.cjs');
 const {execute} = require('../branching/engine.cjs');
 const {probe} = require('../branching/storage.cjs');
 
 const command = args => execFileSync('docker', args, {encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe']}).trim();
 class Backend {
-    constructor() { this.name = 'magelens-p0-check-' + randomUUID(); this.identity = {kind: 'real-mariadb-fixture'}; }
+    constructor() { this.name = 'magelens-branching-check-' + randomUUID(); this.identity = {kind: 'real-mariadb-fixture'}; }
     sql(query) { return command(['exec', this.name, 'mariadb', '-uroot', '-ptest-only', '-Nse', query]); }
     async ready() {
         for (let i = 0; i < 120; i++) {
@@ -52,7 +52,7 @@ class Backend {
                     return res.end('ok');
                 }
                 res.setHeader('Content-Type', 'text/html');
-                res.end('<!doctype html><title>P0 fixture</title><h1>Checkout</h1><script src="/static/frontend/test/code.js"></script>');
+                res.end('<!doctype html><title>branching fixture</title><h1>Checkout</h1><script src="/static/frontend/test/code.js"></script>');
             } catch (error) { res.statusCode = 500; res.end(error.message); }
         });
         await this.stop();
@@ -76,13 +76,13 @@ async function main() {
         assert.equal(browser.version(), '156.0.8078.80');
         assert.equal(require('@playwright/test/package.json').version, '1.65.0');
         const backend = new Backend();
-        const provider = new P0Provider({browser, backend, baseURL: 'http://127.0.0.1', state: async () => ({
+        const provider = new BranchingProvider({browser, backend, baseURL: 'http://127.0.0.1', state: async () => ({
             database: backend.sql('SELECT * FROM probe.state ORDER BY id'),
             media: fs.readFileSync(path.join(backend.paths.media, 'state'), 'utf8'),
             session: fs.readFileSync(path.join(backend.paths.session, 'state'), 'utf8')
         })});
         let firstPage, context; const ids = [];
-        const workflow = {identity: {source: 'real-browser-check-v1', fixture: 'mariadb-files-storage', configuration: 'three-siblings', dependencies: 'pw1.65-chrome156', implementation: 'P0'}, stages: [
+        const workflow = {identity: {source: 'real-browser-check-v1', fixture: 'mariadb-files-storage', configuration: 'three-siblings', dependencies: 'pw1.65-chrome156', implementation: 'branching'}, stages: [
             {id: 'customer-ready', run: async p => {
                 // The fixture receives an ephemeral port only after reset.
                 p.browserState.cache.origin = `http://127.0.0.1:${backend.port}`;
@@ -101,7 +101,7 @@ async function main() {
             {id: 'checkout-ready', parent: 'customer-ready', run: async p => {
                 await p.page.evaluate(() => fetch('/set/checkout'));
                 await p.page.evaluate(() => { window.livePrefix = true; }); firstPage = p.page;
-            }, assert: async p => { assert.equal((await p.normalizedState()).media, 'checkout'); assert.equal(await p.page.title(), 'P0 fixture'); }}
+            }, assert: async p => { assert.equal((await p.normalizedState()).media, 'checkout'); assert.equal(await p.page.title(), 'branching fixture'); }}
         ], specs: ['check', 'coupon', 'free'].map((name, index) => ({id: name, parent: 'checkout-ready', run: async p => {
             assert.equal(p.context, context);
             assert.equal(p.page === firstPage, index === 0, 'Only the first sibling retains its live page');
@@ -124,8 +124,11 @@ async function main() {
         assert.equal(result.counts.prefixExecutions, 2); assert.equal(result.counts.reuseHits, 2);
         assert.equal(result.counts.firstReuseValidations, 1); assert.equal(new Set(ids).size, 3);
         assert.equal(backend.staticRequests, 1); assert.ok(provider.browserState.cache.stats.hits >= 2);
-        console.log(JSON.stringify({status: result.status, browser: browser.version(), playwright: require('@playwright/test/package.json').version,
-            counts: result.counts, cache: provider.browserState.cache.stats, wallMs: result.metrics.wallMs}, null, 2));
+        const summary = {status: result.status, browser: {name: 'Chrome for Testing', version: browser.version()},
+            playwright: require('@playwright/test/package.json').version, tests: result.results.length,
+            counts: result.counts, cache: provider.browserState.cache.stats, wallMs: result.metrics.wallMs};
+        if (process.argv[3]) fs.writeFileSync(process.argv[3], JSON.stringify(summary, null, 2) + '\n');
+        console.log(JSON.stringify(summary, null, 2));
     } finally { await browser.close(); }
 }
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });

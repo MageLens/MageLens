@@ -17,7 +17,7 @@ class PlaywrightState {
     check() {
         if (this.cache.errors.length) throw new Error(`Static cache failure: ${this.cache.errors[0]}`);
         if (this.errors.length) throw new Error(`Application browser error: ${this.errors[0]}`);
-        if (this.context.pages().length !== 1) throw new Error('P0 supports exactly one open page at a checkpoint');
+        if (this.context.pages().length !== 1) throw new Error('branching supports exactly one open page at a checkpoint');
     }
     async track(page) {
         page.on('pageerror', error => this.errors.push(error.message));
@@ -62,7 +62,7 @@ class PlaywrightState {
             await delay(20);
         }
         this.check();
-        // No live WebSockets or workers can be serialized by this prototype.
+        // No live WebSockets or workers can be serialized at a checkpoint.
         if (this.page.workers().length || this.sockets.size) throw new Error('Active workers/WebSockets need a qualified checkpoint boundary');
         // Storage extraction may execute browser work. Finish it before freezing
         // and draining HTTP; only collect final response cookies after the drain.

@@ -5,12 +5,14 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [[ $# -ne 1 || "$1" == --help ]]; then
-    printf 'Usage: bash tests/branching-dashboard.sh PLAYWRIGHT_ADAPTER_IMAGE\nRust instrumentation runs in a separate container.\n'
+if [[ $# -lt 1 || $# -gt 2 || "$1" == --help ]]; then
+    printf 'Usage: bash tests/branching-dashboard.sh PLAYWRIGHT_ADAPTER_IMAGE [OUTPUT_DIRECTORY]\nRust instrumentation runs in a separate container.\n'
     [[ ${1:-} == --help ]] && exit 0 || exit 1
 fi
 root=$(pwd -P)
-output="$root/.runtime/branching-dashboard-self-test/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+output=${2:-"$root/.runtime/branching-dashboard-self-test/$(date -u +%Y%m%dT%H%M%SZ)-$$"}
+[[ ! -e "$output" ]] || { echo 'Dashboard output must be fresh.' >&2; exit 1; }
+output=$(realpath -m "$output")
 mkdir -p "$output/workspace"
 rust_image=$(docker build --quiet --file tests/branching-rust-coverage.Dockerfile .)
 controller=$(docker run --detach --rm --init --network none --memory 1g --memory-swap 1g --user "$(id -u):$(id -g)" \

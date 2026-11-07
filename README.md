@@ -20,7 +20,7 @@ Run the installer, run the tests, and open one report to see which parts of your
 
 The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä. The badges are updated after each successful coverage run.
 
-The normal run remains linear. `./bin/run-coverage --branching` explicitly selects the experimental checkpoint workflow. Development toward MageLens 2.0 includes an opt-in [Playwright branching prototype (P0)](docs/branching.md), which shares setup checkpoints between sibling tests on a dedicated Linux CoW test environment. Its [live dashboard](docs/branching.md#live-branching-dashboard) shows the execution graph, active checkpoints and cleanup.
+`./bin/run-coverage --branching` selects the Playwright checkpoint workflow, which shares setup between sibling tests on a dedicated Linux CoW test environment. Use `branching` to force checkpoints, `L0` for linear execution, or `AUTO` with a source manifest. Run `./bin/run-coverage --branching --help` for arguments. `./bin/branching-dashboard` shows execution history, active checkpoints and cleanup. Branching currently produces execution reports; application coverage collection is not yet supported.
 
 <!-- coverage-badges:start -->
 Run `./bin/run-coverage` to generate coverage reports and badges for your project.
