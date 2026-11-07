@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "templateCoverage": {
-    "repository": "VitaliyBoyko/magento-template-coverage",
-    "pullRequest": 4,
-    "sha": "0ce9605e2db1a2909e30644594f97b3ddfeea970",
-    "version": "1.5.5"
-  }
-}
