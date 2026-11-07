@@ -149,7 +149,6 @@ fi
     ./bin/application-compose exec -T -e MAGELENS_REPORT_DATA=/application/docker/php/report-data.php phpfpm \
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
     if [[ "$runner" == playwright ]]; then
-        ./bin/runner npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @elgentos/magento2-playwright@7.1.0
         ./bin/runner node tests/setup-compatibility.cjs
     fi
     ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh

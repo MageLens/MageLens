@@ -1,0 +1,48 @@
+<!--
+SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MageLens · Branching explorer</title>
+    <link rel="stylesheet" href="/style.css"><script src="/model.js" defer></script><script src="/app.js" defer></script>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/" aria-label="MageLens branching explorer"><span class="brand-icon">M</span> MageLens <span class="edition">/ ORCHESTRATOR</span></a><span id="connection" role="status"><i></i> Connecting</span></header>
+<div class="workspace">
+    <aside class="sidebar">
+        <div class="eyebrow">WORKSPACE</div><h2>Execution history</h2>
+        <p class="muted">Follow a run from shared setup to the final cleanup.</p>
+        <button id="plan-button" class="plan-button" hidden>View source plan <span>→</span></button>
+        <label class="eyebrow" for="run-select">RECENT RUNS</label>
+        <select id="run-select"><option value="">Waiting for a run</option></select>
+        <button id="latest-run" class="latest-run" aria-pressed="true">Follow latest run</button>
+        <div id="run-list" class="run-list"></div>
+        <div class="sidebar-note"><span class="tiny-dot"></span> Live observation<p>Run your branching workflow to see its graph here. Finished runs remain available.</p></div>
+    </aside>
+    <main>
+        <div class="page-heading"><div><div class="eyebrow">EXECUTION MAP</div><h1>Branching explorer</h1><p id="subtitle">A clear view of the work you share.</p></div><span id="run-status" class="status-pill">Waiting</span></div>
+        <p id="current-work" role="status">Waiting for orchestrator events</p>
+        <div id="warnings" role="alert" hidden></div>
+        <section class="metrics" aria-label="Run summary">
+            <div><span>Test outcomes</span><strong id="metric-tests">—</strong></div>
+            <div><span>Checkpoints available</span><strong id="metric-checkpoints">—</strong></div>
+            <div><span>Checkpoint reuses</span><strong id="metric-reuses">—</strong></div>
+            <div><span>Checkpoints cleaned</span><strong id="metric-cleaned">—</strong></div>
+        </section>
+        <section class="map-panel" aria-label="Execution graph">
+            <div class="map-toolbar"><div class="legend"><span><i class="blue"></i>First checkpoint</span><span><i class="green"></i>Follow-up</span><span><i class="red"></i>End test</span><span><i class="gray"></i>Linear step</span></div><div class="map-controls"><button id="follow-active" aria-pressed="true">Follow active</button><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button></div></div></div>
+            <div id="empty" class="empty"><div class="empty-symbol">◇</div><h2>Your execution map will appear here</h2><p>Start a branching run, or generate a source manifest to preview its shared checkpoints.</p><code>./bin/plan-branching SOURCE_ROOT</code></div>
+            <div id="viewport" class="viewport" hidden><div id="canvas-wrap"><div id="canvas"><svg id="edges" aria-hidden="true"></svg><div id="nodes"></div></div></div></div>
+            <div class="map-footer"><span id="graph-summary">Waiting for orchestrator events</span><span><i class="activity-dot"></i> Active work pulses · hover or focus a checkpoint or test for details</span></div>
+        </section>
+        <section class="activity-panel"><div class="activity-heading"><h2>Activity</h2><span id="cleanup-summary">No cleanup recorded</span></div><ol id="activity"><li class="muted">Events will appear as the orchestrator runs.</li></ol></section>
+    </main>
+    <aside class="linear-panel" aria-label="Linear test progress"><div class="eyebrow">LINEAR VIEW</div><h2>Test progress</h2><p class="muted">The same run, in execution order. Shared setup counts toward each test when it executes or restores.</p><ol id="test-progress"></ol></aside>
+</div>
+<div id="node-details" role="tooltip" hidden><div id="detail-kind" class="eyebrow">Checkpoint details</div><h2 id="detail-title"></h2><p id="detail-description" class="muted"></p><dl id="details"></dl><div id="last-use" class="last-use" hidden></div></div>
+</body>
+</html>

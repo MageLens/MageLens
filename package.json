@@ -10,7 +10,8 @@
     "cy:coverage": "./bin/run-coverage",
     "test:integration": "node --test --test-concurrency=2 tests/*.test.cjs",
     "test:e2e": "bash tests/e2e-isolated.sh",
-    "test:e2e:matrix": "bash tests/e2e-matrix.sh"
+    "test:e2e:matrix": "bash tests/e2e-matrix.sh",
+    "test:branching-dashboard": "node tests/branching-dashboard-browser.cjs"
   },
   "devDependencies": {
     "@cypress/code-coverage": "4.1.2",

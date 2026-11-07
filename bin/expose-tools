@@ -9,7 +9,7 @@ upstream=.runtime/docker-magento/compose
 for file in "$upstream"/bin/*; do
     name=$(basename "$file")
     case "$name" in
-        application-compose|application-domain|badges.cjs|build-php-image|common|compose-project|dependencies|expose-tools|finalize.cjs|install|image-inputs.cjs|prepare-images|sync-runner-dependencies|prepare.cjs|project.cjs|report-browser.cjs|report-index.cjs|run-browser.cjs|run-playwright.cjs|run-coverage|runner|sync-dependencies.cjs|javascript-scope.cjs)
+        application-compose|application-domain|badges.cjs|build-php-image|common|compose-project|dependencies|expose-tools|finalize.cjs|install|image-inputs.cjs|prepare-images|sync-runner-dependencies|prepare.cjs|project.cjs|report-browser.cjs|report-index.cjs|run-browser.cjs|run-playwright.cjs|run-coverage|run-branching|plan-branching|branching-image|branching-dashboard|runner|sync-dependencies.cjs|javascript-scope.cjs)
             fail "Upstream tool conflicts with application script: bin/$name" ;;
     esac
     cp -R "$file" bin/

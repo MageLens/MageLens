@@ -50,7 +50,7 @@ const browserScript = runner === 'cypress' ? 'run-browser.cjs' : 'run-playwright
 test(`${runner}: default run preserves running services, configuration and caches`, t => {
     const result = workflow(t, [], '', false, runner);
     assert.equal(result.status, 0, result.stderr);
-    assert.doesNotMatch(result.calls, /^(up|run|stop|restart) |cache:|config:set|refresh-assets|base-url/m);
+    assert.doesNotMatch(result.calls, /^(up|run|stop|restart) |cache:|config:set|refresh-assets|base-url|branching|orchestrator/m);
     assert.equal((result.calls.match(/project-hooks.php cleanup/g) || []).length, 1);
     assert.match(result.calls, /report.php/);
     assert.match(result.calls, /finalize.cjs/);

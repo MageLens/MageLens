@@ -97,7 +97,7 @@ Cypress installations also verify Node-side certificate and hostname validation,
 
 All eight combinations check input updates, loops, navigation, and form submissions against the installed platform. Coverage checks require executed PHP, JavaScript, and template lines, along with uncovered branches and unvisited templates. Hyvä checks also cover Alpine model updates, PHP-generated event names, conditional listeners, modifier-only form prevention and unclicked event handlers. CSP runs include the original vendor theme templates and require the gallery, price and cancellation-modal directives to have no unsupported-directive warnings. Each combination runs the same seven acceptance scenarios: five Blog scenarios covering publishing, moderation, image handling, validation, permissions, and storefront interaction, plus two coverage probes. Inline PHTML scripts must execute normally and appear only in template coverage, with called functions, unused functions and both branch outcomes reported. PHP-rendered child scripts must link to their original template and keep unused child functions and branches uncovered. Original source files and PHP line numbers must remain unchanged. Patch cleanup is checked against the original framework files on both platforms.
 
-Hyvä tests use the installer-selected default theme, with package versions pinned in [hyva-packages.json](../docker/php/hyva-packages.json). Playwright tests include the elgentos guest fixture. CSP runs require an enforcing script policy and verify that unauthorized inline scripts and dynamic code are blocked. Licensed Hyvä Checkout and the full upstream elgentos checkout suite are outside this installation matrix.
+Hyvä tests use the installer-selected default theme, with package versions pinned in [hyva-packages.json](../docker/php/hyva-packages.json). Playwright tests include a project-owned external guest fixture with TypeScript path aliases. CSP runs require an enforcing script policy and verify that unauthorized inline scripts and dynamic code are blocked. Licensed Hyvä Checkout and external checkout suites are outside this installation matrix.
 
 The matrix also compares covered and uncovered lines in the shared Blog PHP and Admin JavaScript across all eight installations. Within each platform and theme, Cypress and Playwright must produce the same Blog PHP and JavaScript line coverage and template statement coverage. The comparison is saved to `.runtime/e2e/matrix-comparison.json`. Missing or duplicate combinations fail the comparison. Overall percentages can differ between Luma and Hyvä because their storefront implementations differ and inactive application files remain uncovered.
 
@@ -108,3 +108,95 @@ Omitting these settings selects Magento Open Source/Luma/Cypress. The full matri
 ## Test a local template coverage package
 
 Test unpublished collector changes in a reviewed CI branch: pack the library in the runner workspace and pass `MAGELENS_TEMPLATE_COVERAGE_PACKAGE` to the existing harness. Record the tarball digest in the run evidence and do not replace the final published-pin qualification with an unpublished-package run. Local packing and focused browser debugging are permitted; the full matrix remains in CI.
+
+## Rust automatic checkpoint planner
+
+`./bin/plan-branching SOURCE_ROOT [MANIFEST]` uses the pinned Rust planner in
+Docker, using a matching prebuilt image by default. The image-builder CI runs
+the Rust unit and CLI tests. For an explicit development build, set
+`MAGELENS_BRANCHING_BUILD_FROM_SOURCE=1`. The CI integration job
+plans a repository-owned two-test fixture and checks its repeated-prefix graph.
+
+`tests/branching-automatic.test.cjs` covers automatic execution, selection,
+source changes, failure cleanup, last-consumer lifetime and retained evidence
+within the normal integration suite. External source corpora and adapters are
+local research inputs, kept under the already ignored `.runtime/` directory.
+
+## Full checkout comparison
+
+The focused [checkout validation](../docs/branching-checkout-validation.md) uses
+nine authenticated simple/configurable/bundle order journeys, with check and free
+payment. `tests/branching-checkout.cjs` exercises P0 in an owned disposable shop;
+`tests/branching-checkout-linear.cjs` runs the same journeys in a separate Docker
+project with conventional SQL resets and fresh browser contexts. The control
+does not load P0's CoW storage, browser restoration or custom asset cache.
+
+Use independent application files, databases, media, sessions, cache services,
+networks and browser containers for the two modes. Run complete suites in
+alternating order, sequentially, with the inactive stack stopped. The `L0` mode
+of the P0 harness is a different experiment: it retains P0 runtime features and
+is not the conventional control. Both real checkout harnesses verify order
+semantics and restore their initial state; preserve failed-run artifacts.
+
+`tests/fixtures/branching-restarts/` contains the service-retention experiments.
+Its `run.cjs` compares retained PHP, alternating SQL schemas and background
+schema preparation; `live-run.cjs` also preserves the original MariaDB process
+through preparation and cleanup. `linear-run.cjs` retains PHP while keeping the
+conventional SQL and tar resets. These explicit runners require the same owned
+fixture, isolated resources and driver environment as the checkout comparison.
+They do not change the default P0 backend. See the validation record for the
+observed concurrency failure, corrections, measured results and limitations.
+
+## Dashboard self-tests and self-coverage
+
+`tests/branching-dashboard.test.cjs` runs in the integration suite. It checks
+event ordering, actual last-consumer deletion, failed/retained cleanup,
+observation failure isolation, read-only HTTP access, reconnect snapshots and
+large SSE messages. The dashboard uses the real engine's events in these checks.
+
+Run the focused browser suite with the prebuilt Playwright adapter image:
+
+```bash
+image=$(./bin/branching-image playwright)
+bash tests/branching-dashboard.sh "$image"
+```
+
+The wrapper builds a separate instrumented Rust image with Rust 1.91.0 and its
+LLVM coverage tools. Rust and Playwright run in separate offline containers with
+bounded memory, read-only source mounts and a shared private artifact directory.
+The Playwright test container uses the Docker socket to invoke the Rust commands;
+it needs neither Magento nor a planner binary inside the browser image.
+The application runner and production planner images are unchanged. This focused
+self-test is not the future branching E2E CI job, which is deferred.
+
+The Playwright checks use pinned Chrome for Testing and real engine execution
+with a small contract provider. They cover active nodes, depth colors, edges,
+last consumers, failures, recovery, refresh/reconnect, hover details, linear
+progress, code-change reloads, ordered groups, automatic scrolling and mobile
+layout. A twelve-boundary graph checks the nine-checkpoint path limit and cleanup.
+The actual Rust CLI discovers a three-test source graph, verifies
+it and makes the static AUTO cost decision; its compiled graph also executes
+through the real engine. These fixtures do not claim Magento business coverage.
+
+Each invocation creates a new `.runtime/branching-dashboard-self-test/` folder:
+
+- `coverage/index.html`, `coverage-final.json`, `coverage-summary.json` and
+  `qualification.json`: JavaScript statement, function, branch and line coverage
+  for the execution/planning entry points, event journal, server and browser UI.
+  Unvisited files remain in the totals. Source hashes and original-byte checks
+  accompany the result.
+- `rust-coverage/html/index.html`, `coverage.json`, `summary.json` and raw LLVM
+  profiles: native planner coverage from the commands exercised by these
+  Playwright checks. Third-party crate code is excluded; native Rust and
+  JavaScript percentages remain separate. `baseline.rs` remains in the source-hash
+  inventory but has no LLVM executable regions (constants and a derived-data
+  type); the report records this explicitly.
+- Browser screenshots, including failure screenshots when needed.
+
+`npm run test:branching-dashboard` is the underlying command inside a prepared
+adapter with a separate planner container. Without Rust instrumentation it still collects JavaScript
+self-coverage and explicitly records native Rust coverage as unavailable. It
+must not be substituted for the wrapper when native coverage is required.
+Self-coverage instrumentation is confined to the test image or in-memory code;
+never use these runs to make performance claims. The report concerns MageLens
+itself, separately from Magento application coverage and branch evidence.

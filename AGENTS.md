@@ -58,6 +58,7 @@ Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. A
 | Command | Purpose |
 | --- | --- |
 | `./bin/run-coverage` | Run the installed browser suite and generate fresh reports |
+| `./bin/run-coverage --branching ...` | Opt into the experimental checkpoint workflow; see [branching](docs/branching.md) |
 | `./bin/run-coverage --start` | Start stopped services, then run coverage |
 | `./bin/run-coverage --refresh-cache` | Clean caches before collection |
 | `./bin/run-coverage --refresh-assets` | Refresh static assets and caches before collection |
@@ -82,6 +83,10 @@ Run installation and coverage one at a time. Do not bypass `.runtime/workflow.lo
 
 ## Validate changes
 
+For ongoing MageLens 2.0 branching work, create task branches from `branching`
+and target pull requests at `branching`. It is the feature integration branch;
+merging it into `main` or publishing a release requires a separate instruction.
+
 CI exists to expose real gaps and problems in the user journey: installation, daily commands, storefront and Admin flows, coverage collection, and recovery. Investigate failures and fix their root causes in the product or test harness. Do not add CI-only workarounds that hide defects, bypass real user paths, weaken assertions or coverage, skip required cases, suppress application errors, or retry away functional failures. Runner setup and resource adaptations must preserve those journeys and acceptance checks. If a supported journey cannot run under the allowed infrastructure constraints, report incomplete coverage and the demonstrated blocker.
 
 For host-side integration checks, install the locked dependencies with `npm ci --ignore-scripts`, then run `npm run test:integration`. Target an existing relevant test first; use the full integration suite for shared orchestration changes. PHP checks live in `tests/*.test.php`; inspect their prerequisites before selecting host or container execution. Use `bash -n`, `node --check` and `php -l` for changed scripts.
@@ -94,7 +99,7 @@ Compare complete coverage outcomes within each theme across platforms, browser r
 
 Local development and CI use the same runner Dockerfile and harness. Cypress 16.2.1 is rebuilt from its pinned upstream source with the cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`; do not duplicate it in CI scripts or application code. Each Cypress case must pass the eleven runner regressions (nine cookie/authorization journeys, document initialization and a delayed-response check) and record matching source/patch provenance. Review the patch when updating Cypress; remove the source build after an upstream release passes the retained regressions. Existing installations must rerun installation with their saved selections to rebuild the runner.
 
-CI runs only on pull requests, including forks, against the exact merge candidate. Merges and release tags do not rerun the matrix. Retrieve the `case-*-attempt-N` and `qualification-N` artifacts; see [tests/README.md](tests/README.md) for setup and diagnostics.
+The full E2E CI matrix runs only on pull requests, including forks, against the exact merge candidate. The separate branching image builder publishes development images on pushes to `branching`; it does not qualify a release. Merges and release tags do not rerun the matrix. Retrieve the `case-*-attempt-N` and `qualification-N` artifacts; see [tests/README.md](tests/README.md) for setup and diagnostics.
 
 Fix failures and push a new candidate to run CI again. Rerun all jobs on the final candidate: artifacts from different attempts cannot be combined. The manually dispatched release publisher consumes the successful PR qualification and requires the release commit to have the same Git tree as the tested candidate. Identical files after merging do not require another CI run; changed files require a new qualified PR. Do not merge or publish unless requested.
 

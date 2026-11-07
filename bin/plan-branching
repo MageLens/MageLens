@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ ${1:-} == --help ]]; then
+    printf 'Usage: ./bin/plan-branching SOURCE_ROOT [MANIFEST.json]\nSee docs/branching.md.\n'
+    exit 0
+fi
+[[ $# -ge 1 && $# -le 2 ]] || { echo 'Expected SOURCE_ROOT [MANIFEST.json]' >&2; exit 1; }
+root=$(pwd -P)
+source_root=$(realpath -e "$1")
+[[ "$source_root" == "$root/"* || "$source_root" == "$root" ]] || { echo 'Source must be within this checkout' >&2; exit 1; }
+manifest=${2:-.runtime/branching-plan.json}
+mkdir -p "$(dirname "$manifest")"
+manifest=$(realpath -m "$manifest")
+[[ "$manifest" == "$root/"* && "$root" != *','* ]] || { echo 'Manifest must be in this checkout; paths cannot contain commas' >&2; exit 1; }
+planner_image=$(./bin/branching-image orchestrator)
+docker run --rm --init --memory 1g --memory-swap 1g --user "$(id -u):$(id -g)" \
+    --mount "type=bind,source=$root,target=$root" --workdir "$root" \
+    "$planner_image" plan "$source_root" "$manifest"
+printf 'Manifest: %s\n' "$manifest"

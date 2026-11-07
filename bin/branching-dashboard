@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+source bin/dependencies
+load_dependencies dependencies.yaml
+if [[ ${1:-} == --help ]]; then
+    printf 'Usage: ./bin/branching-dashboard [PORT] [EVENT_DIRECTORY] [MANIFEST.json]\nDefaults: 4173 .runtime/branching-events .runtime/branching-plan.json\n'
+    exit 0
+fi
+[[ $# -le 3 ]] || { echo 'Expected port, event directory and optional manifest.' >&2; exit 1; }
+port=${1:-4173}
+[[ "$port" =~ ^[0-9]+$ && "$port" -gt 1023 && "$port" -lt 65536 ]] || { echo 'Use a port from 1024 to 65535.' >&2; exit 1; }
+mkdir -p "${2:-.runtime/branching-events}"
+events=$(realpath -e "${2:-.runtime/branching-events}")
+manifest=$(realpath -m "${3:-.runtime/branching-plan.json}")
+root=$(pwd -P)
+[[ "$events" == "$root/"* && "$manifest" == "$root/"* && "$root" != *','* ]] || { echo 'Events and manifest must belong to this checkout.' >&2; exit 1; }
+mkdir -p "$(dirname "$manifest")"
+printf 'Open http://127.0.0.1:%s — Ctrl+C stops only the dashboard.\n' "$port"
+docker run --rm --init --memory 256m --memory-swap 256m --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:4173" \
+    --mount "type=bind,source=$root/branching,target=/app/branching,readonly" \
+    --mount "type=bind,source=$(dirname "$manifest"),target=/plans,readonly" \
+    --mount "type=bind,source=$events,target=/events,readonly" \
+    --env MAGELENS_DASHBOARD_BIND=0.0.0.0 --entrypoint node "$PLAYWRIGHT_RUNNER_IMAGE" \
+    --watch /app/branching/dashboard/server.cjs /events "/plans/$(basename "$manifest")"

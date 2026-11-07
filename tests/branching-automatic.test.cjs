@@ -1,0 +1,126 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const {buildWorkflow, compileFragment} = require('../branching/automatic.cjs');
+const {execute, fileDigest, CheckpointStore, digest} = require('../branching/engine.cjs');
+const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
+
+function fixture(t) {
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'magelens-automatic-'));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    const source="// 🛒 UTF-8 offsets\nawait page.goto('/cart');\nawait page.goto('/one');\nawait page.goto('/two');";
+    fs.writeFileSync(path.join(root,'flow.spec.ts'),source);
+    const steps=["await page.goto('/cart');","await page.goto('/one');","await page.goto('/two');"].map(code=>{
+        const start=Buffer.byteLength(source.slice(0,source.indexOf(code)));return {start,end:start+Buffer.byteLength(code),kind:'statement',portable:true,actionUnits:1};
+    });
+    const tests=['test-one','test-two'].map((id,i)=>({id,file:'flow.spec.ts',title:id,line:2,scope:'same-scope',disposition:'automatic',reasons:[],steps:[steps[0],steps[i+1]]}));
+    const checkpoint={id:'cp-cart',depth:1,parent:null,representative:tests[0].id,consumers:tests.map(t=>t.id),automatic:true};
+    const manifest={schemaVersion:1,implementation:'rust-prefix-v1',root,sourceDigest:'source',sources:[{path:'flow.spec.ts',sha256:fileDigest(path.join(root,'flow.spec.ts'))}],
+        tests,checkpoints:[checkpoint],schedule:tests.map(t=>t.id),diagnostics:[]};
+    const configuration={identity:'same-customer',expect:assert,state:async p=>p.normalizedState(),assertCheckpoint:async p=>assert.equal(p.state.browser.url,'/cart')};
+    class Provider extends FixtureProvider {
+        get page(){return {goto:async url=>{this.state.browser.url=url;this.hit(url);if(url==='/cart')this.state.db.cart=['sku'];}};}
+    }
+    return {root,manifest,configuration,Provider};
+}
+
+test('compiled fragments preserve strict module semantics',async()=>{
+    assert.equal(await compileFragment([], 'return this;')(),undefined);
+    await assert.rejects(compileFragment([], 'unboundAutomaticTestVariable = 1;')(),ReferenceError);
+});
+
+test('automatic fragments preserve UTF-8, branch states and last-consumer cleanup',async t=>{
+    const {root,manifest,configuration,Provider}=fixture(t);
+    const built=buildWorkflow(manifest,configuration);
+    const p0=await execute({...built,root,provider:new Provider()});
+    const l0=await execute({...built,root,provider:new Provider(),approach:'L0'});
+    assert.equal(p0.status,'passed',JSON.stringify(p0.errors));assert.equal(l0.status,'passed');
+    assert.equal(p0.counts.reuseHits,1);assert.equal(p0.checkpoints.length,1);
+    assert.deepEqual(p0.results.map(r=>r.state),l0.results.map(r=>r.state));
+    assert.deepEqual(p0.releases.map(r=>[r.stage,r.after]),[['cp-cart','test-two']]);
+    assert.equal(fs.existsSync(p0.directory),false);
+});
+
+test('single selected branch avoids creating a checkpoint with no future consumer',async t=>{
+    const {root,manifest,configuration,Provider}=fixture(t);
+    const built=buildWorkflow(manifest,configuration,['test-two']);
+    const report=await execute({...built,root,provider:new Provider()});
+    assert.equal(report.status,'passed');assert.equal(report.checkpoints.length,0);assert.equal(report.results.length,1);
+});
+
+test('unsupported fixture, missing assertion, stale dependencies and dynamic tests stop before launch',t=>{
+    const {root,manifest,configuration}=fixture(t);
+    manifest.tests[0].disposition='adapter-required';manifest.tests[0].reasons=['Authenticated fixture'];
+    assert.throws(()=>buildWorkflow(manifest,configuration),/Authenticated fixture/);
+    manifest.tests[0].disposition='automatic';
+    assert.throws(()=>buildWorkflow(manifest,{...configuration,assertCheckpoint:null}),/assertCheckpoint/);
+    manifest.diagnostics.push('dynamic tests');assert.throws(()=>buildWorkflow(manifest,configuration),/Dynamic tests/);
+    assert.doesNotThrow(()=>buildWorkflow(manifest,configuration,['test-one']));manifest.diagnostics=[];
+    fs.appendFileSync(path.join(root,'flow.spec.ts'),'\n//changed');assert.throws(()=>buildWorkflow(manifest,configuration),/Stale source/);
+});
+
+test('invalid selections and syntax are rejected before provider preparation',t=>{
+    const {root,manifest,configuration}=fixture(t);
+    assert.throws(()=>buildWorkflow(manifest,configuration,['missing']),/Unknown test/);
+    assert.throws(()=>buildWorkflow(manifest,configuration,['test-one','test-one']),/Duplicate/);
+    const file=path.join(root,'flow.spec.ts');fs.writeFileSync(file,'await (');
+    manifest.sources[0].sha256=fileDigest(file);manifest.tests[0].steps=[{start:0,end:7}];manifest.checkpoints=[];
+    assert.throws(()=>buildWorkflow(manifest,configuration,['test-one']),SyntaxError);
+});
+
+test('failed last consumer still releases its snapshot and records failure',async t=>{
+    const {root,manifest,configuration,Provider}=fixture(t);
+    const built=buildWorkflow(manifest,configuration);
+    built.workflow.specs.get('test-two').run=async()=>{throw new Error('suffix failure');};
+    const report=await execute({...built,root,provider:new Provider()});
+    assert.equal(report.status,'failed');assert.equal(report.releases.length,1);assert.equal(fs.existsSync(report.directory),false);
+});
+
+test('ancestor remains available for a later sibling after a deeper subtree finishes',async t=>{
+    const {root}=fixture(t);const workflow=fixtureWorkflow({fanout:2});
+    const report=await execute({root,workflow,provider:new FixtureProvider(),checkpointLifetime:'last-consumer',specs:['coupon-0','coupon-1','remove-item']});
+    assert.equal(report.status,'passed');
+    assert.equal(report.releases.find(r=>r.stage==='shipping-selected').after,'coupon-1');
+    assert.equal(report.releases.find(r=>r.stage==='cart-ready').after,'remove-item');
+    assert.equal(report.counts.reuseHits,2);
+});
+
+test('checkpoint release refuses unowned metadata and symlink directories',t=>{
+    const {root}=fixture(t);const dir=path.join(root,'checkpoint');fs.mkdirSync(dir);
+    const manifest={owner:'other',id:'id'};fs.writeFileSync(path.join(dir,'manifest.json'),JSON.stringify(manifest));
+    const store=new CheckpointStore(root,'owner','profile');store.available.set('stage',{id:'id',directory:dir,digest:digest(manifest)});
+    assert.throws(()=>store.release('stage'),/Unowned/);assert.equal(fs.existsSync(dir),true);
+    const link=path.join(root,'link');fs.symlinkSync(dir,link);store.available.set('stage',{id:'id',directory:link,digest:digest(manifest)});
+    assert.throws(()=>store.release('stage'),/Unowned/);
+});
+
+test('retained evidence suppresses last-consumer deletion',async t=>{
+    const {root,manifest,configuration,Provider}=fixture(t);
+    const report=await execute({...buildWorkflow(manifest,configuration),root,provider:new Provider(),retain:true});
+    assert.equal(report.status,'passed');assert.equal(report.releases.length,0);assert.equal(fs.existsSync(report.directory),true);
+});
+
+
+test('source units and reviewed fixture units include the full composite',t=>{
+    const {manifest,configuration}=fixture(t);
+    const native=buildWorkflow(manifest,configuration).workflow;
+    assert.equal([...native.stages.values()].find(s=>s.checkpoint===false).actionUnits,0);
+    assert.equal(native.stages.get('cp-cart').actionUnits,1);
+    const adapter={identity:'reviewed-fixture',supports:()=>true,execute:async()=>{},prepare:async()=>{},
+        fixtureUnits:()=>60,actionUnits:(_test,from,to)=>{assert.equal(from,0);assert.equal(to,1);return 60;}};
+    const adapted=buildWorkflow(manifest,{...configuration,adapter}).workflow;
+    assert.equal([...adapted.stages.values()].find(s=>s.checkpoint===false).actionUnits,60);
+    assert.equal(adapted.stages.get('cp-cart').actionUnits,60);
+    delete adapter.fixtureUnits;delete adapter.actionUnits;
+    const unknown=buildWorkflow(manifest,{...configuration,adapter}).workflow;
+    assert.equal([...unknown.stages.values()].find(s=>s.checkpoint===false).actionUnits,null);
+    assert.equal(unknown.stages.get('cp-cart').actionUnits,null);
+    adapter.fixtureUnits=()=>-1;
+    assert.throws(()=>buildWorkflow(manifest,{...configuration,adapter}),/Invalid static action units/);
+});

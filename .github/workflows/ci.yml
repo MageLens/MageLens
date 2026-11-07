@@ -39,6 +39,12 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Rust checkpoint planner and repository-owned fixture
+        env:
+          MAGELENS_BRANCHING_BUILD_FROM_SOURCE: '1'
+        run: |
+          ./bin/plan-branching tests/fixtures/branching-source .runtime/branching-fixture-plan.json
+          node tests/branching-plan-smoke.cjs .runtime/branching-fixture-plan.json
       - name: Run every integration test and reject skipped tests
         shell: bash
         run: |

@@ -3,9 +3,9 @@
 // License: see LICENSE in the repository root.
 
 const {verifyScriptPolicy} = require('../csp-proof');
-const {test, expect} = require('../../../../../../../.runtime/elgentos/support.cjs');
+const {test, expect} = require('../../../../../../../.runtime/external-suite/support.cjs');
 test('collects real PHP, JavaScript and template execution', async ({page, externalFixture}) => {
-    expect(externalFixture).toBe('elgentos-guest');
+    expect(externalFixture).toBe('external-guest');
     const response = await page.goto('/coverageprobe/');
     if (process.env.MAGELENS_THEME === 'hyva') {
         const policy = response.headers()['content-security-policy'];

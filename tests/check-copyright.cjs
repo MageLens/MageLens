@@ -32,12 +32,12 @@ function style(file, content) {
     const extension = path.extname(file);
     if (['.json', '.lock'].includes(extension)) return 'sidecar';
     if (['.php', '.phtml'].includes(extension) || file.endsWith('.php.sample')) return 'php';
-    if (['.js', '.cjs', '.mjs', '.ts', '.tsx', '.jsx'].includes(extension)) return 'slash';
+    if (['.js', '.cjs', '.mjs', '.ts', '.tsx', '.jsx', '.rs'].includes(extension)) return 'slash';
     if (['.css', '.less', '.scss'].includes(extension)) return 'block';
     if (['.md', '.html', '.xml', '.svg'].includes(extension)) return 'markup';
     if (extension === '.ini') return 'semicolon';
     if (extension === '.patch') return 'plain';
-    if (['.sh', '.bash', '.yaml', '.yml', '.conf'].includes(extension) ||
+    if (['.sh', '.bash', '.yaml', '.yml', '.conf', '.toml'].includes(extension) ||
         ['Dockerfile', '.gitignore', '.gitattributes', '.dockerignore'].includes(path.basename(file)) ||
         content.subarray(0, 2).toString() === '#!') return 'hash';
     // Unknown formats and binaries are never silently excluded.

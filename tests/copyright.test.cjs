@@ -38,6 +38,8 @@ test('checks every tracked format while preserving language preambles and opaque
     const sources = {
         'bin/tool': `#!/usr/bin/env bash\n${hash}exit 0\n`,
         'script.cjs': `${slash}module.exports = 42;\n`,
+        'planner.rs': `${slash}fn main() {}\n`,
+        'Cargo.toml': `${hash}[package]\nname="fixture"\n`,
         'template.phtml': `<?php\n${block}declare(strict_types=1); ?>Hello`,
         'module.xml': `<?xml version="1.0"?>\n${markup}<config/>\n`,
         'image.svg': `${markup}<svg/>\n`,
@@ -58,7 +60,7 @@ test('checks every tracked format while preserving language preambles and opaque
     write('generated/scratch.js', 'Untracked files are outside this check.', false);
     const result = run(path.join(root, '.github'));
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /all 22 tracked files/);
+    assert.match(result.stdout, /all 24 tracked files/);
     for (const [file, source] of Object.entries(sources)) {
         assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), source, 'The check is read-only');
     }

@@ -3,6 +3,7 @@
 # License: see LICENSE in the repository root.
 
 /.runtime/
+/branching/planner/target/
 # Track only application sources inside the otherwise generated Magento tree.
 /src/*
 !/src/app/
@@ -39,6 +40,10 @@
 !/bin/run-browser.cjs
 !/bin/run-playwright.cjs
 !/bin/run-coverage
+!/bin/run-branching
+!/bin/branching-dashboard
+!/bin/plan-branching
+!/bin/branching-image
 !/bin/runner
 !/bin/sync-dependencies.cjs
 /.env

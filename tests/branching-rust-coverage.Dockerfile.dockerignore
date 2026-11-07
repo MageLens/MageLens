@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+*
+!branching/
+!branching/planner/
+!branching/planner/Cargo.toml
+!branching/planner/Cargo.lock
+!branching/planner/src/
+!branching/planner/src/**

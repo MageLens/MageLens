@@ -3,6 +3,14 @@
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
+branching=0
+branching_arguments=()
+for argument in "$@"; do
+    if [[ "$argument" == --branching ]]; then branching=1; else branching_arguments+=("$argument"); fi
+done
+if (( branching )); then
+    exec "$(dirname "$0")/run-branching" --branching "${branching_arguments[@]}"
+fi
 source "$(dirname "$0")/common"
 start_services=0
 refresh_cache=0
@@ -27,6 +35,7 @@ Run the selected browser suite and create fresh coverage reports using the runni
   --refresh-cache   Clean Magento caches (for example after layout/config changes)
   --refresh-assets  Clear published static assets and Magento caches
   --restart-php     Restart PHP-FPM before the run
+  --branching       Opt into checkpoint execution (see --branching --help)
   --runner=cypress|playwright Assert the installed runner (defaults to saved selection)
   --help            Show this help
 
