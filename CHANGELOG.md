@@ -129,7 +129,7 @@ After updating, rerun `./install.sh` with your existing theme and runner flags (
 ## 1.3.1 - 2026-10-18
 
 - Add `withCoverage(test)` to preserve existing Playwright fixtures while collecting PHP, JavaScript and template coverage.
-- Keep external suite selection explicit in the project configuration. The presence of an elgentos directory no longer changes MageLens’s default fixture or path aliases.
+- Keep external suite selection explicit in the project configuration. External test directories do not change MageLens’s default fixture or path aliases.
 
 ## 1.3.0 - 2026-10-18
 
@@ -154,7 +154,7 @@ After updating, rerun `./install.sh` with your selected theme and runner flags, 
 - Each installation includes only its selected runner, browser cache, and tooling. Playwright installations omit the Cypress desktop viewer.
 - `./bin/run-coverage` uses the saved runner selection and generates PHP, JavaScript, and template reports with either runner.
 - Added execution coverage for regular Hyvä/Alpine directives in PHTML while preserving original PHP source lines.
-- `npm run test:e2e:matrix` checks all four combinations in separate temporary installations, including elgentos Playwright guest fixtures and generated coverage reports.
+- `npm run test:e2e:matrix` checks all four combinations in separate temporary installations, including Playwright coverage probes and generated coverage reports.
 - The bundled Blog supports Hyvä and provides equivalent publishing, moderation, validation, permissions, and storefront scenarios in both browser runners.
 - The installation matrix verifies all seven scenarios in every mode and compares coverage for shared application code.
 - Updated Magento template coverage to 1.2.0 from npm.
