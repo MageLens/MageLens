@@ -6,6 +6,12 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.2 - 2026-11-08
+
+- Pin patched glob and minimatch versions in the coverage toolchain to address cancellation-bypass and pattern-amplification denial-of-service advisories (CVE-2026-118773 and CVE-2026-118764).
+
+Rerun installation with your saved platform, theme and runner selections to refresh the runner dependencies.
+
 ## 1.9.1 - 2026-11-07
 
 - Update template coverage to 1.5.5 for Acorn 8.19 parsing fixes and Unicode 17/18 identifiers in Alpine, Knockout and template expressions.
