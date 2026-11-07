@@ -115,10 +115,11 @@ function buildWorkflow(manifest, configuration, selected) {
     }
     return {
         workflow: new Graph({identity: {source: manifest.sourceDigest, fixture: configuration.identity,
-            configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null},
+            configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
+                runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,
             implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./engine.cjs')), manifest.implementation])}, stages, specs}),
-        state: configuration.state, checkpointLifetime: 'last-consumer'
+        state: configuration.state, checkpointLifetime: 'last-consumer', runnerOptions: configuration.runnerOptions
     };
 }
 module.exports = {buildWorkflow, verifySources, compileFragment};

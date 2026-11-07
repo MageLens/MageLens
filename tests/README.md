@@ -121,6 +121,16 @@ plans a repository-owned two-test fixture and checks its repeated-prefix graph.
 source changes, failure cleanup, last-consumer lifetime and retained evidence
 within the normal integration suite.
 
+For suites with dynamic registration or custom fixtures, the project adapter can
+set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
+complete Playwright inventory. Unprofitable AUTO plans run it in one native
+invocation. Mixing reviewed checkpoints with native tests requires an explicitly
+qualified `native.splitSafe: true`, matching Playwright launch/context settings in
+`runnerOptions: {launchOptions, contextOptions}`, one shared setup project, and no global or
+project teardown or managed web server. Global setup must not return per-process
+cleanup when splitting execution. Skipped and missing tests remain visible
+and do not qualify as a fully passed run.
+
 ## Dashboard self-tests and self-coverage
 
 `tests/branching-dashboard.test.cjs` runs in the integration suite. It checks

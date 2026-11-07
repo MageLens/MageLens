@@ -194,6 +194,22 @@ function createExecution({
         emit(protocol.event.specStart, {node: spec.id, index});
         try {
             const state = await resolve(spec.parent);
+            const next = selected[index + 1];
+            if (next && provider.prefetch && !graph.chain(next.parent).some(node => failed.has(node.id))) {
+                // Prepare the deepest published ancestor the next test can use.
+                // Capture publication, cost filtering and nested branches have
+                // already been resolved; no separate speculative schedule.
+                let directory = null;
+                for (const node of graph.chain(next.parent).reverse()) {
+                    const ref = reuse && store.available.get(node.id);
+                    if (!ref) continue;
+                    try { store.verify(ref, graph.key(node.id)); }
+                    catch { continue; } // Normal restore owns invalidation/fallback.
+                    directory = path.join(ref.directory, config.files.payload);
+                    break;
+                }
+                await provider.prefetch({directory, next: next.id});
+            }
             result.parentCheckpoint = state.parent;
             result.lineage = [...state.lineage, await measured('suffix', () => segment(spec, 'Spec'))];
             const observed = new Set(report.segments.slice(first).map((item) => item.id));

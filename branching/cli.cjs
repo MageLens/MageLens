@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {Graph} = require('./engine.cjs');
 const {loadRunner} = require('./runners/index.cjs');
-const {MagentoBackend} = require('./magento.cjs');
+const {RetainedMagentoBackend} = require('./retained-magento.cjs');
 const {probe} = require('./storage.cjs');
 
 async function main(args = process.argv.slice(2), suppliedConfiguration) {
@@ -22,11 +22,11 @@ async function main(args = process.argv.slice(2), suppliedConfiguration) {
     if (typeof configuration.state !== 'function') throw new Error(messages.workflowModuleMustExportStateRuntime);
     const adapter = loadRunner(process.env.MAGELENS_RUNNER ?? 'playwright');
     probe(storage);
-    const runtime = await adapter.open();
+    const runtime = await adapter.open(process.env, configuration.runnerOptions);
     const interrupt = () => { process.exitCode = 130; runtime.close().catch(() => {}); };
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
     try {
-        const backend = new MagentoBackend({workspace, helperImage: process.env.MAGELENS_BRANCHING_IMAGE, disposable: true});
+        const backend = new RetainedMagentoBackend({workspace, helperImage: process.env.MAGELENS_BRANCHING_IMAGE, disposable: true, workflowLease: configuration.workflowLease});
         const report = await runtime.run({workflow: graph, backend, state: configuration.state,
             root: storage, approach, specs: specs.length ? specs : undefined,
             checkpointLifetime: configuration.checkpointLifetime ?? 'run',

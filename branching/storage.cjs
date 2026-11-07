@@ -37,4 +37,14 @@ function replace(source, destination, ownerRoot) {
     fs.rmSync(destination, {recursive: true});
     clone(source, destination);
 }
-module.exports = {clone, probe, replace, regularTree};
+// A live container's bind mount refers to the directory inode. Replacing that
+// directory would leave PHP reading the old mount; replace only its children.
+function replaceContents(source, destination, ownerRoot) {
+    const root = fs.realpathSync(ownerRoot);
+    if (!fs.realpathSync(destination).startsWith(root + path.sep)) throw new Error('Refusing unowned state replacement');
+    regularTree(source);
+    regularTree(destination);
+    for (const name of fs.readdirSync(destination)) fs.rmSync(path.join(destination, name), {recursive: true});
+    for (const name of fs.readdirSync(source)) clone(path.join(source, name), path.join(destination, name));
+}
+module.exports = {clone, probe, replace, replaceContents, regularTree};
