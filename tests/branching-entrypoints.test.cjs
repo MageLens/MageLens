@@ -63,11 +63,11 @@ if (args[0] === 'run' && args.includes('node')) process.exit(37);
 }
 test('branching opt-in preserves literal arguments, worker status and controller cleanup', t => {
     const {directory, run} = launchFixture(t);
-    const result = run(['bin/run-coverage', '--disposable', 'workflow file.cjs', 'cow storage', 'P0', '--branching', 'literal;$(x)']);
+    const result = run(['bin/run-coverage', '--disposable', 'workflow file.cjs', 'cow storage', 'branching', '--branching', 'literal;$(x)']);
     assert.equal(result.status, 37, result.stderr);
     const calls = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse);
     const worker = calls.find(args => args.includes('node'));
-    assert.deepEqual(worker.slice(-5), ['branching/cli.cjs', path.join(directory, 'workflow file.cjs'), path.join(directory, 'cow storage'), 'P0', 'literal;$(x)']);
+    assert.deepEqual(worker.slice(-5), ['branching/cli.cjs', path.join(directory, 'workflow file.cjs'), path.join(directory, 'cow storage'), 'branching', 'literal;$(x)']);
     assert.ok(worker.includes('MAGELENS_ORCHESTRATOR_CONTAINER=' + 'a'.repeat(64)));
     assert.ok(worker.includes('type=volume,source=modules,target=/workspace/node_modules,readonly'));
     assert.deepEqual(calls.at(-1), ['rm', '--force', 'a'.repeat(64)]);

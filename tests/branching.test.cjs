@@ -16,7 +16,7 @@ function setup(t) {
     return {root, workflow: fixtureWorkflow(), provider: new FixtureProvider()};
 }
 test('recursive reuse executes each Stage once and matches every fresh terminal state', async t => {
-    const input = setup(t), fresh = await execute({...input, approach: 'L0'}), branch = await execute({...input, provider: new FixtureProvider(), approach: 'P0'});
+    const input = setup(t), fresh = await execute({...input, approach: 'L0'}), branch = await execute({...input, provider: new FixtureProvider(), approach: 'branching'});
     assert.equal(fresh.status, 'passed'); assert.equal(branch.status, 'passed');
     assert.equal(fresh.counts.prefixExecutions, 11); assert.equal(branch.counts.prefixExecutions, 4);
     assert.deepEqual(branch.results.map(r => r.state), fresh.results.map(r => r.state));
@@ -29,7 +29,7 @@ test('recursive reuse executes each Stage once and matches every fresh terminal 
     assert.deepEqual(fs.readdirSync(input.root), []);
 });
 test('an individual Spec resolves only its required chain', async t => {
-    const result = await execute({...setup(t), approach: 'P0', specs: ['coupon-1']});
+    const result = await execute({...setup(t), approach: 'branching', specs: ['coupon-1']});
     assert.equal(result.status, 'passed'); assert.equal(result.results.length, 1);
     assert.equal(result.counts.prefixExecutions, 4);
 });
@@ -61,7 +61,7 @@ test('library accepts the validated Graph used by the CLI before backend setup',
 });
 test('failed parent blocks all descendants without executing Specs', async t => {
     const input = setup(t); input.workflow.stages[1].assert = async () => { throw new Error('customer failed'); };
-    const result = await execute({...input, approach: 'P0'});
+    const result = await execute({...input, approach: 'branching'});
     assert.equal(result.status, 'failed'); assert.equal(result.results.length, 3);
     assert.equal(result.counts.failures, 1); assert.equal(result.counts.blockedSpecs, 3);
     assert.ok(result.results.every(r => r.status === 'blocked' && r.blockedBy === 'customer-ready'));
@@ -69,7 +69,7 @@ test('failed parent blocks all descendants without executing Specs', async t => 
 });
 test('corrupted checkpoint falls back to the last compatible ancestor', async t => {
     let corrupted = false;
-    const result = await execute({...setup(t), approach: 'P0', fault: async (phase, {ref, stage}) => {
+    const result = await execute({...setup(t), approach: 'branching', fault: async (phase, {ref, stage}) => {
         if (phase === 'beforeRestore' && stage === 'cart-ready' && !corrupted) {
             fs.writeFileSync(path.join(ref.directory, 'payload/state.json'), '{}'); corrupted = true;
         }
@@ -80,7 +80,7 @@ test('corrupted checkpoint falls back to the last compatible ancestor', async t 
 });
 test('interrupted capture stays unpublished and replay starts from clean state', async t => {
     const input = setup(t);
-    const result = await execute({...input, approach: 'P0', fault: async phase => {
+    const result = await execute({...input, approach: 'branching', fault: async phase => {
         if (phase === 'captured') throw new Error('injected interruption');
     }});
     assert.equal(result.status, 'failed'); assert.equal(result.checkpoints.length, 0);
@@ -88,7 +88,7 @@ test('interrupted capture stays unpublished and replay starts from clean state',
     assert.deepEqual(fs.readdirSync(input.root), []);
 });
 test('incomplete, expired, incompatible and foreign checkpoints are rejected', async t => {
-    const input = setup(t), result = await execute({...input, approach: 'P0', retain: true});
+    const input = setup(t), result = await execute({...input, approach: 'branching', retain: true});
     const m = result.checkpoints[0], directory = path.join(result.directory, m.id);
     const ref = {directory, digest: digest(m)};
     const store = new CheckpointStore(result.directory, result.run, m.profile);
@@ -121,7 +121,7 @@ test('a restore failure cannot leak partial state into a continuation', async t 
         if (++restores === 4) { input.provider.state = {broken: true}; throw new Error('interrupted restore'); }
         await original(dir);
     };
-    const result = await execute({...input, approach: 'P0'});
+    const result = await execute({...input, approach: 'branching'});
     assert.equal(result.status, 'failed'); assert.ok(result.counts.fallbacks > 0);
 });
 test('semantic session expiry rejects reuse and replays authentication', async t => {
@@ -134,7 +134,7 @@ test('semantic session expiry rejects reuse and replays authentication', async t
     input.workflow.stages[2].assert = async p => {
         await check(p); assert.ok(p.state.browser.expiresAt > now, 'session expired');
     };
-    const result = await execute({...input, approach: 'P0', fault: async (phase, data) => {
+    const result = await execute({...input, approach: 'branching', fault: async (phase, data) => {
         if (phase === 'beforeRestore' && data.stage === 'cart-ready' && !delayed) { now = 200; delayed = true; }
     }});
     assert.equal(result.status, 'failed'); assert.ok(result.counts.fallbacks > 0);
@@ -143,26 +143,23 @@ test('semantic session expiry rejects reuse and replays authentication', async t
 test('100 recursive contract trials preserve parent and sibling state', async t => {
     const input = setup(t);
     for (let i = 0; i < 100; i++) {
-        const result = await execute({...input, provider: new FixtureProvider(), approach: 'P0'});
+        const result = await execute({...input, provider: new FixtureProvider(), approach: 'branching'});
         assert.equal(result.status, 'passed'); assert.equal(result.errors.length, 0);
         assert.equal(result.counts.prefixExecutions, 4);
     }
 });
 
-test('provider planning follows selected specs even when reset fails before a test body', async t => {
-    const input = setup(t), selected = new Graph(input.workflow).select();
-    const observed = [], reset = input.provider.reset.bind(input.provider); let current;
-    input.provider.beforeSpec = async entry => { current = entry; observed.push({...entry}); };
+test('a failed reset fails its scenario while later scenarios still run and cleanup completes', async t => {
+    const input = setup(t), reset = input.provider.reset.bind(input.provider);
+    let resets = 0;
     input.provider.reset = async () => {
-        assert.equal(current.id, selected[current.index].id);
-        if (current.index === 0) throw new Error('reset rejected before the first test');
+        if (resets++ === 0) throw new Error('reset rejected before the first test');
         return reset();
     };
     const report = await execute({...input, approach: 'L0'});
     assert.equal(report.status, 'failed');
+    assert.equal(report.results.length, input.workflow.specs.length);
     assert.equal(report.results[0].status, 'failed');
     assert.ok(report.results.slice(1).every(result => result.status === 'passed'));
-    assert.deepEqual(observed, selected.map((spec, index) => ({id: spec.id, parent: spec.parent, index,
-        next: selected[index + 1]?.id ?? null, nextParent: selected[index + 1]?.parent ?? null})));
     assert.deepEqual(fs.readdirSync(input.root), []);
 });

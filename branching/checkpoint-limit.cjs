@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const config = require('./configs/runtime.cjs');
+
 const {maxCheckpointsPerTest} = require('./planner/src/limits.json');
 
 // AUTO already selects using Rust's complete cost model. This guard also caps
-// direct/forced P0 and explicit selections, without requiring a native planner.
+// direct/forced branching and explicit selections, without requiring a native planner.
 function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime}) {
     const paths = specs.map(spec => graph.chain(spec.parent));
     const consumers = new Map();
@@ -15,8 +17,8 @@ function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime
         return count > maxCheckpointsPerTest ? [{code: 'checkpoint-limit', test: specs[i].id, candidates: count,
             limit: maxCheckpointsPerTest, message: `${specs[i].label ?? specs[i].id}: ${count} reusable checkpoint candidates; at most ${maxCheckpointsPerTest} can be selected. Consider splitting this long shared journey.`}] : [];
     });
-    const candidates = new Set(paths.flat().filter(node => approach === 'P0' && node.checkpoint !== false &&
-        (!requested || requested.has(node.id)) && (checkpointLifetime === 'run' || consumers.get(node.id) > 1)).map(node => node.id));
+    const candidates = new Set(paths.flat().filter(node => approach === config.APPROACH.branching && node.checkpoint !== false &&
+        (!requested || requested.has(node.id)) && (checkpointLifetime === config.checkpoint.lifetime || consumers.get(node.id) > 1)).map(node => node.id));
     const withinLimit = set => paths.every(path => path.filter(node => set.has(node.id)).length <= maxCheckpointsPerTest);
     let chosen = candidates;
     if (!withinLimit(chosen)) {

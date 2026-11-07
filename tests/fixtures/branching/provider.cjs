@@ -12,14 +12,11 @@ const {fileDigest} = require('../../../branching/engine.cjs');
 // measured implementation of any complete application checkpoint candidate.
 class FixtureProvider {
     constructor({work = 0} = {}) {
-        this.work = work; this.approaches = ['L0', 'P0'];
+        this.work = work; this.approaches = ['L0', 'branching'];
         this.workload = 'contract-fixture'; this.capability = 'serialized-fixture';
         this.identity = {version: fileDigest(__filename), work}; this.coverageKind = 'fixture-events';
     }
-    async prepare({approach} = {}) {
-        if (approach === 'L1') await this.costly();
-        this.authFixture = {customer: 'synthetic'};
-    }
+    async prepare() {}
     async reset() { this.state = {db: {customer: null, cart: [], shipping: null, coupon: null}, files: {}, cache: {}, browser: {cookies: [], url: '/'}}; }
     async beginSegment() { this.hits = new Set(); }
     async endSegment() { return {kind: this.coverageKind, complete: true, hits: [...this.hits].sort()}; }
@@ -39,8 +36,6 @@ function fixtureWorkflow({work = 0, fanout = 2, recursive = true} = {}) {
         {id: 'baseline', run: async p => { p.hit('baseline'); }, assert: async p => assert.deepEqual(p.state.db.cart, [])},
         {id: 'customer-ready', parent: 'baseline', inputs: {work}, run: async p => {
             await p.costly(); p.hit('login'); p.state.db.customer = 'synthetic'; p.state.browser.cookies = ['synthetic-session'];
-        }, conventional: async p => {
-            p.hit('auth-fixture'); p.state.db.customer = p.authFixture.customer; p.state.browser.cookies = ['synthetic-session'];
         }, assert: async p => assert.equal(p.state.db.customer, 'synthetic')},
         {id: 'cart-ready', parent: 'customer-ready', run: async p => {
             p.hit('cart'); p.state.db.cart = ['sku-1', 'sku-2']; p.state.files.cart = 'parent';

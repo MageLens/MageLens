@@ -31,7 +31,7 @@ gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 
 After fixing a failure, push the new candidate. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
+Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, copyright/license notices, and branching provider/dashboard checks are required jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
@@ -45,7 +45,7 @@ The gate compares all five Luma reports with each other (including Windows) and 
 
 Cypress uses the same source-built 16.2.1 binary locally and in CI, with the pinned cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`. `coverage/installation.json` records its upstream commit and patch digest. Each Cypress case also runs eleven isolated regressions (nine cookie/authorization journeys, document initialization and a delayed-response check); `cypress-runner-results.json` is included in its sanitized artifact and required by the final gate. For focused local investigation in an isolated installed runner, use `./bin/runner node tests/cypress-regressions.cjs`. This does not replace the final CI matrix. The source build runs upstream document-classifier, proxy and CDP unit tests and preserves Cypress's packaging and integrity checks; its build inputs and dependencies are discarded before the final image is produced.
 
-Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case and the qualification artifact are limited to **5 MiB**, for at most **50 MiB** of report payload per complete attempt. Oversized qualification reports block upload and fail the gate. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. PR images are built on disposable runners and discarded with them; no image archives are stored as Actions artifacts. Release publication reuses the successful PR qualification when the released files are identical.
+Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case and the qualification artifact are limited to **5 MiB**, for at most **50 MiB** of application qualification payload per complete attempt. The branching provider/dashboard job adds a separate report artifact capped at **5 MiB**. Oversized qualification reports block upload and fail the gate. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. PR images are built on disposable runners and discarded with them; no image archives are stored as Actions artifacts. Release publication reuses the successful PR qualification when the released files are identical.
 
 Every job runs one installation, with at most four Mage-OS and two Magento jobs in parallel on separate standard hosted VMs. E2E jobs have a 150-minute timeout and a 130-minute harness limit, allowing time for cleanup and uploads. CI stores installations under `MAGELENS_TEST_TMPDIR` on disk, avoiding Ubuntu 26’s RAM-backed `/tmp`. Disposable hosted Linux jobs remove unused Android/.NET/GHC/CodeQL SDK directories. Before installation, both the host and its Linux Docker engine must provide at least 25 GiB free disk and 6 GiB RAM; a sparse VM disk cannot hide an exhausted Windows host drive. Docker resources are never globally pruned. No local RAM or disk is consumed by installations. Cleanup addresses only the registered test project and volumes. Canceled/force-terminated jobs cannot qualify, and GitHub disposes of the hosted VM.
 
@@ -119,33 +119,7 @@ plans a repository-owned two-test fixture and checks its repeated-prefix graph.
 
 `tests/branching-automatic.test.cjs` covers automatic execution, selection,
 source changes, failure cleanup, last-consumer lifetime and retained evidence
-within the normal integration suite. External source corpora and adapters are
-local research inputs, kept under the already ignored `.runtime/` directory.
-
-## Full checkout comparison
-
-The focused [checkout validation](../docs/branching-checkout-validation.md) uses
-nine authenticated simple/configurable/bundle order journeys, with check and free
-payment. `tests/branching-checkout.cjs` exercises P0 in an owned disposable shop;
-`tests/branching-checkout-linear.cjs` runs the same journeys in a separate Docker
-project with conventional SQL resets and fresh browser contexts. The control
-does not load P0's CoW storage, browser restoration or custom asset cache.
-
-Use independent application files, databases, media, sessions, cache services,
-networks and browser containers for the two modes. Run complete suites in
-alternating order, sequentially, with the inactive stack stopped. The `L0` mode
-of the P0 harness is a different experiment: it retains P0 runtime features and
-is not the conventional control. Both real checkout harnesses verify order
-semantics and restore their initial state; preserve failed-run artifacts.
-
-`tests/fixtures/branching-restarts/` contains the service-retention experiments.
-Its `run.cjs` compares retained PHP, alternating SQL schemas and background
-schema preparation; `live-run.cjs` also preserves the original MariaDB process
-through preparation and cleanup. `linear-run.cjs` retains PHP while keeping the
-conventional SQL and tar resets. These explicit runners require the same owned
-fixture, isolated resources and driver environment as the checkout comparison.
-They do not change the default P0 backend. See the validation record for the
-observed concurrency failure, corrections, measured results and limitations.
+within the normal integration suite.
 
 ## Dashboard self-tests and self-coverage
 
@@ -166,8 +140,9 @@ LLVM coverage tools. Rust and Playwright run in separate offline containers with
 bounded memory, read-only source mounts and a shared private artifact directory.
 The Playwright test container uses the Docker socket to invoke the Rust commands;
 it needs neither Magento nor a planner binary inside the browser image.
-The application runner and production planner images are unchanged. This focused
-self-test is not the future branching E2E CI job, which is deferred.
+The application runner and production planner images are unchanged. The required
+branching CI job runs this self-test and the real MariaDB/Chrome provider check
+on private XFS reflink storage.
 
 The Playwright checks use pinned Chrome for Testing and real engine execution
 with a small contract provider. They cover active nodes, depth colors, edges,

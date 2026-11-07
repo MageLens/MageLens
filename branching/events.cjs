@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const config = require('./configs/runtime.cjs');
+
 const path = require('node:path');
 const {Worker} = require('node:worker_threads');
 
@@ -61,8 +63,8 @@ function describeGraph(graph, selected, {approach, checkpointLifetime, retain, c
     const used = new Set(selected.flatMap(spec => graph.chain(spec.parent).map(node => node.id)));
     const stages = [...graph.stages.values()].filter(node => used.has(node.id));
     const consumersById = new Map(stages.map(node => [node.id, selected.filter(spec => graph.chain(spec.parent).some(parent => parent.id === node.id)).map(spec => spec.id)]));
-    const eligible = node => node.checkpoint !== false && approach === 'P0' && (!chosen || chosen.has(node.id)) &&
-        (checkpointLifetime === 'run' || consumersById.get(node.id).length > 1);
+    const eligible = node => node.checkpoint !== false && approach === config.APPROACH.branching && (!chosen || chosen.has(node.id)) &&
+        (checkpointLifetime === config.checkpoint.lifetime || consumersById.get(node.id).length > 1);
     return [...stages, ...selected].map(node => {
         const test = graph.specs.has(node.id);
         const consumers = test ? [] : consumersById.get(node.id);

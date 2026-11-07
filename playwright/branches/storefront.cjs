@@ -10,7 +10,7 @@ module.exports = {
         identity: {
             source: fileDigest(__filename), fixture: 'existing-disposable-storefront',
             configuration: 'guest-storefront-v1', dependencies: fileDigest('src/composer.lock'),
-            implementation: 'p0-storefront-example-v1'
+            implementation: 'branching-storefront-example-v1'
         },
         stages: [{id: 'storefront-ready', run: async runtime => {
             await runtime.page.goto('/');

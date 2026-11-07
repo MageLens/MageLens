@@ -5,7 +5,7 @@
 use serde::Serialize;
 
 // Manually maintained, NOT updated at runtime. Reference measurements and their
-// limits: docs/branching-cost-baseline.md. Changing these requires a rebuild.
+// limits below. Changing these requires a rebuild.
 // One unit is one reviewed awaited browser operation/assertion in source;
 // constructors and locator construction are not units. Helper bodies need an
 // adapter estimate. This is an indicative Playwright baseline, not Cypress.
@@ -22,8 +22,8 @@ pub struct Baseline {
     pub min_saving_ms: f64,
 }
 
-pub const PLAYWRIGHT_P0: Baseline = Baseline {
-    version: "pw1.65-p0-http-fixture-2026-11-07-v1",
+pub const PLAYWRIGHT_BRANCHING: Baseline = Baseline {
+    version: "pw1.65-branching-http-fixture-2026-11-07-v1",
     unit_ms: 40.0,
     capture_ms: 1000.0,
     restore_ms: 3800.0,

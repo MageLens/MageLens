@@ -10,6 +10,7 @@ const {execFileSync} = require('node:child_process');
 const {chromium, expect} = require('@playwright/test');
 const {selfCoverage} = require('./branching-self-coverage.cjs');
 const {rustCoverage} = require('./branching-rust-coverage.cjs');
+const {assets} = require('../branching/configs/dashboard-assets.cjs');
 
 async function main() {
     const output = path.resolve(process.argv[2] ?? '.runtime/branching-dashboard-self-test'); fs.mkdirSync(output, {recursive: true});
@@ -25,7 +26,7 @@ async function main() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-dashboard-browser-'));
     const directory = path.join(root, 'events'), manifestPath = path.join(root, 'manifest.json');
     const assetDirectory = path.join(root, 'assets'); fs.mkdirSync(assetDirectory);
-    for (const file of ['index.html', 'app.js', 'model.cjs', 'style.css']) fs.copyFileSync(path.join(__dirname, '../branching/dashboard', file), path.join(assetDirectory, file));
+    for (const [file] of Object.values(assets)) fs.copyFileSync(path.join(__dirname, '../branching/dashboard', file), path.join(assetDirectory, file));
     const app = await startDashboard({directory, manifest: manifestPath, assetDirectory, port: 0, pollMs: 30,
         transformAsset: (file, source) => coverage.transformAsset(path.join(__dirname, '../branching/dashboard', path.basename(file)), source)});
     const browser = await chromium.launch({channel: 'chrome', headless: true});
@@ -206,6 +207,16 @@ async function main() {
         await expect(page.locator('#run-status')).toHaveText('passed');
         assert.ok(page.url().includes(sequential.run));
         checked('a dashboard file change reloads the browser automatically and preserves the selected execution');
+
+        await block('simple').click();
+        await coverage.browser(page);
+        const moduleFile = path.join(assetDirectory, 'graph-node.mjs');
+        const reloaded = page.waitForEvent('load');
+        fs.appendFileSync(moduleFile, '\n// Exercise reload detection for an imported module.\n');
+        await reloaded;
+        await expect(page.locator('body')).toHaveAttribute('data-run', sequential.run);
+        await expect(page.locator('#detail-title')).toHaveText('simple');
+        checked('an imported module change reloads the dashboard and restores run and node selection');
 
         const unsafe = fixtureWorkflow(); unsafe.stages[0].label = '<img src=x onerror=alert(1)>';
         const escaped = await execute({...base, workflow: unsafe, provider: new FixtureProvider()}); await select(escaped);

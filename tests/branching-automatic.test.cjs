@@ -38,13 +38,13 @@ test('compiled fragments preserve strict module semantics',async()=>{
 test('automatic fragments preserve UTF-8, branch states and last-consumer cleanup',async t=>{
     const {root,manifest,configuration,Provider}=fixture(t);
     const built=buildWorkflow(manifest,configuration);
-    const p0=await execute({...built,root,provider:new Provider()});
+    const branching=await execute({...built,root,provider:new Provider()});
     const l0=await execute({...built,root,provider:new Provider(),approach:'L0'});
-    assert.equal(p0.status,'passed',JSON.stringify(p0.errors));assert.equal(l0.status,'passed');
-    assert.equal(p0.counts.reuseHits,1);assert.equal(p0.checkpoints.length,1);
-    assert.deepEqual(p0.results.map(r=>r.state),l0.results.map(r=>r.state));
-    assert.deepEqual(p0.releases.map(r=>[r.stage,r.after]),[['cp-cart','test-two']]);
-    assert.equal(fs.existsSync(p0.directory),false);
+    assert.equal(branching.status,'passed',JSON.stringify(branching.errors));assert.equal(l0.status,'passed');
+    assert.equal(branching.counts.reuseHits,1);assert.equal(branching.checkpoints.length,1);
+    assert.deepEqual(branching.results.map(r=>r.state),l0.results.map(r=>r.state));
+    assert.deepEqual(branching.releases.map(r=>[r.stage,r.after]),[['cp-cart','test-two']]);
+    assert.equal(fs.existsSync(branching.directory),false);
 });
 
 test('single selected branch avoids creating a checkpoint with no future consumer',async t=>{

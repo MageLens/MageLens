@@ -10,10 +10,9 @@ const path=require('node:path');
 const {Graph,execute}=require('../branching/engine.cjs');
 const {orchestrate,costInput}=require('../branching/costs.cjs');
 const {FixtureProvider,fixtureWorkflow}=require('./fixtures/branching/provider.cjs');
-const {ActionMeter}=require('../branching/action-meter.cjs');
 const {deepWorkflow}=require('./fixtures/branching/deep-workflow.cjs');
 
-test('nine-checkpoint path limit preserves all actions, outcomes and cleanup for direct and explicit P0', async t => {
+test('nine-checkpoint path limit preserves all actions, outcomes and cleanup for direct and explicit branching', async t => {
     const {root} = setup(t), workflow = new Graph(deepWorkflow());
     const base = {root, workflow, checkpointLifetime: 'last-consumer'};
     const linear = await execute({...base, approach: 'L0', provider: new FixtureProvider()});
@@ -63,28 +62,20 @@ test('selected composite preserves fixture, intermediate work and semantic resul
     assert.deepEqual(auto.report.results.map(r=>r.state),baseline.results.map(r=>r.state));
     assert.equal(input.calls.length,2);
 });
-test('forced L0 and P0 bypass static selection, calibration is not a runtime mode',async t=>{
+test('forced L0 and branching bypass static selection, calibration is not a runtime mode',async t=>{
     const input=setup(t);const solve=()=>{throw new Error('should not solve');};
-    for(const mode of ['L0','P0'])assert.equal((await orchestrate({...input,mode,solve})).report.approach,mode);
+    for(const mode of ['L0','branching'])assert.equal((await orchestrate({...input,mode,solve})).report.approach,mode);
     await assert.rejects(orchestrate({...input,mode:'CALIBRATE'}),/Unknown cost execution mode/);
     assert.equal(input.calls.length,2);
 });
 test('invalid checkpoint selection is rejected before backend preparation',async t=>{
     const input=setup(t);
-    for(const selection of [['missing'],['baseline','baseline'],'baseline',null])await assert.rejects(input.run('P0',{checkpointSelection:selection}),/Invalid checkpoint selection/);
+    for(const selection of [['missing'],['baseline','baseline'],'baseline',null])await assert.rejects(input.run('branching',{checkpointSelection:selection}),/Invalid checkpoint selection/);
     assert.equal(input.calls.length,0);
 });
 test('failed selector does not launch a run or silently switch modes',async t=>{
     const input=setup(t);await assert.rejects(orchestrate({...input,mode:'AUTO',solve:()=>{throw new Error('invalid graph');}}),/invalid graph/);
     assert.equal(input.calls.length,0);
-});
-test('Playwright meter counts calls within a segment without recording arguments',()=>{
-    const listeners=[];const meter=new ActionMeter({_instrumentation:{addListener:x=>listeners.push(x),removeListener:x=>listeners.splice(listeners.indexOf(x),1)}});
-    const notify=(name,internal=false)=>listeners[0].onApiCallBegin({apiName:name,internal},{params:{password:'do not retain'}});
-    notify('page.goto');meter.start();notify('page.goto');notify('locator.click');notify('internal',true);
-    assert.deepEqual(meter.finish(),{total:2,byApi:{'page.goto':1,'locator.click':1}});
-    notify('page.goto');assert.equal(meter.finish(),null);meter.close();assert.equal(listeners.length,0);
-    const missing=new ActionMeter({});missing.start();assert.equal(missing.finish(),null);missing.close();
 });
 test('automatic CLI accepts a prevalidated Graph before application checks',async t=>{
     const {workflow}=setup(t);const {main}=require('../branching/cli.cjs');

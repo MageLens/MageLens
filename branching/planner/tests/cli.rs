@@ -106,7 +106,7 @@ fn parse_failure_never_replaces_a_valid_manifest() {
 #[test]
 fn planner_does_not_launch_a_browser_worker() {
     let f = Fixture::new();
-    let result = f.command().args(["launch", "manifest", "config", "/cow", "P0"])
+    let result = f.command().args(["launch", "manifest", "config", "/cow", "branching"])
         .env("PATH", "").output().unwrap();
     assert_eq!(result.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&result.stderr).contains("bin/run-coverage --branching"));

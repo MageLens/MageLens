@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const messages = require('./configs/messages.cjs');
+
+const config = require('./configs/runtime.cjs');
+
 const fs = require('node:fs');
 const path = require('node:path');
 const {Graph} = require('./engine.cjs');
@@ -10,19 +14,19 @@ const {MagentoBackend} = require('./magento.cjs');
 const {probe} = require('./storage.cjs');
 
 async function main(args = process.argv.slice(2), suppliedConfiguration) {
-    const [workflowPath, storage, approach = 'P0', ...specs] = args;
-    if (!workflowPath || !storage || !['P0', 'L0'].includes(approach)) throw new Error('Expected workflow, storage directory and P0 or L0');
+    const [workflowPath, storage, approach = config.APPROACH.branching, ...specs] = args;
+    if (!workflowPath || !storage || !config.executionApproaches.includes(approach)) throw new Error(messages.workflowUsage);
     const workspace = process.cwd();
     const configuration = suppliedConfiguration ?? require(path.resolve(workflowPath));
     const graph = configuration.workflow instanceof Graph ? configuration.workflow : new Graph(configuration.workflow); graph.select(specs.length ? specs : undefined);
-    if (typeof configuration.state !== 'function') throw new Error('Workflow module must export state(runtime)');
+    if (typeof configuration.state !== 'function') throw new Error(messages.workflowModuleMustExportStateRuntime);
     const adapter = loadRunner(process.env.MAGELENS_RUNNER ?? 'playwright');
     probe(storage);
     const runtime = await adapter.open();
     const interrupt = () => { process.exitCode = 130; runtime.close().catch(() => {}); };
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
     try {
-        const backend = new MagentoBackend({workspace, helperImage: process.env.MAGELENS_P0_IMAGE, disposable: true});
+        const backend = new MagentoBackend({workspace, helperImage: process.env.MAGELENS_BRANCHING_IMAGE, disposable: true});
         const report = await runtime.run({workflow: graph, backend, state: configuration.state,
             root: storage, approach, specs: specs.length ? specs : undefined,
             checkpointLifetime: configuration.checkpointLifetime ?? 'run',

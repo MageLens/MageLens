@@ -54,13 +54,16 @@ function verifyCase(entry, evidence, directory, context) {
     execFileSync(process.execPath, ['tests/verify-scenarios.cjs', directory], {stdio: 'inherit'});
     return run.id;
 }
+function verifyRequiredJobs(needs) {
+    const required = ['static', 'integration', 'copyright', 'branching', 'e2e', 'magento'];
+    return required.filter(name => needs[name]?.result !== 'success')
+        .map(name => `${name}: ${needs[name]?.result || 'missing'}`);
+}
+
 function gate() {
     const root = process.argv[2] || 'ci-artifacts';
     const needs = JSON.parse(process.env.CI_NEEDS);
-    const errors = [];
-    for (const name of ['static', 'integration', 'copyright', 'e2e', 'magento']) {
-        if (needs[name]?.result !== 'success') errors.push(`${name}: ${needs[name]?.result || 'missing'}`);
-    }
+    const errors = verifyRequiredJobs(needs);
     const reports = [], themeReports = [], runIds = new Set();
     for (const entry of cases) {
         try {
@@ -92,5 +95,5 @@ function gate() {
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Required CI gate\n\n${summary}\n`);
     process.exitCode = report.passed ? 0 : 1;
 }
-module.exports = {verifyCase};
+module.exports = {verifyCase, verifyRequiredJobs};
 if (require.main === module) gate();

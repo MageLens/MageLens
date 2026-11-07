@@ -16,10 +16,12 @@ const reports = require('istanbul-reports');
 // unchanged. Never enable this harness for performance measurements.
 function selfCoverage(output) {
     const root = path.resolve(__dirname, '..');
-    const scope = ['branching/engine.cjs', 'branching/events.cjs', 'branching/events-worker.cjs', 'branching/automatic.cjs', 'branching/costs.cjs', 'branching/checkpoint-limit.cjs',
-        'branching/cli.cjs', 'branching/auto-cli.cjs', 'playwright/branching.cjs',
-        'branching/planner-client.cjs', 'branching/runners/index.cjs', 'branching/runners/playwright/adapter.cjs',
-        'branching/dashboard/model.cjs', 'branching/dashboard/server.cjs', 'branching/dashboard/app.js'];
+    const scope = [
+        ...fs.readdirSync(path.join(root, 'branching'), {recursive: true})
+            .filter(file => file.endsWith('.cjs') || file.endsWith('.mjs'))
+            .map(file => 'branching/' + file.split(path.sep).join('/')),
+        'branching/dashboard/app.js', 'playwright/branching.cjs'
+    ].sort();
     const sources = new Map(), instrumented = new Map(), hashes = {}, coverage = createCoverageMap({});
     for (const relative of scope) {
         const file = path.join(root, relative), source = fs.readFileSync(file, 'utf8'); sources.set(file, source);

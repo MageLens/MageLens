@@ -96,7 +96,7 @@ jobs:
           docker tag "magelens-$PACKAGE:ci" "ghcr.io/magelens/$PACKAGE:branching"
           docker push "ghcr.io/magelens/$PACKAGE:branching"
           echo "image=$image" >> "$GITHUB_OUTPUT"
-          printf 'Tested image: `%s`\n' "$image" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Tested image: %s\n' "$image" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify anonymous image access
         env:
           IMAGE: ${{ steps.publish.outputs.image }}
