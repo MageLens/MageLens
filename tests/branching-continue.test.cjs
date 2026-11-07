@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const {execute}=require('../branching/engine.cjs');
+const {execute}=require('./fixtures/branching/engine.cjs');
 const {FixtureProvider,fixtureWorkflow}=require('./fixtures/branching/provider.cjs');
 class ContinueProvider extends FixtureProvider {
  constructor(){super();this.restores=0;this.resumes=0;}

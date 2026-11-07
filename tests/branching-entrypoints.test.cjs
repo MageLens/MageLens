@@ -63,11 +63,11 @@ if (args[0] === 'run' && args.includes('node')) process.exit(37);
 }
 test('branching opt-in preserves literal arguments, worker status and controller cleanup', t => {
     const {directory, run} = launchFixture(t);
-    const result = run(['bin/run-coverage', '--disposable', 'workflow file.cjs', 'cow storage', 'branching', '--branching', 'literal;$(x)']);
+    const result = run(['bin/run-coverage', '--disposable', 'manifest.json', 'workflow file.cjs', 'cow storage', '--branching']);
     assert.equal(result.status, 37, result.stderr);
     const calls = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse);
     const worker = calls.find(args => args.includes('node'));
-    assert.deepEqual(worker.slice(-5), ['branching/cli.cjs', path.join(directory, 'workflow file.cjs'), path.join(directory, 'cow storage'), 'branching', 'literal;$(x)']);
+    assert.deepEqual(worker.slice(-4), ['branching/auto-cli.cjs', path.join(directory, 'manifest.json'), path.join(directory, 'workflow file.cjs'), path.join(directory, 'cow storage')]);
     assert.ok(worker.includes('MAGELENS_ORCHESTRATOR_CONTAINER=' + 'a'.repeat(64)));
     assert.ok(worker.includes('type=volume,source=modules,target=/workspace/node_modules,readonly'));
     assert.deepEqual(calls.at(-1), ['rm', '--force', 'a'.repeat(64)]);
@@ -80,6 +80,20 @@ test('direct entry requires opt-in; help and unsupported adapter do not start co
     assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /coverage collection is not supported yet/);
     const unsupported = run(['bin/run-coverage', '--branching', '--disposable', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'cypress'});
     assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /not implemented yet/);
+});
+test('only AUTO reaches the worker, with default and legacy automatic spellings', t => {
+    const {run}=launchFixture(t);
+    for(const args of [[],['--auto']]) {
+        const result=run(['bin/run-coverage','--branching','--disposable',...args,'manifest.json','workflow file.cjs','cow storage','AUTO']);
+        assert.equal(result.status,37,result.stderr);assert.match(result.calls,/branching\/auto-cli.cjs/);
+        assert.match(result.calls,/"magelens-plan","verify"/);
+    }
+    for(const mode of ['branching','L0','CALIBRATE','test-id']) {
+        const result=run(['bin/run-coverage','--branching','--disposable','manifest.json','workflow file.cjs','cow storage',mode]);
+        assert.equal(result.status,1);assert.equal(result.calls,'');assert.match(result.stderr,/AUTO is the only/);
+    }
+    const manual=run(['bin/run-coverage','--branching','--disposable','workflow file.cjs','cow storage']);
+    assert.equal(manual.status,1);assert.equal(manual.calls,'');
 });
 test('stale automatic manifests stop before worker launch and remove the Rust controller', t => {
     const {run} = launchFixture(t);

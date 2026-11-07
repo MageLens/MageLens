@@ -4,8 +4,6 @@
 
 const messages = require('./configs/messages.cjs');
 
-const config = require('./configs/runtime.cjs');
-
 const fs = require('node:fs');
 const path = require('node:path');
 const {Graph} = require('./engine.cjs');
@@ -13,13 +11,15 @@ const {loadRunner} = require('./runners/index.cjs');
 const {RetainedMagentoBackend} = require('./retained-magento.cjs');
 const {probe} = require('./storage.cjs');
 
-async function main(args = process.argv.slice(2), suppliedConfiguration) {
-    const [workflowPath, storage, approach = config.APPROACH.branching, ...specs] = args;
-    if (!workflowPath || !storage || !config.executionApproaches.includes(approach)) throw new Error(messages.workflowUsage);
+async function main(configuration, storage) {
+    const costs = require('./costs.cjs');
+    costs.assertAutomatic(configuration);
     const workspace = process.cwd();
-    const configuration = suppliedConfiguration ?? require(path.resolve(workflowPath));
-    const graph = configuration.workflow instanceof Graph ? configuration.workflow : new Graph(configuration.workflow); graph.select(specs.length ? specs : undefined);
+    const graph = configuration.workflow instanceof Graph ? configuration.workflow : new Graph(configuration.workflow);
+    const specs = configuration.specs;
+    graph.select(specs);
     if (typeof configuration.state !== 'function') throw new Error(messages.workflowModuleMustExportStateRuntime);
+    const {plan} = costs.resolvePlan(graph, specs, configuration.plan);
     const adapter = loadRunner(process.env.MAGELENS_RUNNER ?? 'playwright');
     probe(storage);
     const runtime = await adapter.open(process.env, configuration.runnerOptions);
@@ -28,9 +28,8 @@ async function main(args = process.argv.slice(2), suppliedConfiguration) {
     try {
         const backend = new RetainedMagentoBackend({workspace, helperImage: process.env.MAGELENS_BRANCHING_IMAGE, disposable: true, workflowLease: configuration.workflowLease});
         const report = await runtime.run({workflow: graph, backend, state: configuration.state,
-            root: storage, approach, specs: specs.length ? specs : undefined,
+            root: storage, specs, plan,
             checkpointLifetime: configuration.checkpointLifetime ?? 'run',
-            checkpointSelection: configuration.checkpointSelection, checkpointPolicy: configuration.checkpointPolicy,
             eventDirectory: process.env.MAGELENS_BRANCHING_EVENTS || path.join(workspace, '.runtime/branching-events')});
         report.browser = runtime.description;
         const output = path.join(workspace, '.runtime/branching-results'); fs.mkdirSync(output, {recursive: true});
@@ -49,5 +48,5 @@ async function main(args = process.argv.slice(2), suppliedConfiguration) {
         await runtime.close();
     }
 }
-if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) { console.error('Use run-coverage --branching with an automatic source manifest and native runner configuration.'); process.exitCode = 1; }
 module.exports = {main};

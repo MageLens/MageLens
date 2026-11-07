@@ -16,10 +16,10 @@ async function main() {
     const output = path.resolve(process.argv[2] ?? '.runtime/branching-dashboard-self-test'); fs.mkdirSync(output, {recursive: true});
     const coverage = selfCoverage(path.join(output, 'coverage'));
     const nativeCoverage = rustCoverage(path.join(output, 'rust-coverage'));
-    const {execute, Graph} = require('../branching/engine.cjs');
+    const {execute, Graph} = require('./fixtures/branching/engine.cjs');
+    const autoExecute = require('../branching/engine.cjs').execute;
     const {planner} = require('../branching/planner-client.cjs');
     const {buildWorkflow} = require('../branching/automatic.cjs');
-    const {orchestrate} = require('../branching/costs.cjs');
     const {startDashboard} = require('../branching/dashboard/server.cjs');
     const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
     const {deepWorkflow} = require('./fixtures/branching/deep-workflow.cjs');
@@ -172,13 +172,14 @@ async function main() {
         const automatic = await execute({...base, ...built, provider: new AutomaticProvider()}); await select(automatic);
         await expect(page.locator('#run-status')).toHaveText('passed'); assert.ok(automatic.counts.reuseHits > 0);
         checked('Rust-derived graph executes through the real engine and reports checkpoint reuse');
-        const decision = await orchestrate({mode: 'AUTO', workflow: built.workflow, run: (approach, options) => execute({...base, ...built, ...options, approach, provider: new AutomaticProvider()})});
+        const decision = {report: await autoExecute({...base, ...built, provider: new AutomaticProvider()})};
         assert.equal(decision.report.approach, 'L0'); await select(decision.report);
         await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(0);
         await expect(page.locator('#metric-reuses')).toHaveText('0'); checked('static Rust cost decision shows tiny repeated prefixes as linear execution');
 
         const large = new Graph(deepWorkflow());
-        const bounded = await orchestrate({mode: 'AUTO', workflow: large, run: (approach, options) => execute({...base, ...options, approach, workflow: large, provider: new FixtureProvider()})});
+        const boundedReport = await autoExecute({...base, workflow: large, provider: new FixtureProvider()});
+        const bounded = {report: boundedReport, decision: boundedReport.checkpointPolicy};
         assert.equal(bounded.decision.maxCheckpointsPerTest, 9); assert.equal(bounded.decision.selected.length, 9);
         assert.equal(bounded.report.status, 'passed'); await select(bounded.report);
         await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(9);

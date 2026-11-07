@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const APPROACH = Object.freeze({branching: 'branching', linear: 'L0', automatic: 'AUTO'});
+// Internal execution outcomes, not selectable user policies.
 const executionApproaches = Object.freeze([APPROACH.linear, APPROACH.branching]);
-const costModes = Object.freeze([APPROACH.automatic, ...executionApproaches]);
 const files = Object.freeze({
     manifest: 'manifest.json',
     payload: 'payload',
@@ -34,4 +34,4 @@ const provider = Object.freeze({
 const accounting = {
     method: 'Sum of allocated blocks for all run files; shared CoW blocks may be counted repeatedly. Not physical or exclusive usage.'
 };
-module.exports = {APPROACH, executionApproaches, costModes, files, checkpoint, provider, accounting};
+module.exports = {APPROACH, executionApproaches, files, checkpoint, provider, accounting};

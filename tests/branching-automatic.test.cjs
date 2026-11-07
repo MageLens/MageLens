@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {buildWorkflow, compileFragment} = require('../branching/automatic.cjs');
-const {execute, fileDigest, CheckpointStore, digest} = require('../branching/engine.cjs');
+const {execute, fileDigest, CheckpointStore, digest} = require('./fixtures/branching/engine.cjs');
 const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
 
 function fixture(t) {

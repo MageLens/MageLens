@@ -3,9 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const path = require('node:path');
-const config = require('./configs/runtime.cjs');
 const {buildWorkflow, verifySources} = require('./automatic.cjs');
-const {costInput, solveCosts} = require('./costs.cjs');
+const costs = require('./costs.cjs');
 function partition(manifest, inventory, project) {
     const dependencyProjects = new Set(inventory.config.projects.flatMap(p => p.dependencies ?? []));
     const setup = inventory.tests.filter(t => dependencyProjects.has(t.project));
@@ -33,30 +32,32 @@ function validateNative(report, expected) {
         throw new Error('Native runner claimed success with incomplete results');
     }
 }
-async function runSuite({manifest, project, mode, directory, runner, runCheckpoint, solve = solveCosts}) {
-    if (!config.costModes.includes(mode)) throw new Error('Unknown suite mode');
+async function runSuite(options) {
+    costs.assertAutomatic(options);
+    const {manifest, project, directory, runner, runCheckpoint} = options;
+    costs.assertAutomatic(project);
+    const mode = 'AUTO';
     verifySources(manifest);
     const started = performance.now(), phases = [], inventory = await runner.collect(project.native.config, directory);
     if (inventory.exitCode !== 0 || inventory.errors.length || !inventory.tests.length) throw new Error('Native collection failed or returned no tests');
     if (new Set(inventory.tests.map(t => t.id)).size !== inventory.tests.length) throw new Error('Native inventory has duplicate test identities');
     const groups = partition(manifest, inventory, project);
-    let decision, checkpoint = groups.checkpoint;
+    let decision, plan, built, checkpoint = groups.checkpoint;
     const setupProjects = [...new Set(groups.setup.map(t => t.project))];
     const simpleDependencies = setupProjects.length === 1 && inventory.config.projects.every(p =>
         p.name === setupProjects[0] ? !p.dependencies?.length : p.dependencies?.length === 1 && p.dependencies[0] === setupProjects[0]);
     // Project teardown dependencies need one untouched native invocation.
-    if (mode === 'L0' || project.native.splitSafe !== true || !simpleDependencies || inventory.config.globalTeardown || inventory.config.webServer ||
+    if (project.native.splitSafe !== true || !simpleDependencies || inventory.config.globalTeardown || inventory.config.webServer ||
         inventory.config.projects.some(p => p.teardown)) checkpoint = [];
     if (checkpoint.length) {
-        const built = buildWorkflow(manifest, project, checkpoint.map(t => t.staticId));
-        if (mode === 'AUTO') {
-            decision = solve(costInput(built.workflow));
-            const chosen = new Set(decision.selected);
-            checkpoint = checkpoint.filter(test => built.workflow.chain(built.workflow.specs.get(test.staticId).parent)
-                .some(stage => chosen.has(stage.id)));
-        }
-        else if (![...built.workflow.stages.values()].some(s => s.checkpoint !== false)) checkpoint = [];
+        built = buildWorkflow(manifest, project, checkpoint.map(t => t.staticId));
+        ({plan, decision} = costs.planWorkflow(built.workflow));
+        const chosen = new Set(decision.selected);
+        const byStaticId = new Map(checkpoint.map(test => [test.staticId, test]));
+        checkpoint = built.workflow.select().filter(test => built.workflow.chain(test.parent)
+            .some(stage => chosen.has(stage.id))).map(test => byStaticId.get(test.id));
     }
+
     const report = {schemaVersion: 1, kind: 'full-native-suite', mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
         setupDiagnostics: {nativeCollectionMs: inventory.wallMs},
         diagnostics: manifest.diagnostics, decision, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
@@ -66,14 +67,14 @@ async function runSuite({manifest, project, mode, directory, runner, runCheckpoi
         validateNative(result, tests ?? inventory.tests); phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
     if (!checkpoint.length) {
-        report.selectionReason = mode === 'L0' ? 'Linear control: one complete native invocation.' : decision ? 'Static cost model selected native execution for the complete suite.' : 'No qualified split; execute the complete native suite.';
+        report.selectionReason = decision ? 'Static cost model selected native execution for the complete suite.' : 'No qualified split; execute the complete native suite.';
         await native();
     } else {
         if (!groups.setup.length) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');
         const setup = await native(groups.setup, {teardown: false});
         if (setup.exitCode === 0 && setup.status === 'passed' && setup.results.every(r => r.status === 'passed')) {
             verifySources(manifest);
-            const result = await runCheckpoint(checkpoint.map(t => t.staticId), decision);
+            const result = await runCheckpoint({...built, specs: checkpoint.map(t => t.staticId), plan}, decision);
             phases.push({kind: 'checkpoint', report: result});
             const byId = new Map(checkpoint.map(t => [t.staticId, t]));
             for (const entry of result.results) {

@@ -14,7 +14,7 @@ const {setTimeout: delay} = require('node:timers/promises');
 const {randomUUID} = require('node:crypto');
 const {chromium} = require('@playwright/test');
 const {BranchingProvider} = require('../branching/provider.cjs');
-const {execute} = require('../branching/engine.cjs');
+const {execute} = require('./fixtures/branching/engine.cjs');
 const {probe} = require('../branching/storage.cjs');
 
 const command = args => execFileSync('docker', args, {encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe']}).trim();

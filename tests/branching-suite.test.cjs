@@ -8,8 +8,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {fileDigest} = require('../branching/engine.cjs');
+const costs = require('../branching/costs.cjs');
 const {partition, validateNative, runSuite} = require('../branching/suite.cjs');
 function fixture(t) {
+    t.mock.method(costs, 'solveCosts', () => ({selected:['shared']}));
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-suite-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const file = path.join(root, 'flow.spec.ts'); fs.writeFileSync(file, 'await page.goto("/");');
@@ -26,7 +28,7 @@ function fixture(t) {
         const tests=options.tests??inventory.tests;calls.push({tests,options});
         return {tests,results:tests.map(t=>({id:t.id,status:'passed'})),status:'passed',exitCode:0,errors:[]};
     }};
-    const runCheckpoint = async ids => {calls.push({checkpoint:ids});return {status:'passed',results:ids.map(spec=>({spec,status:'passed'})),checkpoints:[{id:'shared'}],counts:{reuseHits:1}};};
+    const runCheckpoint = async ({specs: ids, workflow, plan}) => {costs.resolvePlan(workflow, ids, plan);calls.push({checkpoint:ids});return {status:'passed',results:ids.map(spec=>({spec,status:'passed'})),checkpoints:[{id:'shared'}],counts:{reuseHits:1}};};
     return {root,manifest,inventory,project,runner,calls,runCheckpoint};
 }
 test('native inventory preserves every dynamic and fixture-based test beyond the old subset',t=>{
@@ -35,18 +37,30 @@ test('native inventory preserves every dynamic and fixture-based test beyond the
     assert.equal(new Set([...g.setup,...g.checkpoint,...g.native].map(t=>t.id)).size,103);
 });
 test('mixed suite runs native setup once, checkpoints, then every remaining native test',async t=>{
-    const f=fixture(t); const report=await runSuite({...f,mode:'branching',directory:f.root});
+    const f=fixture(t); const report=await runSuite({...f,mode:'AUTO',directory:f.root});
     assert.equal(report.status,'passed');assert.equal(report.results.length,103);assert.equal(report.reuseHits,1);
     assert.equal(f.calls.length,3);assert.equal(f.calls[0].options.teardown,false);
     assert.deepEqual(f.calls[1].checkpoint,['first','second']);assert.equal(f.calls[2].options.setup,false);
     assert.deepEqual(report.missing,[]);assert.deepEqual(report.duplicates,[]);
 });
-test('linear and unprofitable AUTO modes retain one complete original native invocation',async t=>{
-    for(const mode of ['L0','AUTO']) {
-        const f=fixture(t);const report=await runSuite({...f,mode,directory:f.root,solve:()=>({selected:[]})});
-        assert.equal(report.status,'passed');assert.equal(report.checkpoints,0);assert.equal(f.calls.length,1);
-        assert.equal(f.calls[0].options.tests,undefined);assert.equal(report.results.length,103);
+test('checkpoint execution preserves the order costed by Rust when native inventory differs',async t=>{
+    const f=fixture(t);f.inventory.tests.reverse();
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
+});
+test('unprofitable AUTO retains one complete original native invocation',async t=>{
+    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.mode,'AUTO');assert.equal(report.status,'passed');assert.equal(report.checkpoints,0);assert.equal(f.calls.length,1);
+    assert.equal(f.calls[0].options.tests,undefined);assert.equal(report.results.length,103);
+});
+test('suite rejects non-AUTO modes and manual configuration before discovery',async t=>{
+    for(const options of [{mode:'branching'},{mode:'L0'},{checkpointSelection:['shared']},{solve:()=>({selected:['shared']})}]) {
+        const f=fixture(t);f.runner.collect=()=>assert.fail('must reject before discovery');
+        await assert.rejects(runSuite({...f,...options,directory:f.root}),/AUTO|Manual checkpoint/);
     }
+    const f=fixture(t);f.project.checkpointSelection=['shared'];f.runner.collect=()=>assert.fail('must reject configuration override');
+    await assert.rejects(runSuite({...f,directory:f.root}),/Manual checkpoint/);
 });
 test('AUTO leaves unrelated cheap candidates native while branching profitable shared work', async t => {
     const f=fixture(t);
@@ -56,7 +70,7 @@ test('AUTO leaves unrelated cheap candidates native while branching profitable s
         f.inventory.tests.push({...item,id:'native-'+id,project:'browser',file:path.join(f.root,item.file),expectedStatus:'passed'});
     }
     f.manifest.checkpoints.push({id:'cheap',depth:1,representative:'cheap-first',consumers:['cheap-first','cheap-second'],automatic:true});
-    const report=await runSuite({...f,mode:'AUTO',directory:f.root,solve:()=>({selected:['shared']})});
+    const report=await runSuite({...f,mode:'AUTO',directory:f.root});
     assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
     assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-first'));
     assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-second'));
@@ -64,7 +78,7 @@ test('AUTO leaves unrelated cheap candidates native while branching profitable s
 });
 test('a fully checkpoint-eligible suite needs no artificial native remainder', async t => {
     const f=fixture(t);f.inventory.tests=f.inventory.tests.slice(0,3);
-    const report=await runSuite({...f,mode:'AUTO',directory:f.root,solve:()=>({selected:['shared']})});
+    const report=await runSuite({...f,mode:'AUTO',directory:f.root});
     assert.equal(report.status,'passed');assert.equal(f.calls.length,2);
     assert.equal(report.results.length,3);assert.equal(report.checkpoints,1);
 });
@@ -83,25 +97,25 @@ test('native selection rejects extra/missing/duplicate tests and incomplete succ
 test('setup failure prevents checkpoints and records the blocked remainder',async t=>{
     const f=fixture(t);f.runner.run=async(_c,_d,{tests})=>({tests,results:tests.map(t=>({id:t.id,status:'failed'})),status:'failed',exitCode:1,errors:[]});
     f.runCheckpoint=()=>assert.fail('Failed setup must not reach checkpoint worker');
-    const report=await runSuite({...f,mode:'branching',directory:f.root});assert.equal(report.status,'failed');assert.equal(report.missing.length,102);
+    const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'failed');assert.equal(report.missing.length,102);
 });
 test('native skips remain visible and never become a fully passed qualification',async t=>{
-    const f=fixture(t);f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
-    const report=await runSuite({...f,mode:'L0',directory:f.root});assert.equal(report.status,'completed-with-skips');assert.equal(report.skipped.length,102);
+    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
+    const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'completed-with-skips');assert.equal(report.skipped.length,102);
 });
 test('unqualified global lifecycle or teardown projects keep the complete native invocation',async t=>{
     for (const change of [f=>{f.project.native.splitSafe=false;}, f=>{f.inventory.config.globalTeardown=true;},
         f=>{f.inventory.config.webServer=true;}, f=>{f.inventory.config.projects[1].teardown='cleanup';},
         f=>{f.inventory.config.projects[1].dependencies=[];}, f=>{f.inventory.config.projects[0].dependencies=['another-setup'];}]) {
         const f=fixture(t);change(f);
-        const report=await runSuite({...f,mode:'branching',directory:f.root});
+        const report=await runSuite({...f,mode:'AUTO',directory:f.root});
         assert.equal(f.calls.length,1);assert.equal(f.calls[0].options.tests,undefined);
         assert.deepEqual(report.routing.checkpoint,[]);assert.equal(report.routing.native.length,103);
     }
 });
 test('expected failures remain visible instead of qualifying as passed',async t=>{
-    const f=fixture(t);f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'failed',expectedStatus:'failed'})),status:'passed',exitCode:0,errors:[]});
-    const report=await runSuite({...f,mode:'L0',directory:f.root});assert.equal(report.status,'failed');
+    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'failed',expectedStatus:'failed'})),status:'passed',exitCode:0,errors:[]});
+    const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'failed');
 });
 test('one suite lease fences native collection, checkpoint transitions and recovery',t=>{
     const f=fixture(t), leases=require('../branching/workflow-lease.cjs');

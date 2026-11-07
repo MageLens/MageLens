@@ -119,10 +119,13 @@ plans a repository-owned two-test fixture and checks its repeated-prefix graph.
 
 `tests/branching-automatic.test.cjs` covers automatic execution, selection,
 source changes, failure cleanup, last-consumer lifetime and retained evidence
-within the normal integration suite.
+within the normal integration suite. Public entry-point checks reject forced modes
+and manual checkpoint selections; provider recovery tests use an internal
+mechanism harness so safety failures remain covered independently of cost selection.
 
-For suites with dynamic registration or custom fixtures, the project adapter can
-set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
+AUTO is the only execution policy. Run
+`./bin/run-coverage --branching --disposable MANIFEST.json CONFIG.cjs COW_STORAGE`.
+The project configuration must set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
 complete Playwright inventory. Unprofitable AUTO plans run it in one native
 invocation. Mixing reviewed checkpoints with native tests requires an explicitly
 qualified `native.splitSafe: true`, matching Playwright launch/context settings in

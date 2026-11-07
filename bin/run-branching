@@ -7,38 +7,24 @@ source "$(dirname "$0")/common"
 [[ "${1:-}" == --branching || "${1:-}" == --help ]] || fail 'Checkpoint execution requires --branching. Use bin/run-coverage for the normal linear run.'
 [[ "${1:-}" != --branching ]] || shift
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching --disposable WORKFLOW.cjs COW_STORAGE [branching|L0] [SPEC_ID ...]\n       ./bin/run-coverage --branching --disposable --auto MANIFEST.json CONFIG.cjs COW_STORAGE [AUTO|branching|L0] [TEST_ID ...]\nBranching produces execution reports; coverage collection is not supported yet.\n'
+    printf 'Usage: ./bin/run-coverage --branching --disposable MANIFEST.json CONFIG.cjs COW_STORAGE\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\nConfigure test selection in the native runner configuration.\nBranching produces execution reports; coverage collection is not supported yet.\n'
     exit 0
 fi
-[[ "${1:-}" == --disposable && $# -ge 3 ]] || fail 'Use --disposable WORKFLOW.cjs COW_STORAGE [branching|L0] [SPEC_ID ...].'
+[[ "${1:-}" == --disposable ]] || fail 'Use --disposable MANIFEST.json CONFIG.cjs COW_STORAGE.'
 [[ "$MAGELENS_RUNNER" == playwright ]] || fail "Branching for $MAGELENS_RUNNER is not implemented yet. Use the normal linear run without --branching."
 shift
-automatic=false
-if [[ "${1:-}" == --auto ]]; then
-    automatic=true
-    shift
-    [[ $# -ge 3 ]] || fail 'Automatic runs need MANIFEST.json CONFIG.cjs COW_STORAGE.'
-    manifest=$(realpath -e "$1")
-    configuration=$(realpath -e "$2")
-    [[ "$manifest" == "$ROOT/"* && "$configuration" == "$ROOT/"* ]] || fail 'Manifest and configuration must be in this checkout.'
-    shift 2
-    set -- "$manifest" "$@"
-fi
+[[ "${1:-}" != --auto ]] || shift
+[[ $# -eq 3 || ( $# -eq 4 && "${4:-}" == AUTO ) ]] || fail 'AUTO is the only checkpoint policy. Use MANIFEST.json CONFIG.cjs COW_STORAGE; configure test selection in the native runner.'
+manifest=$(realpath -e "$1")
+configuration=$(realpath -e "$2")
+storage=$(realpath -e "$3")
+[[ "$manifest" == "$ROOT/"* && "$configuration" == "$ROOT/"* && -f "$manifest" && -f "$configuration" ]] || fail 'Manifest and configuration must be files in this checkout.'
 [[ -f .runtime/installed ]] || fail 'Install a dedicated test checkout first.'
 [[ ! -e .runtime/workflow.lock && ! -e .runtime/branching-recovery.json ]] || fail 'An active or interrupted workflow needs recovery first.'
 preflight
 [[ "$(docker info --format '{{.OSType}}')" == linux ]] || fail 'branching currently supports native Linux Docker only.'
-workflow=$(realpath -e "$1")
-storage=$(realpath -e "$2")
-shift 2
 entrypoint=node
-driver_command=(branching/cli.cjs "$workflow" "$storage" "$@")
-if [[ "$automatic" == true ]]; then
-    approach=${1:-AUTO}
-    [[ $# == 0 ]] || shift
-    driver_command=(branching/auto-cli.cjs "$manifest" "$configuration" "$storage" "$approach" "$@")
-fi
-[[ "$workflow" == "$ROOT/"* && -f "$workflow" ]] || fail 'Workflow must be a file in this checkout.'
+driver_command=(branching/auto-cli.cjs "$manifest" "$configuration" "$storage")
 [[ -d "$storage" && "$storage" != *','* && "$ROOT" != *','* ]] || fail 'Use an existing CoW directory; bind mount paths cannot contain commas.'
 runner=$(dc ps -q runner)
 [[ -n "$runner" ]] || fail 'Start this installation with bin/start first.'
@@ -52,7 +38,7 @@ controller=$(docker run --detach --rm --init --network none --memory 512m --memo
     --label org.magelens.role=branching-orchestrator --entrypoint sleep "$planner_image" infinity)
 cleanup_controller() { local result=$?; trap - EXIT; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }
 trap cleanup_controller EXIT
-if [[ "$automatic" == true ]]; then docker exec "$controller" magelens-plan verify "$manifest"; fi
+docker exec "$controller" magelens-plan verify "$manifest"
 # Driver needs Docker control for the application barrier. No ports are exposed.
 # The original browser runner and normal coverage entry point remain unchanged.
 docker run --rm --init --memory 2g --memory-swap 2g --shm-size 512m \
