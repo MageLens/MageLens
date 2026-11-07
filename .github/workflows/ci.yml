@@ -38,6 +38,8 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Prepare pinned unpublished library sources, when configured
+        run: node tests/ci/dependency-previews.cjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run every integration test and reject skipped tests
         shell: bash

@@ -8,6 +8,7 @@ const os = require('node:os');
 const {cases} = require('./cases.cjs');
 const {snapshot} = require('./report-equivalence.cjs');
 const {execFileSync} = require('node:child_process');
+const {evidence: previewEvidence} = require('./dependency-previews.cjs');
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => key in value).map(key => [key, value[key]]));
 const blog = file => file.includes('/Application/Blog/');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -54,6 +55,8 @@ function writeEvidence() {
         runtime: process.env.CI_HOST_RUNTIME || 'native', image: process.env.ImageOS, imageVersion: process.env.ImageVersion, memoryGiB: Math.round(os.totalmem() / 2 ** 30),
         dependencies: Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(match => [match[1], match[2]])),
         counts: null, steps: Object.fromEntries(Object.entries(JSON.parse(process.env.CI_STEPS)).map(([key, value]) => [key, pick(value, ['outcome', 'conclusion'])])), passed: false};
+    try { report.dependencyPreviews = previewEvidence(); }
+    catch { report.previewError = 'Missing or invalid pinned library preview provenance.'; }
     // Failed harnesses still retain their browser results under the owned project.
     const registry = path.join(process.env.RUNNER_TEMP, 'magelens-resource');
     try {
@@ -88,7 +91,7 @@ function writeEvidence() {
         report.browser = read(`${directory}/coverage/${entry.runner}-results.json`).browser;
         fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(snapshot(source)) + '\n');
         execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
-        report.passed = !report.diagnostics && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
+        report.passed = !report.diagnostics && !report.previewError && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {
         // Errors can contain arbitrary subprocess output; publish a fixed diagnostic.
         report.incomplete = 'Missing or invalid completed harness report. Inspect the failed step in Actions.';

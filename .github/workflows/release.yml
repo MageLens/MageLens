@@ -51,7 +51,7 @@ jobs:
           QUALIFIED_ATTEMPT="$(jq -r .run_attempt ci-run.json)"
           gh run download "$QUALIFIED_RUN" --repo "$GH_REPO" --name "qualification-$QUALIFIED_ATTEMPT" --dir qualification
           jq -e --arg run "$QUALIFIED_RUN" --arg attempt "$QUALIFIED_ATTEMPT" \
-            '.passed == true and .themeReportsEqual == true and .workflowRun == $run and .attempt == $attempt and .expectedCases == 9 and .completedCases == 9 and .expectedAcceptanceTests == 63 and (.errors | length) == 0' qualification/qualification.json
+            '.passed == true and .themeReportsEqual == true and .workflowRun == $run and .attempt == $attempt and .expectedCases == 9 and .completedCases == 9 and .expectedAcceptanceTests == 63 and (.errors | length) == 0 and ((.dependencyPreviews // {}) | length) == 0' qualification/qualification.json
           QUALIFIED_SHA="$(jq -r .sha qualification/qualification.json)"
           [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
           QUALIFIED_TREE="$(gh api "repos/$GH_REPO/git/commits/$QUALIFIED_SHA" --jq .tree.sha)"
