@@ -6,6 +6,12 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.2 - 2026-11-08
+
+- Use stable Chrome for Testing 157.0.8103.38 for Cypress, Playwright and browser recovery checks, with verified Linux x64 and ARM64 archive checksums.
+
+Rerun installation with your saved platform, theme and runner selections to rebuild the browser runner, then regenerate coverage reports.
+
 ## 1.9.1 - 2026-11-07
 
 - Update template coverage to 1.5.5 for Acorn 8.19 parsing fixes and Unicode 17/18 identifiers in Alpine, Knockout and template expressions.
