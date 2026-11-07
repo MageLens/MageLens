@@ -14,10 +14,11 @@ const {checkpointNginx, resumedHealth} = require('./magento-health.cjs');
 const {prepareWorkspace} = require('./magento-workspace.cjs');
 
 class MagentoBackend {
-    constructor({workspace, helperImage, disposable}) {
+    constructor({workspace, helperImage, disposable, workflowLease}) {
         if (disposable !== true) throw new Error(messages.requiresDisposableInstallation);
         this.workspace = fs.realpathSync(workspace);
         this.helperImage = helperImage;
+        this.workflowLease = workflowLease;
         this.identity = {
             kind: settings.implementation,
             implementation: implementationDigest(
@@ -194,7 +195,7 @@ class MagentoBackend {
         }
         if (this.recovery) fs.rmSync(this.recovery);
         fs.rmSync(path.join(this.lock, settings.lockOwner));
-        fs.rmdirSync(this.lock);
+        if (!this.workflowLease) fs.rmdirSync(this.lock);
         this.ownsLock = false;
     }
 }

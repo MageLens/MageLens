@@ -23,7 +23,7 @@ function compileFragment(parameters, code) {
 }
 
 function verifySources(manifest) {
-    if (manifest.schemaVersion !== 1 || manifest.implementation !== 'rust-prefix-v1') throw new Error('Unsupported automatic manifest');
+    if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported automatic manifest');
     const root = fs.realpathSync(manifest.root);
     for (const source of manifest.sources) {
         const file = path.resolve(root, source.path);
@@ -74,15 +74,17 @@ function buildWorkflow(manifest, configuration, selected) {
         return value;
     };
     const prefixUnits = (test, from, to) => {
-        if (adapter) return units(adapter.actionUnits?.(test, from, to));
-        const counts = test.steps.slice(from, to).map(s=>units(s.actionUnits));
+        const counts = test.steps.slice(from, to).map(s => manifest.implementation === 'rust-prefix-v2'
+            ? units(s.estimate?.complete === true ? s.estimate.lowerBoundPoints : null) : units(s.actionUnits));
         return counts.some(n=>n === null) ? null : units(counts.reduce((a,b)=>a+b, 0));
     };
     const rootFor = test => {
         if (!roots.has(test.scope)) {
             const id = `root-${test.scope.slice(0, 20)}`; roots.set(test.scope, id);
             stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
-                actionUnits: adapter ? units(adapter.fixtureUnits?.(test) ?? (adapter.prepare ? null : 0)) : 0,
+                actionUnits: manifest.implementation === 'rust-prefix-v2'
+                    ? units(test.fixtureEstimate?.complete === true ? test.fixtureEstimate.lowerBoundPoints : null)
+                    : adapter?.prepare ? null : 0,
                 run: async runtime => { await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
         }
         return roots.get(test.scope);
@@ -115,10 +117,11 @@ function buildWorkflow(manifest, configuration, selected) {
     }
     return {
         workflow: new Graph({identity: {source: manifest.sourceDigest, fixture: configuration.identity,
-            configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null},
+            configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
+                runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,
             implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./engine.cjs')), manifest.implementation])}, stages, specs}),
-        state: configuration.state, checkpointLifetime: 'last-consumer'
+        state: configuration.state, checkpointLifetime: 'last-consumer', runnerOptions: configuration.runnerOptions
     };
 }
 module.exports = {buildWorkflow, verifySources, compileFragment};

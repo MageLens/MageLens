@@ -6,8 +6,8 @@ const config = require('./configs/runtime.cjs');
 
 const {maxCheckpointsPerTest} = require('./planner/src/limits.json');
 
-// AUTO already selects using Rust's complete cost model. This guard also caps
-// direct/forced branching and explicit selections, without requiring a native planner.
+// AUTO selects using Rust's complete cost model. Keep a defensive limit in the
+// execution mechanism, also exercised independently by provider recovery tests.
 function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime}) {
     const paths = specs.map(spec => graph.chain(spec.parent));
     const consumers = new Map();

@@ -5,10 +5,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+
+test('source preview accepts the assessed Rust manifest and fixture-only candidates',()=>{
+    const {manifestView}=require('../branching/dashboard/model.cjs');
+    const view=manifestView({schemaVersion:1,implementation:'rust-prefix-v2',
+        assessment:{version:'js-ts-points-v1'},sources:[],diagnostics:[],schedule:['a','b'],
+        tests:['a','b'].map(id=>({id,title:id,file:'case.spec.ts',line:4,steps:[],disposition:'adapter-required'})),
+        checkpoints:[{id:'fixture',label:'Shared fixture setup',depth:0,representative:'a',consumers:['a','b'],automatic:false}]});
+    assert.equal(view.status,'planned');assert.equal(view.nodes.length,3);
+    assert.equal(view.nodes[0].source.line,4);assert.equal(view.nodes[0].lastConsumer,'b');
+});
 const os = require('node:os');
 const path = require('node:path');
 const {setTimeout: delay} = require('node:timers/promises');
-const {execute} = require('../branching/engine.cjs');
+const {execute} = require('./fixtures/branching/engine.cjs');
 const {applyEvent} = require('../branching/dashboard/model.cjs');
 const {startDashboard} = require('../branching/dashboard/server.cjs');
 const {events: recorder} = require('../branching/events.cjs');

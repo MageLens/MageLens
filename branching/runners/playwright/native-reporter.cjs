@@ -1,0 +1,34 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
+const fs = require('node:fs');
+const path = require('node:path');
+class NativeReporter {
+    constructor() { this.results = new Map(); this.errors = []; }
+    onBegin(config, suite) {
+        this.config = {rootDir: config.rootDir, globalTeardown: !!config.globalTeardown, webServer: !!config.webServer,
+            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown}))};
+        this.tests = suite.allTests().map(test => {
+            const project = test.parent.project();
+            return {id: test.id, project: project.name, file: test.location.file, line: test.location.line,
+                column: test.location.column, title: test.titlePath().slice(3).join(' › '),
+                selector: `[${project.name}] › ${path.relative(config.rootDir, test.location.file).replaceAll(path.sep, '/')} › ${test.titlePath().slice(3).join(' › ')}`,
+                expectedStatus: test.expectedStatus, annotations: test.annotations};
+        });
+    }
+    onTestEnd(test, result) {
+        const previous = this.results.get(test.id);
+        this.results.set(test.id, {id: test.id, status: result.status, expectedStatus: test.expectedStatus,
+            durationMs: (previous?.durationMs ?? 0) + result.duration, attempts: (previous?.attempts ?? 0) + 1,
+            errors: result.errors.map(error => ({message: error.message, stack: error.stack})), annotations: test.annotations});
+        if (process.env.MAGELENS_NATIVE_PROGRESS === '1') console.log(`${result.status}: ${test.title}`);
+    }
+    onError(error) { this.errors.push({message: error.message, stack: error.stack}); }
+    onEnd(result) {
+        const report = {schemaVersion: 1, config: this.config, tests: this.tests ?? [], results: [...this.results.values()],
+            status: result.status, durationMs: result.duration, errors: this.errors};
+        fs.writeFileSync(process.env.MAGELENS_NATIVE_REPORT, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
+    }
+}
+module.exports = NativeReporter;

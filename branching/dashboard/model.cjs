@@ -92,7 +92,7 @@ function applyEvent(state, event) {
 // A source plan is a preview. It never claims a checkpoint was selected by the
 // cost planner or that any source test has executed successfully.
 function manifestView(manifest) {
-    if (manifest.schemaVersion !== 1 || manifest.implementation !== 'rust-prefix-v1') throw new Error('Unsupported manifest');
+    if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported manifest');
     const tests = new Map(manifest.tests.map(test => [test.id, test]));
     const nodes = manifest.checkpoints.map(cp => {
         const representative = tests.get(cp.representative);

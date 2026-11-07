@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {buildWorkflow, compileFragment} = require('../branching/automatic.cjs');
-const {execute, fileDigest, CheckpointStore, digest} = require('../branching/engine.cjs');
+const {execute, fileDigest, CheckpointStore, digest} = require('./fixtures/branching/engine.cjs');
 const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
 
 function fixture(t) {
@@ -107,20 +107,23 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 });
 
 
-test('source units and reviewed fixture units include the full composite',t=>{
+test('Rust source estimates are authoritative and never call handwritten weight callbacks',t=>{
     const {manifest,configuration}=fixture(t);
-    const native=buildWorkflow(manifest,configuration).workflow;
-    assert.equal([...native.stages.values()].find(s=>s.checkpoint===false).actionUnits,0);
-    assert.equal(native.stages.get('cp-cart').actionUnits,1);
-    const adapter={identity:'reviewed-fixture',supports:()=>true,execute:async()=>{},prepare:async()=>{},
-        fixtureUnits:()=>60,actionUnits:(_test,from,to)=>{assert.equal(from,0);assert.equal(to,1);return 60;}};
-    const adapted=buildWorkflow(manifest,{...configuration,adapter}).workflow;
-    assert.equal([...adapted.stages.values()].find(s=>s.checkpoint===false).actionUnits,60);
-    assert.equal(adapted.stages.get('cp-cart').actionUnits,60);
-    delete adapter.fixtureUnits;delete adapter.actionUnits;
-    const unknown=buildWorkflow(manifest,{...configuration,adapter}).workflow;
-    assert.equal([...unknown.stages.values()].find(s=>s.checkpoint===false).actionUnits,null);
-    assert.equal(unknown.stages.get('cp-cart').actionUnits,null);
-    adapter.fixtureUnits=()=>-1;
-    assert.throws(()=>buildWorkflow(manifest,{...configuration,adapter}),/Invalid static action units/);
+    manifest.implementation='rust-prefix-v2';
+    for(const entry of manifest.tests) {
+        entry.fixtureEstimate={points:20,lowerBoundPoints:20,complete:true};
+        for(const step of entry.steps) step.estimate={points:8,lowerBoundPoints:8,complete:true};
+    }
+    const adapter={identity:'execution-only',supports:()=>true,execute:async()=>{},prepare:async()=>{},
+        fixtureUnits:()=>{throw new Error('Handwritten fixture cost must not run');},
+        actionUnits:()=>{throw new Error('Handwritten step cost must not run');}};
+    for(const config of [configuration,{...configuration,adapter}]) {
+        const workflow=buildWorkflow(manifest,config).workflow;
+        assert.equal([...workflow.stages.values()].find(s=>s.checkpoint===false).actionUnits,20);
+        assert.equal(workflow.stages.get('cp-cart').actionUnits,8);
+    }
+    manifest.tests[0].steps[0].estimate.complete=false;
+    assert.equal(buildWorkflow(manifest,configuration).workflow.stages.get('cp-cart').actionUnits,null);
+    manifest.tests[0].steps[0].estimate={points:8,lowerBoundPoints:-1,complete:true};
+    assert.throws(()=>buildWorkflow(manifest,configuration),/Invalid static action units/);
 });

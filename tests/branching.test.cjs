@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {Graph, execute, CheckpointStore, cleanup, digest} = require('../branching/engine.cjs');
+const {Graph, execute, CheckpointStore, cleanup, digest} = require('./fixtures/branching/engine.cjs');
 const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
 
 function setup(t) {

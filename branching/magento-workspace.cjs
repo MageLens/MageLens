@@ -26,7 +26,7 @@ async function prepareWorkspace(backend, {run, directory}) {
     const recovery = path.join(backend.workspace, settings.recovery);
     if (fs.existsSync(recovery)) throw new Error(messages.anInterruptedBranchingRunNeedsRecoveryFirst);
     backend.lock = path.join(backend.workspace, settings.lock);
-    fs.mkdirSync(backend.lock);
+    require('./workflow-lease.cjs').join(backend.lock, backend.workflowLease);
     backend.ownsLock = true;
     fs.writeFileSync(path.join(backend.lock, settings.lockOwner), JSON.stringify({run, directory}), {
         mode: 0o600

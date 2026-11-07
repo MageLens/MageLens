@@ -10,8 +10,12 @@ use std::{
     path::{Path, PathBuf},
 };
 use tree_sitter::{Node, Parser};
+mod assessment;
 pub mod baseline;
 pub mod cost;
+mod normalize;
+pub mod points;
+mod project;
 
 type Result<T> = std::result::Result<T, String>;
 pub fn hash(bytes: impl AsRef<[u8]>) -> String {
@@ -39,6 +43,8 @@ pub struct Step {
     #[serde(default)]
     pub action_units: Option<u64>,
     #[serde(default)]
+    pub estimate: Option<points::Estimate>,
+    #[serde(default)]
     pub label: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +60,18 @@ pub struct Test {
     pub steps: Vec<Step>,
     pub reasons: Vec<String>,
     pub disposition: String,
+    #[serde(default)]
+    pub fixture_estimate: Option<points::Estimate>,
+    #[serde(default)]
+    pub worker_estimate: Option<points::Estimate>,
+    #[serde(default)]
+    pub estimate: Option<points::Estimate>,
+    #[serde(skip)]
+    context_identity: String,
+    #[serde(skip)]
+    callback_start: usize,
+    #[serde(skip)]
+    callback_end: usize,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +99,8 @@ pub struct Manifest {
     pub checkpoints: Vec<Checkpoint>,
     pub schedule: Vec<String>,
     pub diagnostics: Vec<String>,
+    #[serde(default)]
+    pub assessment: serde_json::Value,
 }
 
 fn text<'a>(n: Node, source: &'a str) -> &'a str {
@@ -156,11 +176,12 @@ fn step(n: Node, s: &str, kind: &str, portable: bool) -> Step {
         end: n.end_byte(),
         line: n.start_position().row + 1,
         kind: kind.into(),
-        fingerprint: hash(&minified),
+        fingerprint: hash(normalize::canonical(n, s)),
         minified,
         portable,
         asynchronous: contains(n, &|n| n.kind() == "await_expression"),
-        action_units: if portable { action_units(n, s) } else { None },
+        action_units: None,
+        estimate: None,
         label: if kind == "beforeEach" {
             Some("beforeEach()".into())
         } else {
@@ -210,88 +231,16 @@ fn boundary_label(n: Node, s: &str) -> Option<String> {
         return None;
     }
     let name = callable(field(op, "function")?, s)?;
-    if name == "test.step" {
-        if let Some(title) = field(op, "arguments")
+    if name == "test.step"
+        && let Some(title) = field(op, "arguments")
             .and_then(|a| a.named_child(0))
             .and_then(|a| literal(a, s))
-        {
-            return Some(title);
-        }
+    {
+        return Some(title);
     }
     Some(format!("After {name}()"))
 }
 
-// Count one source operation, not locator construction or all nested calls.
-// Unknown helpers, callbacks, explicit sleeps and composite awaits need an
-// adapter estimate; they are never silently assigned zero or one unit.
-fn action_units(n: Node, s: &str) -> Option<u64> {
-    let awaited = n.named_child(0)?;
-    if n.kind() != "expression_statement" || awaited.kind() != "await_expression" {
-        return None;
-    }
-    let op = awaited.named_child(0)?;
-    if op.kind() != "call_expression"
-        || contains(op, &|n| {
-            matches!(
-                n.kind(),
-                "await_expression" | "arrow_function" | "function_expression"
-            )
-        })
-    {
-        return None;
-    }
-    let function = field(op, "function")?;
-    if function.kind() != "member_expression" {
-        return None;
-    }
-    let method = text(field(function, "property")?, s);
-    let name = function_name(op, s);
-    let browser = name.starts_with("page.")
-        && matches!(
-            method,
-            "goto"
-                | "reload"
-                | "goBack"
-                | "goForward"
-                | "click"
-                | "dblclick"
-                | "fill"
-                | "press"
-                | "type"
-                | "check"
-                | "uncheck"
-                | "setChecked"
-                | "selectOption"
-                | "hover"
-                | "focus"
-                | "blur"
-                | "tap"
-                | "waitFor"
-                | "waitForSelector"
-                | "waitForLoadState"
-                | "waitForURL"
-                | "scrollIntoViewIfNeeded"
-        );
-    let assertion = (name.starts_with("expect(page.")
-        || name.starts_with("expect(page)")
-        || name.starts_with("expect(page,"))
-        && matches!(
-            method,
-            "toBeVisible"
-                | "toBeHidden"
-                | "toBeEnabled"
-                | "toBeDisabled"
-                | "toBeChecked"
-                | "toHaveText"
-                | "toContainText"
-                | "toHaveValue"
-                | "toHaveCount"
-                | "toHaveAttribute"
-                | "toHaveURL"
-                | "toHaveTitle"
-        );
-    (browser || assertion).then_some(1)
-}
 #[derive(Clone, Default)]
 struct Scope {
     names: Vec<String>,
@@ -300,10 +249,23 @@ struct Scope {
     identity: Vec<String>,
 }
 
+#[cfg(test)]
 fn parse_file(file: &str, source: &str) -> Result<(Vec<Test>, Vec<String>)> {
+    parse_file_with_aliases(file, source, BTreeMap::new())
+}
+fn parse_file_with_aliases(
+    file: &str,
+    source: &str,
+    extra_aliases: BTreeMap<String, String>,
+) -> Result<(Vec<Test>, Vec<String>)> {
     let mut parser = Parser::new();
+    let language = if file.ends_with("tsx") || file.ends_with("jsx") {
+        tree_sitter_typescript::LANGUAGE_TSX
+    } else {
+        tree_sitter_typescript::LANGUAGE_TYPESCRIPT
+    };
     parser
-        .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        .set_language(&language.into())
         .map_err(|e| e.to_string())?;
     let tree = parser
         .parse(source, None)
@@ -313,7 +275,7 @@ fn parse_file(file: &str, source: &str) -> Result<(Vec<Test>, Vec<String>)> {
             "{file}: invalid JavaScript/TypeScript; no partial plan was published"
         ));
     }
-    let mut aliases = BTreeMap::new();
+    let mut aliases = extra_aliases;
     let mut native_imports = true;
     for n in children(tree.root_node())
         .into_iter()
@@ -395,7 +357,7 @@ fn walk_scope(
             let (base, method) = name.split_once('.').unwrap_or((&name, ""));
             if aliases.contains_key(base) {
                 if method == "beforeEach" {
-                    scope.identity.push(minify(c, s));
+                    scope.identity.push(normalize::canonical(c, s));
                     if let Some(cb) = callback(c)
                         && let Some(body) = field(cb, "body")
                     {
@@ -415,7 +377,7 @@ fn walk_scope(
                 ]
                 .contains(&method)
                 {
-                    scope.identity.push(minify(c, s));
+                    scope.identity.push(normalize::canonical(c, s));
                     scope.reasons.push(format!(
                         "{method} requires native Playwright lifecycle handling"
                     ));
@@ -429,7 +391,7 @@ fn walk_scope(
                 }
             }
         }
-        scope.identity.push(minify(node, s));
+        scope.identity.push(normalize::canonical(node, s));
         scope.reasons.push(
             "Module/suite setup or dynamic registration requires an execution adapter".into(),
         );
@@ -580,6 +542,17 @@ fn walk_scope(
             }
             .into(),
             reasons,
+            fixture_estimate: None,
+            worker_estimate: None,
+            estimate: None,
+            context_identity: serde_json::to_string(&(
+                fixture,
+                field(cb, "parameters").map(|n| normalize::canonical(n, s)),
+                &scope.identity,
+            ))
+            .unwrap(),
+            callback_start: cb.start_byte(),
+            callback_end: cb.end_byte(),
         });
     }
 }
@@ -643,41 +616,46 @@ pub fn plan(root: &Path) -> Result<Manifest> {
     scan(&root, &root, &mut sources)?;
     sources.sort_by(|a, b| a.path.cmp(&b.path));
     let source_digest = hash(serde_json::to_vec(&sources).unwrap());
+    let project = project::Project::load(&root, &sources)?;
     let mut tests = vec![];
     let mut diagnostics = vec![];
     for src in &sources {
-        if [".spec.ts", ".spec.js", ".test.ts", ".test.js"]
-            .iter()
-            .any(|s| src.path.ends_with(s))
+        if [
+            ".spec.ts",
+            ".spec.js",
+            ".test.ts",
+            ".test.js",
+            ".spec.cjs",
+            ".test.cjs",
+            ".spec.mjs",
+            ".test.mjs",
+            ".spec.mts",
+            ".test.mts",
+            ".spec.cts",
+            ".test.cts",
+            ".spec.tsx",
+            ".test.tsx",
+            ".spec.jsx",
+            ".test.jsx",
+        ]
+        .iter()
+        .any(|s| src.path.ends_with(s))
         {
             let source = fs::read_to_string(root.join(&src.path)).map_err(|e| e.to_string())?;
             if hash(&source) != src.sha256 {
                 return Err(format!("Source changed while planning: {}", src.path));
             }
-            let (mut found, mut warnings) = parse_file(&src.path, &source)?;
+            let (mut found, mut warnings) =
+                parse_file_with_aliases(&src.path, &source, project.test_aliases(&src.path))?;
             tests.append(&mut found);
             diagnostics.append(&mut warnings);
-        } else if [
-            ".spec.tsx",
-            ".spec.jsx",
-            ".spec.mts",
-            ".spec.cts",
-            ".test.tsx",
-            ".test.jsx",
-            ".test.mts",
-            ".test.cts",
-        ]
-        .iter()
-        .any(|s| src.path.ends_with(s))
-        {
-            diagnostics.push(format!(
-                "{}: unsupported test extension; native Playwright collection is required",
-                src.path
-            ));
         }
     }
     if tests.is_empty() {
         return Err("No statically declared Playwright tests found".into());
+    }
+    for test in &mut tests {
+        project.assess(test);
     }
     // Each entry is a prefix-trie node identified by its complete ancestry.
     let mut nodes: BTreeMap<String, (usize, Vec<usize>, BTreeSet<String>, bool)> = BTreeMap::new();
@@ -756,10 +734,52 @@ pub fn plan(root: &Path) -> Result<Manifest> {
             label: tests[repr].steps[depth - 1].label.clone(),
         });
     }
+    // A repeated fixture is itself a composite prefix, even when the test
+    // bodies diverge immediately. Worker setup and teardown are excluded.
+    let mut fixture_groups: BTreeMap<String, Vec<&Test>> = BTreeMap::new();
+    for test in &tests {
+        if test
+            .fixture_estimate
+            .as_ref()
+            .is_some_and(|e| e.complete && e.lower_bound_points > 0)
+        {
+            fixture_groups
+                .entry(test.scope.clone())
+                .or_default()
+                .push(test);
+        }
+    }
+    for (scope, group) in fixture_groups {
+        if group.len() < 2 || !group.iter().any(|t| !t.steps.is_empty()) {
+            continue;
+        }
+        let id = format!("cp-{}", &hash(format!("{scope}:fixture"))[..20]);
+        let consumers: Vec<_> = group.iter().map(|t| t.id.clone()).collect();
+        for checkpoint in &mut checkpoints {
+            if checkpoint.parent.is_none() && consumers.contains(&checkpoint.representative) {
+                checkpoint.parent = Some(id.clone());
+            }
+        }
+        checkpoints.push(Checkpoint {
+            id,
+            parent: None,
+            depth: 0,
+            representative: group[0].id.clone(),
+            release_after: consumers
+                .iter()
+                .max_by_key(|id| positions[id.as_str()])
+                .unwrap()
+                .clone(),
+            saved_statements: group.len() - 1,
+            consumers,
+            automatic: false,
+            label: Some("Shared fixture setup".into()),
+        });
+    }
     checkpoints.sort_by(|a, b| (a.depth, &a.id).cmp(&(b.depth, &b.id)));
-    Ok(Manifest {
+    let mut manifest = Manifest {
         schema_version: 1,
-        implementation: "rust-prefix-v1".into(),
+        implementation: "rust-prefix-v2".into(),
         root: root.to_string_lossy().into_owned(),
         source_digest,
         sources,
@@ -767,7 +787,10 @@ pub fn plan(root: &Path) -> Result<Manifest> {
         checkpoints,
         schedule,
         diagnostics,
-    })
+        assessment: serde_json::Value::Null,
+    };
+    manifest.assessment = assessment::summary(&manifest)?;
+    Ok(manifest)
 }
 
 pub fn write_manifest(path: &Path, manifest: &Manifest) -> Result<()> {
@@ -816,10 +839,10 @@ mod tests {
             .unwrap();
         let tree = parser.parse(source, None).unwrap();
         fn labels(n: Node, s: &str, out: &mut Vec<String>) {
-            if matches!(n.kind(), "expression_statement" | "lexical_declaration") {
-                if let Some(label) = boundary_label(n, s) {
-                    out.push(label);
-                }
+            if matches!(n.kind(), "expression_statement" | "lexical_declaration")
+                && let Some(label) = boundary_label(n, s)
+            {
+                out.push(label);
             }
             for child in children(n) {
                 labels(child, s, out);
@@ -896,7 +919,7 @@ mod tests {
         assert!(warnings[0].contains("native Playwright collection"));
     }
     #[test]
-    fn counts_source_actions_without_guessing_helper_bodies_or_sleeps() {
+    fn assigns_static_weights_and_preserves_unknown_helper_costs() {
         let f = Fixture::new(&format!(
             "{IMPORT} test('units',async ({{page}})=>{{await page.goto('/');await page.getByRole('button').click();await expect(page.locator('h1')).toBeVisible();await expect(page).toHaveURL('/');await helper(page);await page.waitForTimeout(500);await Promise.all([page.click('a'),page.click('b')]);}});"
         ));
@@ -907,7 +930,7 @@ mod tests {
                 .iter()
                 .map(|s| s.action_units)
                 .collect::<Vec<_>>(),
-            vec![Some(1), Some(1), Some(1), Some(1), None, None, None]
+            vec![Some(8), Some(1), Some(1), Some(1), None, Some(4), Some(1)]
         );
     }
     #[test]

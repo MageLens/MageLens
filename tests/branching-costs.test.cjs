@@ -7,12 +7,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const {Graph,execute}=require('../branching/engine.cjs');
-const {orchestrate,costInput}=require('../branching/costs.cjs');
+const {Graph,execute}=require('./fixtures/branching/engine.cjs');
+const autoExecute=require('../branching/engine.cjs').execute;
+const costs=require('../branching/costs.cjs');
+const {costInput}=costs;
 const {FixtureProvider,fixtureWorkflow}=require('./fixtures/branching/provider.cjs');
 const {deepWorkflow}=require('./fixtures/branching/deep-workflow.cjs');
 
-test('nine-checkpoint path limit preserves all actions, outcomes and cleanup for direct and explicit branching', async t => {
+test('provider mechanism enforces the nine-checkpoint limit while preserving actions, outcomes and cleanup', async t => {
     const {root} = setup(t), workflow = new Graph(deepWorkflow());
     const base = {root, workflow, checkpointLifetime: 'last-consumer'};
     const linear = await execute({...base, approach: 'L0', provider: new FixtureProvider()});
@@ -38,14 +40,15 @@ function setup(t) {
     return {root,workflow,run,calls};
 }
 const linear=()=>({schemaVersion:1,selected:[],basis:'static-benchmark-estimate',reason:'linear-estimated-cheaper'});
-test('AUTO runs once without calibration and does not create a cost cache',async t=>{
+test('AUTO is the default, plans once and does not create a calibration cache',async t=>{
     const input=setup(t);let solves=0;
+    t.mock.method(costs,'solveCosts',units=>{solves++;assert.deepEqual(units,costInput(input.workflow));return linear();});
     for(let i=0;i<2;i++) {
-        const r=await orchestrate({...input,mode:'AUTO',solve:units=>{solves++;assert.deepEqual(units,costInput(input.workflow));return linear();}});
-        assert.equal(r.report.approach,'L0');assert.equal(r.report.checkpoints.length,0);
-        assert.equal(r.report.checkpointPolicy.basis,'static-benchmark-estimate');
+        const report=await autoExecute({...input,provider:new FixtureProvider()});
+        assert.equal(report.approach,'L0');assert.equal(report.checkpoints.length,0);
+        assert.equal(report.checkpointPolicy.basis,'static-benchmark-estimate');
     }
-    assert.equal(input.calls.length,2);assert.equal(solves,2);assert.deepEqual(fs.readdirSync(input.root),[]);
+    assert.equal(solves,2);assert.deepEqual(fs.readdirSync(input.root),[]);
 });
 test('static graph carries fixture and incremental units, and unknown is not zero',t=>{
     const {workflow}=setup(t);workflow.stages.get('baseline').actionUnits=2;workflow.stages.get('cart-ready').actionUnits=5;
@@ -53,31 +56,48 @@ test('static graph carries fixture and incremental units, and unknown is not zer
     assert.equal(input.stages[0].units,2);assert.equal(input.stages[1].units,null);assert.equal(input.stages[2].units,5);
     assert.equal(input.stages[2].parent,'customer-ready');assert.equal(input.parents.length,3);
 });
-test('selected composite preserves fixture, intermediate work and semantic results',async t=>{
+test('AUTO selected composite preserves fixtures, intermediate work and results',async t=>{
     const input=setup(t);const baseline=await input.run('L0');
-    const auto=await orchestrate({...input,mode:'AUTO',solve:()=>({selected:['cart-ready'],reason:'static-estimated-saving'})});
-    assert.equal(auto.report.status,'passed');assert.equal(auto.report.checkpoints.length,1);assert.equal(auto.report.checkpoints[0].stage,'cart-ready');
-    assert.equal(auto.report.counts.reuseHits,2);assert.equal(auto.report.releases[0].after,'coupon-1');
-    assert.ok(auto.report.segments.some(s=>s.node==='customer-ready' && s.status==='passed'));
-    assert.deepEqual(auto.report.results.map(r=>r.state),baseline.results.map(r=>r.state));
-    assert.equal(input.calls.length,2);
+    t.mock.method(costs,'solveCosts',()=>({selected:['cart-ready'],reason:'static-estimated-saving'}));
+    const report=await autoExecute({...input,provider:new FixtureProvider(),checkpointLifetime:'last-consumer'});
+    assert.equal(report.status,'passed');assert.equal(report.checkpoints.length,1);assert.equal(report.checkpoints[0].stage,'cart-ready');
+    assert.equal(report.counts.reuseHits,2);assert.equal(report.releases[0].after,'coupon-1');
+    assert.ok(report.segments.some(s=>s.node==='customer-ready' && s.status==='passed'));
+    assert.deepEqual(report.results.map(r=>r.state),baseline.results.map(r=>r.state));
 });
-test('forced L0 and branching bypass static selection, calibration is not a runtime mode',async t=>{
-    const input=setup(t);const solve=()=>{throw new Error('should not solve');};
-    for(const mode of ['L0','branching'])assert.equal((await orchestrate({...input,mode,solve})).report.approach,mode);
-    await assert.rejects(orchestrate({...input,mode:'CALIBRATE'}),/Unknown cost execution mode/);
-    assert.equal(input.calls.length,2);
+test('public engine, Playwright library and CLI reject overrides before application access',async t=>{
+    const {workflow,root}=setup(t), {main}=require('../branching/cli.cjs');
+    const {runBranches}=require('../playwright/branching.cjs');
+    t.mock.method(costs,'solveCosts',()=>assert.fail('Overrides must fail before planning'));
+    for(const override of [{approach:'branching'},{approach:'L0'},{mode:'branching'},{mode:'CALIBRATE'},
+        {checkpointSelection:[]},{checkpointSelection:['cart-ready']},{checkpointPolicy:{selected:['cart-ready']}},{solve:()=>({selected:[]})}]) {
+        for(const run of [options=>autoExecute({...options,provider:new FixtureProvider()}),runBranches,
+            options=>main({...options,state:async()=>({})},root)]) {
+            await assert.rejects(run({workflow,root,...override}),/AUTO|Manual checkpoint/);
+        }
+    }
+    assert.deepEqual(fs.readdirSync(root),[]);
 });
-test('invalid checkpoint selection is rejected before backend preparation',async t=>{
-    const input=setup(t);
-    for(const selection of [['missing'],['baseline','baseline'],'baseline',null])await assert.rejects(input.run('branching',{checkpointSelection:selection}),/Invalid checkpoint selection/);
-    assert.equal(input.calls.length,0);
+test('opaque AUTO plans cannot be forged, mutated, reordered or lose consumers',async t=>{
+    const {workflow,root}=setup(t);
+    t.mock.method(costs,'solveCosts',()=>({selected:['cart-ready'],reason:'static-estimated-saving'}));
+    const {plan,decision}=costs.planWorkflow(workflow);
+    assert.throws(()=>decision.selected.push('baseline'),TypeError);
+    const run=options=>autoExecute({workflow,root,provider:new FixtureProvider(),...options});
+    await assert.rejects(run({plan:{decision}}),/Invalid or stale/);
+    await assert.rejects(run({plan,specs:[...workflow.specs.keys()].reverse()}),/order changed/);
+    await assert.rejects(run({plan,specs:[...workflow.specs.keys()].slice(1)}),/consumers/);
+    workflow.stages.get('cart-ready').actionUnits=100;
+    await assert.rejects(run({plan}),/Invalid or stale/);
+    assert.deepEqual(fs.readdirSync(root),[]);
 });
 test('failed selector does not launch a run or silently switch modes',async t=>{
-    const input=setup(t);await assert.rejects(orchestrate({...input,mode:'AUTO',solve:()=>{throw new Error('invalid graph');}}),/invalid graph/);
-    assert.equal(input.calls.length,0);
+    const input=setup(t);
+    t.mock.method(costs,'solveCosts',()=>{throw new Error('invalid graph');});
+    await assert.rejects(autoExecute({...input,provider:new FixtureProvider()}),/invalid graph/);
+    assert.deepEqual(fs.readdirSync(input.root),[]);
 });
 test('automatic CLI accepts a prevalidated Graph before application checks',async t=>{
     const {workflow}=setup(t);const {main}=require('../branching/cli.cjs');
-    await assert.rejects(main(['unused','unused'],{workflow}),/must export state/);
+    await assert.rejects(main({workflow},'unused'),/must export state/);
 });

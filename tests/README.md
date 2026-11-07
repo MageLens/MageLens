@@ -117,9 +117,42 @@ the Rust unit and CLI tests. For an explicit development build, set
 `MAGELENS_BRANCHING_BUILD_FROM_SOURCE=1`. The CI integration job
 plans a repository-owned two-test fixture and checks its repeated-prefix graph.
 
+The planner parses JavaScript/TypeScript into a normalized syntax tree before
+matching shared prefixes. Comments, formatting and type-only assertions do not
+change matching; literal values and preceding setup remain significant. Rust
+follows local imports, helpers, page objects, fixture dependencies and bounded
+loops, then assigns versioned operation points from
+[`points.rs`](../branching/planner/src/points.rs). No per-test weight callbacks or
+runtime calibration are required. Fixture setup and shared test steps are assessed
+together; worker setup and fixture teardown are excluded from reusable work.
+
+Manifests expose statement estimates, unresolved-analysis reasons and the source
+cost plan under `assessment`. Unknown work has an explicit incomplete estimate
+and cannot justify a checkpoint. These are static forecasts, not measured test
+durations. A profitable source prefix still needs a supported execution boundary:
+cost analysis does not restore arbitrary JavaScript closures or process state.
+The suite report includes both this assessment and the actual execution decision.
+
+`branching/planner/tests/assessment.rs` exercises the real CLI with independent
+source projects, including normalization, inputs, imported helpers, fixtures,
+control flow, cost selection and stale-source invalidation.
+
 `tests/branching-automatic.test.cjs` covers automatic execution, selection,
 source changes, failure cleanup, last-consumer lifetime and retained evidence
-within the normal integration suite.
+within the normal integration suite. Public entry-point checks reject forced modes
+and manual checkpoint selections; provider recovery tests use an internal
+mechanism harness so safety failures remain covered independently of cost selection.
+
+AUTO is the only execution policy. Run
+`./bin/run-coverage --branching --disposable MANIFEST.json CONFIG.cjs COW_STORAGE`.
+The project configuration must set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
+complete Playwright inventory. Unprofitable AUTO plans run it in one native
+invocation. Mixing reviewed checkpoints with native tests requires an explicitly
+qualified `native.splitSafe: true`, matching Playwright launch/context settings in
+`runnerOptions: {launchOptions, contextOptions}`, one shared setup project, and no global or
+project teardown or managed web server. Global setup must not return per-process
+cleanup when splitting execution. Skipped and missing tests remain visible
+and do not qualify as a fully passed run.
 
 ## Dashboard self-tests and self-coverage
 

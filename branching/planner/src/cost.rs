@@ -138,14 +138,29 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
     // Unknown stage costs cancel out: no selected checkpoint can skip them.
     let simulate = |chosen: &BTreeSet<usize>| -> f64 {
         let mut available = BTreeSet::new();
-        let mut total = 0.0;
+        let mut total = if chosen.is_empty() {
+            0.0
+        } else {
+            (baseline.backend_ms + baseline.first_reset_ms) * margin
+        };
+        let mut first = true;
         for path in &paths {
+            let checkpoint_path = path.iter().any(|i| chosen.contains(i));
             let last = path.iter().rposition(|i| available.contains(i));
             total += if last.is_some() {
                 baseline.restore_ms * margin
+            } else if checkpoint_path {
+                if first {
+                    0.0
+                } else {
+                    baseline.reset_ms * margin
+                }
             } else {
-                baseline.reset_ms
+                0.0 // Unselected paths stay in the native runner, with no DB reset.
             };
+            if checkpoint_path {
+                first = false;
+            }
             for &i in &path[last.map(|p| p + 1).unwrap_or(0)..] {
                 total += input.stages[i].units.unwrap_or(0) as f64 * baseline.unit_ms;
                 if chosen.contains(&i) && available.insert(i) {
@@ -159,7 +174,26 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
     let mut selected = BTreeSet::new();
     let mut best = linear;
     let mut iterations = 0;
-    // Bounded best-improvement search, starting from linear. This may miss
+    // Shared backend entry/exit costs can make several groups profitable together
+    // although none is profitable alone. Evaluate a bounded combined seed too.
+    let mut ranked = eligible.clone();
+    ranked.sort_by(|a, b| {
+        let value = |i: &usize| units[*i].unwrap() as u128 * (consumers[*i] - 1) as u128;
+        value(b).cmp(&value(a)).then_with(|| a.cmp(b))
+    });
+    let mut combined = BTreeSet::new();
+    for i in ranked {
+        combined.insert(i);
+        if !within_limit(&combined) {
+            combined.remove(&i);
+        }
+    }
+    let combined_cost = simulate(&combined);
+    if linear - combined_cost > baseline.min_saving_ms {
+        selected = combined;
+        best = combined_cost;
+    }
+    // Bounded best-improvement search from the better initial plan. This may miss
     // opportunities but never adds an estimated net loss. No runtime samples.
     for _ in 0..64 {
         let mut improvement = None;
@@ -209,8 +243,12 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
             let count = consumers[i];
             let known = units[i].is_some() && count > 1;
             let threshold = known.then(|| {
-                baseline.restore_ms * margin - baseline.reset_ms
-                    + ((baseline.capture_ms + baseline.release_ms) * margin
+                baseline.restore_ms * margin
+                    + ((baseline.backend_ms
+                        + baseline.first_reset_ms
+                        + baseline.capture_ms
+                        + baseline.release_ms)
+                        * margin
                         + baseline.min_saving_ms)
                         / (count - 1) as f64
             });
@@ -303,31 +341,31 @@ mod tests {
         let p = select(input(
             vec![
                 stage("fixture", None, 1, true),
-                stage("checkout", Some("fixture"), 150, true),
+                stage("checkout", Some("fixture"), 500, true),
             ],
             &["fixture", "checkout", "checkout"],
         ))
         .unwrap();
         assert_eq!(p.selected, vec!["checkout"]);
-        assert_eq!(p.decisions[1].combined_units, Some(151));
+        assert_eq!(p.decisions[1].combined_units, Some(501));
     }
     #[test]
     fn two_small_parts_can_cross_the_combined_threshold() {
         let p = select(input(
             vec![
-                stage("fixture", None, 60, false),
-                stage("step", Some("fixture"), 60, true),
+                stage("fixture", None, 160, false),
+                stage("step", Some("fixture"), 160, true),
             ],
             &["step"; 3],
         ))
         .unwrap();
         assert_eq!(p.selected, vec!["step"]);
-        assert!(p.decisions[0].minimum_combined_units.unwrap() > 60);
-        assert!(p.decisions[0].minimum_combined_units.unwrap() < 120);
+        assert!(p.decisions[0].minimum_combined_units.unwrap() > 160);
+        assert!(p.decisions[0].minimum_combined_units.unwrap() < 320);
     }
     #[test]
     fn fanout_changes_break_even_and_boundary_is_strict() {
-        for (consumers, minimum) in [(2, 119), (3, 103), (9, 91)] {
+        for (consumers, minimum) in [(2, 441), (3, 261), (9, 127)] {
             let parents = vec!["unit"; consumers];
             let low = select(input(
                 vec![stage("unit", None, minimum - 1, true)],
@@ -344,7 +382,7 @@ mod tests {
     fn nested_snapshots_do_not_double_count_parent_work() {
         let p = select(input(
             vec![
-                stage("parent", None, 150, true),
+                stage("parent", None, 500, true),
                 stage("child", Some("parent"), 1, true),
             ],
             &["child"; 3],
@@ -373,9 +411,9 @@ mod tests {
         unknown.units = None;
         let p = select(input(
             vec![
-                stage("root", None, 200, true),
+                stage("root", None, 500, true),
                 unknown,
-                stage("known", None, 200, true),
+                stage("known", None, 500, true),
             ],
             &["unknown", "unknown", "known", "known"],
         ))
@@ -388,6 +426,47 @@ mod tests {
         let p = select(input(vec![stage("a", None, 1000, true)], &["a"])).unwrap();
         assert!(p.selected.is_empty());
         assert_eq!(p.decisions[0].reason, "single-consumer");
+    }
+    #[test]
+    fn long_unrelated_tests_cannot_create_shared_checkpoints() {
+        let stages = (0..5)
+            .map(|i| stage(&format!("test{i}"), None, 10000, true))
+            .collect();
+        let parents = (0..5).map(|i| format!("test{i}")).collect();
+        let plan = select(Input { stages, parents }).unwrap();
+        assert!(plan.selected.is_empty());
+        assert!(plan.decisions.iter().all(|d| d.reason == "single-consumer"));
+    }
+    #[test]
+    fn native_work_has_no_reset_credit_and_unrelated_work_pays_no_backend_cost() {
+        let alone = select(input(
+            vec![stage("shared", None, 500, true)],
+            &["shared"; 2],
+        ))
+        .unwrap();
+        let mixed = select(input(
+            vec![
+                stage("shared", None, 500, true),
+                stage("native", None, 100, false),
+            ],
+            &["native", "shared", "shared", "native"],
+        ))
+        .unwrap();
+        assert_eq!(alone.estimated_linear_setup_ms, Some(125000.0));
+        assert!((mixed.estimated_saving_ms - alone.estimated_saving_ms).abs() < 1e-6);
+        assert_eq!(mixed.estimated_linear_setup_ms, Some(150000.0));
+    }
+    #[test]
+    fn shared_backend_cost_can_be_amortized_across_independent_groups() {
+        let alone = select(input(vec![stage("a", None, 350, true)], &["a"; 2])).unwrap();
+        assert!(alone.selected.is_empty());
+        let together = select(input(
+            vec![stage("a", None, 350, true), stage("b", None, 350, true)],
+            &["a", "a", "b", "b"],
+        ))
+        .unwrap();
+        assert_eq!(together.selected, vec!["a", "b"]);
+        assert!(together.estimated_saving_ms > 0.0);
     }
     #[test]
     fn malformed_graph_or_overflow_is_rejected() {
