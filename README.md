@@ -20,7 +20,26 @@ Run the installer, run the tests, and open one report to see which parts of your
 
 The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä. The badges are updated after each successful coverage run.
 
-`./bin/run-coverage --branching` selects the Playwright checkpoint workflow, which shares setup between sibling tests on a dedicated Linux CoW test environment. AUTO is the only checkpoint policy: provide a source manifest and native runner configuration. It selects profitable shared prefixes and keeps other tests in the native runner. Manual checkpoint selection is not supported. Run `./bin/run-coverage --branching --help` for arguments. `./bin/branching-dashboard` shows execution history, active checkpoints and cleanup. Branching currently produces execution reports; application coverage collection is not yet supported. The checkpoint runtime retains PHP workers and MariaDB between tests, prepares an inactive database schema in the background, and removes temporary schemas after the run. It currently requires one PHP worker, local file sessions and a single nonpersistent local database connection. AUTO keeps small or unqualified work in the native runner.
+## Faster tests with branching
+
+Branching saves shared setup—such as logging in and filling a cart—so related
+tests can continue from that point instead of repeating it. MageLens uses a
+baseline to choose checkpoints only when their expected time savings outweigh
+the cost of saving and restoring state.
+
+The [default baseline](branching-baseline.json) starts conservatively at about
+126 seconds of repeated setup for two tests. Calibrate it for your project's
+database and machine, especially before running branching in CI:
+
+```bash
+./bin/run-coverage --branching --disposable --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
+```
+
+Calibration measures your environment and adjusts future checkpoint decisions.
+Use `./bin/run-coverage --branching --help` to run the suite and
+`./bin/branching-dashboard` to follow its progress. Branching currently requires
+a disposable Linux installation with Playwright and reflink storage;
+application coverage collection is not yet supported.
 
 <!-- coverage-badges:start -->
 Run `./bin/run-coverage` to generate coverage reports and badges for your project.

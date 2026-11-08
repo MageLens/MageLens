@@ -31,6 +31,7 @@ async function run(args=process.argv.slice(2)) {
         const uid=Number(process.env.MAGELENS_HOST_UID),gid=Number(process.env.MAGELENS_HOST_GID);
         if(Number.isInteger(uid)&&Number.isInteger(gid)){fs.chownSync(directory,uid,gid);fs.chownSync(file,uid,gid);}
         console.log(`${report.status}: checkpoint calibration (${report.costs.captures.length} captures, ${report.costs.restores.length} restores)`);
+        if(report.baseline.update.updated)console.log(`Checkpoint decision baseline: ${report.baseline.update.decisionBaselineMs.toFixed(1)} ms (two-test break-even)`);
         console.log(`Report: ${file}`);
         for(const regression of report.baseline.update.regressions??[])
             console.warn(`Checkpoint overhead increased: ${regression.metric} ${regression.referenceMs.toFixed(1)} → ${regression.observedMs.toFixed(1)} ms`);

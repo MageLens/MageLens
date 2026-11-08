@@ -5,14 +5,10 @@
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-// Fixed defaults compiled into the orchestrator. The performance matrix measured
-// ten native shared-prefix samples (57.4–66.3 ms/point), two captures, eight
-// restorations and two complete backend lifecycles. A separate three-sample
-// calibration measured restores without prefetch overlap and later resets.
-// Round the larger workload means upward; use 55 ms/point conservatively.
-// This small Luma fixture is not a production-size
-// database guarantee. Successful project runs may replace operation costs with
-// their running averages, but never change operation weights or the current plan.
+// Internal operation proportions and source-work weights. The Node entry point
+// scales operation defaults using the root checkpoint decision baseline and
+// supplies a complete baseline to the planner. Project calibration replaces the
+// operation estimates. These desktop-derived bootstrap values are not CI gates.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Baseline {

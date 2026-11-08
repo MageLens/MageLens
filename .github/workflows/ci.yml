@@ -94,6 +94,56 @@ jobs:
           path: ci-reports/branching/
           retention-days: 1
           if-no-files-found: error
+  performance:
+    name: Branching performance / ${{ matrix.row }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        row: [short-5, reuse-2, boundary-5, large-5, strong-5, unrelated-5, large-9, medium-9, deep-shallow, deep-large]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Prepare disk and private reflink storage
+        run: |
+          bash tests/ci/prepare-disk.sh
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xfsprogs
+          bash tests/ci/cow-storage.sh create "$RUNNER_TEMP/performance-cow"
+      - name: Run calibrated Mage-OS Luma checkout comparisons
+        env:
+          PERFORMANCE_ROW: ${{ matrix.row }}
+        run: python3 tests/performance/branching/ci.py "$PERFORMANCE_ROW" "$RUNNER_TEMP/performance-cow/storage"
+      - name: Remove private reflink storage
+        id: storage-cleanup
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/performance-cow/.magelens-cow-owner" ]]; then
+            bash tests/ci/cow-storage.sh remove "$RUNNER_TEMP/performance-cow"
+          fi
+      - name: Bound sanitized timing artifact
+        id: size
+        if: always()
+        env:
+          PERFORMANCE_ROW: ${{ matrix.row }}
+          STORAGE_CLEANUP: ${{ steps.storage-cleanup.outcome }}
+        run: |
+          node tests/performance/branching/ci-finalize.cjs "ci-reports/performance/$PERFORMANCE_ROW" "$STORAGE_CLEANUP"
+          node tests/ci/artifact-size.cjs "ci-reports/performance/$PERFORMANCE_ROW"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.size.outcome == 'success'
+        with:
+          name: performance-${{ matrix.row }}-attempt-${{ github.run_attempt }}
+          path: ci-reports/performance/${{ matrix.row }}/
+          retention-days: 1
+          if-no-files-found: error
   copyright:
     name: Copyright and license notices
     runs-on: ubuntu-latest
@@ -162,7 +212,7 @@ jobs:
   gate:
     name: Required CI gate
     if: always()
-    needs: [static, integration, copyright, branching, e2e, magento]
+    needs: [static, integration, copyright, branching, performance, e2e, magento]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -176,6 +226,10 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: case-*-attempt-${{ github.run_attempt }}
+          path: ci-artifacts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: performance-*-attempt-${{ github.run_attempt }}
           path: ci-artifacts
       - name: Verify nine cases, same-theme report equality and the eight-way Linux comparison
         if: always()

@@ -71,3 +71,20 @@ test('overhead history detects a regression before averaging and retains the ori
     assert.equal(history.length,3);assert.equal(history[1].previousBaseline.restoreMs,100);
     assert.equal(history[1].observed.restoreMs,150);assert.equal(history[1].nextBaseline.restoreMs,125);
 });
+
+test('the root decision baseline controls bootstrap costs and calibration reports its adjusted value', t => {
+    const root = require('../branching-baseline.json');
+    assert.ok(Math.abs(baseline.decisionBaselineMs(baseline.defaults) - root.checkpointDecisionBaselineMs) < 0.001);
+    const target = root.checkpointDecisionBaselineMs * 2;
+    const scaled = baseline.withDecisionBaseline(target);
+    assert.ok(Math.abs(baseline.decisionBaselineMs(scaled) - target) < 0.001);
+    assert.equal(scaled.unitMs, baseline.defaults.unitMs);
+    for (const value of [NaN, Infinity, -1, 0, '125000', baseline.defaults.minSavingMs])
+        assert.throws(() => baseline.withDecisionBaseline(value), /decision baseline/);
+    const {store} = fixture(t);
+    const before = store.load();
+    const after = store.update(report(), {explicit:true, replace:true});
+    assert.equal(after.decisionBaselineMs, baseline.decisionBaselineMs(after.baseline));
+    assert.notEqual(after.decisionBaselineMs, before.decisionBaselineMs);
+    assert.equal(require('../branching-baseline.json').checkpointDecisionBaselineMs, root.checkpointDecisionBaselineMs);
+});

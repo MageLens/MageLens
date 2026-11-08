@@ -14,7 +14,9 @@ const leases=require('../../../branching/workflow-lease.cjs');
     if(arm==='linear')report=await native.run(path.join(suite,'playwright.config.cjs'),directory);
     else {
         const manifest=JSON.parse(fs.readFileSync(manifestFile));
-        const project=require('./config.cjs').project(manifest);const workflowLease=leases.acquire(process.cwd());
+        const project=require('./config.cjs').project(manifest);
+        if(process.env.MAGELENS_PERFORMANCE_FREEZE_BASELINE==='1')project.baseline={updateOnSuccess:false};
+        const workflowLease=leases.acquire(process.cwd());
         try {
             const store=require('../../../branching/baseline.cjs').openProject(process.cwd(),project.baseline);
             const used=store.load();project.costBaseline=used.baseline;

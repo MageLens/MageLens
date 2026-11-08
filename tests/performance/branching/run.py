@@ -170,6 +170,7 @@ class Campaign:
                    '--env', 'NODE_PATH=/workspace/node_modules', '--env', 'PLAYWRIGHT_VERSION=1.65.0', '--env', 'CHROME_VERSION=156.0.8078.80',
                    '--env', 'PLAYWRIGHT_BASE_URL=' + self.config['origin'], '--env', 'MAGELENS_HOST_UID=' + str(os.getuid()),
                    '--env', 'MAGELENS_HOST_GID=' + str(os.getgid()), '--env', 'MAGELENS_NATIVE_PROGRESS=1',
+                   '--env', 'MAGELENS_PERFORMANCE_FREEZE_BASELINE',
                    '--env', 'MAGELENS_PERF_FIRST=' + str(marker), '--env', 'MAGELENS_PERF_RUN=' + identity,
                    '--env', 'MAGELENS_PERF_STEPS=' + str(directory / 'steps'), '--env', 'MAGELENS_PERF_OUTPUT=' + str(directory / 'artifacts')]
             if arm == 'branching':

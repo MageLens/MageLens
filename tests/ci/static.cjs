@@ -12,6 +12,7 @@ for (const file of files) {
     let command;
     if (file.endsWith('.sh') || head.startsWith('#!/usr/bin/env bash')) command = ['bash', '-n'];
     else if (/\.(cjs|mjs|js)$/.test(file)) command = ['node', '--check'];
+    else if (file.endsWith('.py')) command = ['python3', '-c', 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())'];
     else if (/\.(php|phtml)$/.test(file) || file.endsWith('.php.sample')) command = ['php', '-l'];
     if (command) { execFileSync(command[0], [...command.slice(1), file], {stdio: 'pipe'}); count++; }
 }

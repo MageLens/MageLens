@@ -21,7 +21,6 @@ pub struct Input {
     pub parents: Vec<String>,
     #[serde(default = "checkpoint_limit")]
     pub max_checkpoints_per_test: usize,
-    #[serde(default)]
     pub baseline: Baseline,
 }
 #[derive(Serialize)]
@@ -661,12 +660,17 @@ mod tests {
         let mut invalid = input(vec![stage("one", None, 1000, true)], &["one"; 2]);
         invalid.max_checkpoints_per_test = 0;
         assert!(select(invalid).err().unwrap().contains("Checkpoint limit"));
-        let default: Input = serde_json::from_str(r#"{"stages":[],"parents":[]}"#).unwrap();
+        assert!(serde_json::from_str::<Input>(r#"{"stages":[],"parents":[]}"#).is_err());
+        let defaults = serde_json::to_string(&Baseline::default()).unwrap();
+        let default: Input = serde_json::from_str(&format!(
+            r#"{{"stages":[],"parents":[],"baseline":{defaults}}}"#
+        ))
+        .unwrap();
         assert_eq!(default.max_checkpoints_per_test, 9);
         for limit in ["null", "-1", "1.5", "\"4\""] {
             assert!(
                 serde_json::from_str::<Input>(&format!(
-                    r#"{{"stages":[],"parents":[],"maxCheckpointsPerTest":{limit}}}"#
+                    r#"{{"stages":[],"parents":[],"baseline":{defaults},"maxCheckpointsPerTest":{limit}}}"#
                 ))
                 .is_err()
             );

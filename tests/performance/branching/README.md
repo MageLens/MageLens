@@ -38,6 +38,43 @@ contain more than nine candidates along a path. The cap limits selected
 checkpoints, never the test actions or the number of tests. It is not a byte
 limit: snapshot size still depends on the application and database.
 
+## Required CI performance check
+
+The normal PR CI runs **all ten rows, with three alternating pairs per row** on
+`ubuntu-24.04`. Each job installs two isolated Mage-OS/Luma/Playwright environments,
+calibrates on that CI machine through `--calibrate`, then freezes the measured
+baseline for its timed pairs. Real checkout assertions, matching test inventories,
+source/seed/PHP/browser parity and complete cleanup are required. The positive
+workloads must actually create and restore checkpoints.
+
+[`references.json`](references.json) contains only reviewed GitHub Actions
+measurements. [`desktop-history.json`](desktop-history.json) preserves local
+research results for context; CI never uses those numbers as a reference.
+The first complete CI run produces reference candidates and fails with
+`baseline-required` until its measurements are reviewed. It does not silently
+accept the current implementation as its own performance reference.
+
+CI fails when median setup, test or total time increases by more than 10% and
+at least one second. Improvements of the same size or changed checkpoint counts
+raise a warning to review and rebuild the matrix. A changed host/workload profile
+requires a fresh reference. These thresholds are in [`ci-policy.json`](ci-policy.json);
+functional failures always fail regardless of timing. References never update
+automatically, and a regression cannot be averaged away.
+
+After reviewing all ten artifacts from one commit, run and attempt, prepare a
+replacement reference file from the downloaded artifacts:
+
+```bash
+node tests/performance/branching/ci-reference.cjs ARTIFACT_DIRECTORY COMMIT_SHA RUN_ID ATTEMPT .runtime/ci-reference.json
+```
+
+Review that file, replace `tests/performance/branching/references.json`, and rerun
+the complete CI matrix against the updated candidate. Missing rows, failed runs
+and mixed attempts cannot form a reference. Only bounded timing summaries and
+provenance are uploaded; databases, credentials and raw test artifacts stay on
+the disposable runner. This performance check supplements the release E2E and
+coverage-equivalence gate; it does not establish branching application coverage.
+
 ## Prepare two disposable installations
 
 Use two independently installed Docker projects with separate databases, Redis,
@@ -123,9 +160,10 @@ benefit; do not subtract checkpoint overhead from it.
 
 ## Project baseline and overhead history
 
-Fresh projects use the versioned defaults in
-[`baseline.json`](../../../branching/planner/src/baseline.json). Source-operation
-weights and milliseconds per point remain fixed. After a successful suite with
+Fresh projects use the root [checkpoint decision baseline](../../../branching-baseline.json).
+It represents the estimated break-even repeated work for two tests sharing one
+checkpoint. The internal operation proportions and source-work weights remain
+versioned; calibration replaces operation estimates with project measurements. After a successful suite with
 real checkpoints, zero fallbacks and verified cleanup, the orchestrator saves
 weighted averages of the measured checkpoint operations for subsequent runs.
 It adds no extra calibration work during ordinary tests and keeps the current
@@ -153,7 +191,8 @@ default warning threshold is an increase greater than 10% and at least 10 ms;
 compares against the old reference before establishing a new one. History remains
 available across recalibration and configuration changes.
 
-[`references.json`](references.json) retains the earlier benchmark measurements
-and configured defaults. Keep the workload and prefetch conditions in mind when
-comparing them: a warning is evidence to investigate, not proof of a code
-regression. These local measurements do not replace the release CI matrix.
+The displayed decision baseline includes backend setup/cleanup, the first reset,
+capture, one restore and release, with 2× overhead plus 20% headroom and a 50 ms
+minimum saving. Fanout and nested graphs use the complete operation model;
+the two-test value is a summary, not a universal per-test cutoff. Calibration
+changes the project measurements, not the tracked root default.
