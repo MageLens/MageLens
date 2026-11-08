@@ -330,7 +330,9 @@ function openProject(workspace, configuration = {}) {
         ),
         services,
         image: process.env.MAGELENS_BRANCHING_IMAGE,
+        runner: process.env.MAGELENS_RUNNER ?? 'playwright',
         playwright: process.env.PLAYWRIGHT_VERSION,
+        cypress: process.env.CYPRESS_VERSION,
         chrome: process.env.CHROME_VERSION,
         files: Object.fromEntries(
             files.map((file) => [

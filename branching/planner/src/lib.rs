@@ -13,6 +13,7 @@ use tree_sitter::{Node, Parser};
 mod assessment;
 pub mod baseline;
 pub mod cost;
+mod cypress;
 mod normalize;
 pub mod points;
 mod project;
@@ -143,7 +144,14 @@ pub fn minify(n: Node, source: &str) -> String {
     out.join(" ")
 }
 fn contains(n: Node, predicate: &impl Fn(Node) -> bool) -> bool {
-    predicate(n) || children(n).into_iter().any(|c| contains(c, predicate))
+    let mut pending = vec![n];
+    while let Some(node) = pending.pop() {
+        if predicate(node) {
+            return true;
+        }
+        pending.extend(children(node));
+    }
+    false
 }
 fn call(n: Node<'_>) -> Option<Node<'_>> {
     let n = if n.kind() == "expression_statement" {
@@ -157,6 +165,14 @@ fn function_name(n: Node, s: &str) -> String {
     field(n, "function")
         .map(|n| minify(n, s).replace(' ', ""))
         .unwrap_or_default()
+}
+fn collection_name(n: Node, s: &str, cypress: bool) -> String {
+    let name = function_name(n, s);
+    if cypress {
+        cypress::collection_name(&name)
+    } else {
+        name
+    }
 }
 fn has_host_callback(n: Node, s: &str) -> bool {
     if matches!(n.kind(), "arrow_function" | "function_expression") {
@@ -305,6 +321,10 @@ fn parse_file_with_aliases(
         ));
     }
     let mut aliases = extra_aliases;
+    let cypress = cypress::is_spec(file);
+    if cypress {
+        aliases.insert("it".into(), "cypress:it".into());
+    }
     let mut native_imports = true;
     for n in children(tree.root_node())
         .into_iter()
@@ -358,13 +378,17 @@ fn parse_file_with_aliases(
             source,
             aliases: &aliases,
             project,
+            cypress,
         },
         scope,
         &mut tests,
         &mut diagnostics,
     );
+    let runner = if cypress { "Cypress" } else { "Playwright" };
     if tests.is_empty() && diagnostics.is_empty() {
-        diagnostics.push(format!("{file}: no supported static test declarations; native Playwright collection is required"));
+        diagnostics.push(format!(
+            "{file}: no supported static test declarations; native {runner} collection is required"
+        ));
     }
     Ok((tests, diagnostics))
 }
@@ -374,6 +398,7 @@ struct CollectionContext<'a> {
     source: &'a str,
     aliases: &'a BTreeMap<String, String>,
     project: Option<&'a project::Project>,
+    cypress: bool,
 }
 fn walk_scope(
     n: Node,
@@ -387,6 +412,7 @@ fn walk_scope(
         source: s,
         aliases,
         project,
+        cypress,
     } = *context;
     let nodes = children(n);
     // Hooks and test.use apply to the entire lexical suite even if declared last.
@@ -395,7 +421,7 @@ fn walk_scope(
             continue;
         }
         if let Some(c) = call(node) {
-            let name = function_name(c, s);
+            let name = collection_name(c, s, cypress);
             let (base, method) = name.split_once('.').unwrap_or((&name, ""));
             if aliases.contains_key(base) {
                 if method == "beforeEach" {
@@ -421,14 +447,14 @@ fn walk_scope(
                 {
                     scope.identity.push(normalize::canonical(c, s));
                     scope.reasons.push(format!(
-                        "{method} requires native Playwright lifecycle handling"
+                        "{method} requires native runner lifecycle handling"
                     ));
                     continue;
                 }
                 if ["skip", "fixme", "fail", "slow"].contains(&method) && callback(c).is_none() {
                     scope.identity.push(normalize::canonical(c, s));
                     scope.reasons.push(format!(
-                        "test.{method} requires native Playwright lifecycle handling"
+                        "test.{method} requires native runner lifecycle handling"
                     ));
                     continue;
                 }
@@ -445,9 +471,10 @@ fn walk_scope(
             "Module/suite setup or dynamic registration requires an execution adapter".into(),
         );
     }
+    let runner = if cypress { "Cypress" } else { "Playwright" };
     for node in nodes {
         if tests.len() >= 10000 {
-            diagnostics.push(format!("{file}: static registration exceeds 10000 test limit; native Playwright collection is required"));
+            diagnostics.push(format!("{file}: static registration exceeds 10000 test limit; native {runner} collection is required"));
             break;
         }
         if matches!(
@@ -465,12 +492,13 @@ fn walk_scope(
             continue;
         }
         let direct = call(node).is_some_and(|c| {
-            let name = function_name(c, s);
+            let name = collection_name(c, s, cypress);
             aliases.contains_key(name.split('.').next().unwrap_or(&name))
         });
         if !direct
             && contains(node, &|n| {
-                n.kind() == "call_expression" && aliases.keys().any(|a| function_name(n, s) == *a)
+                n.kind() == "call_expression"
+                    && aliases.keys().any(|a| collection_name(n, s, cypress) == *a)
             })
         {
             if let Some(expanded) =
@@ -482,12 +510,12 @@ fn walk_scope(
                     walk_scope(body, context, child, tests, diagnostics);
                 }
             } else {
-                diagnostics.push(format!("{file}:{}: dynamic test registration is not expanded; native Playwright collection is required", node.start_position().row+1));
+                diagnostics.push(format!("{file}:{}: dynamic test registration is not expanded; native {runner} collection is required", node.start_position().row+1));
             }
             continue;
         }
         let Some(c) = call(node) else { continue };
-        let name = function_name(c, s);
+        let name = collection_name(c, s, cypress);
         let (base, method) = name.split_once('.').unwrap_or((&name, ""));
         let Some(fixture) = aliases.get(base) else {
             continue;
@@ -503,7 +531,7 @@ fn walk_scope(
                 continue;
             }
             diagnostics.push(format!(
-                "{file}:{}: callback reference or modifier requires native Playwright collection",
+                "{file}:{}: callback reference or modifier requires native {runner} collection",
                 c.start_position().row + 1
             ));
             continue;
@@ -523,7 +551,7 @@ fn walk_scope(
             });
         let Some(title) = title else {
             diagnostics.push(format!(
-                "{file}:{}: dynamic title requires native Playwright collection",
+                "{file}:{}: dynamic title requires native {runner} collection",
                 c.start_position().row + 1
             ));
             continue;
@@ -546,8 +574,11 @@ fn walk_scope(
         }
         let mut reasons = scope.reasons.clone();
         let parameters = params(cb, s);
-        if parameters != "( { page } )" {
+        if !cypress && parameters != "( { page } )" {
             reasons.push("Fixture parameters beyond { page } require an execution adapter".into());
+        }
+        if cypress && parameters != "( )" {
+            reasons.push("Cypress callback parameters require native lifecycle handling".into());
         }
         if body.kind() != "statement_block" {
             reasons.push("Expression test callback requires native execution".into());
@@ -583,12 +614,24 @@ fn walk_scope(
                 "test.{method} must be honored by native Playwright"
             ));
         }
-        if fixture != "@playwright/test:test" {
+        if !cypress && fixture != "@playwright/test:test" {
             reasons.push("Custom fixture lifecycle is not equivalent to a bare page".into());
         }
         let mut steps = scope.hooks.clone();
         let mut prefix_portable = true;
-        for statement in children(body) {
+        let statements = if body.kind() == "statement_block" {
+            children(body)
+        } else {
+            vec![body]
+        };
+        for statement in statements {
+            if cypress {
+                prefix_portable &= cypress::portable(statement, s);
+                let mut entry = step(statement, s, "statement", prefix_portable);
+                entry.asynchronous = contains(statement, &|n| n.kind() == "call_expression");
+                steps.push(entry);
+                continue;
+            }
             // Only standalone awaited statements can be replayed without losing
             // lexical bindings. Declarations, control flow, closures and returned
             // values need a project adapter to reconstruct their live state.
@@ -611,6 +654,12 @@ fn walk_scope(
                     && matches!(text(n, s), "Math" | "Date" | "crypto" | "performance")
             });
             steps.push(step(statement, s, "statement", prefix_portable));
+        }
+        if cypress && !prefix_portable {
+            reasons.push(
+                "Cypress lexical state, callbacks or unsupported commands require native execution"
+                    .into(),
+            );
         }
         reasons.sort();
         reasons.dedup();
@@ -708,6 +757,19 @@ fn scan(root: &Path, directory: &Path, out: &mut Vec<Source>) -> Result<()> {
 }
 
 pub fn plan(root: &Path) -> Result<Manifest> {
+    // Source helpers can nest many expression frames inside each bounded call.
+    // Give analysis a fixed stack independent of host/test-thread defaults.
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("source-analysis".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn_scoped(scope, || plan_project(root))
+            .map_err(|error| error.to_string())?
+            .join()
+            .map_err(|_| "Source analysis worker failed".to_string())?
+    })
+}
+fn plan_project(root: &Path) -> Result<Manifest> {
     let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("Source root must be a directory".into());
@@ -724,26 +786,27 @@ pub fn plan(root: &Path) -> Result<Manifest> {
         if src.path.split('/').any(|part| part == "node_modules") {
             continue;
         }
-        if [
-            ".spec.ts",
-            ".spec.js",
-            ".test.ts",
-            ".test.js",
-            ".spec.cjs",
-            ".test.cjs",
-            ".spec.mjs",
-            ".test.mjs",
-            ".spec.mts",
-            ".test.mts",
-            ".spec.cts",
-            ".test.cts",
-            ".spec.tsx",
-            ".test.tsx",
-            ".spec.jsx",
-            ".test.jsx",
-        ]
-        .iter()
-        .any(|s| src.path.ends_with(s))
+        if cypress::is_spec(&src.path)
+            || [
+                ".spec.ts",
+                ".spec.js",
+                ".test.ts",
+                ".test.js",
+                ".spec.cjs",
+                ".test.cjs",
+                ".spec.mjs",
+                ".test.mjs",
+                ".spec.mts",
+                ".test.mts",
+                ".spec.cts",
+                ".test.cts",
+                ".spec.tsx",
+                ".test.tsx",
+                ".spec.jsx",
+                ".test.jsx",
+            ]
+            .iter()
+            .any(|s| src.path.ends_with(s))
         {
             let source = fs::read_to_string(root.join(&src.path)).map_err(|e| e.to_string())?;
             if hash(&source) != src.sha256 {
@@ -760,7 +823,7 @@ pub fn plan(root: &Path) -> Result<Manifest> {
         }
     }
     if tests.is_empty() {
-        return Err("No statically declared Playwright tests found".into());
+        return Err("No statically declared Playwright or Cypress tests found".into());
     }
     // Module state can survive between tests. Propagate injected capabilities
     // to a fixed point so estimates do not depend on discovery/execution order.
@@ -776,7 +839,9 @@ pub fn plan(root: &Path) -> Result<Manifest> {
     }
     // Each entry is a prefix-trie node identified by its complete ancestry.
     for test in &mut tests {
-        if let Ok(recipe) = project.restoration(test) {
+        if !test.fixture.starts_with("cypress:")
+            && let Ok(recipe) = project.restoration(test)
+        {
             test.restoration = Some(recipe);
             test.disposition = "automatic".into();
             test.reasons.clear();

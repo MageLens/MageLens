@@ -35,6 +35,25 @@ test('compiled fragments preserve strict module semantics',async()=>{
     await assert.rejects(compileFragment([], 'unboundAutomaticTestVariable = 1;')(),ReferenceError);
 });
 
+test('Cypress fragments use their own queue with original UTF-8 source bytes', async t => {
+    const {root, manifest, configuration} = fixture(t);
+    const source = "// 🛒\ncy.visit('/cart');\ncy.visit('/one');\ncy.visit('/two');";
+    const file = path.join(root, 'flow.spec.ts'); fs.writeFileSync(file, source);
+    manifest.sources[0].sha256 = fileDigest(file);
+    for (const [index, item] of manifest.tests.entries()) {
+        item.fixture = 'cypress:it';
+        item.steps = ["cy.visit('/cart');", `cy.visit('/${index ? 'two' : 'one'}');`].map(code => {
+            const start = Buffer.byteLength(source.slice(0, source.indexOf(code)));
+            return {start, end: start + Buffer.byteLength(code), kind: 'statement', portable: true, actionUnits: 1};
+        });
+    }
+    const built = buildWorkflow(manifest, configuration), executed = [];
+    const runtime = {executeCypress: async code => executed.push(code)};
+    await built.workflow.stages.get('cp-cart').run(runtime);
+    await built.workflow.specs.get('test-two').run(runtime);
+    assert.deepEqual(executed, ["cy.visit('/cart');", "cy.visit('/two');"]);
+});
+
 test('automatic fragments preserve UTF-8, branch states and last-consumer cleanup',async t=>{
     const {root,manifest,configuration,Provider}=fixture(t);
     const built=buildWorkflow(manifest,configuration);
@@ -110,7 +129,7 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 test('Rust source estimates are authoritative and never call handwritten weight callbacks',t=>{
     const {manifest,configuration}=fixture(t);
     manifest.implementation='rust-prefix-v2';
-    manifest.assessment={version:'js-ts-points-v4',boundsVersion:1};
+    manifest.assessment={version:'js-ts-points-v5',boundsVersion:1};
     for(const entry of manifest.tests) {
         entry.fixtureEstimate={points:20,estimatedPoints:20,lowerBoundPoints:2,complete:false};
         for(const step of entry.steps) step.estimate={points:8,estimatedPoints:8,lowerBoundPoints:1,complete:false};

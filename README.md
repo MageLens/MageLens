@@ -44,8 +44,10 @@ Calibration measures your environment and adjusts future checkpoint decisions.
 Run `./bin/run-coverage --branching` to execute the suite and
 `./bin/branching-dashboard` to follow its progress. Project paths have defaults;
 use `--branching --help` for setup and overrides. Branching currently requires
-an isolated Linux test installation with Playwright and reflink storage;
-application coverage collection is not yet supported.
+an isolated Linux test installation with Cypress or Playwright and reflink
+storage; application coverage collection is not yet supported. Cypress checkpoints
+currently require independent command chains without support hooks, plugin state,
+aliases or module state. Unsupported tests retain their native lifecycle.
 
 <!-- coverage-badges:start -->
 Run `./bin/run-coverage` to generate coverage reports and badges for your project.

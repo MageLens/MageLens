@@ -10,7 +10,7 @@ function partition(manifest, inventory, project) {
     const setup = inventory.tests.filter(t => dependencyProjects.has(t.project));
     const main = inventory.tests.filter(t => !dependencyProjects.has(t.project));
     const occurrences = new Map();
-    const key = test => `${path.resolve(test.file)}:${test.line}:${test.title}`;
+    const key = test => `${path.resolve(test.file)}:${test.framework === 'cypress' || test.fixture?.startsWith('cypress:') ? 'cypress' : test.line}:${test.title}`;
     for (const test of main) occurrences.set(key(test), (occurrences.get(key(test)) ?? 0) + 1);
     const staticTests = new Map(manifest.tests.map(test => [key({...test, file: path.join(manifest.root, test.file)}), test]));
     const checkpoint = [], native = [];
@@ -47,11 +47,12 @@ async function runSuite(options) {
     const setupProjects = [...new Set(groups.setup.map(t => t.project))];
     const simpleDependencies = setupProjects.length === 1 && inventory.config.projects.every(p =>
         p.name === setupProjects[0] ? !p.dependencies?.length : p.dependencies?.length === 1 && p.dependencies[0] === setupProjects[0]);
+    const independent = inventory.config.checkpointLifecycle === 'independent-cypress';
     // Project teardown dependencies need one untouched native invocation.
-    if (project.native.splitSafe !== true || !simpleDependencies || inventory.config.globalTeardown || inventory.config.webServer ||
+    if (project.native.splitSafe !== true || (!simpleDependencies && !independent) || inventory.config.globalTeardown || inventory.config.webServer ||
         inventory.config.projects.some(p => p.teardown)) checkpoint = [];
     if (checkpoint.length) {
-        built = buildWorkflow(manifest, project, checkpoint.map(t => t.staticId));
+        built = buildWorkflow(manifest, independent ? {...project, runnerOptions: {...project.runnerOptions, nativeConfig: project.native.config}} : project, checkpoint.map(t => t.staticId));
         ({plan, decision} = costs.planWorkflow(built.workflow));
         const chosen = new Set(decision.selected);
         const byStaticId = new Map(checkpoint.map(test => [test.staticId, test]));
@@ -71,8 +72,8 @@ async function runSuite(options) {
         report.selectionReason = decision ? 'Static cost model selected native execution for the complete suite.' : 'No qualified split; execute the complete native suite.';
         await native();
     } else {
-        if (!groups.setup.length) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');
-        const setup = await native(groups.setup, {teardown: false});
+        if (!groups.setup.length && !independent) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');
+        const setup = groups.setup.length ? await native(groups.setup, {teardown: false}) : {exitCode: 0, status: 'passed', results: []};
         if (setup.exitCode === 0 && setup.status === 'passed' && setup.results.every(r => r.status === 'passed')) {
             verifySources(manifest);
             const result = await runCheckpoint({...built, specs: checkpoint.map(t => t.staticId), plan}, decision);

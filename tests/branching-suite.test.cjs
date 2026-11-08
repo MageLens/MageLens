@@ -87,6 +87,25 @@ test('a fully checkpoint-eligible suite needs no artificial native remainder', a
     assert.equal(report.status,'passed');assert.equal(f.calls.length,2);
     assert.equal(report.results.length,3);assert.equal(report.checkpoints,1);
 });
+test('independent Cypress tests match native titles without a synthetic setup project', async t => {
+    const f = fixture(t), file = path.join(f.root, 'flow.spec.ts');
+    fs.writeFileSync(file, 'cy.visit("/");');
+    f.manifest.sources[0].sha256 = fileDigest(file);
+    for (const item of f.manifest.tests) {
+        item.fixture = 'cypress:it'; item.steps[0].end = Buffer.byteLength('cy.visit("/");');
+    }
+    f.inventory.config = {projects: [{name: 'cypress'}], checkpointLifecycle: 'independent-cypress'};
+    f.inventory.tests = f.inventory.tests.slice(1, 3).map(item => ({...item, project: 'cypress', framework: 'cypress', line: 0}));
+    const checkpoint = f.runCheckpoint;
+    f.runCheckpoint = async options => {
+        assert.equal(options.runnerOptions.nativeConfig, f.project.native.config);
+        return checkpoint(options);
+    };
+    const report = await runSuite({...f, directory: f.root});
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(f.calls, [{checkpoint: ['first', 'second']}]);
+    assert.equal(report.results.length, 2);
+});
 test('ambiguous static matches across browser projects and skipped tests stay native',t=>{
     const f=fixture(t); f.inventory.tests.push({...f.inventory.tests[1],id:'other-browser',project:'other'});
     f.inventory.tests[2].expectedStatus='skipped';

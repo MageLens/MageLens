@@ -241,6 +241,16 @@ image=$(./bin/branching-image playwright)
 bash tests/branching-dashboard.sh "$image"
 ```
 
+For Cypress checkpoint storage, native discovery, selection and lifecycle checks:
+
+```bash
+image=$(./bin/branching-image cypress)
+bash tests/ci/cypress-image.sh "$image"
+```
+
+This focused check uses the pinned Cypress build and Chrome for Testing in an
+offline container. The required branching CI job runs both runner checks.
+
 The wrapper builds a separate instrumented Rust image with Rust 1.91.0 and its
 LLVM coverage tools. Rust and Playwright run in separate offline containers with
 bounded memory, read-only source mounts and a shared private artifact directory.

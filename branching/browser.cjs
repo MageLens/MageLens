@@ -18,6 +18,8 @@ class PlaywrightState {
         if (this.errors.length) throw new Error(`Application browser error: ${this.errors[0]}`);
         if (this.context.pages().length !== 1) throw new Error('branching supports exactly one open page at a checkpoint');
     }
+    get active() { return Boolean(this.context); }
+    async closePages() { for (const page of this.context?.pages() ?? []) await page.close(); }
     async track(page) {
         page.on('pageerror', error => this.errors.push(error.message));
         page.on('crash', () => this.errors.push('Page crashed'));

@@ -62,11 +62,42 @@ pub(super) fn request_cost(args: &[Value]) -> Estimate {
 impl Project {
     pub(super) fn property(&self, value: Value, key: &str, ctx: &mut Context) -> Eval {
         match value {
+            Value::Nullable(value) => {
+                let mut result = self.property(*value, key, ctx);
+                result.cost = result
+                    .cost
+                    .optional("A property read on a nullish receiver throws on this path");
+                result
+            }
             Value::DataLibrary(file) => Eval::value(Value::DataLibrary(file)),
             Value::MissingDependency(module) => Eval::value(Value::MissingDependency(module)),
             Value::Object(v) => Eval::value(v.get(key).cloned().unwrap_or(Value::Undefined)),
             Value::Sequence(_) if key == "length" => Eval::value(Value::Data),
+            Value::Dom => Eval::value(match key {
+                "head" | "body" | "ownerDocument" | "document" | "defaultView" => Value::Dom,
+                "Event" | "CustomEvent" | "MouseEvent" | "KeyboardEvent" => {
+                    Value::Builtin("Event".into())
+                }
+                "jQuery" | "$" => Value::Builtin("DOM.query".into()),
+                _ => Value::Data,
+            }),
+            Value::Chai => Eval::value(Value::Chai),
             Value::Class(class) => {
+                if let Some(method) = self.class_static_method(&class, key, 0) {
+                    let node = self.node(&method).unwrap();
+                    if (0..node.child_count())
+                        .any(|i| node.child(i).is_some_and(|n| n.kind() == "get"))
+                    {
+                        return self.invoke(
+                            &method,
+                            &Env::new(),
+                            vec![],
+                            Some(Value::Class(class)),
+                            ctx,
+                        );
+                    }
+                    return Eval::value(Value::Function(method, Box::new(Env::new())));
+                }
                 if let Some(body) = self.node(&class).and_then(|n| field(n, "body")) {
                     let source = &self.modules[&class.file].source;
                     if let Some(member) = children(body).into_iter().find(|n| {
@@ -75,11 +106,10 @@ impl Project {
                             && text(*n, source).split_whitespace().any(|v| v == "static")
                     }) && let Some(value) = field(member, "value")
                     {
-                        let value = self
-                            .eval(&class.file, value, &mut Env::new(), ctx)
-                            .value
-                            .widen();
-                        return Eval::value(value);
+                        let value = self.eval(&class.file, value, &mut Env::new(), ctx).value;
+                        // Registration sees initial declarations. During test
+                        // execution a static field may have been mutated.
+                        return Eval::value(if ctx.collecting { value } else { value.widen() });
                     }
                 }
                 Eval::value(Value::Unknown)
@@ -146,6 +176,52 @@ impl Project {
         ctx: &mut Context,
     ) -> Option<Eval> {
         let value = match target {
+            "Buffer.from" | "Buffer.alloc" | "Buffer.allocUnsafe" | "Buffer.concat" => {
+                Value::Builtin("Buffer.instance".into())
+            }
+            "Buffer.instance.toString" => Value::Text,
+            "child_process.exec"
+            | "child_process.execFile"
+            | "child_process.execSync"
+            | "child_process.execFileSync"
+            | "child_process.spawn"
+            | "child_process.spawnSync" => {
+                let mut cost = Estimate::operation("external-process", points::REQUEST)
+                    .uncertain("External process duration requires runtime measurement; source analysis counts the invocation only");
+                if let Some(Value::Function(reference, closure)) = args.last() {
+                    cost.add(
+                        self.invoke(
+                            reference,
+                            closure,
+                            vec![Value::Data, Value::Text, Value::Text],
+                            None,
+                            ctx,
+                        )
+                        .cost,
+                    );
+                }
+                return Some(Eval {
+                    value: Value::Data,
+                    cost,
+                    ..Eval::default()
+                });
+            }
+            // Hashing APIs perform local computation and cannot enqueue browser
+            // or server operations. Unknown library APIs still require analysis.
+            "jsrsasign.KJUR.crypto.MessageDigest" | "crypto.createHash" | "crypto.createHmac" => {
+                Value::Builtin("Digest".into())
+            }
+            "Digest.update" => Value::Builtin("Digest".into()),
+            "Digest.updateString" | "Digest.updateHex" => Value::Undefined,
+            "Digest.digest" | "crypto-js.SHA256" | "crypto-js.SHA512" | "crypto-js.SHA1"
+            | "crypto-js.MD5" => Value::Text,
+            "structuredClone" | "Cypress._.cloneDeep" | "Cypress._.clone" => {
+                args.first().cloned().unwrap_or(Value::Undefined)
+            }
+            "encodeURIComponent" | "decodeURIComponent" | "encodeURI" | "decodeURI" | "btoa"
+            | "atob" | "escape" | "unescape" | "Cypress._.uniqueId" => Value::Text,
+            "Event" => Value::Data,
+            "DOM.query" => Value::Dom,
             "fetch" => {
                 return Some(Eval {
                     cost: request_cost(args),
@@ -162,7 +238,9 @@ impl Project {
                     _ => Value::Text,
                 })
                 .unwrap_or(Value::String(String::new())),
-            "parseInt" | "parseFloat" | "Date.now" => Value::Data,
+            "parseInt" | "parseFloat" | "Number.parseInt" | "Number.parseFloat" | "Date.now" => {
+                Value::Data
+            }
             "Number" => args
                 .first()
                 .map(|v| match v {
@@ -332,6 +410,8 @@ impl Project {
             | "Date.instance.toUTCString"
             | "Date.instance.toDateString" => Value::Text,
             "RegExp" => Value::Builtin("RegExp.instance".into()),
+            "RegExp.instance.test" => Value::Data,
+            "RegExp.instance.exec" => Value::Sequence(Box::new(Value::Text)),
             "URL" => Value::Builtin("URL.instance".into()),
             "URL.instance.toString" | "URL.instance.toJSON" => Value::Text,
             "Error" | "TypeError" => Value::Object(Env::from([("message".into(), Value::Text)])),
@@ -353,7 +433,7 @@ impl Project {
                     "mkdirSync" | "mkdir" | "writeFileSync" | "writeFile" | "unlinkSync"
                     | "rmSync" | "appendFileSync" => Value::Undefined,
                     "readdirSync" | "readdir" => Value::Sequence(Box::new(Value::Text)),
-                    "statSync" | "stat" => Value::Data,
+                    "statSync" | "stat" | "openSync" | "readSync" | "closeSync" => Value::Data,
                     _ => return None,
                 };
                 return Some(Eval {
@@ -380,6 +460,35 @@ impl Project {
         ctx: &mut Context,
     ) -> Option<Eval> {
         match receiver {
+            Value::Nullable(value) => {
+                let mut result = self.value_call(value, method, args, ctx)?;
+                result.cost = result
+                    .cost
+                    .uncertain("A method call on a nullish receiver throws on this path");
+                return Some(result);
+            }
+            Value::CypressChain(subject) => {
+                return Some(self.cypress_chain_call(subject, method, args, ctx));
+            }
+            Value::Dom => return self.dom_call(method, args, ctx),
+            Value::Chai => return self.chai_call(method),
+            Value::Function(reference, closure) if matches!(method, "call" | "apply") => {
+                let this = args.first().cloned();
+                let forwarded = if method == "call" {
+                    args.get(1..).unwrap_or_default().to_vec()
+                } else {
+                    match args.get(1) {
+                        Some(Value::Array(values)) => values.clone(),
+                        None | Some(Value::Undefined | Value::Null) => vec![],
+                        _ => {
+                            return Some(Eval::cost(Estimate::unknown(
+                                "Function.apply arguments have runtime length",
+                            )));
+                        }
+                    }
+                };
+                return Some(self.invoke(reference, closure, forwarded, this, ctx));
+            }
             Value::DataLibrary(file) => {
                 if self
                     .dependency_closure(file)
@@ -483,6 +592,9 @@ impl Project {
                 });
             }
             Value::Builtin(target) => {
+                if target == "cy" || target == "Cypress" {
+                    return Some(self.cypress_call(target, method, args, ctx));
+                }
                 return self.platform_call(&format!("{target}.{method}"), args, ctx);
             }
             Value::TestApi => {
@@ -585,11 +697,29 @@ impl Project {
                         }
                         Value::Undefined
                     }
+                    "delete" => {
+                        if let (Some(items), Some(arg)) = (items, args.first()) {
+                            items.retain(|item| item != arg);
+                        }
+                        Value::Data
+                    }
+                    "clear" => {
+                        *items = Some(vec![]);
+                        Value::Undefined
+                    }
                     _ => return None,
                 };
                 return Some(Eval::value(value));
             }
             _ => {}
+        }
+        if matches!(method, "toString" | "toFixed" | "toLocaleString")
+            && matches!(
+                receiver,
+                Value::Number(_) | Value::Bool(_) | Value::String(_) | Value::Text | Value::Data
+            )
+        {
+            return Some(Eval::value(Value::Text));
         }
         if matches!(receiver, Value::String(_) | Value::Text | Value::Data) {
             let first = args.first();
@@ -624,6 +754,7 @@ impl Project {
                 "split" => Value::Sequence(Box::new(Value::Text)),
                 "match" => Value::Sequence(Box::new(Value::Text)),
                 "indexOf" | "lastIndexOf" | "charCodeAt" => Value::Data,
+                "charAt" => Value::Text,
                 _ => Value::Unknown,
             };
             if !matches!(value, Value::Unknown) {
@@ -631,6 +762,34 @@ impl Project {
             }
         }
         if matches!(receiver, Value::Array(_) | Value::Sequence(_) | Value::Data) {
+            if method == "concat" {
+                let mut items = vec![];
+                let mut exact = true;
+                for value in std::iter::once(&*receiver).chain(args) {
+                    match value {
+                        Value::Array(values) => items.extend(values.clone()),
+                        Value::Sequence(value) => {
+                            exact = false;
+                            items.push(*value.clone());
+                        }
+                        Value::Data | Value::Unknown => {
+                            exact = false;
+                            items.push(value.clone());
+                        }
+                        value => items.push(value.clone()),
+                    }
+                }
+                return Some(Eval::value(if exact {
+                    Value::Array(items)
+                } else {
+                    Value::Sequence(Box::new(
+                        items.into_iter().reduce(Value::join).unwrap_or(Value::Data),
+                    ))
+                }));
+            }
+            if matches!(method, "indexOf" | "lastIndexOf" | "includes") {
+                return Some(Eval::value(Value::Data));
+            }
             if method == "flat" {
                 let depth = match args.first() {
                     None => 1,
@@ -691,9 +850,10 @@ impl Project {
                 method,
                 "map" | "forEach" | "filter" | "find" | "some" | "every" | "reduce"
             ) {
-                let Some(Value::Function(r, closure)) = args.first() else {
+                let callback = args.first()?;
+                if !matches!(callback, Value::Function(..) | Value::Builtin(_)) {
                     return None;
-                };
+                }
                 let bounded = matches!(receiver,Value::Array(v) if v.len()<=points::LOOP_LIMIT);
                 let items = match receiver {
                     Value::Array(items) if bounded => items.clone(),
@@ -716,11 +876,22 @@ impl Project {
                             accumulator.clone().unwrap_or(Value::Data),
                             item.clone(),
                             Value::Number(i as i64),
+                            receiver.clone(),
                         ]
                     } else {
-                        vec![item.clone(), Value::Number(i as i64)]
+                        vec![item.clone(), Value::Number(i as i64), receiver.clone()]
                     };
-                    let result = self.invoke(r, closure, arguments, None, ctx);
+                    let result = match callback {
+                        Value::Function(r, closure) => self.invoke(
+                            r,
+                            closure,
+                            arguments,
+                            args.get(1).cloned().filter(|_| method != "reduce"),
+                            ctx,
+                        ),
+                        Value::Builtin(name) => self.platform_call(name, &arguments, ctx)?,
+                        _ => unreachable!(),
+                    };
                     cost.add(if optional {
                         result
                             .cost
@@ -759,7 +930,8 @@ impl Project {
                     "map" => Value::Sequence(Box::new(Value::Data)),
                     _ => Value::Data,
                 };
-                if self.node(r).is_some_and(function_async) {
+                if matches!(callback, Value::Function(r, _) if self.node(r).is_some_and(function_async))
+                {
                     cost = cost.optional("Async array callbacks may overlap");
                 }
                 return Some(Eval {
@@ -848,16 +1020,27 @@ impl Project {
     pub(super) fn class_base(&self, class: &Reference) -> Option<Reference> {
         let n = self.node(class)?;
         let s = &self.modules[&class.file].source;
-        let base = children(n)
+        let heritage = children(n)
             .into_iter()
-            .find(|n| n.kind() == "class_heritage")
-            .and_then(|n| {
-                children(n)
-                    .into_iter()
-                    .find(|n| n.kind() == "extends_clause")
-            })
-            .and_then(|n| field(n, "value"))?;
+            .find(|n| n.kind() == "class_heritage")?;
+        let base = children(heritage).into_iter().find_map(|node| {
+            if node.kind() == "extends_clause" {
+                field(node, "value")
+            } else if node.kind() == "identifier" {
+                Some(node)
+            } else {
+                None
+            }
+        })?;
         self.symbol(&class.file, text(base, s), 0)
+    }
+    pub(super) fn class_static_method(
+        &self,
+        class: &Reference,
+        name: &str,
+        depth: usize,
+    ) -> Option<Reference> {
+        self.class_member(class, name, depth, true)
     }
     pub(super) fn class_method(
         &self,
@@ -865,18 +1048,30 @@ impl Project {
         name: &str,
         depth: usize,
     ) -> Option<Reference> {
+        self.class_member(class, name, depth, false)
+    }
+    fn class_member(
+        &self,
+        class: &Reference,
+        name: &str,
+        depth: usize,
+        is_static: bool,
+    ) -> Option<Reference> {
         if depth > points::CALL_LIMIT {
             return None;
         }
         let body = self.node(class).and_then(|n| field(n, "body"))?;
         let s = &self.modules[&class.file].source;
         if let Some(n) = children(body).into_iter().find(|n| {
-            n.kind() == "method_definition" && field(*n, "name").is_some_and(|n| text(n, s) == name)
+            n.kind() == "method_definition"
+                && field(*n, "name").is_some_and(|n| text(n, s) == name)
+                && (0..n.child_count()).any(|i| n.child(i).is_some_and(|n| n.kind() == "static"))
+                    == is_static
         }) {
             return Some(self.reference(&class.file, n));
         }
         self.class_base(class)
-            .and_then(|base| self.class_method(&base, name, depth + 1))
+            .and_then(|base| self.class_member(&base, name, depth + 1, is_static))
     }
     pub(super) fn initialize_fields(
         &self,

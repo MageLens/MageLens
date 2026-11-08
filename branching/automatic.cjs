@@ -24,7 +24,7 @@ function compileFragment(parameters, code) {
 
 function verifySources(manifest) {
     if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported automatic manifest');
-    if (manifest.implementation === 'rust-prefix-v2' && (manifest.assessment?.boundsVersion !== 1 || manifest.assessment?.version !== 'js-ts-points-v4')) throw new Error('Outdated source cost model; replan before execution');
+    if (manifest.implementation === 'rust-prefix-v2' && (manifest.assessment?.boundsVersion !== 1 || manifest.assessment?.version !== 'js-ts-points-v5')) throw new Error('Outdated source cost model; replan before execution');
     if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
         throw new Error('Outdated source point scale; replan before execution');
     const root = fs.realpathSync(manifest.root);
@@ -59,6 +59,7 @@ function buildWorkflow(manifest, configuration, selected) {
     const fixtureState = !adapter && [...selection].some(id=>byId.get(id).restoration)
         ? new (require('./runners/playwright/fixture-state.cjs').FixtureState)(manifest, configuration) : undefined;
     const source = new Map(), compiled = new Map();
+    const cypress = test => test.fixture?.startsWith('cypress:');
     const execute = (test, from, to, runtime, terminal = false) => {
         if (adapter) return adapter.execute(test, from, to, runtime);
         if (test.restoration) {
@@ -67,6 +68,11 @@ function buildWorkflow(manifest, configuration, selected) {
             return fixtureState.run(test,runtime);
         }
         const key = `${test.id}:${from}:${to}`;
+        if (cypress(test)) {
+            if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
+            const original = source.get(test.file);
+            return runtime.executeCypress(test.steps.slice(from, to).map(s => original.subarray(s.start, s.end).toString('utf8')).join('\n'));
+        }
         if (!compiled.has(key)) {
             if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
             // Rust offsets are UTF-8 byte offsets, not JavaScript string indexes.
@@ -123,7 +129,7 @@ function buildWorkflow(manifest, configuration, selected) {
         const original = fs.readFileSync(path.join(manifest.root, test.file));
         for (let i=1;i<cuts.length;i++) {
             const code = test.steps.slice(cuts[i-1], cuts[i]).map(s=>original.subarray(s.start,s.end).toString('utf8')).join('\n');
-            compiled.set(`${test.id}:${cuts[i-1]}:${cuts[i]}`, compileFragment(['page','expect'],code));
+            compiled.set(`${test.id}:${cuts[i-1]}:${cuts[i]}`, compileFragment(cypress(test) ? ['cy','Cypress','expect'] : ['page','expect'],code));
         }
     }
     return {

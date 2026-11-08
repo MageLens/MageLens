@@ -30,7 +30,15 @@ fn registration_exit(n: Node) -> bool {
 }
 impl Project {
     pub(crate) fn collection_declaration(&self, file: &str, node: Node, bindings: &mut Bindings) {
-        self.eval(file, node, &mut bindings.0, &mut Context::default());
+        self.eval(
+            file,
+            node,
+            &mut bindings.0,
+            &mut Context {
+                collecting: true,
+                ..Context::default()
+            },
+        );
     }
     pub(crate) fn collection_title(
         &self,
@@ -39,7 +47,15 @@ impl Project {
         bindings: &Bindings,
     ) -> Option<String> {
         match self
-            .eval(file, node, &mut bindings.0.clone(), &mut Context::default())
+            .eval(
+                file,
+                node,
+                &mut bindings.0.clone(),
+                &mut Context {
+                    collecting: true,
+                    ..Context::default()
+                },
+            )
             .value
         {
             Value::String(value) => Some(value),
@@ -54,7 +70,10 @@ impl Project {
     ) -> Option<Vec<(Node<'a>, Bindings)>> {
         let source = &self.modules[file].source;
         let mut env = bindings.0.clone();
-        let mut ctx = Context::default();
+        let mut ctx = Context {
+            collecting: true,
+            ..Context::default()
+        };
         if node.kind() == "for_in_statement"
             && field(node, "operator").is_some_and(|n| text(n, source) == "of")
         {

@@ -173,8 +173,8 @@ test('direct entry requires opt-in; help and unsupported adapter do not start co
     const help = run(['bin/run-coverage', '--branching', '--help']);
     assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /coverage collection is not supported yet/);
     assert.doesNotMatch(help.stdout, /--disposable/);
-    const unsupported = run(['bin/run-coverage', '--branching', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'cypress'});
-    assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /not implemented yet/);
+    const unsupported = run(['bin/run-coverage', '--branching', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'unknown'});
+    assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /Unknown branching runner/);
 });
 test('legacy explicit acknowledgment still reaches both branching workers', t => {
     const {run} = launchFixture(t);
@@ -207,10 +207,12 @@ test('stale automatic manifests stop before worker launch and remove the Rust co
     assert.doesNotMatch(result.calls, /"--entrypoint","node"/);
     assert.match(result.calls, /\["rm","--force","a{64}"\]/);
 });
-test('adapter registry is lazy and leaves Cypress linear-only until implemented', () => {
+test('adapter registry loads either runner without requiring the other browser package', () => {
     assert.equal(descriptor('playwright').image, 'branching-playwright');
     assert.equal(typeof loadRunner('playwright').open, 'function');
-    assert.throws(() => loadRunner('cypress'), /normal linear run without --branching/);
+    assert.equal(descriptor('cypress').image, 'branching-cypress');
+    assert.equal(typeof loadRunner('cypress').open, 'function');
+    assert.equal(typeof loadRunner('cypress').native.collect, 'function');
     assert.throws(() => loadRunner('unknown'), /Unknown branching runner/);
 });
 test('planner requires a valid container and transports stdin and arguments without a shell', t => {
@@ -232,7 +234,11 @@ test('image inputs separate Rust from browser dependencies and track their own s
     for (const file of new Set(files)) {
         if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'bin/sync-dependencies.cjs', 'bin/sync-runner-dependencies', 'dependencies.yaml', '.dockerignore', 'package.json'].includes(file))) copy(directory, file);
     }
-    const before = {core: describe(directory, 'orchestrator').fingerprint, browser: describe(directory, 'playwright').fingerprint};
+    const before = {core: describe(directory, 'orchestrator').fingerprint, browser: describe(directory, 'playwright').fingerprint, cypress: describe(directory, 'cypress').fingerprint};
+    fs.appendFileSync(path.join(directory, 'branching/runners/cypress/Dockerfile'), '\n');
+    assert.notEqual(describe(directory, 'cypress').fingerprint, before.cypress);
+    assert.equal(describe(directory, 'playwright').fingerprint, before.browser);
+    assert.equal(describe(directory, 'orchestrator').fingerprint, before.core);
     fs.appendFileSync(path.join(directory, 'branching/runners/playwright/Dockerfile'), '\n');
     assert.equal(describe(directory, 'orchestrator').fingerprint, before.core);
     const changedBrowser = describe(directory, 'playwright').fingerprint;
@@ -255,8 +261,8 @@ function imageFixture(t, kind = 'orchestrator') {
 const fs = require('node:fs'), args = process.argv.slice(2), fingerprint = 'c'.repeat(64);
 fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify(args) + '\\n');
 if (args[0] === 'info') console.log('linux/x86_64');
-if (args.includes('describe')) console.log(fingerprint + (args.at(-1) === 'playwright'
-    ? '\\tbranching-playwright\\tbranching/runners/playwright' : '\\torchestrator\\tbranching/planner'));
+if (args.includes('describe')) console.log(fingerprint + (['playwright', 'cypress'].includes(args.at(-1))
+    ? '\\tbranching-' + args.at(-1) + '\\tbranching/runners/' + args.at(-1) : '\\torchestrator\\tbranching/planner'));
 if (args.includes('base')) process.exit(99);
 if (args[0] === 'image' && args[1] === 'inspect') {
     if (!args.includes('--format')) process.exit(process.env.TEST_CACHE === '1' ? 0 : 1);
@@ -291,19 +297,21 @@ test('default images use cache or pull; missing images never silently build on t
     assert.equal(developer.status, 0, developer.stderr); assert.match(developer.calls, /"build"/); assert.doesNotMatch(developer.calls, /"pull"/);
 });
 test('explicit browser builds compile the product runner without release lookup and clean their context', t => {
-    const run = imageFixture(t, 'playwright');
+    for (const runner of ['playwright', 'cypress']) {
+    const run = imageFixture(t, runner);
     const result = run(['--build-from-source']);
     assert.equal(result.status, 0, result.stderr);
     const calls = result.calls.trim().split('\n').map(JSON.parse);
     const builds = calls.filter(args => args[0] === 'build');
     assert.equal(builds.length, 2);
-    assert.ok(builds[0].includes('playwright'));
+    assert.ok(builds[0].includes(runner));
     assert.ok(builds[0].some(arg => arg.endsWith('/docker/runner/Dockerfile')));
     assert.ok(calls.some(args => args.includes('bin/sync-dependencies.cjs') && args.includes('MAGELENS_RUNNER')));
-    assert.ok(builds[1].includes('RUNNER_IMAGE=magelens-branching-playwright-base:inputs-' + 'c'.repeat(64) + '-amd64'));
-    assert.match(result.stdout, /^magelens-branching-playwright:inputs-c{64}-amd64\n$/);
+    assert.ok(builds[1].includes('RUNNER_IMAGE=magelens-branching-' + runner + '-base:inputs-' + 'c'.repeat(64) + '-amd64'));
+    assert.equal(result.stdout, 'magelens-branching-' + runner + ':inputs-' + 'c'.repeat(64) + '-amd64\n');
     assert.ok(!calls.some(args => args.includes('base')));
     const failed = run(['--build-from-source'], {TEST_BASE_BUILD_FAIL: '1'});
     assert.equal(failed.status, 29, failed.stderr);
     assert.equal(failed.calls.trim().split('\n').map(JSON.parse).filter(args => args[0] === 'build').length, 1);
+    }
 });

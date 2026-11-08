@@ -21,6 +21,7 @@ on:
       - 'package.json'
       - 'tests/ci/*-image.sh'
       - 'tests/branching-plan-smoke.cjs'
+      - 'tests/branching-cypress-browser.cjs'
       - 'tests/fixtures/branching-source/**'
       - '.github/workflows/orchestrator-image.yml'
   workflow_dispatch:
@@ -37,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind: [orchestrator, playwright]
+        kind: [orchestrator, playwright, cypress]
     permissions:
       contents: read
       packages: write

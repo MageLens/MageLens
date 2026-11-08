@@ -134,7 +134,7 @@ impl Target {
 fn framework(module: &str) -> bool {
     matches!(
         module,
-        "@playwright/test" | "playwright" | "playwright-core"
+        "@playwright/test" | "playwright" | "playwright-core" | "cypress"
     )
 }
 fn source_path(root: &Path, path: &str) -> Result<Option<PathBuf>> {
@@ -291,8 +291,8 @@ fn resolve_disk(
     }
     let from_dir = Path::new(from).parent().unwrap_or(Path::new(""));
     if module.starts_with('.') {
-        let candidate =
-            Project::clean(from_dir.join(module)).ok_or("Dependency escapes source root")?;
+        let candidate = Project::clean(from_dir.join(module))
+            .ok_or_else(|| format!("Dependency escapes source root: {from} imports {module}"))?;
         return file(root, &candidate);
     }
     let components: Vec<_> = module.split('/').collect();
@@ -339,8 +339,11 @@ fn resolve_disk(
             return if let Some(target) = target {
                 let normalized = Project::clean(Path::new(&package_dir).join(&target))
                     .ok_or("Invalid package export target")?;
-                if !normalized.starts_with(&format!("{package_dir}/")) {
-                    return Err("Package export escapes its package".into());
+                if normalized != package_dir && !normalized.starts_with(&format!("{package_dir}/"))
+                {
+                    return Err(format!(
+                        "Package export escapes its package: {module} in {from} resolves to {target}"
+                    ));
                 }
                 file(root, &normalized)
             } else {

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-pub const VERSION: &str = "js-ts-points-v4";
+pub const VERSION: &str = "js-ts-points-v5";
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Approximation {
@@ -42,7 +42,7 @@ pub const LOCAL_IO: u64 = 1;
 pub const UNKNOWN: u64 = 1;
 pub const LOOP_LIMIT: usize = 1000;
 pub const NODE_LIMIT: usize = 100000;
-pub const CALL_LIMIT: usize = 32;
+pub const CALL_LIMIT: usize = 64;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Issue {

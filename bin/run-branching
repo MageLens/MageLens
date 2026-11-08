@@ -15,7 +15,7 @@ if [[ "${1:-}" == --help ]]; then
     exit 0
 fi
 (( disposable )) || fail 'Use ./bin/run-coverage --branching.'
-[[ "$MAGELENS_RUNNER" == playwright ]] || fail "Branching for $MAGELENS_RUNNER is not implemented yet. Use the normal linear run without --branching."
+[[ "$MAGELENS_RUNNER" == playwright || "$MAGELENS_RUNNER" == cypress ]] || fail "Unknown branching runner: $MAGELENS_RUNNER"
 calibrate=0
 if [[ "${1:-}" == --calibrate ]]; then calibrate=1; shift; fi
 [[ "${1:-}" != --auto ]] || shift
@@ -65,6 +65,7 @@ docker run --rm --init --memory 2g --memory-swap 2g --shm-size 512m \
     --env MAGELENS_RUNNER --env "MAGELENS_ORCHESTRATOR_CONTAINER=$controller" \
     --env "MAGELENS_HOST_UID=$LOCAL_UID" --env "MAGELENS_HOST_GID=$LOCAL_GID" \
     --env "LOCAL_UID=$LOCAL_UID" --env "LOCAL_GID=$LOCAL_GID" \
-    --env PLAYWRIGHT_VERSION --env CHROME_VERSION \
+    --env PLAYWRIGHT_VERSION --env CYPRESS_VERSION --env CHROME_VERSION \
+    --env "CYPRESS_BASE_URL=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$runner" | sed -n 's/^CYPRESS_BASE_URL=//p')" \
     --env "PLAYWRIGHT_BASE_URL=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$runner" | sed -n 's/^PLAYWRIGHT_BASE_URL=//p')" \
     --entrypoint "$entrypoint" "$image" "${driver_command[@]}"
