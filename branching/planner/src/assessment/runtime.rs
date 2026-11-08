@@ -5,6 +5,60 @@
 // Abstract values for platform primitives. These operations never execute test
 // code, read environment values, open fixture files, or contact a browser.
 use super::*;
+
+// Payload size is a coarse proxy for request work, not a claim about server SQL
+// counts, response bytes, indexes or network latency. Unknown bodies stay small
+// until measurement provides evidence for changing the versioned defaults.
+pub(super) fn request_cost(args: &[Value]) -> Estimate {
+    let mut cost = Estimate::operation("request", points::REQUEST);
+    let body = match args.get(1) {
+        Some(Value::Object(options)) => options
+            .get("data")
+            .or_else(|| options.get("body"))
+            .or_else(|| options.get("form"))
+            .or_else(|| options.get("multipart")),
+        None => None,
+        value => value,
+    };
+    fn items(value: &serde_json::Value) -> usize {
+        match value {
+            serde_json::Value::Array(values) => values
+                .len()
+                .max(values.iter().map(items).max().unwrap_or(0)),
+            serde_json::Value::Object(values) => values.values().map(items).max().unwrap_or(0),
+            _ => 0,
+        }
+    }
+    let size = match body {
+        None => Some((0, 0)),
+        Some(value) => value.json().map(|v| (v.to_string().len(), items(&v))),
+    };
+    let config = &*points::APPROXIMATION;
+    let (band, multiplier) = match size {
+        Some((bytes, rows))
+            if bytes <= config.small_payload_bytes && rows <= config.small_payload_items =>
+        {
+            ("small", 1)
+        }
+        Some((bytes, rows))
+            if bytes <= config.medium_payload_bytes && rows <= config.medium_payload_items =>
+        {
+            ("medium", config.medium_request_multiplier)
+        }
+        Some(_) => ("large", config.large_request_multiplier),
+        None => ("unknown", 1),
+    };
+    cost.operations.insert(format!("request-payload-{band}"), 1);
+    cost.estimated_operations
+        .insert(format!("request-payload-{band}"), 1.0);
+    if band != "small" {
+        cost.complete = false;
+        cost.upper_bound_points = None;
+        cost.estimated_points = points::REQUEST.saturating_mul(multiplier);
+        cost.assume(format!("Request payload band {band}: {multiplier}x base request cost; server work is not inspected"));
+    }
+    cost
+}
 impl Project {
     pub(super) fn property(&self, value: Value, key: &str, ctx: &mut Context) -> Eval {
         match value {
@@ -92,6 +146,13 @@ impl Project {
         ctx: &mut Context,
     ) -> Option<Eval> {
         let value = match target {
+            "fetch" => {
+                return Some(Eval {
+                    cost: request_cost(args),
+                    value: Value::Promise(Box::new(Value::Response)),
+                    ..Eval::default()
+                });
+            }
             "String" => args
                 .first()
                 .map(|v| match v {

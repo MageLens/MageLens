@@ -11,6 +11,7 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::Node;
 mod collection;
+mod restoration;
 mod runtime;
 pub(crate) use collection::Bindings;
 type Env = BTreeMap<String, Value>;
@@ -450,7 +451,7 @@ impl Project {
                 | "String" | "Boolean" | "RegExp" | "URL" | "Error" | "TypeError" | "Map"
                 | "Set" | "WeakMap" | "WeakSet" | "Promise" | "parseInt" | "parseFloat"
                 | "Date" | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
-                | "queueMicrotask" => return Value::Builtin(name.into()),
+                | "queueMicrotask" | "fetch" => return Value::Builtin(name.into()),
                 "undefined" => return Value::Undefined,
                 "__dirname" | "__filename" => return Value::Text,
                 _ => {}
@@ -501,7 +502,7 @@ impl Project {
                 | "String" | "Boolean" | "RegExp" | "URL" | "Error" | "TypeError" | "Map"
                 | "Set" | "WeakMap" | "WeakSet" | "Promise" | "parseInt" | "parseFloat"
                 | "Date" | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
-                | "queueMicrotask" => Value::Builtin(name.into()),
+                | "queueMicrotask" | "fetch" => Value::Builtin(name.into()),
                 "undefined" => Value::Undefined,
                 "__dirname" | "__filename" => Value::Text,
                 _ => Value::Unknown,
@@ -1492,6 +1493,7 @@ impl Project {
             let mut cost = Estimate::default();
             let mut lower = 0;
             let mut points = 0;
+            let mut estimated_points = 0;
             let mut upper = Some(0u64);
             let mut values = vec![];
             for arg in children(argument_nodes[0]) {
@@ -1504,10 +1506,12 @@ impl Project {
                 let c = evaluated.cost;
                 upper = upper.zip(c.upper_bound_points).map(|(a, b)| a.max(b));
                 points = points.max(c.points);
+                estimated_points = estimated_points.max(c.estimated_points);
                 lower = lower.max(c.lower_bound_points);
                 cost.add(c);
             }
             cost.points = points;
+            cost.estimated_points = estimated_points;
             cost.lower_bound_points = lower;
             cost.upper_bound_points = upper;
             if matches!(
@@ -1768,7 +1772,7 @@ impl Project {
                     if ["get", "post", "put", "patch", "delete", "fetch", "head"]
                         .contains(&method) =>
                 {
-                    cost.add(Estimate::operation("request", points::REQUEST));
+                    cost.add(runtime::request_cost(&args));
                     return Eval {
                         cost,
                         value: Value::Promise(Box::new(Value::Response)),
@@ -1915,6 +1919,7 @@ struct Fixture {
     reference: Reference,
     worker: bool,
     auto: bool,
+    order: usize,
 }
 impl Project {
     fn provider(
@@ -1987,12 +1992,17 @@ impl Project {
             } else {
                 value
             };
+            let name = normalize::string(key, s).unwrap_or_else(|| text(key, s).into());
+            let order = fixtures
+                .get(&name)
+                .map_or(fixtures.len(), |fixture| fixture.order);
             fixtures.insert(
-                normalize::string(key, s).unwrap_or_else(|| text(key, s).into()),
+                name,
                 Fixture {
                     reference: self.reference(file, value),
                     worker,
                     auto,
+                    order,
                 },
             );
         }
@@ -2298,7 +2308,7 @@ impl Project {
                 prior_exit = result.flow;
             }
             result.cost.finalize();
-            step.action_units = Some(result.cost.lower_bound_points);
+            step.action_units = Some(result.cost.estimated_points);
             step.estimate = Some(result.cost.clone());
             costs.repeated.add(result.cost);
         }
@@ -2319,7 +2329,7 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
                 id: format!("root-{}", &t.scope[..20]),
                 parent: None,
                 checkpoint: false,
-                units: t.fixture_estimate.as_ref().map(|e| e.lower_bound_points),
+                units: t.fixture_estimate.as_ref().map(|e| e.estimated_points),
             });
         }
     }
@@ -2363,12 +2373,14 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
                 .unwrap_or_else(|| format!("root-{}", &t.scope[..20])),
         );
     }
-    let plan = crate::cost::select(crate::cost::Input {
+    let input = crate::cost::Input {
         baseline: crate::baseline::Baseline::default(),
         stages,
         parents,
         max_checkpoints_per_test: crate::cost::checkpoint_limit(),
-    })?;
+    };
+    let cost_input = serde_json::to_value(&input).map_err(|e| e.to_string())?;
+    let plan = crate::cost::select(input)?;
     let baseline = &*crate::baseline::PLAYWRIGHT_BRANCHING;
     let candidates:Vec<_>=manifest.checkpoints.iter().map(|cp| {
         let test=manifest.tests.iter().find(|t| t.id==cp.representative).unwrap();
@@ -2380,10 +2392,13 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         // save more than capture/release and its own restores. This gives a
         // useful rejection test without pretending uncertain work is free.
         let variable_ms=(baseline.capture_ms+baseline.release_ms+reuses*baseline.restore_ms)*baseline.overhead_multiplier*(1.0+baseline.overhead_margin);
-        let classification=if plan.selected.contains(&cp.id) { "saving-supported-by-minimum" }
+        let classification=if plan.selected.contains(&cp.id) { "estimated-saving" }
           else if reuses>0.0 && estimate.upper_bound_points.is_some_and(|upper| upper as f64*baseline.unit_ms*reuses<=variable_ms) { "below-variable-cost" }
-          else { "benefit-uncertain" };
+          else if estimate.estimated_points as f64*baseline.unit_ms*reuses<=variable_ms { "estimated-below-variable-cost" }
+          else { "shared-overhead-not-recovered" };
         serde_json::json!({"id":cp.id,"consumers":cp.consumers.len(),"lowerBoundPoints":estimate.lower_bound_points,"upperBoundPoints":estimate.upper_bound_points,
+          "estimatedPoints":estimate.estimated_points,"estimatedPrefixMs":estimate.estimated_points as f64*baseline.unit_ms,
+          "confidence":estimate.confidence,"assumptions":estimate.assumptions,
           "estimatedMinimumPrefixMs":estimate.lower_bound_points as f64*baseline.unit_ms,"estimatedMaximumPrefixMs":estimate.upper_bound_points.map(|p|p as f64*baseline.unit_ms),
           "classification":classification,"analysisComplete":estimate.analysis_complete,"issues":estimate.issues,"reasons":estimate.reasons})
     }).collect();
@@ -2414,6 +2429,6 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         .count();
     let analysis = serde_json::json!({"status":if analyzed==statements.len()&&fixture_gaps==0&&worker_gaps==0&&manifest.diagnostics.is_empty() {"complete"}else{"partial"},"totalStatements":statements.len(),"analyzedStatements":analyzed,"exactStatements":exact,"runtimeDependentStatements":analyzed.saturating_sub(exact),"fixturesWithGaps":fixture_gaps,"workersWithGaps":worker_gaps,"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()});
     Ok(
-        serde_json::json!({"version":points::VERSION,"boundsVersion":1,"weights":points::weights(),"costBasis":"conservative-lower-bound-points", "analysis":analysis,"runtimeEligibility":"Cost selection alone does not authorize restoring JavaScript state", "candidates":candidates, "costPlan":plan}),
+        serde_json::json!({"version":points::VERSION,"boundsVersion":1,"weights":points::weights(),"costBasis":"approximate-operation-points", "analysis":analysis,"runtimeEligibility":"Cost selection alone does not authorize restoring JavaScript state", "candidates":candidates, "costInput":cost_input, "costPlan":plan}),
     )
 }

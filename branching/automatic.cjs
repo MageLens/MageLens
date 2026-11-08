@@ -24,7 +24,7 @@ function compileFragment(parameters, code) {
 
 function verifySources(manifest) {
     if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported automatic manifest');
-    if (manifest.implementation === 'rust-prefix-v2' && (manifest.assessment?.boundsVersion !== 1 || manifest.assessment?.version !== 'js-ts-points-v3')) throw new Error('Outdated source cost model; replan before execution');
+    if (manifest.implementation === 'rust-prefix-v2' && (manifest.assessment?.boundsVersion !== 1 || manifest.assessment?.version !== 'js-ts-points-v4')) throw new Error('Outdated source cost model; replan before execution');
     if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
         throw new Error('Outdated source point scale; replan before execution');
     const root = fs.realpathSync(manifest.root);
@@ -56,9 +56,16 @@ function buildWorkflow(manifest, configuration, selected) {
     }
     const usable = manifest.checkpoints.filter(c => c.consumers.filter(id => selection.has(id)).length >= 2 &&
         (c.automatic || (adapter?.supportsCheckpoint?.(c, byId.get(c.representative)) === true)));
+    const fixtureState = !adapter && [...selection].some(id=>byId.get(id).restoration)
+        ? new (require('./runners/playwright/fixture-state.cjs').FixtureState)(manifest, configuration) : undefined;
     const source = new Map(), compiled = new Map();
-    const execute = (test, from, to, runtime) => {
+    const execute = (test, from, to, runtime, terminal = false) => {
         if (adapter) return adapter.execute(test, from, to, runtime);
+        if (test.restoration) {
+            if (!terminal && from===0 && to===0) return;
+            if (!terminal || from!==0 || to!==test.steps.length) throw new Error('Fixture continuation requires a complete test body');
+            return fixtureState.run(test,runtime);
+        }
         const key = `${test.id}:${from}:${to}`;
         if (!compiled.has(key)) {
             if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
@@ -78,7 +85,7 @@ function buildWorkflow(manifest, configuration, selected) {
     };
     const prefixUnits = (test, from, to) => {
         const counts = test.steps.slice(from, to).map(s => manifest.implementation === 'rust-prefix-v2'
-            ? units(s.estimate?.lowerBoundPoints) : units(s.actionUnits));
+            ? units(s.estimate?.estimatedPoints) : units(s.actionUnits));
         return counts.some(n=>n === null) ? null : units(counts.reduce((a,b)=>a+b, 0));
     };
     const rootFor = test => {
@@ -86,9 +93,9 @@ function buildWorkflow(manifest, configuration, selected) {
             const id = `root-${test.scope.slice(0, 20)}`; roots.set(test.scope, id);
             stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
                 actionUnits: manifest.implementation === 'rust-prefix-v2'
-                    ? units(test.fixtureEstimate?.lowerBoundPoints)
+                    ? units(test.fixtureEstimate?.estimatedPoints)
                     : adapter?.prepare ? null : 0,
-                run: async runtime => { await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
+                run: async runtime => { if(test.restoration&&!adapter)await fixtureState.prepare(test,runtime);else await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
         }
         return roots.get(test.scope);
     };
@@ -107,10 +114,11 @@ function buildWorkflow(manifest, configuration, selected) {
     const specs = manifest.schedule.filter(id => selection.has(id)).map(id => {
         const test = byId.get(id), parent = parentFor(test, Infinity);
         return {id, label: test.title, source: {file: test.file, line: test.line}, parent: parent?.id ?? rootFor(test), inputs: {test: id, source: manifest.sourceDigest},
-            run: runtime => execute(test, parent?.depth ?? 0, test.steps.length, runtime), assert: async () => {}};
+            run: runtime => execute(test, parent?.depth ?? 0, test.steps.length, runtime, true), assert: async () => {}};
     });
     // Compile all native fragments now: syntax failures must precede backend setup.
     if (!adapter) for (const test of manifest.tests.filter(t => selection.has(t.id))) {
+        if(test.restoration)continue;
         const cuts = [0, ...usable.filter(c => c.consumers.includes(test.id)).map(c => c.depth).sort((a,b)=>a-b), test.steps.length];
         const original = fs.readFileSync(path.join(manifest.root, test.file));
         for (let i=1;i<cuts.length;i++) {
@@ -119,11 +127,12 @@ function buildWorkflow(manifest, configuration, selected) {
         }
     }
     return {
-        workflow: new Graph({costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
+        workflow: new Graph({runtimeState:fixtureState, costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
             configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
                 runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,
-            implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./engine.cjs')), manifest.implementation])}, stages, specs}),
+            implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./engine.cjs')), manifest.implementation,
+                ...(fixtureState?['./runtime-state.cjs','./runners/playwright/fixture-state.cjs','./runners/playwright/fixture-values.cjs'].map(file=>fileDigest(require.resolve(file))):[])])}, stages, specs}),
         state: configuration.state, checkpointLifetime: 'last-consumer', runnerOptions: configuration.runnerOptions
     };
 }

@@ -9,8 +9,8 @@ const {sourceFiles} = require('./branching-rust-coverage.cjs');
 
 test('Rust self-coverage includes nested estimator modules and embedded cost configuration', () => {
     const files = sourceFiles(path.resolve(__dirname, '../branching/planner'));
-    for (const file of ['src/assessment/runtime.rs', 'src/assessment/collection.rs',
-        'src/project/dependencies.rs', 'src/project/effects.rs', 'src/baseline.json', 'src/limits.json'])
+    for (const file of ['src/assessment/runtime.rs', 'src/assessment/collection.rs', 'src/assessment/restoration.rs',
+        'src/project/dependencies.rs', 'src/project/effects.rs', 'src/baseline.json', 'src/limits.json', 'src/estimation.json'])
         assert.ok(files.includes(file), `Missing source: ${file}`);
     assert.equal(new Set(files).size, files.length);
     assert.ok(files.every(file => file.startsWith('src/') && /\.(rs|json)$/.test(file)));

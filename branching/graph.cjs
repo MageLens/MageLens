@@ -8,7 +8,10 @@ const config = require('./configs/runtime.cjs');
 
 const {canonical, digest} = require('./identity.cjs');
 class Graph {
-    constructor({stages, specs, identity, costBaseline = require('./baseline.cjs').defaults, maxCheckpointsPerTest = require('./planner/src/limits.json').maxCheckpointsPerTest}) {
+    constructor({stages, specs, identity, runtimeState, costBaseline = require('./baseline.cjs').defaults, maxCheckpointsPerTest = require('./planner/src/limits.json').maxCheckpointsPerTest}) {
+        this.runtimeState = runtimeState;
+        if(runtimeState && ['capture','restore','cleanup'].some(method=>typeof runtimeState[method]!=='function'))
+            throw new Error('Runtime state requires capture, restore and cleanup functions');
         this.maxCheckpointsPerTest = require('./checkpoint-limit.cjs').validateLimit(maxCheckpointsPerTest);
         this.costBaseline = require('./baseline.cjs').validate(costBaseline);
         if (!Array.isArray(stages) || !stages.length || !Array.isArray(specs) || !specs.length)

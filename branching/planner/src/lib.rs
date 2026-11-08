@@ -66,6 +66,8 @@ pub struct Test {
     pub worker_estimate: Option<points::Estimate>,
     #[serde(default)]
     pub estimate: Option<points::Estimate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restoration: Option<serde_json::Value>,
     #[serde(skip)]
     context_identity: String,
     #[serde(skip)]
@@ -640,6 +642,7 @@ fn walk_scope(
             fixture_estimate: None,
             worker_estimate: None,
             estimate: None,
+            restoration: None,
             context_identity: serde_json::to_string(&(
                 fixture,
                 field(cb, "parameters").map(|n| normalize::canonical(n, s)),
@@ -772,6 +775,18 @@ pub fn plan(root: &Path) -> Result<Manifest> {
         }
     }
     // Each entry is a prefix-trie node identified by its complete ancestry.
+    for test in &mut tests {
+        if let Ok(recipe) = project.restoration(test) {
+            test.restoration = Some(recipe);
+            test.disposition = "automatic".into();
+            test.reasons.clear();
+            // Fixture frames are restored at use(), not midway through a test's
+            // local JavaScript stack. Body prefixes remain cost-only candidates.
+            for step in &mut test.steps {
+                step.portable = false;
+            }
+        }
+    }
     let mut nodes: BTreeMap<String, (usize, Vec<usize>, BTreeSet<String>, bool)> = BTreeMap::new();
     let mut paths = vec![];
     for (i, t) in tests.iter().enumerate() {
@@ -855,7 +870,7 @@ pub fn plan(root: &Path) -> Result<Manifest> {
         if test
             .fixture_estimate
             .as_ref()
-            .is_some_and(|e| e.complete && e.lower_bound_points > 0)
+            .is_some_and(|e| e.estimated_points > 0)
         {
             fixture_groups
                 .entry(test.scope.clone())
@@ -886,7 +901,7 @@ pub fn plan(root: &Path) -> Result<Manifest> {
                 .clone(),
             saved_statements: group.len() - 1,
             consumers,
-            automatic: false,
+            automatic: group.iter().all(|t| t.restoration.is_some()),
             label: Some("Shared fixture setup".into()),
         });
     }

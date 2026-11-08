@@ -20,10 +20,12 @@ const {probe} = require('../branching/storage.cjs');
 const command = args => execFileSync('docker', args, {encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe']}).trim();
 class Backend {
     constructor() { this.name = 'magelens-branching-check-' + randomUUID(); this.identity = {kind: 'real-mariadb-fixture'}; }
-    sql(query) { return command(['exec', this.name, 'mariadb', '-uroot', '-ptest-only', '-Nse', query]); }
+    sql(query, tcp = false) { return command(['exec', this.name, 'mariadb', ...(tcp ? ['--protocol=tcp', '-h127.0.0.1'] : []), '-uroot', '-ptest-only', '-Nse', query]); }
     async ready() {
         for (let i = 0; i < 120; i++) {
-            try { this.sql('SELECT 1'); return; } catch { await delay(250); }
+            // The image's temporary initialization server accepts socket SQL,
+            // then exits. TCP opens only on the final server used by the test.
+            try { this.sql('SELECT 1', true); return; } catch { await delay(250); }
         }
         throw new Error('MariaDB failed to become ready');
     }

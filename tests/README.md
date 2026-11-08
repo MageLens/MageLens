@@ -136,16 +136,33 @@ for dependency analysis. Reached dependency files and package metadata participa
 in source validation; unrelated packages are not scanned. Missing dependencies
 are reported explicitly. The analyzer reads source without executing imported code.
 
-Manifests expose minimum/maximum statement estimates, structured issues and the
+Manifests expose approximate and minimum/maximum statement estimates, structured issues and the
 source cost plan under `assessment`. `analysisComplete` means the analyzer could
 model the statement; `complete` means its modeled cost is exact. The CLI and
 `assessment.analysis` summarize statements, fixtures and worker setup separately.
-Runtime-dependent branches retain cost ranges; unresolved work contributes no minimum credit but does not erase known
-work in the same prefix. Candidate diagnostics distinguish prefixes below the
-modeled checkpoint cost from those whose benefit remains uncertain. These are
+AUTO uses `estimatedPoints`, with estimated operation counts, confidence and
+explicit assumptions. Runtime-dependent branches retain their bounds but no longer
+lose all estimated benefit just because an exact count is unavailable. Defaults in
+[`estimation.json`](../branching/planner/src/estimation.json) assume equal-probability
+branches, three unknown loop iterations, and small/medium/large request-payload
+bands. Payload bands approximate request work; they do not count the database
+queries hidden behind an API. Unresolved calls receive no invented cost, and
+unmeasured overlapping work receives no sequential saving credit.
+Candidate diagnostics distinguish estimated savings from variable and shared
+checkpoint costs. These are
 static forecasts of framework operations, not measured test durations or arbitrary
 JavaScript CPU costs. A profitable source prefix still needs a supported execution boundary:
 cost analysis does not restore arbitrary JavaScript closures or process state.
+AUTO can restore test-scoped `test.extend` fixtures with a standalone `await use(value)`
+boundary (including a direct `try { await use(value); } finally { … }`). Rust follows helper imports and fixture dependencies and emits setup and
+teardown continuations. The Playwright runner saves fixture values and live teardown
+locals with the application checkpoint, preserves object aliases and cycles, and
+reconnects page, context, request and locator references to the restored browser.
+Each consumer runs its own teardown, including failed tests. Unsupported lifecycle
+shapes, worker fixtures, native hooks, module side effects and browser overrides
+remain native; unrecognized live handles fail before a checkpoint is published.
+Fixture data is limited to 8 MiB and 50,000 objects per checkpoint. Functions,
+accessors, static/private class state and process resources cannot be serialized.
 The suite report includes both this assessment and the actual execution decision.
 
 `branching/planner/tests/assessment.rs` exercises the real CLI with independent
@@ -197,6 +214,9 @@ isolated linear and AUTO runs on real Luma orders. It uses a budget of **4** and
 includes short, unrelated, highly reused and twelve-boundary journeys. It records
 setup, tests including checkpoint overhead, total, memory peaks and cleanup, with
 PHP-FPM and database parity checks before accepting measurements.
+The additional fixture rows cover small and expensive runtime-dependent setup,
+mutable values shared between dependent fixtures, browser references and per-test
+teardown. Cost forecasts and actual checkpoint counts are reported separately.
 
 Fresh projects use the versioned checkpoint-cost defaults in
 [`baseline.json`](../branching/planner/src/baseline.json), with **2 × overhead × 1.20**

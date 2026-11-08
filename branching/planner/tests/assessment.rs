@@ -64,6 +64,227 @@ fn points(v: &Value) -> u64 {
 const IMPORT: &str = "import {test,expect} from '@playwright/test';";
 
 #[test]
+fn generic_fixture_restoration_lowers_dependencies_values_and_teardown() {
+    let f = Fixture::new(&[
+        (
+            "helpers.ts",
+            "export async function prepare(page) { await page.goto('/cart'); }",
+        ),
+        (
+            "fixtures.ts",
+            "import {test as base} from '@playwright/test'; import {prepare} from './helpers'; export const test=base.extend({cart:async({page},use)=>{await prepare(page);const state={page,items:['original']};await use(state);await page.goto('/cleanup/'+state.items.length);},ready:async({cart},use)=>{await use({cart});}});",
+        ),
+        (
+            "case.spec.ts",
+            "import {test} from './fixtures';test('one',async({ready})=>{ready.cart.items.push('one');await ready.cart.page.goto('/one');});test('two',async({ready})=>{await ready.cart.page.goto('/two');});",
+        ),
+    ]);
+    let p = f.plan();
+    let recipe = &test(&p, "one")["restoration"];
+    assert_eq!(test(&p, "one")["disposition"], "automatic");
+    assert_eq!(recipe["version"], 1);
+    assert_eq!(recipe["fixtures"][0]["name"], "cart");
+    assert_eq!(recipe["fixtures"][1]["name"], "ready");
+    assert_eq!(recipe["fixtures"][0]["locals"], json!(["state"]));
+    assert!(
+        recipe["fixtures"][0]["teardown"]
+            .as_str()
+            .unwrap()
+            .contains("/cleanup/")
+    );
+    assert!(
+        p["checkpoints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["depth"] == 0 && c["automatic"] == true)
+    );
+    assert!(
+        test(&p, "one")["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["portable"] == false)
+    );
+}
+
+#[test]
+fn unsupported_fixture_lifecycles_remain_native() {
+    for fixture in [
+        "value:[async({},use)=>{await use(1);},{scope:'worker'}]",
+        "value:async({page},use)=>{if(await page.title())await use(page);}",
+        "value:async({page},use)=>{page.on('request',()=>{});await use(page);}",
+        "page:async({browser},use)=>{await use(await browser.newPage());}",
+        "value:async({},use)=>{class State {public static count=0;}await use(new State());}",
+    ] {
+        let source = format!(
+            "import {{test as base}} from '@playwright/test';const test=base.extend({{{fixture}}});test('a',async({{value}})=>{{await value.click();}});"
+        );
+        let p = Fixture::new(&[("case.spec.ts", &source)]).plan();
+        assert_eq!(
+            test(&p, "a")["disposition"],
+            "adapter-required",
+            "{fixture}"
+        );
+        assert!(test(&p, "a").get("restoration").is_none());
+    }
+}
+
+#[test]
+fn fixture_frames_keep_only_locals_needed_after_use() {
+    let p=Fixture::new(&[("case.spec.ts", "import {test as base} from '@playwright/test';const test=base.extend({record:async({request},use)=>{const response=await request.post('/records',{data:{name:'sample'}});const record=await response.json();try{await use(record);}finally{await request.delete('/records/'+record.id);}}});test('a',async({record})=>{if(!record.id)throw new Error('missing');});")]).plan();
+    let recipe = &test(&p, "a")["restoration"];
+    assert_eq!(recipe["fixtures"][0]["locals"], json!(["record"]));
+    assert!(
+        recipe["fixtures"][0]["setup"]
+            .as_str()
+            .unwrap()
+            .contains("response.json()")
+    );
+}
+
+#[test]
+fn described_fixture_tests_restore_but_module_side_effects_remain_native() {
+    let declaration = "import {test as base} from '@playwright/test';const test=base.extend({data:async({page},use)=>{await page.goto('/');await use({ready:true});}});test.describe('group',()=>{test('a',async({data})=>{if(!data.ready)throw new Error('missing');});});";
+    let p = Fixture::new(&[("case.spec.ts", declaration)]).plan();
+    assert_eq!(test(&p, "group › a")["disposition"], "automatic");
+    let p = Fixture::new(&[(
+        "case.spec.ts",
+        &format!("{declaration}\nconfigureExternalService();"),
+    )])
+    .plan();
+    assert_eq!(test(&p, "group › a")["disposition"], "adapter-required");
+}
+
+#[test]
+fn fixture_continuations_preserve_automatic_and_parameter_order() {
+    let p=Fixture::new(&[("case.spec.ts","import {test as base} from '@playwright/test';const test=base.extend({z:async({},use)=>{await use('z');},a:async({},use)=>{await use('a');},autoZ:[async({},use)=>{await use('auto-z');},{auto:true}],autoA:[async({},use)=>{await use('auto-a');},{auto:true}]});test('a',async({z,a})=>{});")]).plan();
+    let names: Vec<_> = test(&p, "a")["restoration"]["fixtures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["autoZ", "autoA", "z", "a"]);
+}
+
+#[test]
+fn approximate_fixture_costs_can_justify_reuse_with_a_restorable_boundary() {
+    let f = Fixture::new(&[
+        (
+            "fixtures.ts",
+            r#"import {test as base} from '@playwright/test';
+          async function prepare(page) { if (await page.locator('#empty').isVisible()) {
+            for(let i=0;i<500;i++) await page.goto('/item');
+          }}
+          export const test=base.extend({cart:async({page},use)=>{await prepare(page);await use(page);}});"#,
+        ),
+        (
+            "case.spec.ts",
+            "import {test} from './fixtures';test('a',async({cart})=>{await cart.goto('/a');});test('b',async({cart})=>{await cart.goto('/b');});test('c',async({cart})=>{await cart.goto('/c');});test('d',async({cart})=>{await cart.goto('/d');});test('e',async({cart})=>{await cart.goto('/e');});",
+        ),
+    ]);
+    let p = f.plan();
+    let estimate = &test(&p, "a")["fixtureEstimate"];
+    assert!(
+        estimate["estimatedPoints"].as_u64().unwrap()
+            > estimate["lowerBoundPoints"].as_u64().unwrap()
+    );
+    assert_eq!(estimate["confidence"], "medium");
+    assert!(
+        !p["assessment"]["costPlan"]["selected"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(p["assessment"]["costBasis"], "approximate-operation-points");
+    assert_eq!(test(&p, "a")["disposition"], "automatic");
+    assert!(
+        p["checkpoints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["depth"] == 0 && c["automatic"] == true)
+    );
+}
+
+#[test]
+fn approximate_counts_preserve_small_unknown_and_non_database_fixture_controls() {
+    let f = Fixture::new(&[(
+        "case.spec.ts",
+        &format!(
+            r#"{IMPORT}
+      test('small',async({{page}})=>{{if(await page.locator('#x').isVisible()) await page.goto('/');}});
+      test('unknown',async({{page}})=>{{await unprovidedClient.query('SELECT lots');}});
+      test('loop',async({{page}})=>{{for(const item of await page.locator('li').all()) await item.click();}});
+    "#
+        ),
+    )]);
+    let p = f.plan();
+    let small = &test(&p, "small")["steps"][0]["estimate"];
+    assert!(small["estimatedPoints"].as_u64().unwrap() < 9);
+    assert_eq!(
+        test(&p, "unknown")["steps"][0]["estimate"]["estimatedPoints"],
+        0
+    );
+    let repeated = &test(&p, "loop")["steps"][0]["estimate"];
+    assert!(
+        repeated["estimatedPoints"].as_u64().unwrap()
+            > repeated["lowerBoundPoints"].as_u64().unwrap()
+    );
+    assert!(
+        repeated["assumptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.as_str().unwrap().contains("iterations"))
+    );
+    assert_eq!(repeated["estimatedOperations"]["interaction"], 3.0);
+    assert!(
+        p["assessment"]["costPlan"]["selected"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn request_workload_bands_count_calls_and_distinguish_bulk_payloads() {
+    let large = "x".repeat(70_000);
+    let f = Fixture::new(&[(
+        "case.spec.ts",
+        &format!(
+            r#"{IMPORT}
+       test('small',async({{request}})=>{{await request.post('/seed',{{data:{{name:'a'}}}});}});
+       test('medium',async({{request}})=>{{await request.post('/seed',{{data:{{rows:'{}'}}}});}});
+       test('large',async({{request}})=>{{await request.post('/seed',{{data:{{rows:'{large}'}}}});}});
+       test('runtime',async({{request}})=>{{await request.post('/seed',{{data:JSON.parse(process.env.ROWS)}});}});
+    "#,
+            "x".repeat(5000)
+        ),
+    )]);
+    let p = f.plan();
+    let e = |name| &test(&p, name)["steps"][0]["estimate"];
+    assert!(
+        e("small")["estimatedPoints"].as_u64().unwrap()
+            < e("medium")["estimatedPoints"].as_u64().unwrap()
+    );
+    assert!(
+        e("medium")["estimatedPoints"].as_u64().unwrap()
+            < e("large")["estimatedPoints"].as_u64().unwrap()
+    );
+    for name in ["small", "medium", "large", "runtime"] {
+        assert_eq!(e(name)["operations"]["request"], 1);
+    }
+    assert_eq!(e("runtime")["confidence"], "medium");
+    assert_eq!(
+        e("small")["operations"].get("database"),
+        None,
+        "A fixture or request alone is not proof of a database query"
+    );
+}
+
+#[test]
 fn formatting_comments_quotes_and_types_do_not_hide_shared_work() {
     let f = Fixture::new(&[(
         "case.spec.ts",
@@ -85,7 +306,7 @@ fn formatting_comments_quotes_and_types_do_not_hide_shared_work() {
     assert_eq!(a["fingerprint"], b["fingerprint"]);
     assert_eq!(points(a), points(b));
     assert!(points(a) > 0);
-    assert_eq!(p["assessment"]["version"], "js-ts-points-v3");
+    assert_eq!(p["assessment"]["version"], "js-ts-points-v4");
 }
 #[test]
 fn literal_whitespace_inputs_and_preceding_state_are_never_erased() {
@@ -927,11 +1148,11 @@ fn candidate_ranges_distinguish_cheap_work_from_uncertain_benefit() {
         ("await page.goto('/');", "below-variable-cost"),
         (
             "if(runtimeCondition){for(let i=0;i<300;i++){await page.goto('/');}}",
-            "benefit-uncertain",
+            "shared-overhead-not-recovered",
         ),
         (
             "for(let i=0;i<300;i++){await page.goto('/');}",
-            "saving-supported-by-minimum",
+            "estimated-saving",
         ),
     ] {
         let f = Fixture::new(&[(
