@@ -17,6 +17,8 @@ function command(file, args, options = {}) {
             ...options
         }).trim();
     } catch (error) {
+        // Child-process errors retain command arguments and unbounded output, potentially including credentials.
+        // eslint-disable-next-line preserve-caught-error -- Expose only the bounded diagnostics below.
         throw new Error(
             messages.commandFailed(
                 path.basename(file),

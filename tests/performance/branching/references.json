@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 2,
+  "environment": "github-actions",
+  "status": "awaiting-first-qualified-ci-matrix",
+  "rows": []
+}

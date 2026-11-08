@@ -25,9 +25,16 @@ async function run(args = process.argv.slice(2)) {
     const leases = require('./workflow-lease.cjs');
     const workflowLease = leases.acquire(process.cwd());
     let report;
-    try { report = await runSuite({manifest, project, mode: approach, directory,
+    try {
+        const store = require('./baseline.cjs').openProject(process.cwd(), project.baseline);
+        const used = store.load(); project.costBaseline = used.baseline;
+        report = await runSuite({manifest, project, mode: approach, directory,
         runner: loadRunner(process.env.MAGELENS_RUNNER ?? 'playwright').native,
-        runCheckpoint: configuration => main({...configuration, workflowLease}, storage)}); }
+        runCheckpoint: configuration => main({...configuration, workflowLease}, storage)});
+        report.baseline = {used, update: store.update(report)};
+        for (const regression of report.baseline.update.regressions ?? [])
+            console.warn(`Checkpoint overhead increased: ${regression.metric} ${regression.referenceMs.toFixed(1)} → ${regression.observedMs.toFixed(1)} ms`);
+    }
     finally { if (!leases.release(workflowLease)) { console.error('Suite workflow lock retained for application recovery'); process.exitCode = 1; } }
     const output = path.join(directory, 'suite.json'); fs.writeFileSync(output, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
     const uid = Number(process.env.MAGELENS_HOST_UID), gid = Number(process.env.MAGELENS_HOST_GID);

@@ -10,7 +10,7 @@ async function closeFile() { const handle = file; file = null; if (handle) await
 async function fail() {
     if (failed) return; failed = true; pending = [];
     parentPort.postMessage({type: 'error'});
-    try { await closeFile(); } catch {}
+    try { await closeFile(); } catch { /* The journal failure has already been reported to the parent. */ }
     parentPort.close();
 }
 const ready = (async () => {

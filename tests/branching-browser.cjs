@@ -75,6 +75,7 @@ async function main() {
     try {
         assert.equal(browser.version(), '156.0.8078.80');
         assert.equal(require('@playwright/test/package.json').version, '1.65.0');
+        await require('./branching-browser-ready.cjs').checkReadiness(browser);
         const backend = new Backend();
         const provider = new BranchingProvider({browser, backend, baseURL: 'http://127.0.0.1', state: async () => ({
             database: backend.sql('SELECT * FROM probe.state ORDER BY id'),

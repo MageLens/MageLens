@@ -1,0 +1,83 @@
+{
+  "paths": {
+    "baseline": ".runtime/branching-baseline.json",
+    "history": ".runtime/branching-baseline-history.ndjson",
+    "compose": "bin/application-compose",
+    "identity": [
+      "src/composer.lock",
+      "src/app/etc/env.php",
+      ".runtime/install-profile",
+      "dependencies.yaml"
+    ],
+    "decision": "branching-baseline.json",
+    "operationDefaults": "branching/planner/src/baseline.json"
+  },
+  "metrics": [
+    "captureMs",
+    "restoreMs",
+    "releaseMs",
+    "resetMs",
+    "firstResetMs",
+    "backendMs"
+  ],
+  "operations": {
+    "captureMs": "captures",
+    "restoreMs": "restores",
+    "releaseMs": "releases"
+  },
+  "policy": {
+    "schemaVersion": 1,
+    "updateOnSuccess": true,
+    "regressionThreshold": 0.1,
+    "minimumRegressionMs": 10,
+    "maxRecordBytes": 65536,
+    "databaseBucketFloorBytes": 16777216,
+    "commandTimeoutMs": 30000,
+    "queryMaxBytes": 1048576,
+    "inspectMaxBytes": 4194304
+  },
+  "labels": {
+    "passed": "passed",
+    "calibration": "baseline-calibration",
+    "checkpoint": "checkpoint",
+    "measured": "measured",
+    "default": "default",
+    "updatesDisabled": "automatic-updates-disabled",
+    "noMeasurements": "no-successful-clean-checkpoint-measurements",
+    "composeService": "com.docker.compose.service"
+  },
+  "commands": {
+    "databaseSizeQuery": "SELECT COALESCE(SUM(DATA_LENGTH+INDEX_LENGTH),0) FROM information_schema.TABLES WHERE TABLE_SCHEMA='magento'",
+    "databaseSize": [
+      "exec",
+      "-T",
+      "db",
+      "sh",
+      "-c",
+      "exec mariadb -N -uroot --password=\"$MYSQL_ROOT_PASSWORD\" -e \"$1\"",
+      "sh"
+    ],
+    "services": [
+      "ps",
+      "-a",
+      "-q",
+      "db",
+      "phpfpm"
+    ],
+    "inspect": [
+      "inspect"
+    ]
+  },
+  "messages": {
+    "invalidBaseline": "Invalid checkpoint cost baseline; use the current configured defaults and measured operation costs",
+    "invalidConfiguration": "Invalid project baseline configuration",
+    "invalidThreshold": "Invalid overhead regression threshold",
+    "invalidCache": "Baseline cache must be a regular file, not a symbolic link",
+    "overflow": "Baseline measurement overflow",
+    "linkedDirectory": "Baseline directory must not be a symbolic link",
+    "invalidHistory": "Baseline history must be a regular file",
+    "databaseSize": "Cannot determine database size for the checkpoint baseline",
+    "missingServices": "Database and PHP services are required for baseline calibration",
+    "invalidDecision": "Checkpoint decision baseline must be a finite number greater than the minimum saving"
+  }
+}

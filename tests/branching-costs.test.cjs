@@ -33,6 +33,22 @@ test('provider mechanism enforces the nine-checkpoint limit while preserving act
         assert.equal(events[0].checkpointLimit.warnings.length, 6);
     }
 });
+test('a configured four-checkpoint budget preserves all twelve stages and releases every snapshot', async t => {
+    const {root} = setup(t), workflow = new Graph({...deepWorkflow(), maxCheckpointsPerTest: 4});
+    assert.equal(costInput(workflow).maxCheckpointsPerTest, 4);
+    const base = {root, workflow, checkpointLifetime: 'last-consumer'};
+    const linear = await execute({...base, approach: 'L0', provider: new FixtureProvider()});
+    const report = await execute({...base, provider: new FixtureProvider()});
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(report.results.map(r => r.state), linear.results.map(r => r.state));
+    assert.equal(report.checkpointLimit.maxCheckpointsPerTest, 4);
+    assert.equal(report.checkpoints.length, 4);
+    assert.ok(report.checkpointLimit.warnings.some(w => w.candidates > 9 && w.limit === 4));
+    assert.equal(report.releases.length, 4);
+    assert.equal(fs.existsSync(report.directory), false);
+    for (const limit of [0, -1, 1.5, '4', null, Infinity])
+        assert.throws(() => new Graph({...deepWorkflow(), maxCheckpointsPerTest: limit}), /checkpoint.*limit/i);
+});
 function setup(t) {
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'magelens-costs-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
     const workflow=new Graph(fixtureWorkflow()),calls=[];
@@ -52,7 +68,8 @@ test('AUTO is the default, plans once and does not create a calibration cache',a
 });
 test('static graph carries fixture and incremental units, and unknown is not zero',t=>{
     const {workflow}=setup(t);workflow.stages.get('baseline').actionUnits=2;workflow.stages.get('cart-ready').actionUnits=5;
-    const input=costInput(workflow);assert.deepEqual(Object.keys(input).sort(),['parents','stages']);
+    const input=costInput(workflow);assert.deepEqual(Object.keys(input).sort(),['baseline','maxCheckpointsPerTest','parents','stages']);
+    assert.equal(input.maxCheckpointsPerTest,9);
     assert.equal(input.stages[0].units,2);assert.equal(input.stages[1].units,null);assert.equal(input.stages[2].units,5);
     assert.equal(input.stages[2].parent,'customer-ready');assert.equal(input.parents.length,3);
 });

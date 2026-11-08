@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
-const {execFileSync} = require('node:child_process');
 const {chromium, expect} = require('@playwright/test');
 const {selfCoverage} = require('./branching-self-coverage.cjs');
 const {rustCoverage} = require('./branching-rust-coverage.cjs');

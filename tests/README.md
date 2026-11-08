@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 Run the fast integration checks with `npm run test:integration`.
 
-The full E2E matrix and release qualification use **GitHub Actions**. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Local results do not replace final CI qualification. Local syntax, PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
+The full E2E matrix and release qualification use **GitHub Actions**. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Local results do not replace final CI qualification. Local static checks (`npm run check:static`), PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
 
 ## Run CI
 
@@ -31,7 +31,7 @@ gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 
 After fixing a failure, push the new candidate. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, copyright/license notices, and branching provider/dashboard checks are required jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
+Configure the branch protection/ruleset to require **Required CI gate**. Static checks (ESLint, script syntax, copyright/license notices and workflows), integration/PHP unit checks, branching provider/dashboard checks, and the [branching performance matrix](performance/branching/README.md) are required jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
@@ -45,7 +45,7 @@ The gate compares all five Luma reports with each other (including Windows) and 
 
 Cypress uses the same source-built 16.2.1 binary locally and in CI, with the pinned cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`. `coverage/installation.json` records its upstream commit and patch digest. Each Cypress case also runs eleven isolated regressions (nine cookie/authorization journeys, document initialization and a delayed-response check); `cypress-runner-results.json` is included in its sanitized artifact and required by the final gate. For focused local investigation in an isolated installed runner, use `./bin/runner node tests/cypress-regressions.cjs`. This does not replace the final CI matrix. The source build runs upstream document-classifier, proxy and CDP unit tests and preserves Cypress's packaging and integrity checks; its build inputs and dependencies are discarded before the final image is produced.
 
-Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case and the qualification artifact are limited to **5 MiB**, for at most **50 MiB** of application qualification payload per complete attempt. The branching provider/dashboard job adds a separate report artifact capped at **5 MiB**. Oversized qualification reports block upload and fail the gate. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. PR images are built on disposable runners and discarded with them; no image archives are stored as Actions artifacts. Release publication reuses the successful PR qualification when the released files are identical.
+Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case and the qualification artifact are limited to **5 MiB**, for at most **50 MiB** of application qualification payload per complete attempt. The branching provider/dashboard job and each of the ten performance rows add separate report artifacts capped at **5 MiB** each. Oversized qualification reports block upload and fail the gate. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. PR images are built on disposable runners and discarded with them; no image archives are stored as Actions artifacts. Release publication reuses the successful PR qualification when the released files are identical.
 
 Every job runs one installation, with at most four Mage-OS and two Magento jobs in parallel on separate standard hosted VMs. E2E jobs have a 150-minute timeout and a 130-minute harness limit, allowing time for cleanup and uploads. CI stores installations under `MAGELENS_TEST_TMPDIR` on disk, avoiding Ubuntu 26’s RAM-backed `/tmp`. Disposable hosted Linux jobs remove unused Android/.NET/GHC/CodeQL SDK directories. Before installation, both the host and its Linux Docker engine must provide at least 25 GiB free disk and 6 GiB RAM; a sparse VM disk cannot hide an exhausted Windows host drive. Docker resources are never globally pruned. No local RAM or disk is consumed by installations. Cleanup addresses only the registered test project and volumes. Canceled/force-terminated jobs cannot qualify, and GitHub disposes of the hosted VM.
 
@@ -119,23 +119,39 @@ plans a repository-owned two-test fixture and checks its repeated-prefix graph.
 
 The planner parses JavaScript/TypeScript into a normalized syntax tree before
 matching shared prefixes. Comments, formatting and type-only assertions do not
-change matching; literal values and preceding setup remain significant. Rust
-follows local imports, helpers, page objects, fixture dependencies and bounded
-loops, then assigns versioned operation points from
+change matching; literal values and preceding setup remain significant. Fixed
+array registrations using `for...of` or `forEach`, static template titles and
+unnamed suites are collected without executing JavaScript. Parameter values stay
+part of checkpoint identity. Runtime-generated inventories remain explicit native
+collection diagnostics; `assessment.analysis.collectionComplete` reports this.
+Rust follows local and installed dependency imports, re-exports, JSON data, recursive
+helpers, inherited page objects, fixture dependencies, hooks and bounded loops,
+then assigns versioned operation points from
 [`points.rs`](../branching/planner/src/points.rs). No per-test weight callbacks or
 runtime calibration are required. Fixture setup and shared test steps are assessed
 together; worker setup and fixture teardown are excluded from reusable work.
 
-Manifests expose statement estimates, unresolved-analysis reasons and the source
-cost plan under `assessment`. Unknown work has an explicit incomplete estimate
-and cannot justify a checkpoint. These are static forecasts, not measured test
-durations. A profitable source prefix still needs a supported execution boundary:
+Use a source root containing the tests, their helpers and installed `node_modules`
+for dependency analysis. Reached dependency files and package metadata participate
+in source validation; unrelated packages are not scanned. Missing dependencies
+are reported explicitly. The analyzer reads source without executing imported code.
+
+Manifests expose minimum/maximum statement estimates, structured issues and the
+source cost plan under `assessment`. `analysisComplete` means the analyzer could
+model the statement; `complete` means its modeled cost is exact. The CLI and
+`assessment.analysis` summarize statements, fixtures and worker setup separately.
+Runtime-dependent branches retain cost ranges; unresolved work contributes no minimum credit but does not erase known
+work in the same prefix. Candidate diagnostics distinguish prefixes below the
+modeled checkpoint cost from those whose benefit remains uncertain. These are
+static forecasts of framework operations, not measured test durations or arbitrary
+JavaScript CPU costs. A profitable source prefix still needs a supported execution boundary:
 cost analysis does not restore arbitrary JavaScript closures or process state.
 The suite report includes both this assessment and the actual execution decision.
 
 `branching/planner/tests/assessment.rs` exercises the real CLI with independent
 source projects, including normalization, inputs, imported helpers, fixtures,
-control flow, cost selection and stale-source invalidation.
+control flow, installed dependency resolution, library state mutation, cost selection
+and stale-source invalidation.
 
 `tests/branching-automatic.test.cjs` covers automatic execution, selection,
 source changes, failure cleanup, last-consumer lifetime and retained evidence
@@ -143,9 +159,23 @@ within the normal integration suite. Public entry-point checks reject forced mod
 and manual checkpoint selections; provider recovery tests use an internal
 mechanism harness so safety failures remain covered independently of cost selection.
 
-AUTO is the only execution policy. Run
-`./bin/run-coverage --branching --disposable MANIFEST.json CONFIG.cjs COW_STORAGE`.
-The project configuration must set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
+## Run branching
+
+Save the project configuration as `branching.config.cjs` and generate its plan
+with `./bin/plan-branching SOURCE_ROOT`. Then use
+`./bin/run-coverage --branching` or `./bin/run-coverage --branching --calibrate`.
+Both commands read `.runtime/branching-plan.json` and create checkpoint storage
+at `.runtime/branching-storage`, which must be on a reflink-capable filesystem.
+Regenerate the plan after changing its source files.
+
+Override individual paths with `MAGELENS_BRANCHING_MANIFEST`,
+`MAGELENS_BRANCHING_CONFIG` or `MAGELENS_BRANCHING_STORAGE`, or supply
+`[MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]` after the command. Explicit paths
+take precedence; custom storage directories must already exist. The planner
+also honors `MAGELENS_BRANCHING_MANIFEST`.
+
+AUTO is the only execution policy. The project configuration must set
+`native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
 complete Playwright inventory. Unprofitable AUTO plans run it in one native
 invocation. Mixing reviewed checkpoints with native tests requires an explicitly
 qualified `native.splitSafe: true`, matching Playwright launch/context settings in
@@ -153,6 +183,29 @@ qualified `native.splitSafe: true`, matching Playwright launch/context settings 
 project teardown or managed web server. Global setup must not return per-process
 cleanup when splitting execution. Skipped and missing tests remain visible
 and do not qualify as a fully passed run.
+Checkpoint execution also requires the project's `identity`, `state(runtime)`
+and `assertCheckpoint(runtime, checkpoint)` validation hooks.
+
+Set `maxCheckpointsPerTest` in the project configuration to change the checkpoint
+budget (a positive integer, default **9**). Rust selection and the execution guard
+use the same budget. The limit applies to each test's ancestor path, not the number
+of tests or the whole suite. Excess candidates produce warnings; their actions
+still execute, and AUTO prioritizes the checkpoints with greater estimated savings.
+
+The reusable [performance matrix](performance/branching/README.md) compares
+isolated linear and AUTO runs on real Luma orders. It uses a budget of **4** and
+includes short, unrelated, highly reused and twelve-boundary journeys. It records
+setup, tests including checkpoint overhead, total, memory peaks and cleanup, with
+PHP-FPM and database parity checks before accepting measurements.
+
+Fresh projects use the versioned checkpoint-cost defaults in
+[`baseline.json`](../branching/planner/src/baseline.json), with **2 × overhead × 1.20**
+as the conservative cost. Successful, fully cleaned checkpoint runs update
+operation averages for later runs by default; the current plan stays unchanged.
+Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
+`./bin/run-coverage --branching --calibrate`
+to measure and replace the project baseline. Both modes retain overhead history
+and flag increases before averaging; see the performance matrix documentation.
 
 ## Dashboard self-tests and self-coverage
 
@@ -176,6 +229,8 @@ it needs neither Magento nor a planner binary inside the browser image.
 The application runner and production planner images are unchanged. The required
 branching CI job runs this self-test and the real MariaDB/Chrome provider check
 on private XFS reflink storage.
+The provider check also verifies that restored browser pages wait for deferred
+initialization and fail within the configured timeout when requests cannot settle.
 
 The Playwright checks use pinned Chrome for Testing and real engine execution
 with a small contract provider. They cover active nodes, depth colors, edges,
@@ -196,9 +251,8 @@ Each invocation creates a new `.runtime/branching-dashboard-self-test/` folder:
 - `rust-coverage/html/index.html`, `coverage.json`, `summary.json` and raw LLVM
   profiles: native planner coverage from the commands exercised by these
   Playwright checks. Third-party crate code is excluded; native Rust and
-  JavaScript percentages remain separate. `baseline.rs` remains in the source-hash
-  inventory but has no LLVM executable regions (constants and a derived-data
-  type); the report records this explicitly.
+  JavaScript percentages remain separate. Nested estimator modules are included;
+  source fingerprints also cover the embedded baseline and limit configuration.
 - Browser screenshots, including failure screenshots when needed.
 
 `npm run test:branching-dashboard` is the underlying command inside a prepared

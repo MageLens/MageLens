@@ -24,6 +24,9 @@ function compileFragment(parameters, code) {
 
 function verifySources(manifest) {
     if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported automatic manifest');
+    if (manifest.implementation === 'rust-prefix-v2' && (manifest.assessment?.boundsVersion !== 1 || manifest.assessment?.version !== 'js-ts-points-v3')) throw new Error('Outdated source cost model; replan before execution');
+    if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
+        throw new Error('Outdated source point scale; replan before execution');
     const root = fs.realpathSync(manifest.root);
     for (const source of manifest.sources) {
         const file = path.resolve(root, source.path);
@@ -75,7 +78,7 @@ function buildWorkflow(manifest, configuration, selected) {
     };
     const prefixUnits = (test, from, to) => {
         const counts = test.steps.slice(from, to).map(s => manifest.implementation === 'rust-prefix-v2'
-            ? units(s.estimate?.complete === true ? s.estimate.lowerBoundPoints : null) : units(s.actionUnits));
+            ? units(s.estimate?.lowerBoundPoints) : units(s.actionUnits));
         return counts.some(n=>n === null) ? null : units(counts.reduce((a,b)=>a+b, 0));
     };
     const rootFor = test => {
@@ -83,7 +86,7 @@ function buildWorkflow(manifest, configuration, selected) {
             const id = `root-${test.scope.slice(0, 20)}`; roots.set(test.scope, id);
             stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
                 actionUnits: manifest.implementation === 'rust-prefix-v2'
-                    ? units(test.fixtureEstimate?.complete === true ? test.fixtureEstimate.lowerBoundPoints : null)
+                    ? units(test.fixtureEstimate?.lowerBoundPoints)
                     : adapter?.prepare ? null : 0,
                 run: async runtime => { await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
         }
@@ -116,7 +119,7 @@ function buildWorkflow(manifest, configuration, selected) {
         }
     }
     return {
-        workflow: new Graph({identity: {source: manifest.sourceDigest, fixture: configuration.identity,
+        workflow: new Graph({costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
             configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
                 runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,

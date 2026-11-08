@@ -25,6 +25,10 @@ fn run() -> Result<(), String> {
             write_manifest(output,&manifest)?;
             println!("{} tests, {} repeated prefixes ({} automatic), {} diagnostics; {:.2} ms",
                 manifest.tests.len(),manifest.checkpoints.len(),manifest.checkpoints.iter().filter(|c|c.automatic).count(),manifest.diagnostics.len(),start.elapsed().as_secs_f64()*1000.0);
+            let analysis=&manifest.assessment["analysis"];
+            println!("Cost analysis: {}/{} statements analyzed, {} exact; {} fixture gaps, {} worker gaps",
+                analysis["analyzedStatements"],analysis["totalStatements"],analysis["exactStatements"],
+                analysis["fixturesWithGaps"],analysis["workersWithGaps"]);
         },
         Some("verify") if args.len()==2 => {verify(&args[1])?; println!("Manifest matches source and planner");},
         _ => return Err("Usage: magelens-plan plan SOURCE_ROOT MANIFEST | verify MANIFEST | cost-plan < UNITS.json. Execute tests with bin/run-coverage --branching.".into())

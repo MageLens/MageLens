@@ -22,6 +22,8 @@ function workspace(t, options = {}) {
     const commands = path.join(directory, 'commands');
     const log = path.join(directory, 'downloads.jsonl');
     const archive = path.join(directory, 'release.tar.gz');
+    const input = path.join(directory, 'stdin');
+    fs.writeFileSync(input, 'interactive answer\n');
     for (const entry of [destination, temporary, source, commands]) fs.mkdirSync(entry);
     if (!options.missingInstaller) {
         fs.writeFileSync(path.join(source, 'install.sh'), `#!/usr/bin/env bash
@@ -59,11 +61,17 @@ process.exit(${options.downloadStatus ?? 0});
             const invocation = mode === 'command'
                 ? ['-c', fs.readFileSync(bootstrap, 'utf8'), '--', ...args]
                 : [bootstrap, ...args];
-            const result = spawnSync('bash', invocation, {
-                cwd: destination, encoding: 'utf8', input: 'interactive answer\n', timeout: 10000,
-                env: {...process.env, PATH: `${commands}:${process.env.PATH}`, TMPDIR: temporary,
-                    MAGELENS_VERSION: options.version ?? ''}
-            });
+            // A real input descriptor preserves installer stdin without racing a
+            // pipe write against bootstrap's intentional early validation exits.
+            const stdin = fs.openSync(input, 'r');
+            let result;
+            try {
+                result = spawnSync('bash', invocation, {
+                    cwd: destination, encoding: 'utf8', stdio: [stdin, 'pipe', 'pipe'], timeout: 10000,
+                    env: {...process.env, PATH: `${commands}:${process.env.PATH}`, TMPDIR: temporary,
+                        MAGELENS_VERSION: options.version ?? ''}
+                });
+            } finally { fs.closeSync(stdin); }
             assert.ifError(result.error);
             assert.equal(result.signal, null);
             assert.deepEqual(fs.readdirSync(temporary), [], 'Temporary downloads must be cleaned up');

@@ -8,11 +8,11 @@ define(['uiComponent', 'ko', 'jquery', 'mage/template', 'text!Application_Blog/h
         defaults: {template: 'Application_Blog/list', postsUrl: '', categories: []},
         initialize: function () {
             this._super();
-            var params = new URLSearchParams(window.location.search), saved = [];
+            var params = new URLSearchParams(window.location.search), saved;
             try {
                 saved = JSON.parse(window.localStorage.getItem('application.blog.favorites') || '[]');
                 if (!Array.isArray(saved)) { saved = []; }
-            } catch (error) { saved = []; }
+            } catch { saved = []; }
             this.posts = ko.observableArray([]);
             this.query = ko.observable(params.get('q') || '');
             this.category = ko.observable(params.get('category') || '');
@@ -65,7 +65,7 @@ define(['uiComponent', 'ko', 'jquery', 'mage/template', 'text!Application_Blog/h
                 this.favoriteNotice(renderTemplate(favoriteTemplate, {data: {title: post.title, note: ''}}));
             }
             try { window.localStorage.setItem('application.blog.favorites', JSON.stringify(this.favorites())); }
-            catch (error) { this.message('Favorites are available for this visit only. Browser storage is unavailable.'); }
+            catch { this.message('Favorites are available for this visit only. Browser storage is unavailable.'); }
         }
     });
 });

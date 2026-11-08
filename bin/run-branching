@@ -4,27 +4,43 @@
 # License: see LICENSE in the repository root.
 
 source "$(dirname "$0")/common"
+source "$ROOT/branching/configs/entrypoints.conf"
 [[ "${1:-}" == --branching || "${1:-}" == --help ]] || fail 'Checkpoint execution requires --branching. Use bin/run-coverage for the normal linear run.'
 [[ "${1:-}" != --branching ]] || shift
+disposable=0
+if [[ "${1:-}" == --disposable ]]; then disposable=1; shift; fi
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching --disposable MANIFEST.json CONFIG.cjs COW_STORAGE\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\nConfigure test selection in the native runner configuration.\nBranching produces execution reports; coverage collection is not supported yet.\n'
+    printf 'Usage: ./bin/run-coverage --branching [--calibrate] [MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nCreate the saved plan with ./bin/plan-branching SOURCE_ROOT and configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching produces execution reports; coverage collection is not supported yet.\n' \
+        "$BRANCHING_DEFAULT_MANIFEST" "$BRANCHING_DEFAULT_CONFIGURATION" "$BRANCHING_DEFAULT_STORAGE" "$BRANCHING_DEFAULT_CONFIGURATION"
     exit 0
 fi
-[[ "${1:-}" == --disposable ]] || fail 'Use --disposable MANIFEST.json CONFIG.cjs COW_STORAGE.'
+(( disposable )) || fail 'Use ./bin/run-coverage --branching.'
 [[ "$MAGELENS_RUNNER" == playwright ]] || fail "Branching for $MAGELENS_RUNNER is not implemented yet. Use the normal linear run without --branching."
-shift
+calibrate=0
+if [[ "${1:-}" == --calibrate ]]; then calibrate=1; shift; fi
 [[ "${1:-}" != --auto ]] || shift
-[[ $# -eq 3 || ( $# -eq 4 && "${4:-}" == AUTO ) ]] || fail 'AUTO is the only checkpoint policy. Use MANIFEST.json CONFIG.cjs COW_STORAGE; configure test selection in the native runner.'
-manifest=$(realpath -e "$1")
-configuration=$(realpath -e "$2")
-storage=$(realpath -e "$3")
+[[ $# -le 3 || ( $# -eq 4 && "${4:-}" == AUTO ) ]] || fail 'AUTO is the only checkpoint policy. Use optional MANIFEST.json CONFIG.cjs COW_STORAGE paths; configure test selection in the native runner.'
+manifest=${1-${MAGELENS_BRANCHING_MANIFEST:-$BRANCHING_DEFAULT_MANIFEST}}
+configuration=${2-${MAGELENS_BRANCHING_CONFIG:-$BRANCHING_DEFAULT_CONFIGURATION}}
+storage=${3-${MAGELENS_BRANCHING_STORAGE:-$BRANCHING_DEFAULT_STORAGE}}
+[[ -f "$manifest" ]] || fail "Branching plan not found: $manifest. Run ./bin/plan-branching SOURCE_ROOT first."
+[[ -f "$configuration" ]] || fail "Branching configuration not found: $configuration. Configure your project there; see tests/README.md#run-branching."
+manifest=$(realpath -e "$manifest")
+configuration=$(realpath -e "$configuration")
 [[ "$manifest" == "$ROOT/"* && "$configuration" == "$ROOT/"* && -f "$manifest" && -f "$configuration" ]] || fail 'Manifest and configuration must be files in this checkout.'
 [[ -f .runtime/installed ]] || fail 'Install a dedicated test checkout first.'
 [[ ! -e .runtime/workflow.lock && ! -e .runtime/branching-recovery.json ]] || fail 'An active or interrupted workflow needs recovery first.'
 preflight
 [[ "$(docker info --format '{{.OSType}}')" == linux ]] || fail 'branching currently supports native Linux Docker only.'
+if [[ $# -lt 3 && -z "${MAGELENS_BRANCHING_STORAGE:-}" ]]; then
+    [[ "$(realpath -m "$storage")" == "$ROOT/$BRANCHING_DEFAULT_STORAGE" ]] || fail 'Default branching storage must remain inside this checkout without symlinks.'
+    mkdir -p "$storage"
+fi
+[[ -d "$storage" ]] || fail "Checkpoint storage not found: $storage. Use a directory on a reflink-capable filesystem."
+storage=$(realpath -e "$storage")
 entrypoint=node
 driver_command=(branching/auto-cli.cjs "$manifest" "$configuration" "$storage")
+if (( calibrate )); then driver_command=(branching/calibration-cli.cjs "$manifest" "$configuration" "$storage"); fi
 [[ -d "$storage" && "$storage" != *','* && "$ROOT" != *','* ]] || fail 'Use an existing CoW directory; bind mount paths cannot contain commas.'
 runner=$(dc ps -q runner)
 [[ -n "$runner" ]] || fail 'Start this installation with bin/start first.'

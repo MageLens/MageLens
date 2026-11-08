@@ -10,25 +10,160 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::Node;
+mod collection;
+mod runtime;
+pub(crate) use collection::Bindings;
 type Env = BTreeMap<String, Value>;
 #[derive(Clone, Debug, Default, PartialEq)]
 enum Value {
     #[default]
     Unknown,
+    Data,
+    Text,
+    Null,
+    Undefined,
     Number(i64),
     Bool(bool),
     String(String),
     Array(Vec<Value>),
+    Sequence(Box<Value>),
     Object(Env),
+    Builtin(String),
+    Promise(Box<Value>),
+    Response,
+    TestApi,
+    TestInfo,
+    Map(Option<Vec<(Value, Value)>>),
+    Set(Option<Vec<Value>>),
     Browser,
     Request,
     Expect,
     Assertion(bool),
+    RetryAssertion(Reference, Box<Env>),
     Use,
     Function(Reference, Box<Env>),
     Class(Reference),
     Instance(Reference, Env),
     Namespace(String),
+    MissingDependency(String),
+    DataLibrary(String),
+}
+impl Value {
+    fn settled() -> Self {
+        Self::Object(Env::from([
+            ("status".into(), Self::Text),
+            ("value".into(), Self::Data),
+            ("reason".into(), Self::Data),
+        ]))
+    }
+    fn data_only(&self) -> bool {
+        match self {
+            Self::Null
+            | Self::Undefined
+            | Self::Bool(_)
+            | Self::Number(_)
+            | Self::String(_)
+            | Self::Text
+            | Self::Data => true,
+            Self::Array(v) => v.iter().all(Self::data_only),
+            Self::Object(v) => v.values().all(Self::data_only),
+            Self::Sequence(v) => v.data_only(),
+            _ => false,
+        }
+    }
+    fn widen(&self) -> Self {
+        match self {
+            Self::String(_) | Self::Text => Self::Text,
+            Self::Array(v) => {
+                Self::Sequence(Box::new(v.first().map(Self::widen).unwrap_or(Self::Data)))
+            }
+            Self::Sequence(v) => Self::Sequence(v.clone()),
+            Self::Promise(v) => Self::Promise(Box::new(v.widen())),
+            Self::Map(_) => Self::Map(None),
+            Self::Set(_) => Self::Set(None),
+            Self::Object(v) => {
+                Self::Object(v.iter().map(|(k, v)| (k.clone(), v.widen())).collect())
+            }
+            Self::Instance(c, v) => Self::Instance(
+                c.clone(),
+                v.iter().map(|(k, v)| (k.clone(), v.widen())).collect(),
+            ),
+            Self::Browser
+            | Self::Request
+            | Self::Function(..)
+            | Self::Class(_)
+            | Self::TestInfo
+            | Self::TestApi
+            | Self::Expect
+            | Self::Use
+            | Self::Builtin(_)
+            | Self::Namespace(_)
+            | Self::DataLibrary(_)
+            | Self::MissingDependency(_)
+            | Self::Response
+            | Self::Assertion(_)
+            | Self::RetryAssertion(..) => self.clone(),
+            _ => Self::Data,
+        }
+    }
+    fn resolved(self) -> Self {
+        if let Self::Promise(value) = self {
+            *value
+        } else {
+            self
+        }
+    }
+    fn truth(&self) -> Option<bool> {
+        match self {
+            Self::Bool(v) => Some(*v),
+            Self::Number(v) => Some(*v != 0),
+            Self::String(v) => Some(!v.is_empty()),
+            Self::Null | Self::Undefined => Some(false),
+            Self::Array(_)
+            | Self::Object(_)
+            | Self::Map(_)
+            | Self::Set(_)
+            | Self::Instance(..)
+            | Self::Function(..)
+            | Self::Class(_)
+            | Self::Browser
+            | Self::Request => Some(true),
+            _ => None,
+        }
+    }
+    fn from_json(value: &serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => Self::Null,
+            serde_json::Value::Bool(v) => Self::Bool(*v),
+            serde_json::Value::String(v) => Self::String(v.clone()),
+            serde_json::Value::Number(v) => v.as_i64().map(Self::Number).unwrap_or(Self::Data),
+            serde_json::Value::Array(v) => Self::Array(v.iter().map(Self::from_json).collect()),
+            serde_json::Value::Object(v) => Self::Object(
+                v.iter()
+                    .map(|(k, v)| (k.clone(), Self::from_json(v)))
+                    .collect(),
+            ),
+        }
+    }
+    fn json(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::Null => Some(serde_json::Value::Null),
+            Self::Bool(v) => Some((*v).into()),
+            Self::Number(v) => Some((*v).into()),
+            Self::String(v) => Some(v.clone().into()),
+            Self::Array(v) => v
+                .iter()
+                .map(Self::json)
+                .collect::<Option<Vec<_>>>()
+                .map(serde_json::Value::Array),
+            Self::Object(v) => v
+                .iter()
+                .map(|(k, v)| Some((k.clone(), v.json()?)))
+                .collect::<Option<serde_json::Map<_, _>>>()
+                .map(serde_json::Value::Object),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Default)]
 enum Flow {
@@ -36,12 +171,18 @@ enum Flow {
     Continue,
     Return,
     Use,
+    Break,
+    Next,
+    Throw,
+    Maybe,
 }
 #[derive(Default)]
 struct Eval {
     value: Value,
     cost: Estimate,
     flow: Flow,
+    this: Option<Value>,
+    writes: Env,
 }
 impl Eval {
     fn value(value: Value) -> Self {
@@ -60,14 +201,23 @@ impl Eval {
 struct Context {
     budget: usize,
     stack: Vec<String>,
+    module_values: BTreeMap<(String, usize), Value>,
+    tainted_libraries: BTreeSet<String>,
+    lexical_envs: BTreeMap<(String, usize), Env>,
 }
 impl Default for Context {
     fn default() -> Self {
         Self {
             budget: points::NODE_LIMIT,
             stack: vec![],
+            module_values: BTreeMap::new(),
+            tainted_libraries: BTreeSet::new(),
+            lexical_envs: BTreeMap::new(),
         }
     }
+}
+fn function_async(n: Node) -> bool {
+    (0..n.child_count()).any(|i| n.child(i).is_some_and(|n| n.kind() == "async"))
 }
 fn params(n: Node) -> Vec<Node> {
     field(n, "parameters")
@@ -101,7 +251,7 @@ fn bind(n: Node, value: Value, s: &str, env: &mut Env) {
             env.insert(text(n, s).into(), value);
         }
         "object_pattern" => {
-            let object = if let Value::Object(v) = value {
+            let object = if let Value::Object(v) | Value::Instance(_, v) = value {
                 v
             } else {
                 Env::new()
@@ -148,6 +298,9 @@ fn builtin(name: &str) -> Value {
         "page" | "context" | "browser" => Value::Browser,
         "request" => Value::Request,
         "expect" => Value::Expect,
+        "browserName" | "baseURL" => Value::Text,
+        "testInfo" => Value::TestInfo,
+        "playwright" => Value::Object(Env::from([("request".into(), Value::Request)])),
         _ => Value::Unknown,
     }
 }
@@ -156,11 +309,87 @@ fn invalidate_changed(env: &mut Env, branch: &Env) {
     // only bindings whose abstract value is unchanged on the optional path.
     for (name, value) in branch {
         if env.get(name).is_none_or(|prior| prior != value) {
-            env.insert(name.clone(), Value::Unknown);
+            env.insert(name.clone(), value.widen());
         }
     }
 }
-fn escaped_writes(body: Node, source: &str, parameters: &[Node]) -> bool {
+// Without heap identities, equal abstract objects may alias. Widen the other
+// references on mutation rather than inventing a concrete value for them.
+fn invalidate_aliases(env: &mut Env, old: &Value, except: &str) {
+    if !matches!(
+        old,
+        Value::Object(_) | Value::Instance(..) | Value::Array(_) | Value::Map(_) | Value::Set(_)
+    ) {
+        return;
+    }
+    fn invalidate(value: &mut Value, old: &Value) {
+        if value == old {
+            *value = value.widen();
+        } else {
+            match value {
+                Value::Object(fields) | Value::Instance(_, fields) => {
+                    for value in fields.values_mut() {
+                        invalidate(value, old);
+                    }
+                }
+                Value::Array(items) => {
+                    for value in items {
+                        invalidate(value, old);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    for (name, value) in env.iter_mut() {
+        if name != except {
+            invalidate(value, old);
+        }
+    }
+}
+fn store_mutation(target: Node, value: Value, source: &str, env: &mut Env) {
+    if let Some(old) = env.get(text(target, source)).cloned() {
+        if old == value {
+            return;
+        }
+        invalidate_aliases(env, &old, text(target, source));
+    }
+    store_value(target, value, source, env);
+}
+fn store_value(target: Node, value: Value, source: &str, env: &mut Env) {
+    if matches!(target.kind(), "identifier" | "this") {
+        env.insert(text(target, source).into(), value);
+    } else if target.kind() == "member_expression"
+        && let (Some(object), Some(property)) = (field(target, "object"), field(target, "property"))
+    {
+        if let Some(old) = env.get(text(object, source)).cloned() {
+            invalidate_aliases(env, &old, text(object, source));
+        }
+        if let Some(Value::Object(fields) | Value::Instance(_, fields)) =
+            env.get_mut(text(object, source))
+        {
+            fields.insert(text(property, source).into(), value);
+        }
+    } else {
+        // Dynamic or nested writes can change values used by later branches.
+        for value in env.values_mut() {
+            *value = value.widen();
+        }
+    }
+}
+fn invalidate_call(env: &mut Env, result: &Eval) {
+    if result
+        .cost
+        .reasons
+        .iter()
+        .any(|r| r == "Helper mutates state outside its local bindings")
+    {
+        for value in env.values_mut() {
+            *value = value.widen();
+        }
+    }
+}
+fn escaped_writes(body: Node, source: &str, parameters: &[Node]) -> Vec<String> {
     let mut locals = BTreeSet::new();
     fn bindings(n: Node, s: &str, locals: &mut BTreeSet<String>) {
         if matches!(
@@ -204,36 +433,117 @@ fn escaped_writes(body: Node, source: &str, parameters: &[Node]) -> bool {
     visit(body, source, &mut locals, &mut writes);
     writes
         .iter()
-        .any(|n| n.kind() != "identifier" || !locals.contains(text(*n, source)))
+        .filter(|n| n.kind() != "identifier" || !locals.contains(text(**n, source)))
+        .map(|n| text(*n, source).to_string())
+        .collect()
 }
 impl Project {
     fn value(&self, file: &str, name: &str, env: &Env, ctx: &mut Context) -> Value {
         if let Some(v) = env.get(name) {
             return v.clone();
         }
+        // A star re-export exposes names to importers, not new local bindings.
+        // In particular it must not turn JSON, Set or Promise into fake runner exports.
+        if !self.imports(file).contains_key(name) && self.declaration(file, name).is_none() {
+            match name {
+                "process" | "console" | "Object" | "Array" | "JSON" | "Math" | "Number"
+                | "String" | "Boolean" | "RegExp" | "URL" | "Error" | "TypeError" | "Map"
+                | "Set" | "WeakMap" | "WeakSet" | "Promise" | "parseInt" | "parseFloat"
+                | "Date" | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
+                | "queueMicrotask" => return Value::Builtin(name.into()),
+                "undefined" => return Value::Undefined,
+                "__dirname" | "__filename" => return Value::Text,
+                _ => {}
+            }
+        }
+        if let Some((module, export)) = self.external(file, name, 0) {
+            if module == "@playwright/test" {
+                return match export.as_str() {
+                    "test" => Value::TestApi,
+                    "expect" => Value::Expect,
+                    "request" => Value::Request,
+                    _ => Value::Unknown,
+                };
+            }
+            let module = module.strip_prefix("node:").unwrap_or(&module);
+            if matches!(
+                module,
+                "fs" | "fs/promises" | "path" | "url" | "os" | "assert" | "assert/strict"
+            ) {
+                return Value::Builtin(if matches!(export.as_str(), "default" | "*") {
+                    module.into()
+                } else {
+                    format!("{module}.{export}")
+                });
+            }
+            if self.resolve_import(file, name, module).is_none() {
+                return Value::MissingDependency(module.into());
+            }
+        }
         if let Some((module, export)) = self.imports(file).get(name) {
             if module == "@playwright/test" && export == "expect" {
                 return Value::Expect;
             }
             if export == "*"
-                && let Some(target) = self.resolve(file, module)
+                && let Some(target) = self.resolve_import(file, name, module)
             {
                 return Value::Namespace(target);
             }
+            if let Some(target) = self.resolve_import(file, name, module)
+                && let Some(data) = self.data.get(&target)
+            {
+                return Value::from_json(data);
+            }
         }
         let Some(r) = self.symbol(file, name, 0) else {
-            return Value::Unknown;
+            return match name {
+                "process" | "console" | "Object" | "Array" | "JSON" | "Math" | "Number"
+                | "String" | "Boolean" | "RegExp" | "URL" | "Error" | "TypeError" | "Map"
+                | "Set" | "WeakMap" | "WeakSet" | "Promise" | "parseInt" | "parseFloat"
+                | "Date" | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
+                | "queueMicrotask" => Value::Builtin(name.into()),
+                "undefined" => Value::Undefined,
+                "__dirname" | "__filename" => Value::Text,
+                _ => Value::Unknown,
+            };
         };
+        if self.node(&r).is_some_and(|n| n.kind() == "call_expression")
+            && self.provider(file, name, &mut BTreeSet::new()).is_some()
+        {
+            return Value::TestApi;
+        }
+        if self.data_modules.contains(&r.file)
+            && self
+                .node(&r)
+                .is_some_and(|n| matches!(n.kind(), "new_expression" | "call_expression"))
+        {
+            return Value::DataLibrary(r.file);
+        }
+        if self.mutable_binding(&r) {
+            return Value::Data;
+        }
+        let cache_key = (r.file.clone(), r.start);
+        if let Some(value) = ctx.module_values.get(&cache_key) {
+            return value.clone();
+        }
         let key = format!("binding:{}:{}", r.file, r.start);
         if ctx.stack.contains(&key) || ctx.stack.len() >= points::CALL_LIMIT {
             return Value::Unknown;
         }
         ctx.stack.push(key);
-        let v = self
+        let mut v = self
             .node(&r)
             .map(|n| self.eval(&r.file, n, &mut Env::new(), ctx).value)
             .unwrap_or_default();
         ctx.stack.pop();
+        // Module collections survive between tests; their contents cannot be
+        // assumed to match construction-time values on every reuse.
+        match &mut v {
+            Value::Map(v) => *v = None,
+            Value::Set(v) => *v = None,
+            _ => {}
+        }
+        ctx.module_values.insert(cache_key, v.clone());
         v
     }
     fn invoke(
@@ -244,22 +554,45 @@ impl Project {
         this: Option<Value>,
         ctx: &mut Context,
     ) -> Eval {
-        let key = format!("call:{}:{}", r.file, r.start);
-        if ctx.stack.contains(&key) || ctx.stack.len() >= points::CALL_LIMIT {
-            return Eval::cost(Estimate::unknown("Recursive helper or call-depth limit"));
+        let key = format!("call:{}:{}:{}", r.file, r.start, hash(format!("{args:?}")));
+        let call_prefix = format!("call:{}:{}:", r.file, r.start);
+        if ctx.stack.contains(&key)
+            || args.iter().all(|v| v.json().is_none())
+                && ctx.stack.iter().any(|key| key.starts_with(&call_prefix))
+        {
+            return Eval {
+                value: self.recursive_return(r, this.as_ref()),
+                cost: Estimate::unknown("Recursive helper depends on runtime data"),
+                ..Eval::default()
+            };
+        }
+        if ctx.stack.len() >= points::CALL_LIMIT {
+            return Eval::cost(Estimate::unknown("Static helper call-depth limit"));
         }
         let Some(n) = self.node(r) else {
             return Eval::cost(Estimate::unknown("Unresolved helper body"));
         };
         let s = &self.modules[&r.file].source;
         let mut env = closure.clone();
+        // Closures capture bindings, not their values at declaration time. A
+        // nested helper can read locals initialized later in its lexical block.
+        let mut parent = n.parent();
+        while let Some(scope) = parent {
+            if matches!(scope.kind(), "statement_block" | "program") {
+                if let Some(active) = ctx.lexical_envs.get(&(r.file.clone(), scope.start_byte())) {
+                    env.extend(active.clone());
+                }
+                break;
+            }
+            parent = scope.parent();
+        }
         if let Some(this) = this {
             env.insert("this".into(), this);
         }
         ctx.stack.push(key);
         let mut defaults = Estimate::default();
         for (i, param) in params(n).into_iter().enumerate() {
-            let value = if let Some(value) = args.get(i) {
+            let mut value = if let Some(value) = args.get(i) {
                 value.clone()
             } else if let Some(value) = field(param, "value") {
                 let r = self.eval(&r.file, value, &mut env, ctx);
@@ -268,6 +601,22 @@ impl Project {
             } else {
                 Value::Unknown
             };
+            if matches!(value, Value::Unknown)
+                && let Some(annotation) = field(param, "type")
+            {
+                let annotation = text(annotation, s).trim_start_matches(':').trim();
+                value = match annotation {
+                    "string" => Value::Text,
+                    "number" | "boolean" | "unknown" => Value::Data,
+                    _ => {
+                        if annotation.ends_with("[]") {
+                            Value::Sequence(Box::new(Value::Data))
+                        } else {
+                            value
+                        }
+                    }
+                };
+            }
             bind(param, value, s, &mut env);
         }
         let mut result = field(n, "body")
@@ -275,13 +624,41 @@ impl Project {
             .unwrap_or_default();
         ctx.stack.pop();
         result.cost.add(defaults);
-        if field(n, "body").is_some_and(|body| escaped_writes(body, s, &params(n))) {
-            result.cost = result
-                .cost
-                .uncertain("Helper mutates state outside its local bindings");
+        let writes = field(n, "body")
+            .map(|body| escaped_writes(body, s, &params(n)))
+            .unwrap_or_default();
+        if !writes.is_empty() && args.iter().any(|v| !v.data_only()) {
+            for name in &writes {
+                let root = name.split(['.', '[']).next().unwrap_or(name);
+                let target = self
+                    .imports(&r.file)
+                    .get(root)
+                    .and_then(|(module, _)| self.resolve_import(&r.file, root, module))
+                    .or_else(|| self.data_modules.contains(&r.file).then(|| r.file.clone()));
+                if let Some(target) = target {
+                    ctx.tainted_libraries
+                        .extend(self.dependency_closure(&target));
+                }
+            }
         }
-        if result.flow == Flow::Return {
+        for name in &writes {
+            if let Some(value) = env.get(name) {
+                result.writes.insert(name.clone(), value.clone());
+            }
+        }
+        if !writes.is_empty() {
+            result.cost.complete = false;
+            result
+                .cost
+                .reasons
+                .push("Helper mutates state outside its local bindings".into());
+        }
+        result.this = env.get("this").cloned();
+        if matches!(result.flow, Flow::Return | Flow::Maybe) {
             result.flow = Flow::Continue;
+        }
+        if function_async(n) && result.flow != Flow::Use {
+            result.value = Value::Promise(Box::new(result.value.resolved()));
         }
         result
     }
@@ -320,14 +697,48 @@ impl Project {
                     .map(Value::String)
                     .unwrap_or_default(),
             ),
-            "null" | "undefined" => Eval::default(),
-            "regex" | "string_fragment" | "escape_sequence" => Eval::default(),
-            "template_string" | "template_substitution" => {
+            "null" => Eval::value(Value::Null),
+            "undefined" => Eval::value(Value::Undefined),
+            "regex" => Eval::value(Value::Builtin("RegExp.instance".into())),
+            "string_fragment" | "escape_sequence" => Eval::default(),
+            "template_substitution" => children(n)
+                .first()
+                .map(|n| self.eval(file, *n, env, ctx))
+                .unwrap_or_default(),
+            "template_string" => {
                 let mut cost = Estimate::default();
+                let mut value = String::new();
+                let mut known = true;
                 for child in children(n) {
-                    cost.add(self.eval(file, child, env, ctx).cost);
+                    let part = if child.kind() == "template_substitution" {
+                        let result = self.eval(file, child, env, ctx);
+                        cost.add(result.cost);
+                        match result.value {
+                            Value::String(s) => Some(s),
+                            Value::Number(n) => Some(n.to_string()),
+                            Value::Bool(b) => Some(b.to_string()),
+                            Value::Null => Some("null".into()),
+                            Value::Undefined => Some("undefined".into()),
+                            _ => None,
+                        }
+                    } else {
+                        normalize::decode(text(child, s))
+                    };
+                    if let Some(part) = part {
+                        value.push_str(&part);
+                    } else {
+                        known = false;
+                    }
                 }
-                Eval::cost(cost)
+                Eval {
+                    cost,
+                    value: if known {
+                        Value::String(value)
+                    } else {
+                        Value::Text
+                    },
+                    ..Eval::default()
+                }
             }
             "arrow_function"
             | "function_expression"
@@ -340,20 +751,34 @@ impl Project {
             "array" => {
                 let mut cost = Estimate::default();
                 let mut values = vec![];
+                let mut dynamic = false;
                 for c in children(n) {
                     let r = self.eval(file, c, env, ctx);
                     cost.add(r.cost);
-                    values.push(r.value);
+                    if c.kind() == "spread_element" {
+                        if let Value::Array(items) = r.value {
+                            values.extend(items);
+                        } else {
+                            dynamic = true;
+                        }
+                    } else {
+                        values.push(r.value);
+                    }
                 }
                 Eval {
                     cost,
-                    value: Value::Array(values),
+                    value: if dynamic {
+                        Value::Sequence(Box::new(Value::Data))
+                    } else {
+                        Value::Array(values)
+                    },
                     ..Eval::default()
                 }
             }
             "object" => {
                 let mut cost = Estimate::default();
                 let mut values = Env::new();
+                let mut dynamic = false;
                 for c in children(n) {
                     if c.kind() == "pair" {
                         if let (Some(k), Some(v)) = (field(c, "key"), field(c, "value")) {
@@ -363,6 +788,21 @@ impl Project {
                                 normalize::string(k, s).unwrap_or_else(|| text(k, s).into()),
                                 r.value,
                             );
+                        }
+                    } else if c.kind() == "method_definition"
+                        && let Some(name) = field(c, "name")
+                    {
+                        values.insert(
+                            text(name, s).into(),
+                            Value::Function(self.reference(file, c), Box::new(env.clone())),
+                        );
+                    } else if c.kind() == "spread_element" {
+                        let r = self.eval(file, c, env, ctx);
+                        cost.add(r.cost);
+                        if let Value::Object(fields) = r.value {
+                            values.extend(fields);
+                        } else {
+                            dynamic = true;
                         }
                     } else if c.kind() == "shorthand_property_identifier" {
                         let r = self.eval(file, c, env, ctx);
@@ -374,17 +814,45 @@ impl Project {
                 }
                 Eval {
                     cost,
-                    value: Value::Object(values),
+                    value: if dynamic {
+                        Value::Data
+                    } else {
+                        Value::Object(values)
+                    },
                     ..Eval::default()
                 }
+            }
+            "spread_element" => {
+                let mut r = children(n)
+                    .first()
+                    .map(|n| self.eval(file, *n, env, ctx))
+                    .unwrap_or_default();
+                r.value = match r.value {
+                    Value::Map(Some(v)) => Value::Array(
+                        v.into_iter()
+                            .map(|(k, v)| Value::Array(vec![k, v]))
+                            .collect(),
+                    ),
+                    Value::Map(None) => {
+                        Value::Sequence(Box::new(Value::Array(vec![Value::Data, Value::Data])))
+                    }
+                    Value::Set(Some(v)) => Value::Array(v),
+                    Value::Set(None) => Value::Sequence(Box::new(Value::Data)),
+                    v => v,
+                };
+                r
             }
             "expression_statement" | "await_expression" => {
                 let child = children(n).into_iter().next();
                 let mut r = child
                     .map(|n| self.eval(file, n, env, ctx))
                     .unwrap_or_default();
+                if n.kind() == "await_expression" {
+                    r.value = r.value.resolved();
+                }
                 if n.kind() == "expression_statement"
                     && child.is_some_and(|n| n.kind() == "call_expression")
+                    && matches!(r.value, Value::Promise(_))
                     && r.cost.points > 0
                 {
                     r.cost = r
@@ -394,7 +862,26 @@ impl Project {
                 r
             }
             "statement_block" | "program" => {
+                let scope_key = (file.to_string(), n.start_byte());
+                let prior_scope = ctx.lexical_envs.remove(&scope_key);
                 let mut result = Eval::default();
+                let mut scoped = BTreeMap::new();
+                for declaration in children(n)
+                    .into_iter()
+                    .filter(|n| n.kind() == "lexical_declaration")
+                {
+                    for item in children(declaration) {
+                        if let Some(name) = field(item, "name") {
+                            let mut names = Env::new();
+                            bind(name, Value::Unknown, s, &mut names);
+                            for name in names.into_keys() {
+                                scoped
+                                    .entry(name.clone())
+                                    .or_insert_with(|| env.get(&name).cloned());
+                            }
+                        }
+                    }
+                }
                 // Function declarations are hoisted within this lexical body.
                 for c in children(n)
                     .into_iter()
@@ -411,12 +898,34 @@ impl Project {
                     if c.kind() == "function_declaration" {
                         continue;
                     }
+                    ctx.lexical_envs.insert(scope_key.clone(), env.clone());
                     let r = self.eval(file, c, env, ctx);
-                    result.cost.add(r.cost);
-                    result.value = r.value;
-                    result.flow = r.flow;
-                    if result.flow != Flow::Continue {
+                    result.cost.add(if result.flow == Flow::Maybe {
+                        r.cost.optional("A prior branch may exit before this work")
+                    } else {
+                        r.cost
+                    });
+                    result.value = if result.flow == Flow::Maybe {
+                        Value::Data
+                    } else {
+                        r.value
+                    };
+                    if result.flow != Flow::Maybe {
+                        result.flow = r.flow;
+                    }
+                    if !matches!(result.flow, Flow::Continue | Flow::Maybe) {
                         break;
+                    }
+                }
+                ctx.lexical_envs.remove(&scope_key);
+                if let Some(prior) = prior_scope {
+                    ctx.lexical_envs.insert(scope_key, prior);
+                }
+                for (name, previous) in scoped {
+                    if let Some(previous) = previous {
+                        env.insert(name, previous);
+                    } else {
+                        env.remove(&name);
                     }
                 }
                 result
@@ -436,6 +945,48 @@ impl Project {
                 }
                 r
             }
+            "unary_expression" => {
+                let mut r = eval_field("argument", env, ctx);
+                let op = field(n, "operator").map(|n| text(n, s)).unwrap_or("");
+                r.value = match (op, r.value) {
+                    ("!", v) => v.truth().map(|v| Value::Bool(!v)).unwrap_or(Value::Data),
+                    ("-", Value::Number(v)) => {
+                        v.checked_neg().map(Value::Number).unwrap_or(Value::Data)
+                    }
+                    ("+", v) => v,
+                    ("void", _) => Value::Undefined,
+                    ("typeof", v) => match v {
+                        Value::String(_) | Value::Text => Value::String("string".into()),
+                        Value::Number(_) => Value::String("number".into()),
+                        Value::Bool(_) => Value::String("boolean".into()),
+                        Value::Object(_)
+                        | Value::Array(_)
+                        | Value::Map(_)
+                        | Value::Set(_)
+                        | Value::Null => Value::String("object".into()),
+                        Value::Undefined => Value::String("undefined".into()),
+                        _ => Value::Text,
+                    },
+                    _ => Value::Data,
+                };
+                r
+            }
+            "break_statement" => Eval {
+                flow: Flow::Break,
+                ..Eval::default()
+            },
+            "continue_statement" => Eval {
+                flow: Flow::Next,
+                ..Eval::default()
+            },
+            "throw_statement" => {
+                let mut r = children(n)
+                    .first()
+                    .map(|n| self.eval(file, *n, env, ctx))
+                    .unwrap_or_default();
+                r.flow = Flow::Throw;
+                r
+            }
             "return_statement" => {
                 let mut r = n
                     .named_child(0)
@@ -447,15 +998,9 @@ impl Project {
             "member_expression" => {
                 let mut result = eval_field("object", env, ctx);
                 let key = field(n, "property").map(|n| text(n, s)).unwrap_or("");
-                result.value = match result.value {
-                    Value::Object(v) | Value::Instance(_, v) => {
-                        v.get(key).cloned().unwrap_or_default()
-                    }
-                    Value::Array(v) if key == "length" => Value::Number(v.len() as i64),
-                    Value::Browser if key == "request" => Value::Request,
-                    Value::Assertion(browser) if key == "not" => Value::Assertion(browser),
-                    _ => Value::Unknown,
-                };
+                let property = self.property(result.value, key, ctx);
+                result.cost.add(property.cost);
+                result.value = property.value;
                 result
             }
             "subscript_expression" => {
@@ -467,6 +1012,8 @@ impl Project {
                         v.get(i as usize).cloned().unwrap_or_default()
                     }
                     (Value::Object(v), Value::String(s)) => v.get(&s).cloned().unwrap_or_default(),
+                    (Value::Sequence(v), _) => *v,
+                    (Value::Data | Value::Text | Value::Builtin(_), _) => Value::Data,
                     _ => Value::Unknown,
                 };
                 obj
@@ -476,8 +1023,13 @@ impl Project {
                 let op = field(n, "operator").map(|n| text(n, s)).unwrap_or("");
                 if matches!(op, "&&" | "||" | "??") {
                     let execute = match (&a.value, op) {
-                        (Value::Bool(v), "&&") => Some(*v),
-                        (Value::Bool(v), "||") => Some(!*v),
+                        (value, "&&") => value.truth(),
+                        (value, "||") => value.truth().map(|v| !v),
+                        (Value::Null | Value::Undefined, "??") => Some(true),
+                        (Value::Unknown | Value::Data | Value::Text | Value::Sequence(_), "??") => {
+                            None
+                        }
+                        (_, "??") => Some(false),
                         _ => None,
                     };
                     if execute == Some(false) {
@@ -488,7 +1040,8 @@ impl Project {
                     if execute.is_none() {
                         b.cost = b
                             .cost
-                            .uncertain("Short-circuit operation depends on runtime data");
+                            .optional("Short-circuit operation depends on runtime data");
+                        b.value = Value::Data;
                         invalidate_changed(env, &branch_env);
                     } else {
                         *env = branch_env;
@@ -499,20 +1052,7 @@ impl Project {
                 let b = eval_field("right", env, ctx);
                 let mut cost = a.cost;
                 cost.add(b.cost);
-                let value = match (a.value, b.value, op) {
-                    (Value::Number(a), Value::Number(b), "<") => Value::Bool(a < b),
-                    (Value::Number(a), Value::Number(b), "<=") => Value::Bool(a <= b),
-                    (Value::Number(a), Value::Number(b), ">") => Value::Bool(a > b),
-                    (Value::Number(a), Value::Number(b), ">=") => Value::Bool(a >= b),
-                    (Value::Number(a), Value::Number(b), "==" | "===") => Value::Bool(a == b),
-                    (Value::Number(a), Value::Number(b), "+") => {
-                        a.checked_add(b).map(Value::Number).unwrap_or_default()
-                    }
-                    (Value::Number(a), Value::Number(b), "-") => {
-                        a.checked_sub(b).map(Value::Number).unwrap_or_default()
-                    }
-                    _ => Value::Unknown,
-                };
+                let value = runtime::binary(a.value, b.value, op);
                 Eval {
                     cost,
                     value,
@@ -520,7 +1060,28 @@ impl Project {
                 }
             }
             "assignment_expression" | "augmented_assignment_expression" => {
+                let mut target = None;
+                let mut target_cost = Estimate::default();
+                if n.kind() == "assignment_expression"
+                    && let Some(left) = field(n, "left")
+                    && let Some(object) = field(left, "object")
+                {
+                    let result = self.eval(file, object, env, ctx);
+                    target_cost.add(result.cost);
+                    target = Some(result.value);
+                    if left.kind() == "subscript_expression"
+                        && let Some(index) = field(left, "index")
+                    {
+                        target_cost.add(self.eval(file, index, env, ctx).cost);
+                    }
+                }
                 let mut r = eval_field("right", env, ctx);
+                r.cost.add(target_cost);
+                if !r.value.data_only()
+                    && let Some(Value::DataLibrary(file)) = target
+                {
+                    ctx.tainted_libraries.extend(self.dependency_closure(&file));
+                }
                 if let Some(left) = field(n, "left") {
                     if n.kind() == "augmented_assignment_expression" {
                         let prior = self.eval(file, left, env, ctx);
@@ -539,15 +1100,7 @@ impl Project {
                             _ => Value::Unknown,
                         };
                     }
-                    if left.kind() == "identifier" {
-                        env.insert(text(left, s).into(), r.value.clone());
-                    } else if left.kind() == "member_expression"
-                        && field(left, "object").is_some_and(|n| text(n, s) == "this")
-                        && let (Some(key), Some(Value::Instance(_, fields))) =
-                            (field(left, "property"), env.get_mut("this"))
-                    {
-                        fields.insert(text(key, s).into(), r.value.clone());
-                    }
+                    store_value(left, r.value.clone(), s, env);
                 }
                 r
             }
@@ -556,16 +1109,25 @@ impl Project {
                     && let Some(Value::Number(value)) = env.get_mut(text(arg, s))
                 {
                     let delta = if text(n, s).contains("++") { 1 } else { -1 };
+                    let old = *value;
                     *value = value.saturating_add(delta);
-                    return Eval::value(Value::Number(*value));
+                    return Eval::value(Value::Number(
+                        if text(n, s).trim_start().starts_with("++")
+                            || text(n, s).trim_start().starts_with("--")
+                        {
+                            *value
+                        } else {
+                            old
+                        },
+                    ));
                 }
                 Eval::default()
             }
             "if_statement" | "ternary_expression" => {
                 let condition = eval_field("condition", env, ctx);
-                let branch = match condition.value {
-                    Value::Bool(true) => Some("consequence"),
-                    Value::Bool(false) => Some("alternative"),
+                let branch = match condition.value.truth() {
+                    Some(true) => Some("consequence"),
+                    Some(false) => Some("alternative"),
                     _ => None,
                 };
                 if let Some(branch) = branch {
@@ -579,18 +1141,28 @@ impl Project {
                     let b = eval_field("alternative", &mut b_env, ctx);
                     invalidate_changed(env, &a_env);
                     invalidate_changed(env, &b_env);
-                    let mut cost = if a.cost.points >= b.cost.points {
-                        a.cost.clone()
+                    let flow = if a.flow == b.flow {
+                        a.flow
                     } else {
-                        b.cost.clone()
+                        Flow::Maybe
                     };
-                    cost.lower_bound_points =
-                        a.cost.lower_bound_points.min(b.cost.lower_bound_points);
-                    cost.complete = false;
-                    cost.reasons
-                        .push("Data-dependent branch; lower bound uses the cheaper path".into());
+                    let value = if a.value == b.value {
+                        a.value
+                    } else {
+                        Value::Data
+                    };
+                    let mut cost = Estimate::choice(
+                        a.cost,
+                        b.cost,
+                        "Data-dependent branch; costs cover both paths",
+                    );
                     cost.add(condition.cost);
-                    Eval::cost(cost)
+                    Eval {
+                        cost,
+                        value,
+                        flow,
+                        ..Eval::default()
+                    }
                 }
             }
             "else_clause" => n
@@ -607,23 +1179,28 @@ impl Project {
                         Value::Bool(true) if iteration < points::LOOP_LIMIT => {}
                         _ => {
                             let body = eval_field("body", &mut env.clone(), ctx);
-                            cost.add(body.cost);
-                            return Eval::cost(cost.uncertain("Unbounded or over-budget loop"));
+                            cost.add(body.cost.unknown_repetitions());
+                            return Eval::cost(cost);
                         }
                     }
                     let body = eval_field("body", env, ctx);
-                    if !body.cost.complete {
-                        cost.add(body.cost);
-                        return Eval::cost(
-                            cost.uncertain("Loop body depends on unresolved control flow"),
-                        );
-                    }
                     cost.add(body.cost);
-                    if body.flow != Flow::Continue {
+                    if body.flow == Flow::Break {
+                        return Eval::cost(cost);
+                    }
+                    if body.flow == Flow::Maybe {
+                        return Eval {
+                            cost: cost.unknown_repetitions(),
+                            flow: Flow::Maybe,
+                            ..Eval::default()
+                        };
+                    }
+                    if !matches!(body.flow, Flow::Continue | Flow::Next) {
                         return Eval {
                             cost,
                             value: body.value,
                             flow: body.flow,
+                            ..Eval::default()
                         };
                     }
                     cost.add(eval_field("increment", env, ctx).cost);
@@ -633,7 +1210,7 @@ impl Project {
             "for_in_statement" => {
                 let values = eval_field("right", env, ctx);
                 let mut cost = values.cost;
-                if let Value::Array(items) = values.value
+                if let Value::Array(items) = values.value.clone()
                     && field(n, "operator").is_some_and(|n| text(n, s) == "of")
                     && items.len() <= points::LOOP_LIMIT
                 {
@@ -643,27 +1220,181 @@ impl Project {
                         }
                         let r = eval_field("body", env, ctx);
                         cost.add(r.cost);
-                        if r.flow != Flow::Continue {
+                        if r.flow == Flow::Break {
+                            return Eval::cost(cost);
+                        }
+                        if r.flow == Flow::Maybe {
+                            return Eval {
+                                cost: cost.unknown_repetitions(),
+                                flow: Flow::Maybe,
+                                ..Eval::default()
+                            };
+                        }
+                        if !matches!(r.flow, Flow::Continue | Flow::Next) {
                             return Eval {
                                 cost,
                                 value: r.value,
                                 flow: r.flow,
+                                ..Eval::default()
                             };
                         }
                     }
                     return Eval::cost(cost);
                 }
-                cost.add(eval_field("body", &mut env.clone(), ctx).cost);
-                Eval::cost(cost.uncertain("Unknown loop collection"))
+                let mut loop_env = env.clone();
+                if let Some(left) = field(n, "left") {
+                    bind(
+                        left,
+                        match values.value {
+                            Value::Sequence(v) => *v,
+                            _ => Value::Data,
+                        },
+                        s,
+                        &mut loop_env,
+                    );
+                }
+                let body = eval_field("body", &mut loop_env, ctx);
+                cost.add(body.cost.unknown_repetitions());
+                invalidate_changed(env, &loop_env);
+                Eval {
+                    cost,
+                    flow: if matches!(body.flow, Flow::Continue | Flow::Next | Flow::Break) {
+                        Flow::Continue
+                    } else {
+                        Flow::Maybe
+                    },
+                    ..Eval::default()
+                }
             }
             "while_statement" | "do_statement" => {
-                let c = eval_field("condition", env, ctx);
-                if matches!(c.value, Value::Bool(false)) && n.kind() == "while_statement" {
-                    return Eval::cost(c.cost);
+                let mut cost = Estimate::default();
+                for i in 0..=points::LOOP_LIMIT {
+                    let condition = if i == 0 && n.kind() == "do_statement" {
+                        Eval::value(Value::Bool(true))
+                    } else {
+                        eval_field("condition", env, ctx)
+                    };
+                    cost.add(condition.cost);
+                    if condition.value.truth() == Some(false) {
+                        return Eval::cost(cost);
+                    }
+                    if condition.value.truth() != Some(true) || i == points::LOOP_LIMIT {
+                        let mut loop_env = env.clone();
+                        let body = eval_field("body", &mut loop_env, ctx);
+                        cost.add(body.cost.unknown_repetitions());
+                        invalidate_changed(env, &loop_env);
+                        return Eval {
+                            cost,
+                            flow: if matches!(body.flow, Flow::Continue | Flow::Next | Flow::Break)
+                            {
+                                Flow::Continue
+                            } else {
+                                Flow::Maybe
+                            },
+                            ..Eval::default()
+                        };
+                    }
+                    let r = eval_field("body", env, ctx);
+                    cost.add(r.cost);
+                    if r.flow == Flow::Break {
+                        return Eval::cost(cost);
+                    }
+                    if r.flow == Flow::Maybe {
+                        return Eval {
+                            cost: cost.unknown_repetitions(),
+                            flow: Flow::Maybe,
+                            ..Eval::default()
+                        };
+                    }
+                    if !matches!(r.flow, Flow::Continue | Flow::Next) {
+                        return Eval {
+                            cost,
+                            value: r.value,
+                            flow: r.flow,
+                            ..Eval::default()
+                        };
+                    }
                 }
-                let mut cost = c.cost;
-                cost.add(eval_field("body", &mut env.clone(), ctx).cost);
-                Eval::cost(cost.uncertain("Unbounded loop"))
+                unreachable!()
+            }
+            "switch_statement" => {
+                let discriminant = eval_field("value", env, ctx);
+                let cases = field(n, "body").map(children).unwrap_or_default();
+                let known = !matches!(
+                    discriminant.value,
+                    Value::Unknown | Value::Data | Value::Text
+                );
+                let chosen = cases
+                    .iter()
+                    .position(|case| {
+                        field(*case, "value").is_some_and(|v| {
+                            self.eval(file, v, env, ctx).value == discriminant.value
+                        })
+                    })
+                    .or_else(|| cases.iter().position(|n| n.kind() == "switch_default"));
+                let starts: Vec<_> = if known {
+                    chosen.into_iter().collect()
+                } else {
+                    (0..cases.len()).collect()
+                };
+                let mut alternatives = vec![];
+                if !known && !cases.iter().any(|n| n.kind() == "switch_default") {
+                    alternatives.push(Eval::default());
+                }
+                for start in starts {
+                    let mut branch_env = env.clone();
+                    let mut result = Eval::default();
+                    for case in cases.iter().skip(start) {
+                        for statement in children(*case)
+                            .into_iter()
+                            .filter(|n| Some(*n) != field(*case, "value"))
+                        {
+                            let r = self.eval(file, statement, &mut branch_env, ctx);
+                            result.cost.add(r.cost);
+                            result.value = r.value;
+                            result.flow = r.flow;
+                            if result.flow != Flow::Continue {
+                                break;
+                            }
+                        }
+                        if result.flow != Flow::Continue {
+                            break;
+                        }
+                    }
+                    if result.flow == Flow::Break {
+                        result.flow = Flow::Continue;
+                    }
+                    if known {
+                        *env = branch_env;
+                    } else {
+                        invalidate_changed(env, &branch_env);
+                    }
+                    alternatives.push(result);
+                }
+                let mut result = alternatives.pop().unwrap_or_default();
+                for other in alternatives {
+                    result.cost =
+                        Estimate::choice(result.cost, other.cost, "Runtime switch branch");
+                    result.value = Value::Data;
+                    if result.flow != other.flow {
+                        result.flow = Flow::Maybe;
+                    }
+                }
+                result.cost.add(discriminant.cost);
+                result
+            }
+            "sequence_expression" => {
+                let mut result = Eval::default();
+                for child in children(n) {
+                    let part = self.eval(file, child, env, ctx);
+                    result.cost.add(part.cost);
+                    result.value = part.value;
+                    result.flow = part.flow;
+                    if result.flow != Flow::Continue {
+                        break;
+                    }
+                }
+                result
             }
             "new_expression" => {
                 let constructor = eval_field("constructor", env, ctx);
@@ -675,69 +1406,64 @@ impl Project {
                     args.push(r.value);
                 }
                 if let Value::Class(class) = constructor.value {
-                    let mut fields = Env::new();
-                    let class_node = self.node(&class).unwrap();
-                    let cs = &self.modules[&class.file].source;
-                    if let Some(body) = field(class_node, "body") {
-                        for member in children(body) {
-                            if member.kind() == "method_definition"
-                                && field(member, "name")
-                                    .is_some_and(|n| text(n, cs) == "constructor")
-                            {
-                                for (i, param) in params(member).into_iter().enumerate() {
-                                    if children(param).iter().any(|n| {
-                                        n.kind() == "accessibility_modifier"
-                                            || text(*n, cs) == "readonly"
-                                    }) {
-                                        fields.insert(
-                                            text(pattern(param), cs).into(),
-                                            args.get(i).cloned().unwrap_or_default(),
-                                        );
-                                    }
-                                }
-                                let mut ctor_env = Env::new();
-                                let instance = Value::Instance(class.clone(), fields.clone());
-                                ctor_env.insert("this".into(), instance);
-                                for (i, param) in params(member).into_iter().enumerate() {
-                                    bind(
-                                        param,
-                                        args.get(i).cloned().unwrap_or_default(),
-                                        cs,
-                                        &mut ctor_env,
-                                    );
-                                }
-                                if let Some(body) = field(member, "body") {
-                                    cost.add(self.eval(&class.file, body, &mut ctor_env, ctx).cost);
-                                }
-                                if let Some(Value::Instance(_, v)) = ctor_env.remove("this") {
-                                    fields = v;
-                                }
-                            }
-                        }
-                    }
-                    Eval {
-                        cost,
-                        value: Value::Instance(class, fields),
-                        ..Eval::default()
+                    let mut r = self.construct(&class, &args, ctx, 0);
+                    r.cost.add(cost);
+                    r
+                } else if let Value::Builtin(name) = constructor.value {
+                    if let Some(mut r) = self.platform_call(&name, &args, ctx) {
+                        r.cost.add(cost);
+                        r
+                    } else {
+                        cost.add(Estimate::unknown("Unresolved platform constructor"));
+                        Eval::cost(cost)
                     }
                 } else {
-                    cost.add(Estimate::unknown("Unresolved constructor"));
+                    cost.add(Estimate::unknown(format!(
+                        "Unresolved constructor at {file}:{}",
+                        n.start_position().row + 1
+                    )));
                     Eval::cost(cost)
                 }
             }
             "call_expression" => self.call_eval(file, n, env, ctx),
             "try_statement" => {
-                let mut r = eval_field("body", env, ctx);
-                if r.flow == Flow::Use {
-                    return r;
+                let mut body = eval_field("body", env, ctx);
+                if body.flow == Flow::Use {
+                    return body;
                 }
-                if field(n, "handler").is_some() {
-                    r.cost = r.cost.uncertain("Exception-dependent control flow");
+                if let Some(handler) = field(n, "handler") {
+                    let mut catch_env = env.clone();
+                    if let Some(param) = field(handler, "parameter") {
+                        bind(param, Value::Data, s, &mut catch_env);
+                    }
+                    let caught = field(handler, "body")
+                        .map(|n| self.eval(file, n, &mut catch_env, ctx))
+                        .unwrap_or_default();
+                    let mut caught_cost = body
+                        .cost
+                        .clone()
+                        .optional("Exception may interrupt the protected body");
+                    caught_cost.add(caught.cost);
+                    body.cost = Estimate::choice(
+                        body.cost,
+                        caught_cost,
+                        "Exception-dependent control flow",
+                    );
+                    if body.flow != caught.flow {
+                        body.flow = Flow::Maybe;
+                    }
+                    body.value = Value::Data;
+                    invalidate_changed(env, &catch_env);
                 }
-                if let Some(finalizer) = field(n, "finalizer") {
-                    r.cost.add(self.eval(file, finalizer, env, ctx).cost);
+                if let Some(finalizer) = field(n, "finalizer").and_then(|n| field(n, "body")) {
+                    let r = self.eval(file, finalizer, env, ctx);
+                    body.cost.add(r.cost);
+                    if r.flow != Flow::Continue {
+                        body.flow = r.flow;
+                        body.value = r.value;
+                    }
                 }
-                r
+                body
             }
             _ => {
                 let mut cost = Estimate::default();
@@ -757,21 +1483,46 @@ impl Project {
         let argument_nodes = field(n, "arguments").map(children).unwrap_or_default();
         // Browser time for concurrently awaited independent operations is a max,
         // never a sum credited as repeated sequential work.
-        if crate::function_name(n, s) == "Promise.all"
+        if matches!(
+            crate::function_name(n, s).as_str(),
+            "Promise.all" | "Promise.race" | "Promise.any" | "Promise.allSettled"
+        ) && matches!(self.value(file,"Promise",env,ctx),Value::Builtin(name) if name=="Promise")
             && argument_nodes.first().is_some_and(|n| n.kind() == "array")
         {
             let mut cost = Estimate::default();
             let mut lower = 0;
             let mut points = 0;
+            let mut upper = Some(0u64);
+            let mut values = vec![];
             for arg in children(argument_nodes[0]) {
-                let c = self.eval(file, arg, env, ctx).cost;
+                let evaluated = self.eval(file, arg, env, ctx);
+                values.push(if crate::function_name(n, s) == "Promise.allSettled" {
+                    Value::settled()
+                } else {
+                    evaluated.value.resolved()
+                });
+                let c = evaluated.cost;
+                upper = upper.zip(c.upper_bound_points).map(|(a, b)| a.max(b));
                 points = points.max(c.points);
                 lower = lower.max(c.lower_bound_points);
                 cost.add(c);
             }
             cost.points = points;
             cost.lower_bound_points = lower;
-            return Eval::cost(cost);
+            cost.upper_bound_points = upper;
+            if matches!(
+                crate::function_name(n, s).as_str(),
+                "Promise.race" | "Promise.any"
+            ) && cost.points > 0
+            {
+                cost = cost
+                    .uncertain("Racing promises may finish or overlap depending on runtime data");
+            }
+            return Eval {
+                cost,
+                value: Value::Promise(Box::new(Value::Array(values))),
+                ..Eval::default()
+            };
         }
         if crate::function_name(n, s)
             .strip_suffix(".step")
@@ -801,14 +1552,30 @@ impl Project {
             cost.add(r.cost);
             args.push(r.value);
         }
-        if let Some(receiver) = receiver {
+        if let Some(mut receiver) = receiver {
             cost.add(receiver.cost);
+            let previous_receiver = receiver.value.clone();
+            if let Some(mut r) = self.value_call(&mut receiver.value, method, &args, ctx) {
+                if receiver.value != previous_receiver
+                    && let Some(object) = field(function, "object")
+                {
+                    store_mutation(object, receiver.value, s, env);
+                }
+                invalidate_call(env, &r);
+                r.cost.add(cost);
+                return r;
+            }
             match receiver.value {
+                Value::MissingDependency(module) => {
+                    cost.add(Estimate::unknown(format!("Missing dependency: {module}")));
+                    return Eval::cost(cost);
+                }
                 Value::Namespace(target) => {
                     if let Value::Function(r, closure) =
                         self.value(&target, method, &Env::new(), ctx)
                     {
                         let mut r = self.invoke(&r, &closure, args, None, ctx);
+                        invalidate_call(env, &r);
                         r.cost.add(cost);
                         return r;
                     }
@@ -828,12 +1595,68 @@ impl Project {
                         "first",
                         "last",
                         "frameLocator",
+                        "context",
+                        "browser",
+                        "mainFrame",
+                        "asElement",
+                        "on",
+                        "once",
+                        "off",
+                        "removeListener",
                     ]
                     .contains(&method)
                     {
                         return Eval {
                             cost,
                             value: Value::Browser,
+                            ..Eval::default()
+                        };
+                    }
+                    if matches!(method, "frames" | "childFrames") {
+                        return Eval {
+                            cost,
+                            value: Value::Sequence(Box::new(Value::Browser)),
+                            ..Eval::default()
+                        };
+                    }
+                    if method == "contentFrame" {
+                        cost.add(Estimate::operation("browser-read", points::INTERACTION));
+                        return Eval {
+                            cost,
+                            value: Value::Promise(Box::new(Value::Browser)),
+                            ..Eval::default()
+                        };
+                    }
+                    if method == "url" {
+                        return Eval {
+                            cost,
+                            value: Value::Text,
+                            ..Eval::default()
+                        };
+                    }
+                    if matches!(method, "newContext" | "newPage") {
+                        cost.add(Estimate::operation("browser-create", points::INTERACTION));
+                        return Eval {
+                            cost,
+                            value: Value::Promise(Box::new(Value::Browser)),
+                            ..Eval::default()
+                        };
+                    }
+                    if method == "cookies" {
+                        cost.add(Estimate::operation("browser-read", points::INTERACTION));
+                        return Eval {
+                            cost,
+                            value: Value::Promise(Box::new(Value::Sequence(Box::new(Value::Data)))),
+                            ..Eval::default()
+                        };
+                    }
+                    if method == "all" {
+                        cost.add(Estimate::operation("browser-read", points::INTERACTION));
+                        return Eval {
+                            cost,
+                            value: Value::Promise(Box::new(Value::Sequence(Box::new(
+                                Value::Browser,
+                            )))),
                             ..Eval::default()
                         };
                     }
@@ -864,6 +1687,8 @@ impl Project {
                         "waitForLoadState",
                         "waitForURL",
                         "waitForFunction",
+                        "waitForResponse",
+                        "waitForRequest",
                     ]
                     .contains(&method)
                     {
@@ -878,10 +1703,24 @@ impl Project {
                         "inputValue",
                         "getAttribute",
                         "isVisible",
+                        "isHidden",
+                        "isDisabled",
+                        "isEditable",
+                        "allInnerTexts",
+                        "$eval",
+                        "$$eval",
                         "isEnabled",
                         "isChecked",
                         "addCookies",
                         "storageState",
+                        "content",
+                        "allTextContents",
+                        "innerHTML",
+                        "close",
+                        "dispose",
+                        "route",
+                        "unroute",
+                        "screenshot",
                     ]
                     .contains(&method)
                     {
@@ -891,7 +1730,23 @@ impl Project {
                     };
                     if let Some((name, value)) = operation {
                         cost.add(Estimate::operation(name, value));
-                        return Eval::cost(cost);
+                        return Eval {
+                            cost,
+                            value: Value::Promise(Box::new(
+                                if name == "navigation"
+                                    || matches!(method, "waitForResponse" | "waitForRequest")
+                                {
+                                    Value::Response
+                                } else if method == "evaluateHandle" {
+                                    Value::Browser
+                                } else if matches!(method, "allInnerTexts" | "allTextContents") {
+                                    Value::Sequence(Box::new(Value::Text))
+                                } else {
+                                    Value::Data
+                                },
+                            )),
+                            ..Eval::default()
+                        };
                     }
                     if method == "waitForTimeout"
                         && let Some(Value::Number(ms)) = args.first()
@@ -914,81 +1769,110 @@ impl Project {
                         .contains(&method) =>
                 {
                     cost.add(Estimate::operation("request", points::REQUEST));
-                    return Eval::cost(cost);
+                    return Eval {
+                        cost,
+                        value: Value::Promise(Box::new(Value::Response)),
+                        ..Eval::default()
+                    };
                 }
                 Value::Assertion(browser) => {
                     if method.starts_with("to") {
                         if browser {
                             cost.add(Estimate::operation("assertion", points::ASSERTION));
                         }
-                        return Eval::cost(cost);
-                    }
-                }
-                Value::Instance(class, fields) => {
-                    if let Some(body) = self.node(&class).and_then(|n| field(n, "body")) {
-                        let cs = &self.modules[&class.file].source;
-                        for member in children(body) {
-                            if member.kind() == "method_definition"
-                                && field(member, "name").is_some_and(|n| text(n, cs) == method)
-                            {
-                                let mut r = self.invoke(
-                                    &self.reference(&class.file, member),
-                                    &Env::new(),
-                                    args,
-                                    Some(Value::Instance(class.clone(), fields)),
-                                    ctx,
-                                );
-                                r.cost.add(cost);
-                                return r;
-                            }
-                        }
-                    }
-                }
-                Value::Array(items)
-                    if ["forEach", "map"].contains(&method)
-                        && items.len() <= points::LOOP_LIMIT =>
-                {
-                    if let Some(Value::Function(r, closure)) = args.first() {
-                        let mut values = vec![];
-                        for (i, item) in items.into_iter().enumerate() {
-                            let result = self.invoke(
-                                r,
-                                closure,
-                                vec![item, Value::Number(i as i64)],
-                                None,
-                                ctx,
-                            );
-                            cost.add(result.cost);
-                            values.push(result.value);
-                        }
-                        if self.node(r).is_some_and(|n| {
-                            text(n, &self.modules[&r.file].source)
-                                .trim_start()
-                                .starts_with("async")
-                        }) {
-                            cost = cost.uncertain(
-                                "Async array callbacks may overlap; execution order is unresolved",
-                            );
-                        }
                         return Eval {
                             cost,
-                            value: Value::Array(values),
+                            value: if browser {
+                                Value::Promise(Box::new(Value::Data))
+                            } else {
+                                Value::Data
+                            },
                             ..Eval::default()
                         };
+                    }
+                }
+                Value::RetryAssertion(r, closure) if method.starts_with("to") => {
+                    let mut result = self.invoke(&r, &closure, vec![], None, ctx);
+                    result.cost.complete = false;
+                    result.cost.upper_bound_points = None;
+                    result
+                        .cost
+                        .reasons
+                        .push("Assertion callback retry count depends on runtime data".into());
+                    result.cost.add(cost);
+                    result.value = Value::Promise(Box::new(Value::Data));
+                    invalidate_call(env, &result);
+                    return result;
+                }
+                Value::Instance(class, fields) => {
+                    if let Some(member) = self.class_method(&class, method, 0) {
+                        let mut r = self.invoke(
+                            &member,
+                            &Env::new(),
+                            args,
+                            Some(Value::Instance(class, fields)),
+                            ctx,
+                        );
+                        if let (Some(this), Some(object)) =
+                            (r.this.take(), field(function, "object"))
+                        {
+                            store_mutation(object, this, s, env);
+                        }
+                        invalidate_call(env, &r);
+                        r.cost.add(cost);
+                        return r;
+                    }
+                }
+                Value::Object(fields) => {
+                    if let Some(Value::Function(reference, closure)) = fields.get(method) {
+                        let mut r = self.invoke(reference, closure, args, None, ctx);
+                        invalidate_call(env, &r);
+                        r.cost.add(cost);
+                        return r;
                     }
                 }
                 _ => {}
             }
         } else {
+            if text(function, s) == "super"
+                && let Some(Value::Instance(class, _)) = env.get("this").cloned()
+                && let Some(base) = self.class_base(&class)
+            {
+                let mut r = self.construct(&base, &args, ctx, 0);
+                if let Value::Instance(_, fields) = r.value {
+                    env.insert("this".into(), Value::Instance(class.clone(), fields));
+                    r.cost.add(self.initialize_fields(&class, env, ctx));
+                    self.parameter_properties(&class, env);
+                }
+                r.value = Value::Undefined;
+                invalidate_call(env, &r);
+                r.cost.add(cost);
+                return r;
+            }
             let target = self.eval(file, function, env, ctx);
             cost.add(target.cost);
             match target.value {
+                Value::MissingDependency(module) => {
+                    cost.add(Estimate::unknown(format!("Missing dependency: {module}")));
+                    return Eval::cost(cost);
+                }
+                Value::Builtin(name) => {
+                    if let Some(mut r) = self.platform_call(&name, &args, ctx) {
+                        invalidate_call(env, &r);
+                        r.cost.add(cost);
+                        return r;
+                    }
+                }
                 Value::Expect => {
                     return Eval {
                         cost,
-                        value: Value::Assertion(
-                            args.first().is_some_and(|v| matches!(v, Value::Browser)),
-                        ),
+                        value: if let Some(Value::Function(r, closure)) = args.first() {
+                            Value::RetryAssertion(r.clone(), closure.clone())
+                        } else {
+                            Value::Assertion(
+                                args.first().is_some_and(|v| matches!(v, Value::Browser)),
+                            )
+                        },
                         ..Eval::default()
                     };
                 }
@@ -997,15 +1881,22 @@ impl Project {
                         cost,
                         value: args.into_iter().next().unwrap_or_default(),
                         flow: Flow::Use,
+                        ..Eval::default()
                     };
                 }
                 Value::Function(r, closure) => {
                     let mut r = self.invoke(&r, &closure, args, None, ctx);
+                    invalidate_call(env, &r);
                     r.cost.add(cost);
                     return r;
                 }
                 _ => {}
             }
+        }
+        // An unknown function may mutate argument objects or an escaped closure.
+        // Do not reuse concrete loop bounds after that call.
+        for value in env.values_mut() {
+            *value = value.widen();
         }
         cost.add(Estimate::unknown(format!(
             "Unresolved call at {file}:{}",
@@ -1037,8 +1928,7 @@ impl Project {
             return None;
         }
         if self
-            .imports(file)
-            .get(name)
+            .external(file, name, 0)
             .is_some_and(|(module, export)| module == "@playwright/test" && export == "test")
         {
             return Some(BTreeMap::new());
@@ -1171,7 +2061,7 @@ impl Project {
             self.invoke(
                 r,
                 &Env::new(),
-                vec![Value::Object(input), Value::Use],
+                vec![Value::Object(input), Value::Use, Value::TestInfo],
                 None,
                 ctx,
             )
@@ -1187,9 +2077,12 @@ impl Project {
         values.insert(name.into(), result.value.clone());
         result.value
     }
-    pub fn assess(&self, test: &mut Test) {
-        let mut ctx = Context::default();
-        let mut env = Env::new();
+    pub fn assess(&self, test: &mut Test, tainted_libraries: &mut BTreeSet<String>) {
+        let mut ctx = Context {
+            tainted_libraries: tainted_libraries.clone(),
+            ..Context::default()
+        };
+        let mut env = test.collection_bindings.0.clone();
         let aliases = self.test_aliases(&test.file);
         let alias = aliases
             .iter()
@@ -1252,32 +2145,122 @@ impl Project {
                 );
                 env.insert(name, value);
             }
-            if let Some(parameter) = callback.and_then(|cb| params(cb).first().copied()) {
-                bind(
-                    parameter,
-                    Value::Object(env.clone()),
-                    &module.source,
-                    &mut env,
-                );
+            if let Some(callback) = callback {
+                let input = Value::Object(env.clone());
+                for (i, param) in params(callback).into_iter().enumerate() {
+                    bind(
+                        param,
+                        if i == 0 {
+                            input.clone()
+                        } else {
+                            Value::TestInfo
+                        },
+                        &module.source,
+                        &mut env,
+                    );
+                }
             }
         } else if test.fixture != "@playwright/test:test" {
             costs
                 .repeated
                 .add(Estimate::unknown("Unresolved fixture provider"));
         }
-        if test
-            .reasons
-            .iter()
-            .any(|r| r.starts_with("use requires") || r.starts_with("beforeAll requires"))
-        {
+        // beforeAll establishes receiver types for descendant tests. Its work
+        // runs once per worker and is never credited as reusable test setup.
+        let mut scopes = vec![];
+        let mut ancestor = callback.and_then(|n| n.parent());
+        while let Some(node) = ancestor {
+            if matches!(node.kind(), "program" | "statement_block") {
+                scopes.push(node);
+            }
+            ancestor = node.parent();
+        }
+        for scope in scopes.into_iter().rev() {
+            for statement in children(scope) {
+                let call = if statement.kind() == "expression_statement" {
+                    children(statement).into_iter().next().unwrap_or(statement)
+                } else {
+                    statement
+                };
+                if call.kind() != "call_expression" {
+                    continue;
+                }
+                let name = crate::function_name(call, &module.source);
+                let Some(alias) = name.strip_suffix(".beforeAll") else {
+                    continue;
+                };
+                if self
+                    .provider(&test.file, alias, &mut BTreeSet::new())
+                    .is_none()
+                {
+                    continue;
+                }
+                let hook = field(call, "arguments").and_then(|n| {
+                    children(n)
+                        .into_iter()
+                        .find(|n| matches!(n.kind(), "arrow_function" | "function_expression"))
+                });
+                if let Some(hook) = hook {
+                    let mut inputs = values.clone();
+                    for dependency in params(hook)
+                        .first()
+                        .map(|n| names(*n, &module.source))
+                        .unwrap_or_default()
+                    {
+                        inputs
+                            .entry(dependency.clone())
+                            .or_insert_with(|| builtin(&dependency));
+                    }
+                    let result = self.invoke(
+                        &self.reference(&test.file, hook),
+                        &env,
+                        vec![Value::Object(inputs), Value::TestInfo],
+                        None,
+                        &mut ctx,
+                    );
+                    costs.worker.add(result.cost);
+                    env.extend(
+                        result
+                            .writes
+                            .into_iter()
+                            .map(|(name, value)| (name, value.widen())),
+                    );
+                }
+            }
+        }
+        if test.reasons.iter().any(|r| r.starts_with("use requires")) {
             costs.repeated.add(Estimate::unknown(
-                "Native fixture overrides or beforeAll state require runtime inputs",
+                "Native fixture overrides require runtime inputs",
             ));
         }
+        costs.repeated.finalize();
+        costs.worker.finalize();
         test.fixture_estimate = Some(costs.repeated.clone());
         test.worker_estimate = Some(costs.worker);
         let module = &self.modules[&test.file];
+        let callback_body = callback.and_then(|n| field(n, "body"));
+        if let Some(body) = callback_body {
+            for function in children(body)
+                .into_iter()
+                .filter(|n| n.kind() == "function_declaration")
+            {
+                if let Some(name) = field(function, "name") {
+                    env.insert(
+                        text(name, &module.source).into(),
+                        Value::Function(
+                            self.reference(&test.file, function),
+                            Box::new(env.clone()),
+                        ),
+                    );
+                }
+            }
+        }
+        let mut prior_exit = Flow::Continue;
         for step in &mut test.steps {
+            if let Some(body) = callback_body {
+                ctx.lexical_envs
+                    .insert((test.file.clone(), body.start_byte()), env.clone());
+            }
             let Some(node) = module
                 .tree
                 .root_node()
@@ -1285,31 +2268,43 @@ impl Project {
             else {
                 continue;
             };
-            let result = if step.kind == "beforeEach" {
+            let mut result = if step.kind == "beforeEach" {
                 if let Some(cb) = node.parent() {
                     let mut inputs = env.clone();
                     inputs.extend(values.clone());
-                    self.invoke(
+                    let result = self.invoke(
                         &self.reference(&test.file, cb),
                         &env,
-                        vec![Value::Object(inputs)],
+                        vec![Value::Object(inputs), Value::TestInfo],
                         None,
                         &mut ctx,
-                    )
+                    );
+                    env.extend(result.writes.clone());
+                    result
                 } else {
                     Eval::cost(Estimate::unknown("Unresolved hook callback"))
                 }
             } else {
                 self.eval(&test.file, node, &mut env, &mut ctx)
             };
-            step.action_units = result
-                .cost
-                .complete
-                .then_some(result.cost.lower_bound_points);
+            if prior_exit == Flow::Maybe {
+                result.cost = result
+                    .cost
+                    .optional("A prior test branch may exit before this step");
+            } else if prior_exit != Flow::Continue {
+                result.cost = Estimate::default();
+            }
+            if step.kind != "beforeEach" && prior_exit == Flow::Continue {
+                prior_exit = result.flow;
+            }
+            result.cost.finalize();
+            step.action_units = Some(result.cost.lower_bound_points);
             step.estimate = Some(result.cost.clone());
             costs.repeated.add(result.cost);
         }
+        costs.repeated.finalize();
         test.estimate = Some(costs.repeated);
+        tainted_libraries.extend(ctx.tainted_libraries);
         test.scope =
             hash(serde_json::to_vec(&(&test.context_identity, self.context(&test.file))).unwrap());
     }
@@ -1324,11 +2319,7 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
                 id: format!("root-{}", &t.scope[..20]),
                 parent: None,
                 checkpoint: false,
-                units: t
-                    .fixture_estimate
-                    .as_ref()
-                    .filter(|e| e.complete)
-                    .map(|e| e.lower_bound_points),
+                units: t.fixture_estimate.as_ref().map(|e| e.lower_bound_points),
             });
         }
     }
@@ -1372,8 +2363,57 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
                 .unwrap_or_else(|| format!("root-{}", &t.scope[..20])),
         );
     }
-    let plan = crate::cost::select(crate::cost::Input { stages, parents })?;
+    let plan = crate::cost::select(crate::cost::Input {
+        baseline: crate::baseline::Baseline::default(),
+        stages,
+        parents,
+        max_checkpoints_per_test: crate::cost::checkpoint_limit(),
+    })?;
+    let baseline = &*crate::baseline::PLAYWRIGHT_BRANCHING;
+    let candidates:Vec<_>=manifest.checkpoints.iter().map(|cp| {
+        let test=manifest.tests.iter().find(|t| t.id==cp.representative).unwrap();
+        let mut estimate=test.fixture_estimate.clone().unwrap_or_else(||Estimate::unknown("Missing fixture estimate"));
+        for step in &test.steps[..cp.depth] { estimate.add(step.estimate.clone().unwrap_or_else(||Estimate::unknown("Missing statement estimate"))); }
+        estimate.finalize();
+        let reuses=cp.consumers.len().saturating_sub(1) as f64;
+        // Even with all shared backend costs amortized away, this prefix must
+        // save more than capture/release and its own restores. This gives a
+        // useful rejection test without pretending uncertain work is free.
+        let variable_ms=(baseline.capture_ms+baseline.release_ms+reuses*baseline.restore_ms)*baseline.overhead_multiplier*(1.0+baseline.overhead_margin);
+        let classification=if plan.selected.contains(&cp.id) { "saving-supported-by-minimum" }
+          else if reuses>0.0 && estimate.upper_bound_points.is_some_and(|upper| upper as f64*baseline.unit_ms*reuses<=variable_ms) { "below-variable-cost" }
+          else { "benefit-uncertain" };
+        serde_json::json!({"id":cp.id,"consumers":cp.consumers.len(),"lowerBoundPoints":estimate.lower_bound_points,"upperBoundPoints":estimate.upper_bound_points,
+          "estimatedMinimumPrefixMs":estimate.lower_bound_points as f64*baseline.unit_ms,"estimatedMaximumPrefixMs":estimate.upper_bound_points.map(|p|p as f64*baseline.unit_ms),
+          "classification":classification,"analysisComplete":estimate.analysis_complete,"issues":estimate.issues,"reasons":estimate.reasons})
+    }).collect();
+    let statements: Vec<_> = manifest
+        .tests
+        .iter()
+        .flat_map(|t| t.steps.iter().filter_map(|s| s.estimate.as_ref()))
+        .collect();
+    let analyzed = statements.iter().filter(|e| e.analysis_complete).count();
+    let exact = statements.iter().filter(|e| e.complete).count();
+    let fixture_gaps = manifest
+        .tests
+        .iter()
+        .filter(|t| {
+            t.fixture_estimate
+                .as_ref()
+                .is_none_or(|e| !e.analysis_complete)
+        })
+        .count();
+    let worker_gaps = manifest
+        .tests
+        .iter()
+        .filter(|t| {
+            t.worker_estimate
+                .as_ref()
+                .is_none_or(|e| !e.analysis_complete)
+        })
+        .count();
+    let analysis = serde_json::json!({"status":if analyzed==statements.len()&&fixture_gaps==0&&worker_gaps==0&&manifest.diagnostics.is_empty() {"complete"}else{"partial"},"totalStatements":statements.len(),"analyzedStatements":analyzed,"exactStatements":exact,"runtimeDependentStatements":analyzed.saturating_sub(exact),"fixturesWithGaps":fixture_gaps,"workersWithGaps":worker_gaps,"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()});
     Ok(
-        serde_json::json!({"version":points::VERSION,"weights":points::weights(),"costBasis":"conservative-lower-bound-points", "runtimeEligibility":"Cost selection alone does not authorize restoring JavaScript state", "costPlan":plan}),
+        serde_json::json!({"version":points::VERSION,"boundsVersion":1,"weights":points::weights(),"costBasis":"conservative-lower-bound-points", "analysis":analysis,"runtimeEligibility":"Cost selection alone does not authorize restoring JavaScript state", "candidates":candidates, "costPlan":plan}),
     )
 }
