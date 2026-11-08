@@ -85,7 +85,7 @@ must match; separate Docker networks resolve it to the corresponding application
 The linear runner must be the normal Playwright image. Only the branching driver
 receives the Docker socket and CoW storage.
 
-`run.py` resets databases and sessions. It requires `--disposable` and an explicit
+`run.py` resets databases and sessions. It requires an explicit
 `.runtime/experience-owner.json` in each installation:
 
 ```json
@@ -126,13 +126,7 @@ compares Chrome versions, restores the seed, rebuilds indexes, clears caches and
 sessions, then verifies the database dump matches byte for byte. Resetting the
 fixture is outside each timed sample and happens identically for both arms.
 
-```bash
-python3 tests/performance/branching/run.py \
-  --config .runtime/performance-local.json \
-  --output .runtime/performance-matrix-01 --disposable
-```
-
-Use `--rows strong-5,deep-shallow,deep-large --pairs 1` for a focused qualification.
+Run the internal harness using the [agent validation instructions](../../../AGENTS.md#internal-branching-harnesses).
 Use a fresh output directory for every campaign. A failed test or preflight stops
 the campaign; there are no automatic test retries. Recover any retained workflow
 before another run. Reports and database seeds stay local under `.runtime/`.
@@ -173,7 +167,7 @@ Set `baseline: {updateOnSuccess: false}` in the project configuration to keep
 updates explicit. The project-setup calibration command works in either mode:
 
 ```bash
-./bin/run-coverage --branching --disposable --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
+./bin/run-coverage --branching --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
 ```
 
 It measures three real capture/restore cycles, validates restored state and

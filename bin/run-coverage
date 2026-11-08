@@ -9,7 +9,11 @@ for argument in "$@"; do
     if [[ "$argument" == --branching ]]; then branching=1; else branching_arguments+=("$argument"); fi
 done
 if (( branching )); then
-    exec "$(dirname "$0")/run-branching" --branching "${branching_arguments[@]}"
+    internal_arguments=()
+    for argument in "${branching_arguments[@]}"; do
+        [[ "$argument" == --disposable ]] || internal_arguments+=("$argument")
+    done
+    exec "$(dirname "$0")/run-branching" --branching --disposable "${internal_arguments[@]}"
 fi
 source "$(dirname "$0")/common"
 start_services=0

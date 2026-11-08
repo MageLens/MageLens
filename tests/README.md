@@ -160,7 +160,7 @@ and manual checkpoint selections; provider recovery tests use an internal
 mechanism harness so safety failures remain covered independently of cost selection.
 
 AUTO is the only execution policy. Run
-`./bin/run-coverage --branching --disposable MANIFEST.json CONFIG.cjs COW_STORAGE`.
+`./bin/run-coverage --branching MANIFEST.json CONFIG.cjs COW_STORAGE`.
 The project configuration must set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
 complete Playwright inventory. Unprofitable AUTO plans run it in one native
 invocation. Mixing reviewed checkpoints with native tests requires an explicitly
@@ -187,7 +187,7 @@ Fresh projects use the versioned checkpoint-cost defaults in
 as the conservative cost. Successful, fully cleaned checkpoint runs update
 operation averages for later runs by default; the current plan stays unchanged.
 Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
-`./bin/run-coverage --branching --disposable --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE`
+`./bin/run-coverage --branching --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE`
 to measure and replace the project baseline. Both modes retain overhead history
 and flag increases before averaging; see the performance matrix documentation.
 

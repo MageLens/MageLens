@@ -106,7 +106,7 @@ def main():
         compose = site / 'bin/application-compose'
         call([compose, 'up', '-d', '--wait', '--wait-timeout', '180'], cwd=site, env=env)
         calibration_env = dict(env, MAGELENS_BRANCHING_BUILD_FROM_SOURCE='0')
-        call(['./bin/run-coverage', '--branching', '--disposable', '--calibrate',
+        call(['./bin/run-coverage', '--branching', '--calibrate',
               calibration / 'manifest.json', config, cow], cwd=site, env=calibration_env)
         call([compose, 'stop', '-t', '30'], cwd=site, env=env)
         config_file = work / 'campaign.json'

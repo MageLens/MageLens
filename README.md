@@ -32,13 +32,13 @@ The [default baseline](branching-baseline.json) starts conservatively at about
 database and machine, especially before running branching in CI:
 
 ```bash
-./bin/run-coverage --branching --disposable --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
+./bin/run-coverage --branching --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
 ```
 
 Calibration measures your environment and adjusts future checkpoint decisions.
 Use `./bin/run-coverage --branching --help` to run the suite and
 `./bin/branching-dashboard` to follow its progress. Branching currently requires
-a disposable Linux installation with Playwright and reflink storage;
+an isolated Linux test installation with Playwright and reflink storage;
 application coverage collection is not yet supported.
 
 <!-- coverage-badges:start -->

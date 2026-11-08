@@ -6,13 +6,14 @@
 source "$(dirname "$0")/common"
 [[ "${1:-}" == --branching || "${1:-}" == --help ]] || fail 'Checkpoint execution requires --branching. Use bin/run-coverage for the normal linear run.'
 [[ "${1:-}" != --branching ]] || shift
+disposable=0
+if [[ "${1:-}" == --disposable ]]; then disposable=1; shift; fi
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching --disposable [--calibrate] MANIFEST.json CONFIG.cjs COW_STORAGE\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching produces execution reports; coverage collection is not supported yet.\n'
+    printf 'Usage: ./bin/run-coverage --branching [--calibrate] MANIFEST.json CONFIG.cjs COW_STORAGE\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching produces execution reports; coverage collection is not supported yet.\n'
     exit 0
 fi
-[[ "${1:-}" == --disposable ]] || fail 'Use --disposable MANIFEST.json CONFIG.cjs COW_STORAGE.'
+(( disposable )) || fail 'Use ./bin/run-coverage --branching MANIFEST.json CONFIG.cjs COW_STORAGE.'
 [[ "$MAGELENS_RUNNER" == playwright ]] || fail "Branching for $MAGELENS_RUNNER is not implemented yet. Use the normal linear run without --branching."
-shift
 calibrate=0
 if [[ "${1:-}" == --calibrate ]]; then calibrate=1; shift; fi
 [[ "${1:-}" != --auto ]] || shift

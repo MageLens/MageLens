@@ -63,7 +63,7 @@ if (args[0] === 'run' && args.includes('node')) process.exit(37);
 }
 test('explicit calibration uses the same isolated launcher without executing tests', t => {
     const {directory,run}=launchFixture(t);
-    const result=run(['bin/run-coverage','--branching','--disposable','--calibrate','manifest.json','workflow file.cjs','cow storage']);
+    const result=run(['bin/run-coverage','--branching','--calibrate','manifest.json','workflow file.cjs','cow storage']);
     assert.equal(result.status,37,result.stderr);
     const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
     const worker=calls.find(args=>args.includes('node'));
@@ -72,7 +72,7 @@ test('explicit calibration uses the same isolated launcher without executing tes
 });
 test('branching opt-in preserves literal arguments, worker status and controller cleanup', t => {
     const {directory, run} = launchFixture(t);
-    const result = run(['bin/run-coverage', '--disposable', 'manifest.json', 'workflow file.cjs', 'cow storage', '--branching']);
+    const result = run(['bin/run-coverage', 'manifest.json', 'workflow file.cjs', 'cow storage', '--branching']);
     assert.equal(result.status, 37, result.stderr);
     const calls = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse);
     const worker = calls.find(args => args.includes('node'));
@@ -85,10 +85,23 @@ test('direct entry requires opt-in; help and unsupported adapter do not start co
     const {run} = launchFixture(t);
     const missing = run(['bin/run-branching', '--disposable', 'workflow file.cjs', 'cow storage']);
     assert.equal(missing.status, 1); assert.equal(missing.calls, ''); assert.match(missing.stderr, /requires --branching/);
+    const unacknowledged = run(['bin/run-branching', '--branching', 'manifest.json', 'workflow file.cjs', 'cow storage']);
+    assert.equal(unacknowledged.status, 1); assert.equal(unacknowledged.calls, '');
+    assert.match(unacknowledged.stderr, /Use .*run-coverage --branching/);
     const help = run(['bin/run-coverage', '--branching', '--help']);
     assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /coverage collection is not supported yet/);
-    const unsupported = run(['bin/run-coverage', '--branching', '--disposable', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'cypress'});
+    assert.doesNotMatch(help.stdout, /--disposable/);
+    const unsupported = run(['bin/run-coverage', '--branching', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'cypress'});
     assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /not implemented yet/);
+});
+test('legacy explicit acknowledgment still reaches both branching workers', t => {
+    const {run} = launchFixture(t);
+    for (const options of [[], ['--calibrate']]) {
+        const result = run(['bin/run-coverage', '--branching', '--disposable', ...options,
+            'manifest.json', 'workflow file.cjs', 'cow storage']);
+        assert.equal(result.status, 37, result.stderr);
+        assert.match(result.calls, options.length ? /branching\/calibration-cli.cjs/ : /branching\/auto-cli.cjs/);
+    }
 });
 test('only AUTO reaches the worker, with default and legacy automatic spellings', t => {
     const {run}=launchFixture(t);
