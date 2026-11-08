@@ -27,6 +27,11 @@ continue from a shared checkpoint instead of repeating the same steps. MageLens
 uses a baseline to choose checkpoints only when their expected time savings outweigh
 the cost of saving and restoring state.
 
+For faster branching, remove copied shop data from the dedicated test database
+and use fixtures to create only the data your tests need. Keep Magento's required
+setup and configuration data. Smaller databases reduce checkpoint storage and
+the time needed to save and restore state.
+
 The [default baseline](branching-baseline.json) starts conservatively at about
 126 seconds of shared steps for two tests. Calibrate it for your project's
 database and machine, especially before running branching in CI:
