@@ -112,7 +112,7 @@ def main():
         config_file = work / 'campaign.json'
         config_file.write_text(json.dumps({**projects, 'seed': str(seed), 'cowRoot': str(Path(cow).resolve()),
             'origin': 'https://performance.test:18443/', 'coreImage': core_image,
-            'branchingImage': adapter, 'plannerBinary': str(planner)}))
+            'branchingImage': adapter, 'plannerBinary': str(planner), 'driverMemoryMiB': 3072}))
         config_file.chmod(0o600)
         campaign = work / 'campaign'
         call([sys.executable, HERE / 'run.py', '--config', config_file, '--output', campaign,

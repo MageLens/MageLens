@@ -66,7 +66,7 @@ class FixtureState {
             }
             this.capture(runtime); // Reject unsupported handles before capture or suffix execution.
         } catch(error) {
-            try {await this.cleanup(runtime);}catch(cleanup){throw new AggregateError([error,cleanup],'Fixture setup and teardown failed');}
+            try {await this.cleanup(runtime);}catch(cleanup){throw new AggregateError([error,cleanup],'Fixture setup and teardown failed',{cause:cleanup});}
             throw error;
         }
     }

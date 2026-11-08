@@ -67,7 +67,7 @@ test('static checks retain Bash, Python and PHP syntax validation', t => {
     assert.equal(result.status, 1, result.stderr);
     for (const file of ['bad.sh', 'bad.py', 'bad.php']) assert.ok(result.stderr.includes(file), result.stderr);
     assert.match(result.stderr, /SyntaxError/);
-    assert.match(result.stderr, /PHP Parse error/);
+    assert.match(result.stderr, /(?:PHP )?Parse error/);
     assert.match(result.stderr, /syntax error near unexpected token/);
     assert.match(result.stdout, /Syntax checked 0 tracked/);
 });

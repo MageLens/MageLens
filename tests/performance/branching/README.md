@@ -55,7 +55,7 @@ reports unsupported execution boundaries explicitly.
 
 ## Required CI performance check
 
-The normal PR CI runs **all ten rows, with three alternating pairs per row** on
+The normal PR CI runs **all thirteen rows, with three alternating pairs per row** on
 `ubuntu-24.04`. Each job installs two isolated Mage-OS/Luma/Playwright environments,
 calibrates on that CI machine through `--calibrate`, then freezes the measured
 baseline for its timed pairs. Real checkout assertions, matching test inventories,
@@ -76,7 +76,7 @@ requires a fresh reference. These thresholds are in [`ci-policy.json`](ci-policy
 functional failures always fail regardless of timing. References never update
 automatically, and a regression cannot be averaged away.
 
-After reviewing all ten artifacts from one commit, run and attempt, prepare a
+After reviewing all thirteen artifacts from one commit, run and attempt, prepare a
 replacement reference file from the downloaded artifacts:
 
 ```bash
