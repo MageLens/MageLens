@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 Run the fast integration checks with `npm run test:integration`.
 
-The full E2E matrix and release qualification use **GitHub Actions**. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Local results do not replace final CI qualification. Local syntax, PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
+The full E2E matrix and release qualification use **GitHub Actions**. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Local results do not replace final CI qualification. Local static checks (`npm run check:static`), PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
 
 ## Run CI
 
@@ -31,7 +31,7 @@ gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 
 After fixing a failure, push the new candidate. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, copyright/license notices, branching provider/dashboard checks, and the [branching performance matrix](performance/branching/README.md) are required jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
+Configure the branch protection/ruleset to require **Required CI gate**. Static checks (ESLint, script syntax, copyright/license notices and workflows), integration/PHP unit checks, branching provider/dashboard checks, and the [branching performance matrix](performance/branching/README.md) are required jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 

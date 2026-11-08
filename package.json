@@ -5,7 +5,7 @@
   "license": "Elastic-2.0",
   "description": "Quickly bootstrap Magento with PHP, JavaScript, and HTML template code coverage",
   "scripts": {
-    "check:copyright": "node tests/check-copyright.cjs",
+    "check:static": "node tests/ci/static.cjs",
     "coverage": "./bin/run-coverage",
     "cy:coverage": "./bin/run-coverage",
     "test:integration": "node --test --test-concurrency=2 tests/*.test.cjs",
@@ -15,8 +15,11 @@
   },
   "devDependencies": {
     "@cypress/code-coverage": "4.1.2",
+    "@eslint/js": "10.0.1",
     "@vitaliiboiko/magento-template-coverage": "1.5.4",
     "cypress": "16.2.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
     "istanbul-lib-coverage": "3.2.2",
     "istanbul-lib-instrument": "6.0.3",
     "istanbul-lib-report": "3.0.1",

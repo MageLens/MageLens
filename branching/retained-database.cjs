@@ -3,7 +3,6 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
-const path = require('node:path');
 const assert = require('node:assert/strict');
 const {spawn, execFileSync} = require('node:child_process');
 const {fileDigest} = require('./identity.cjs');

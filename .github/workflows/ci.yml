@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   static:
-    name: Static syntax and workflow checks
+    name: Static checks and copyright
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,7 +24,8 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - run: node tests/ci/static.cjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check:static
       - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
   integration:
     name: Integration and PHP unit checks
@@ -144,20 +145,6 @@ jobs:
           path: ci-reports/performance/${{ matrix.row }}/
           retention-days: 1
           if-no-files-found: error
-  copyright:
-    name: Copyright and license notices
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - run: npm run check:copyright
-      - run: node --test tests/copyright.test.cjs
   e2e:
     name: Mage-OS E2E
     strategy:
@@ -212,7 +199,7 @@ jobs:
   gate:
     name: Required CI gate
     if: always()
-    needs: [static, integration, copyright, branching, performance, e2e, magento]
+    needs: [static, integration, branching, performance, e2e, magento]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

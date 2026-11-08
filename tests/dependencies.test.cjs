@@ -11,7 +11,7 @@ const {execFileSync, spawnSync} = require('node:child_process');
 const {syncDependencies} = require('../bin/sync-dependencies.cjs');
 const root = path.resolve(__dirname, '..');
 const yaml = fs.readFileSync(path.join(root, 'dependencies.yaml'), 'utf8');
-const configured = key => yaml.match(new RegExp(`^${key}: \"([^\"]+)\"`, 'm'))[1];
+const configured = key => yaml.match(new RegExp(`^${key}: "([^"]+)"`, 'm'))[1];
 const phpVersion = configured('PHP_IMAGE').match(/^php:([0-9]+\.[0-9]+\.[0-9]+)-/)[1];
 const phpBase = (version = phpVersion, upstream = configured('MARKSHUST_DOCKER_MAGENTO_VERSION')) => `magelens-php-base:${version}-markshust${upstream}`;
 const browserVersions = {
@@ -31,7 +31,7 @@ const browserPackages = {
     ISTANBUL_LIB_INSTRUMENT_VERSION: 'istanbul-lib-instrument', NYC_VERSION: 'nyc'
 };
 const select = (content, values) => Object.entries(values).reduce((text, [key, value]) =>
-    text.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: \"${value}\"`), content);
+    text.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: "${value}"`), content);
 
 test('committed browser dependencies and locks match the central version settings', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
@@ -40,7 +40,14 @@ test('committed browser dependencies and locks match the central version setting
     assert.equal(lock.packages[''].version, manifest.version, 'Root package versions must match');
     const runner = process.env.MAGELENS_RUNNER || 'cypress';
     const selected = Object.entries(browserPackages).filter(([key]) => runner === 'cypress' ? key !== 'PLAYWRIGHT_VERSION' : !['CYPRESS_VERSION', 'CYPRESS_CODE_COVERAGE_VERSION'].includes(key));
-    assert.deepEqual(Object.keys(manifest.devDependencies).sort(), selected.map(([, name]) => name).sort());
+    const lintPackages = ['eslint', '@eslint/js', 'globals'];
+    assert.deepEqual(Object.keys(manifest.devDependencies).sort(), [...selected.map(([, name]) => name), ...lintPackages].sort());
+    for (const name of lintPackages) {
+        const version = manifest.devDependencies[name];
+        assert.match(version, /^\d+\.\d+\.\d+$/, `${name} must be pinned`);
+        assert.equal(lock.packages[''].devDependencies[name], version, name);
+        assert.equal(lock.packages[`node_modules/${name}`].version, version, name);
+    }
     for (const [key, name] of selected) {
         const local = key === 'TEMPLATE_COVERAGE_VERSION' && manifest.devDependencies[name] === 'file:.runtime/template-coverage.tgz';
         const expected = local ? manifest.devDependencies[name] : configured(key);

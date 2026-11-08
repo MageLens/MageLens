@@ -55,7 +55,7 @@ function verifyCase(entry, evidence, directory, context) {
     return run.id;
 }
 function verifyRequiredJobs(needs) {
-    const required = ['static', 'integration', 'copyright', 'branching', 'performance', 'e2e', 'magento'];
+    const required = ['static', 'integration', 'branching', 'performance', 'e2e', 'magento'];
     return required.filter(name => needs[name]?.result !== 'success')
         .map(name => `${name}: ${needs[name]?.result || 'missing'}`);
 }

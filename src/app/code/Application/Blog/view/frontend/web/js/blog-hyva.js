@@ -27,7 +27,7 @@ window.applicationBlog = function (postsUrl) {
             try {
                 const saved = JSON.parse(window.localStorage.getItem('application.blog.favorites') || '[]');
                 this.favorites = Array.isArray(saved) ? saved.filter(Number.isInteger) : [];
-            } catch (error) { this.favorites = []; }
+            } catch { this.favorites = []; }
             this.loadPosts();
         },
         search() {
@@ -52,7 +52,7 @@ window.applicationBlog = function (postsUrl) {
                 this.pages = data.pages;
                 this.total = data.total;
                 this.expanded = null;
-            } catch (error) {
+            } catch {
                 this.posts = [];
                 this.total = 0;
                 this.message = 'Could not load articles. Please try again.';
@@ -71,7 +71,7 @@ window.applicationBlog = function (postsUrl) {
                 this.favoriteNotice = post.title + ' is saved locally.';
             }
             try { window.localStorage.setItem('application.blog.favorites', JSON.stringify(this.favorites)); }
-            catch (error) { this.message = 'Favorites are available for this visit only. Browser storage is unavailable.'; }
+            catch { this.message = 'Favorites are available for this visit only. Browser storage is unavailable.'; }
         }
     };
 };
