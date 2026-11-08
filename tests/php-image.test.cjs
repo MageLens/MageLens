@@ -80,3 +80,30 @@ test('PHP image build failures are returned without rerunning the build', t => {
     assert.equal(calls().filter(call => call.command === 'docker').length, 1);
     assert.ok(calls().every(call => call.command !== 'sleep'));
 });
+
+test('PHP artifact downloads retry HTTP 504 and fail immediately on HTTP 404', async t => {
+    const http = require('node:http');
+    const {execFile} = require('node:child_process');
+    const {promisify} = require('node:util');
+    const recipe = fs.readFileSync(path.join(root, 'docker/php/Dockerfile'), 'utf8');
+    const commands = [...recipe.matchAll(/curl ([^\n]+?) "https:[^"]+" -o/g)].map(match => match[1].split(' '));
+    assert.equal(commands.length, 2);
+    let status, calls;
+    const server = http.createServer((request, response) => {
+        calls++;
+        response.writeHead(status === 504 && calls > 1 ? 200 : status);
+        response.end(status === 504 && calls > 1 ? 'verified download' : 'download failed');
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const url = `http://127.0.0.1:${server.address().port}/artifact`;
+    for (const options of commands) {
+        status = 504; calls = 0;
+        const result = await promisify(execFile)('curl', [...options, url]);
+        assert.equal(result.stdout, 'verified download');
+        assert.equal(calls, 2);
+        status = 404; calls = 0;
+        await assert.rejects(promisify(execFile)('curl', [...options, url]), error => error.code === 22);
+        assert.equal(calls, 1);
+    }
+});

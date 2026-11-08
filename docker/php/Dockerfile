@@ -11,12 +11,12 @@ RUN php -r 'if (PHP_VERSION !== $argv[1]) { fwrite(STDERR, "Unexpected PHP versi
 ARG PIE_VERSION
 ARG PCOV_VERSION
 # Current supported installation mechanism, pinned to the fork's release.
-RUN curl -fsSL "https://github.com/php/pie/releases/download/${PIE_VERSION}/pie.phar" -o /usr/local/bin/pie \
+RUN curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://github.com/php/pie/releases/download/${PIE_VERSION}/pie.phar" -o /usr/local/bin/pie \
     && chmod +x /usr/local/bin/pie \
     && pie install "vitaliyboyko/pcov:${PCOV_VERSION}" --no-interaction \
     && php -r 'if (phpversion("pcov") !== getenv("PCOV_VERSION") || !function_exists("pcov\\export") || extension_loaded("xdebug")) exit(1);'
 RUN mkdir /opt/pcov-tools \
-    && curl -fsSL "https://codeload.github.com/VitaliyBoyko/pcov/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
+    && curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://codeload.github.com/VitaliyBoyko/pcov/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
     && tar xzf /tmp/pcov.tar.gz --strip-components=2 -C /opt/pcov-tools --wildcards '*/tools/*' \
     && rm /tmp/pcov.tar.gz
 # Magento is installed with upstream's Composer workflow at runtime. Marketplace
