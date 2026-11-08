@@ -8,6 +8,11 @@ License: see LICENSE in the repository root.
 
 Run the fast integration checks with `npm run test:integration`.
 
+Rust-backed integration cases start isolated planner containers and remove them
+after each test. Prepare the matching development image with
+`./bin/branching-image orchestrator --build-from-source` when no matching image
+is available locally or from the image-builder CI.
+
 The full E2E matrix and release qualification use **GitHub Actions**. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Do not run the full CI suite or E2E matrix locally unless explicitly requested. Local results do not replace final CI qualification. Local static checks (`npm run check:static`), PHP unit and Node integration checks remain available. After `npm ci --ignore-scripts`, `npm run test:integration` limits concurrency to two workers to bound RAM use.
 
 ## Run CI

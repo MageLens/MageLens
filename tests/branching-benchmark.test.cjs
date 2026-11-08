@@ -43,11 +43,10 @@ test('fixture matrix covers automatic restoration, sibling isolation and per-tes
 });
 
 test('Rust assesses the reusable fixture rows with approximate costs and the matrix checkpoint cap', t => {
-    const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+    const fs=require('node:fs'),path=require('node:path');
     const {planner}=require('../branching/planner-client.cjs');
     const {assess}=require('./performance/branching/plan.cjs');
-    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'magelens-fixture-matrix-'));
-    t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+    const directory=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-fixture-matrix-');
     for(const row of matrix.filter(row=>row.fixture)) {
         const root=path.join(directory,row.id);fs.mkdirSync(root);
         fs.writeFileSync(path.join(root,'journeys.spec.ts'),renderSuite(row));
