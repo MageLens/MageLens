@@ -23,15 +23,18 @@ function compileFragment(parameters, code) {
 }
 
 function verifySources(manifest) {
-    if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported automatic manifest');
-    if (manifest.implementation === 'rust-prefix-v2' && (manifest.assessment?.boundsVersion !== 1 || manifest.assessment?.version !== 'js-ts-points-v5')) throw new Error('Outdated source cost model; replan before execution');
-    if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
-        throw new Error('Outdated source point scale; replan before execution');
-    const root = fs.realpathSync(manifest.root);
-    for (const source of manifest.sources) {
-        const file = path.resolve(root, source.path);
-        if (!file.startsWith(root + path.sep) || fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('Source escapes the manifest root');
-        if (fileDigest(file) !== source.sha256) throw new Error(`Stale source: ${source.path}; generate the manifest again`);
+    require('./estimation.cjs').assertAssessed(manifest);
+    try {
+        if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
+            throw new Error('Outdated source point scale; replan before execution');
+        const root = fs.realpathSync(manifest.root);
+        for (const source of manifest.sources) {
+            const file = path.resolve(root, source.path);
+            if (!file.startsWith(root + path.sep) || fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('Source escapes the manifest root');
+            if (fileDigest(file) !== source.sha256) throw new Error(`Stale source: ${source.path}; generate the manifest again`);
+        }
+    } catch (error) {
+        throw new (require('./estimation.cjs').EstimationError)([{phase: 'source', message: error.message}], error.message);
     }
 }
 
@@ -45,7 +48,6 @@ function buildWorkflow(manifest, configuration, selected) {
     if (selected && selection.size !== selected.length) throw new Error('Duplicate test selection');
     for (const id of selection) if (!byId.has(id)) throw new Error(`Unknown test ${id}`);
     if (!selection.size) throw new Error('Empty test selection');
-    if (manifest.diagnostics.length && !selected?.length) throw new Error('Dynamic tests need native collection; select explicit test IDs or use the original Playwright runner');
     const adapter = configuration.adapter;
     if (adapter && (typeof adapter.execute !== 'function' || typeof adapter.supports !== 'function' || !adapter.identity)) throw new Error('Adapter requires identity, supports(test) and execute(test, from, to, runtime)');
     for (const id of selection) {

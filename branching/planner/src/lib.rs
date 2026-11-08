@@ -14,6 +14,8 @@ mod assessment;
 pub mod baseline;
 pub mod cost;
 mod cypress;
+pub mod estimation;
+mod models;
 mod normalize;
 pub mod points;
 mod project;
@@ -65,6 +67,8 @@ pub struct Test {
     pub fixture_estimate: Option<points::Estimate>,
     #[serde(default)]
     pub worker_estimate: Option<points::Estimate>,
+    #[serde(default)]
+    pub lifecycle_estimate: Option<points::Estimate>,
     #[serde(default)]
     pub estimate: Option<points::Estimate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -424,6 +428,11 @@ fn walk_scope(
             let name = collection_name(c, s, cypress);
             let (base, method) = name.split_once('.').unwrap_or((&name, ""));
             if aliases.contains_key(base) {
+                if ["beforeEach", "beforeAll", "afterEach", "afterAll"].contains(&method)
+                    && callback(c).is_none()
+                {
+                    diagnostics.push(format!("{file}:{}: unresolved {method} callback; use an inline callback with an assessable helper call", c.start_position().row + 1));
+                }
                 if method == "beforeEach" {
                     scope.identity.push(normalize::canonical(c, s));
                     if let Some(cb) = callback(c)
@@ -690,6 +699,7 @@ fn walk_scope(
             reasons,
             fixture_estimate: None,
             worker_estimate: None,
+            lifecycle_estimate: None,
             estimate: None,
             restoration: None,
             context_identity: serde_json::to_string(&(
@@ -757,6 +767,20 @@ fn scan(root: &Path, directory: &Path, out: &mut Vec<Source>) -> Result<()> {
 }
 
 pub fn plan(root: &Path) -> Result<Manifest> {
+    let manifest = assess(root).map_err(|message| {
+        estimation::error(
+            "Cost assessment failed; no tests may execute until all work is assessed",
+            vec![serde_json::json!({"phase":"assessment","message":message})],
+        )
+        .to_string()
+    })?;
+    estimation::validate(&manifest)?;
+    Ok(manifest)
+}
+
+// Diagnostic library API. Partial assessments are never executable manifests;
+// production entry points must use plan(), which enforces complete assessment.
+pub fn assess(root: &Path) -> Result<Manifest> {
     // Source helpers can nest many expression frames inside each bounded call.
     // Give analysis a fixed stack independent of host/test-thread defaults.
     std::thread::scope(|scope| {
@@ -990,6 +1014,13 @@ fn plan_project(root: &Path) -> Result<Manifest> {
 }
 
 pub fn write_manifest(path: &Path, manifest: &Manifest) -> Result<()> {
+    estimation::validate(manifest)?;
+    write_json(
+        path,
+        &serde_json::to_value(manifest).map_err(|e| e.to_string())?,
+    )
+}
+pub fn write_json(path: &Path, manifest: &serde_json::Value) -> Result<()> {
     use std::io::Write;
     let parent = path
         .parent()
@@ -1071,7 +1102,7 @@ mod tests {
             Self(root)
         }
         fn plan(&self) -> Manifest {
-            plan(&self.0).unwrap()
+            assess(&self.0).unwrap()
         }
     }
     impl Drop for Fixture {

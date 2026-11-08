@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-pub const VERSION: &str = "js-ts-points-v5";
+pub const VERSION: &str = "js-ts-points-v6";
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Approximation {
@@ -182,8 +182,15 @@ impl Estimate {
             *current = current.saturating_add(count);
         }
         for reason in other.reasons {
-            if !self.reasons.contains(&reason) && self.reasons.len() < 128 {
-                self.reasons.push(reason);
+            if !self.reasons.contains(&reason) {
+                if self.reasons.len() < 128 {
+                    self.reasons.push(reason);
+                } else if self.reasons.len() == 128 {
+                    self.reasons.push(
+                        "Analysis issue budget exceeded; additional issues cannot be reported"
+                            .into(),
+                    );
+                }
             }
         }
         for assumption in other.assumptions {
@@ -296,4 +303,25 @@ pub fn weights() -> serde_json::Value {
       "wait": WAIT, "localIo": LOCAL_IO, "unknown": UNKNOWN, "pureDeclarations": 0, "maxLoopIterations": LOOP_LIMIT,
       "maxCallDepth": CALL_LIMIT, "maxAnalysisNodes": NODE_LIMIT, "millisecondsPerPoint": crate::baseline::PLAYWRIGHT_BRANCHING.unit_ms,
       "approximation": &*APPROXIMATION})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn bounded_diagnostics_cannot_hide_a_later_analysis_failure() {
+        let mut estimate = Estimate::default();
+        for index in 0..128 {
+            estimate.add(Estimate::unknown(format!("Runtime condition {index}")));
+        }
+        estimate.add(Estimate::unknown("Unsupported late operation"));
+        estimate.finalize();
+        assert!(!estimate.analysis_complete);
+        assert!(
+            estimate
+                .issues
+                .iter()
+                .any(|issue| issue.kind == "analysis-limit")
+        );
+    }
 }

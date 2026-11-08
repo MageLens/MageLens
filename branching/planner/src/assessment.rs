@@ -55,6 +55,26 @@ enum Value {
     DataLibrary(String),
 }
 impl Value {
+    fn contains_callback(&self) -> bool {
+        match self {
+            Self::Function(..) | Self::Class(..) | Self::RetryAssertion(..) | Self::Builtin(..) => {
+                true
+            }
+            Self::Object(fields) | Self::Instance(_, fields) => {
+                fields.values().any(Self::contains_callback)
+            }
+            Self::Array(values) => values.iter().any(Self::contains_callback),
+            Self::Map(Some(values)) => values
+                .iter()
+                .any(|(key, value)| key.contains_callback() || value.contains_callback()),
+            Self::Set(Some(values)) => values.iter().any(Self::contains_callback),
+            Self::Promise(value)
+            | Self::Sequence(value)
+            | Self::Nullable(value)
+            | Self::CypressChain(value) => value.contains_callback(),
+            _ => false,
+        }
+    }
     fn kind(&self) -> &'static str {
         match self {
             Self::Unknown => "unresolved value",
@@ -1721,6 +1741,30 @@ impl Project {
             }
         }
     }
+    fn modeled_call(&self, file: &str, node: Node, args: &[Value], env: &mut Env) -> Option<Eval> {
+        let model = self
+            .models
+            .get(&(file.to_string(), node.start_byte(), node.end_byte()))?;
+        if args.iter().any(Value::contains_callback) {
+            return Some(Eval::cost(Estimate::unknown(format!(
+                "Unsupported project call model with callback arguments at {file}:{}",
+                node.start_position().row + 1
+            ))));
+        }
+        for value in env.values_mut() {
+            *value = value.widen();
+        }
+        let value = match model.returns {
+            crate::models::ReturnValue::Data => Value::Data,
+            crate::models::ReturnValue::Text => Value::Text,
+            crate::models::ReturnValue::Undefined => Value::Undefined,
+        };
+        Some(Eval {
+            cost: model.estimate(),
+            value,
+            ..Eval::default()
+        })
+    }
     fn call_eval(&self, file: &str, n: Node, env: &mut Env, ctx: &mut Context) -> Eval {
         let s = &self.modules[file].source;
         let Some(function) = field(n, "function") else {
@@ -1819,6 +1863,22 @@ impl Project {
             cost.add(receiver.cost);
             let previous_receiver = receiver.value.clone();
             if let Some(mut r) = self.value_call(&mut receiver.value, method, &args, ctx) {
+                // Built-in runner dispatch reports opaque project commands here.
+                // Replace only that unresolved command, never nested argument,
+                // dependency, callback or analysis-limit failures.
+                if r.cost.reasons.len() == 1
+                    && r.cost.reasons.iter().any(|reason| {
+                        reason.starts_with("Unsupported Cypress command:")
+                            || reason.starts_with("Unsupported Cypress API:")
+                            || reason == "Unresolved Cypress task registration or runtime task name"
+                    })
+                    && let Some(mut modeled) = self.modeled_call(file, n, &args, env)
+                {
+                    if matches!(r.value, Value::CypressChain(_)) {
+                        modeled.value = Value::CypressChain(Box::new(modeled.value));
+                    }
+                    r = modeled;
+                }
                 if receiver.value != previous_receiver
                     && let Some(object) = field(function, "object")
                 {
@@ -2187,6 +2247,10 @@ impl Project {
         for value in env.values_mut() {
             *value = value.widen();
         }
+        if let Some(mut result) = self.modeled_call(file, n, &args, env) {
+            result.cost.add(cost);
+            return result;
+        }
         cost.add(Estimate::unknown(format!(
             "Unresolved call at {file}:{} ({} on {receiver_kind})",
             n.start_position().row + 1,
@@ -2472,6 +2536,7 @@ impl Project {
             }
             ancestor = node.parent();
         }
+        let mut cleanup_hooks = vec![];
         for scope in scopes.into_iter().rev() {
             for statement in children(scope) {
                 let call = if statement.kind() == "expression_statement" {
@@ -2483,30 +2548,56 @@ impl Project {
                     continue;
                 }
                 let name = crate::function_name(call, &module.source);
-                let Some(alias) = name.strip_suffix(".beforeAll") else {
-                    continue;
+                let (alias, phase) = if ctx.cypress {
+                    match name.as_str() {
+                        "before" => ("", "beforeAll"),
+                        "after" => ("", "afterAll"),
+                        "afterEach" => ("", "afterEach"),
+                        _ => continue,
+                    }
+                } else {
+                    let Some((alias, phase)) = name.rsplit_once('.') else {
+                        continue;
+                    };
+                    if !["beforeAll", "afterAll", "afterEach"].contains(&phase)
+                        || self
+                            .provider(&test.file, alias, &mut BTreeSet::new())
+                            .is_none()
+                    {
+                        continue;
+                    }
+                    (alias, phase)
                 };
-                if self
-                    .provider(&test.file, alias, &mut BTreeSet::new())
-                    .is_none()
-                {
-                    continue;
-                }
                 let hook = field(call, "arguments").and_then(|n| {
                     children(n)
                         .into_iter()
                         .find(|n| matches!(n.kind(), "arrow_function" | "function_expression"))
                 });
                 if let Some(hook) = hook {
+                    if phase != "beforeAll" {
+                        cleanup_hooks.push((alias.to_string(), hook));
+                        continue;
+                    }
                     let mut inputs = values.clone();
+                    let fixtures = self.provider(&test.file, alias, &mut BTreeSet::new());
                     for dependency in params(hook)
                         .first()
                         .map(|n| names(*n, &module.source))
                         .unwrap_or_default()
                     {
-                        inputs
-                            .entry(dependency.clone())
-                            .or_insert_with(|| builtin(&dependency));
+                        let value = if let Some(fixtures) = &fixtures {
+                            self.fixture_value(
+                                &dependency,
+                                fixtures,
+                                &mut values,
+                                &mut BTreeSet::new(),
+                                &mut costs,
+                                &mut ctx,
+                            )
+                        } else {
+                            builtin(&dependency)
+                        };
+                        inputs.insert(dependency, value);
                     }
                     let result = self.invoke(
                         &self.reference(&test.file, hook),
@@ -2533,7 +2624,6 @@ impl Project {
         costs.repeated.finalize();
         costs.worker.finalize();
         test.fixture_estimate = Some(costs.repeated.clone());
-        test.worker_estimate = Some(costs.worker);
         let module = &self.modules[&test.file];
         let callback_body = callback.and_then(|n| field(n, "body"));
         if let Some(body) = callback_body {
@@ -2599,6 +2689,39 @@ impl Project {
             step.estimate = Some(result.cost.clone());
             costs.repeated.add(result.cost);
         }
+        let mut lifecycle = Estimate::default();
+        for (alias, hook) in cleanup_hooks.into_iter().rev() {
+            let mut inputs = values.clone();
+            if let Some(fixtures) = self.provider(&test.file, &alias, &mut BTreeSet::new()) {
+                for dependency in params(hook)
+                    .first()
+                    .map(|n| names(*n, &module.source))
+                    .unwrap_or_default()
+                {
+                    let value = self.fixture_value(
+                        &dependency,
+                        &fixtures,
+                        &mut values,
+                        &mut BTreeSet::new(),
+                        &mut costs,
+                        &mut ctx,
+                    );
+                    inputs.insert(dependency, value);
+                }
+            }
+            let result = self.invoke(
+                &self.reference(&test.file, hook),
+                &env,
+                vec![Value::Object(inputs), Value::TestInfo],
+                None,
+                &mut ctx,
+            );
+            lifecycle.add(result.cost);
+        }
+        lifecycle.finalize();
+        test.lifecycle_estimate = Some(lifecycle);
+        costs.worker.finalize();
+        test.worker_estimate = Some(costs.worker);
         costs.repeated.finalize();
         test.estimate = Some(costs.repeated);
         tainted_libraries.extend(ctx.tainted_libraries);
@@ -2667,7 +2790,12 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         max_checkpoints_per_test: crate::cost::checkpoint_limit(),
     };
     let cost_input = serde_json::to_value(&input).map_err(|e| e.to_string())?;
-    let plan = crate::cost::select(input)?;
+    let complete = crate::estimation::issues(manifest).is_empty();
+    let plan = if complete {
+        Some(crate::cost::select(input)?)
+    } else {
+        None
+    };
     let baseline = &*crate::baseline::PLAYWRIGHT_BRANCHING;
     let candidates:Vec<_>=manifest.checkpoints.iter().map(|cp| {
         let test=manifest.tests.iter().find(|t| t.id==cp.representative).unwrap();
@@ -2679,7 +2807,7 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         // save more than capture/release and its own restores. This gives a
         // useful rejection test without pretending uncertain work is free.
         let variable_ms=(baseline.capture_ms+baseline.release_ms+reuses*baseline.restore_ms)*baseline.overhead_multiplier*(1.0+baseline.overhead_margin);
-        let classification=if plan.selected.contains(&cp.id) { "estimated-saving" }
+        let classification=if !complete { "assessment-failed" } else if plan.as_ref().is_some_and(|plan| plan.selected.contains(&cp.id)) { "estimated-saving" }
           else if reuses>0.0 && estimate.upper_bound_points.is_some_and(|upper| upper as f64*baseline.unit_ms*reuses<=variable_ms) { "below-variable-cost" }
           else if estimate.estimated_points as f64*baseline.unit_ms*reuses<=variable_ms { "estimated-below-variable-cost" }
           else { "shared-overhead-not-recovered" };
@@ -2694,6 +2822,7 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         .iter()
         .flat_map(|t| t.steps.iter().filter_map(|s| s.estimate.as_ref()))
         .collect();
+    let total: usize = manifest.tests.iter().map(|t| t.steps.len()).sum();
     let analyzed = statements.iter().filter(|e| e.analysis_complete).count();
     let exact = statements.iter().filter(|e| e.complete).count();
     let fixture_gaps = manifest
@@ -2714,7 +2843,16 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
                 .is_none_or(|e| !e.analysis_complete)
         })
         .count();
-    let analysis = serde_json::json!({"status":if analyzed==statements.len()&&fixture_gaps==0&&worker_gaps==0&&manifest.diagnostics.is_empty() {"complete"}else{"partial"},"totalStatements":statements.len(),"analyzedStatements":analyzed,"exactStatements":exact,"runtimeDependentStatements":analyzed.saturating_sub(exact),"fixturesWithGaps":fixture_gaps,"workersWithGaps":worker_gaps,"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()});
+    let lifecycle_gaps = manifest
+        .tests
+        .iter()
+        .filter(|t| {
+            t.lifecycle_estimate
+                .as_ref()
+                .is_none_or(|e| !e.analysis_complete)
+        })
+        .count();
+    let analysis = serde_json::json!({"status":if complete {"complete"}else{"partial"},"totalStatements":total,"lifecycleWithGaps":lifecycle_gaps,"analyzedStatements":analyzed,"exactStatements":exact,"runtimeDependentStatements":analyzed.saturating_sub(exact),"fixturesWithGaps":fixture_gaps,"workersWithGaps":worker_gaps,"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()});
     Ok(
         serde_json::json!({"version":points::VERSION,"boundsVersion":1,"weights":points::weights(),"costBasis":"approximate-operation-points", "analysis":analysis,"runtimeEligibility":"Cost selection alone does not authorize restoring JavaScript state", "candidates":candidates, "costInput":cost_input, "costPlan":plan}),
     )

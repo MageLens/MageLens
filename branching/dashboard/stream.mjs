@@ -9,7 +9,18 @@ export function connectStream({onData, onConnection}) {
     const stream = new EventSource('/events');
     let revision;
     stream.addEventListener('open', () => onConnection(true));
-    stream.addEventListener('error', () => onConnection(false));
+    stream.addEventListener('error', async () => {
+        onConnection(false);
+        // EventSource hides non-200 bodies. Fetch the same assessment failure
+        // so a newly opened dashboard shows its reason instead of stale data.
+        try {
+            const response = await fetch('/api/state');
+            if (response.status === 500) {
+                const state = await response.json();
+                if (state.error?.code === 'ESTIMATION_FAILED') onData(state);
+            }
+        } catch { /* Connection state already reports an unreachable server. */ }
+    });
     const journals = new Map();
     const journalWarnings = new Map();
     let frame;

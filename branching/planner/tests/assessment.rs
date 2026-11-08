@@ -27,20 +27,9 @@ impl Fixture {
         Self(root)
     }
     fn plan(&self) -> Value {
-        let out = Command::new(env!("CARGO_BIN_EXE_magelens-plan"))
-            .args([
-                "plan",
-                self.0.join("src").to_str().unwrap(),
-                self.0.join("manifest.json").to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        serde_json::from_slice(&fs::read(self.0.join("manifest.json")).unwrap()).unwrap()
+        // Keep inspecting diagnostics, including intentionally unsupported fixtures.
+        // CLI tests separately require production planning to reject these reports.
+        serde_json::to_value(magelens_plan::assess(&self.0.join("src")).unwrap()).unwrap()
     }
 }
 impl Drop for Fixture {
@@ -60,6 +49,40 @@ fn points(v: &Value) -> u64 {
     v["estimate"]["points"]
         .as_u64()
         .expect("every statement has a point estimate")
+}
+
+#[test]
+fn array_from_assesses_iterables_array_like_values_and_mapping_callbacks() {
+    let f = Fixture::new(&[(
+        "flow.cy.js",
+        r#"
+        it('sets',()=>{Array.from(new Set(['a','b','a'])).forEach(value=>cy.request('/'+value));});
+        it('maps',()=>{Array.from(new Map([['a',1],['b',2],['a',3]])).forEach(([key,value])=>cy.request('/'+key));});
+        it('arraylike',()=>{Array.from({length:2,0:'a',1:'b'},function(value,index){this.request('/'+value);},{request:url=>cy.request(url)});});
+        it('string',()=>{Array.from('a🛒',value=>cy.request('/'+value));});
+        it('runtime',()=>{Array.from(Cypress.env('records'),value=>cy.request('/'+value));});
+        it('cleanup',()=>{cy.request('/create');});
+        after(()=>Array.from(Cypress.env('created')).forEach(value=>cy.request('/delete/'+value)));
+    "#,
+    )]);
+    let p = f.plan();
+    assert_eq!(p["assessment"]["analysis"]["status"], "complete");
+    for title in ["sets", "maps", "arraylike", "string"] {
+        assert_eq!(
+            test(&p, title)["estimate"]["operations"]["request"],
+            2,
+            "{title}"
+        );
+    }
+    assert_eq!(
+        test(&p, "runtime")["estimate"]["estimatedOperations"]["request"],
+        3.0
+    );
+    assert_eq!(
+        test(&p, "cleanup")["lifecycleEstimate"]["estimatedOperations"]["request"],
+        3.0
+    );
+    assert!(magelens_plan::plan(&f.0.join("src")).is_ok());
 }
 
 #[test]
@@ -627,10 +650,13 @@ fn approximate_counts_preserve_small_unknown_and_non_database_fixture_controls()
     );
     assert_eq!(repeated["estimatedOperations"]["interaction"], 3.0);
     assert!(
-        p["assessment"]["costPlan"]["selected"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["assessment"]["costPlan"].is_null(),
+        "Incomplete assessment must not select checkpoints"
+    );
+    assert!(
+        magelens_plan::plan(&f.0.join("src"))
+            .unwrap_err()
+            .contains("ESTIMATION_FAILED")
     );
 }
 
@@ -692,7 +718,7 @@ fn formatting_comments_quotes_and_types_do_not_hide_shared_work() {
     assert_eq!(a["fingerprint"], b["fingerprint"]);
     assert_eq!(points(a), points(b));
     assert!(points(a) > 0);
-    assert_eq!(p["assessment"]["version"], "js-ts-points-v5");
+    assert_eq!(p["assessment"]["version"], "js-ts-points-v6");
 }
 #[test]
 fn literal_whitespace_inputs_and_preceding_state_are_never_erased() {
@@ -812,10 +838,13 @@ fn unknown_calls_recursion_and_unbounded_loops_have_explanations_not_fake_precis
         assert_eq!(s["estimate"]["lowerBoundPoints"], 0);
     }
     assert!(
-        p["assessment"]["costPlan"]["selected"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["assessment"]["costPlan"].is_null(),
+        "Incomplete assessment must not select checkpoints"
+    );
+    assert!(
+        magelens_plan::plan(&f.0.join("src"))
+            .unwrap_err()
+            .contains("ESTIMATION_FAILED")
     );
 }
 #[test]
@@ -1306,7 +1335,7 @@ fn runtime_early_returns_bound_the_remaining_helper_body() {
 }
 
 #[test]
-fn known_expensive_work_can_justify_reuse_despite_an_unpriced_dependency() {
+fn known_expensive_work_cannot_bypass_an_unpriced_dependency() {
     let f = Fixture::new(&[
         (
             "fixtures.ts",
@@ -1320,18 +1349,15 @@ fn known_expensive_work_can_justify_reuse_despite_an_unpriced_dependency() {
     let p = f.plan();
     assert_eq!(test(&p, "a")["fixtureEstimate"]["complete"], false);
     assert!(
-        !p["assessment"]["costPlan"]["selected"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["assessment"]["costPlan"].is_null(),
+        "Incomplete assessment must not select checkpoints"
     );
     assert!(
-        p["assessment"]["costPlan"]["decisions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|d| d["combinedUnits"] == 2400)
+        magelens_plan::plan(&f.0.join("src"))
+            .unwrap_err()
+            .contains("ESTIMATION_FAILED")
     );
+    assert_eq!(p["assessment"]["analysis"]["status"], "partial");
 }
 
 #[test]

@@ -200,8 +200,11 @@ test('only AUTO reaches the worker, with default and legacy automatic spellings'
     assert.equal(manual.status,1);assert.equal(manual.calls,'');
 });
 test('stale automatic manifests stop before worker launch and remove the Rust controller', t => {
-    const {run} = launchFixture(t);
+    const {run, directory} = launchFixture(t);
     const result = run(['bin/run-coverage', '--branching', '--disposable', '--auto', 'manifest.json', 'workflow file.cjs', 'cow storage'], {TEST_VERIFY_FAIL: '1'});
+    const failure = JSON.parse(fs.readFileSync(path.join(directory, 'manifest.json.error.json')));
+    assert.equal(failure.statusCode, 500); assert.equal(failure.code, 'ESTIMATION_FAILED');
+    assert.equal(fs.readdirSync(directory).some(name => name.includes('.verify-')), false);
     assert.equal(result.status, 23, result.stderr);
     assert.match(result.calls, /"magelens-plan","verify"/);
     assert.doesNotMatch(result.calls, /"--entrypoint","node"/);

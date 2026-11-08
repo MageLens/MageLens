@@ -23,11 +23,16 @@ function createHandler({snapshot, stream, assetDirectory, transformAsset}) {
             response.writeHead(405, {Allow: 'GET'});
             return response.end();
         }
-        if (url.pathname === http.stateRoute) {
+        if (url.pathname === http.stateRoute || url.pathname === http.streamRoute) {
+            const state = snapshot();
+            if (state.error) {
+                response.writeHead(500, {'Content-Type': 'application/json'});
+                return response.end(JSON.stringify(state));
+            }
+            if (url.pathname === http.streamRoute) return stream.connect(request, response);
             response.setHeader('Content-Type', 'application/json');
-            return response.end(JSON.stringify(snapshot()));
+            return response.end(JSON.stringify(state));
         }
-        if (url.pathname === http.streamRoute) return stream.connect(request, response);
         const asset = assets[url.pathname];
         if (!asset) {
             response.writeHead(404);

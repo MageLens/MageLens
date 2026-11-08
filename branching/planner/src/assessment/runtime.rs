@@ -304,6 +304,118 @@ impl Project {
                 }
                 Value::Object(object)
             }
+            "Array.from" => {
+                let mut values = match args.first() {
+                    Some(Value::Array(items) | Value::Set(Some(items))) => {
+                        Value::Array(items.clone())
+                    }
+                    Some(Value::Sequence(item)) => Value::Sequence(item.clone()),
+                    Some(Value::Map(Some(items))) => Value::Array(
+                        items
+                            .iter()
+                            .map(|(key, value)| Value::Array(vec![key.clone(), value.clone()]))
+                            .collect(),
+                    ),
+                    Some(Value::Map(None)) => {
+                        Value::Sequence(Box::new(Value::Array(vec![Value::Data, Value::Data])))
+                    }
+                    Some(Value::String(value)) => Value::Array(
+                        value
+                            .chars()
+                            .map(|c| Value::String(c.to_string()))
+                            .collect(),
+                    ),
+                    Some(Value::Text) => Value::Sequence(Box::new(Value::Text)),
+                    Some(Value::Object(fields)) if matches!(fields.get("length"),Some(Value::Number(n)) if *n>=0 && *n<=points::LOOP_LIMIT as i64) =>
+                    {
+                        let Some(Value::Number(length)) = fields.get("length") else {
+                            unreachable!()
+                        };
+                        Value::Array(
+                            (0..*length)
+                                .map(|i| {
+                                    fields
+                                        .get(&i.to_string())
+                                        .cloned()
+                                        .unwrap_or(Value::Undefined)
+                                })
+                                .collect(),
+                        )
+                    }
+                    _ => Value::Sequence(Box::new(Value::Data)),
+                };
+                if matches!(args.first(), Some(Value::Set(_)))
+                    && let Value::Array(items) = values.clone()
+                {
+                    let mut unique = vec![];
+                    for item in items {
+                        if !matches!(
+                            item,
+                            Value::String(_)
+                                | Value::Number(_)
+                                | Value::Bool(_)
+                                | Value::Null
+                                | Value::Undefined
+                        ) {
+                            values = Value::Sequence(Box::new(Value::Data));
+                            break;
+                        }
+                        if !unique.contains(&item) {
+                            unique.push(item);
+                        }
+                    }
+                    if let Value::Array(items) = &mut values {
+                        *items = unique;
+                    }
+                }
+                if let Some(callback) = args.get(1).filter(|v| !matches!(v, Value::Undefined)) {
+                    let (items, exact) = match values {
+                        Value::Array(items) if items.len() <= points::LOOP_LIMIT => (items, true),
+                        Value::Sequence(item) => (vec![*item], false),
+                        _ => (vec![Value::Data], false),
+                    };
+                    let mut cost = Estimate::default();
+                    let mut mapped = vec![];
+                    for (index, item) in items.into_iter().enumerate() {
+                        let arguments = vec![item, Value::Number(index as i64)];
+                        let result = match callback {
+                            Value::Function(reference, closure) => self.invoke(
+                                reference,
+                                closure,
+                                arguments,
+                                args.get(2).cloned(),
+                                ctx,
+                            ),
+                            Value::Builtin(name) => self.platform_call(name, &arguments, ctx)?,
+                            _ => return None,
+                        };
+                        cost.add(result.cost);
+                        mapped.push(result.value);
+                    }
+                    if !exact {
+                        cost = cost.unknown_repetitions();
+                    }
+                    if matches!(callback,Value::Function(reference,_) if self.node(reference).is_some_and(function_async))
+                    {
+                        cost = cost.optional("Async array callbacks may overlap");
+                    }
+                    return Some(Eval {
+                        cost,
+                        value: if exact {
+                            Value::Array(mapped)
+                        } else {
+                            Value::Sequence(Box::new(
+                                mapped
+                                    .into_iter()
+                                    .reduce(Value::join)
+                                    .unwrap_or(Value::Data),
+                            ))
+                        },
+                        ..Eval::default()
+                    });
+                }
+                values
+            }
             "Array.isArray" => match args.first() {
                 Some(Value::Array(_) | Value::Sequence(_)) => Value::Bool(true),
                 Some(
@@ -415,7 +527,30 @@ impl Project {
             "URL" => Value::Builtin("URL.instance".into()),
             "URL.instance.toString" | "URL.instance.toJSON" => Value::Text,
             "Error" | "TypeError" => Value::Object(Env::from([("message".into(), Value::Text)])),
-            "Map" | "WeakMap" => Value::Map(Some(vec![])),
+            "Map" | "WeakMap" => Value::Map(match args.first() {
+                None => Some(vec![]),
+                Some(Value::Array(items)) => {
+                    items
+                        .iter()
+                        .try_fold(Vec::<(Value, Value)>::new(), |mut entries, item| {
+                            let Value::Array(pair) = item else {
+                                return None;
+                            };
+                            if pair.len() < 2 {
+                                return None;
+                            }
+                            if let Some((_, value)) =
+                                entries.iter_mut().find(|(key, _)| key == &pair[0])
+                            {
+                                *value = pair[1].clone();
+                            } else {
+                                entries.push((pair[0].clone(), pair[1].clone()));
+                            }
+                            Some(entries)
+                        })
+                }
+                _ => None,
+            }),
             "Set" | "WeakSet" => Value::Set(match args.first() {
                 Some(Value::Array(v)) => Some(v.clone()),
                 None => Some(vec![]),

@@ -14,7 +14,7 @@ assert.ok(manifest.checkpoints.some(checkpoint => checkpoint.automatic && checkp
 assert.deepEqual([...manifest.schedule].sort(), manifest.tests.map(test => test.id).sort());
 console.log('Rust image planned both continuations and their shared prefix.');
 
-assert.equal(manifest.assessment.version, 'js-ts-points-v5');
+assert.equal(manifest.assessment.version, 'js-ts-points-v6');
 assert.ok(manifest.tests.every(test => test.steps.every(step => step.estimate)));
 
 assert.equal(manifest.assessment.boundsVersion, 1);

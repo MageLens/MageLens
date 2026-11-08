@@ -17,6 +17,8 @@ async function install(on, config, original, options) {
     const supportFile = config.supportFile;
     if (options.list) config.baseUrl = null;
     const native = {projects: [{name: 'cypress', dependencies: []}], rootDir: config.projectRoot,
+        unassessedLifecycle: [...(supportFile ? ['Cypress support-file hooks and command registrations'] : []),
+            ...(hasNodeEvents ? ['Cypress setupNodeEvents and plugin lifecycle'] : [])],
         checkpointLifecycle: !supportFile && !hasNodeEvents && config.testIsolation !== false ? 'independent-cypress' : 'native-cypress'};
     fs.writeFileSync(options.metadata, JSON.stringify(native), {mode: 0o600});
     fs.writeFileSync(options.support, `require(${JSON.stringify(path.join(__dirname, 'native-support.cjs'))}).install(${JSON.stringify({list: options.list, selected: options.selected})});\n${supportFile ? `require(${JSON.stringify(supportFile)});` : ''}\n`, {mode: 0o600});

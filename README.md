@@ -47,7 +47,12 @@ use `--branching --help` for setup and overrides. Branching currently requires
 an isolated Linux test installation with Cypress or Playwright and reflink
 storage; application coverage collection is not yet supported. Cypress checkpoints
 currently require independent command chains without support hooks, plugin state,
-aliases or module state. Unsupported tests retain their native lifecycle.
+aliases or module state. Fully assessed tests that cannot restore state retain
+their native lifecycle.
+
+Incomplete cost assessment stops branching with `ESTIMATION_FAILED` (HTTP 500
+in the dashboard). Resolve every reported issue before proceeding; use the
+[project cost-model extension](docs/branching-estimation.md) for opaque project calls.
 
 <!-- coverage-badges:start -->
 Run `./bin/run-coverage` to generate coverage reports and badges for your project.

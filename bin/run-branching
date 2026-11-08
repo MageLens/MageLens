@@ -52,9 +52,25 @@ modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/works
 controller=$(docker run --detach --rm --init --network none --memory 512m --memory-swap 512m \
     --user "$LOCAL_UID:$LOCAL_GID" --mount "type=bind,source=$ROOT,target=$ROOT,readonly" --workdir "$ROOT" \
     --label org.magelens.role=branching-orchestrator --entrypoint sleep "$planner_image" infinity)
-cleanup_controller() { local result=$?; trap - EXIT; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }
+verification_error=''
+cleanup_controller() { local result=$?; trap - EXIT; if [[ -n "$verification_error" ]]; then rm -f -- "$verification_error" || result=1; fi; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }
 trap cleanup_controller EXIT
-docker exec "$controller" magelens-plan verify "$manifest"
+# Keep the controller's source mount read-only; publish its failure on the host
+# so the dashboard cannot silently display a superseded successful assessment.
+verification_error=$(mktemp "${manifest}.verify-XXXXXX")
+if docker exec "$controller" magelens-plan verify "$manifest" 2>"$verification_error"; then
+    rm -f -- "$verification_error"
+    verification_error=''
+else
+    result=$?
+    if [[ ! -s "$verification_error" ]]; then
+        printf '{"statusCode":500,"code":"ESTIMATION_FAILED","message":"Source verification failed","issues":[{"phase":"verification","exitCode":%s}],"remediation":"Resolve the verification failure and replan."}\n' "$result" >"$verification_error"
+    fi
+    cat "$verification_error" >&2
+    mv -f -- "$verification_error" "${manifest}.error.json"
+    verification_error=''
+    exit "$result"
+fi
 # Driver needs Docker control for the application barrier. No ports are exposed.
 # The original browser runner and normal coverage entry point remain unchanged.
 docker run --rm --init --memory 2g --memory-swap 2g --shm-size 512m \

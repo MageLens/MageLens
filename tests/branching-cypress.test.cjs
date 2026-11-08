@@ -91,7 +91,9 @@ test('Cypress native plugin composes hooks and suppresses execution hooks during
             on('task', {read: () => 'fixture'});
         }, options);
         assert.equal(configured.baseUrl, list ? null : 'https://store.test');
-        assert.equal(JSON.parse(fs.readFileSync(options.metadata)).checkpointLifecycle, 'native-cypress');
+        const metadata = JSON.parse(fs.readFileSync(options.metadata));
+        assert.equal(metadata.checkpointLifecycle, 'native-cypress');
+        assert.deepEqual(metadata.unassessedLifecycle, ['Cypress setupNodeEvents and plugin lifecycle']);
         assert.equal(events.get('task').read(), 'fixture');
         if (list) assert.equal(events.has('before:run'), false);
         else { await events.get('before:run')(); assert.deepEqual(calls, ['first', 'second']); }

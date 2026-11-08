@@ -5,12 +5,34 @@
 const path = require('node:path');
 const {buildWorkflow, verifySources} = require('./automatic.cjs');
 const costs = require('./costs.cjs');
+const {EstimationError} = require('./estimation.cjs');
+const testKey = test => `${path.resolve(test.file)}:${test.framework === 'cypress' || test.fixture?.startsWith('cypress:') ? 'cypress' : test.line}:${test.title}`;
+function assertInventoryAssessed(manifest, inventory) {
+    const lifecycle = [...(inventory.config.unassessedLifecycle ?? []),
+        ...['globalSetup', 'globalTeardown', 'webServer'].filter(key => inventory.config[key])];
+    if (lifecycle.length) throw new EstimationError(lifecycle.map(name => ({phase: 'native-lifecycle',
+        message: `${name} is not covered by the source assessment. Move test work into assessed spec hooks or fixtures before using branching.`})));
+    const assessed = new Map();
+    for (const test of manifest.tests) {
+        const key = testKey({...test, file: path.join(manifest.root, test.file)});
+        assessed.set(key, (assessed.get(key) ?? 0) + 1);
+    }
+    const perProject = new Map(), issues = [];
+    for (const test of inventory.tests) {
+        const key = testKey(test), occurrence = `${test.project}:${key}`;
+        const count = (perProject.get(occurrence) ?? 0) + 1;
+        perProject.set(occurrence, count);
+        if (count > (assessed.get(key) ?? 0)) issues.push({phase: 'native-collection', file: test.file, line: test.line, test: test.title,
+            message: 'Native test has no corresponding complete source assessment'});
+    }
+    if (issues.length) throw new EstimationError(issues);
+}
 function partition(manifest, inventory, project) {
     const dependencyProjects = new Set(inventory.config.projects.flatMap(p => p.dependencies ?? []));
     const setup = inventory.tests.filter(t => dependencyProjects.has(t.project));
     const main = inventory.tests.filter(t => !dependencyProjects.has(t.project));
     const occurrences = new Map();
-    const key = test => `${path.resolve(test.file)}:${test.framework === 'cypress' || test.fixture?.startsWith('cypress:') ? 'cypress' : test.line}:${test.title}`;
+    const key = testKey;
     for (const test of main) occurrences.set(key(test), (occurrences.get(key(test)) ?? 0) + 1);
     const staticTests = new Map(manifest.tests.map(test => [key({...test, file: path.join(manifest.root, test.file)}), test]));
     const checkpoint = [], native = [];
@@ -32,16 +54,27 @@ function validateNative(report, expected) {
         throw new Error('Native runner claimed success with incomplete results');
     }
 }
+async function collectAssessed(manifest, project, directory, runner) {
+    verifySources(manifest);
+    if (!project.native?.config) throw new EstimationError([{phase: 'native-collection', message: 'A native runner configuration is required to assess the complete inventory and lifecycle'}]);
+    let inventory;
+    try { inventory = await runner.collect(project.native.config, directory); }
+    catch (error) { throw new EstimationError([{phase: 'native-collection', message: error.message}]); }
+    if (inventory.exitCode !== 0 || inventory.errors.length || !inventory.tests.length)
+        throw new EstimationError([{phase: 'native-collection', message: 'Native collection failed or returned no tests', reasons: inventory.errors}]);
+    if (new Set(inventory.tests.map(t => t.id)).size !== inventory.tests.length)
+        throw new EstimationError([{phase: 'native-collection', message: 'Native inventory has duplicate test identities'}]);
+    assertInventoryAssessed(manifest, inventory);
+    return inventory;
+}
 async function runSuite(options) {
     costs.assertAutomatic(options);
     const {manifest, project, directory, runner, runCheckpoint} = options;
     costs.assertAutomatic(project);
     require('./checkpoint-limit.cjs').validateLimit(project.maxCheckpointsPerTest);
     const mode = 'AUTO';
-    verifySources(manifest);
-    const started = performance.now(), phases = [], inventory = await runner.collect(project.native.config, directory);
-    if (inventory.exitCode !== 0 || inventory.errors.length || !inventory.tests.length) throw new Error('Native collection failed or returned no tests');
-    if (new Set(inventory.tests.map(t => t.id)).size !== inventory.tests.length) throw new Error('Native inventory has duplicate test identities');
+    const started = performance.now(), phases = [];
+    const inventory = await collectAssessed(manifest, project, directory, runner);
     const groups = partition(manifest, inventory, project);
     let decision, plan, built, checkpoint = groups.checkpoint;
     const setupProjects = [...new Set(groups.setup.map(t => t.project))];
@@ -100,4 +133,4 @@ async function runSuite(options) {
     report.wallMs = performance.now() - started;
     return report;
 }
-module.exports = {partition, validateNative, runSuite};
+module.exports = {partition, validateNative, collectAssessed, runSuite};
