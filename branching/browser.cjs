@@ -48,20 +48,30 @@ class PlaywrightState {
         this.page.setDefaultTimeout(this.timeout); this.page.setDefaultNavigationTimeout(this.timeout);
         await this.track(this.page);
         await this.page.addInitScript(disablePageTransitions);
-        if (saved.url !== 'about:blank') await this.page.goto(saved.url, {waitUntil: 'load'});
+        if (saved.url !== 'about:blank') {
+            await this.page.goto(saved.url, {waitUntil: 'load'});
+            // A rebuilt page can schedule initialization requests after load.
+            // Let that work settle before the restored test suffix can interact
+            // with fields that initialization may still overwrite.
+            await this.settle(500);
+        }
         this.check();
     }
-    async freeze() {
+    async settle(quietMs = 100) {
         this.check();
-        if (this.frozen) return;
         const deadline = Date.now() + this.timeout;
         let quietSince = Date.now();
-        while (Date.now() - quietSince < 100) {
+        while (Date.now() - quietSince < quietMs) {
             if (Date.now() >= deadline) throw new Error('Browser did not become quiescent');
             if (this.requests.size) quietSince = Date.now();
             await delay(20);
         }
         this.check();
+    }
+    async freeze() {
+        this.check();
+        if (this.frozen) return;
+        await this.settle();
         // No live WebSockets or workers can be serialized at a checkpoint.
         if (this.page.workers().length || this.sockets.size) throw new Error('Active workers/WebSockets need a qualified checkpoint boundary');
         // Storage extraction may execute browser work. Finish it before freezing
