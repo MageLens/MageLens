@@ -26,7 +26,7 @@ function command(directory, file, source) {
 }
 function launchFixture(t) {
     const directory = temporary(t);
-    for (const file of ['bin/run-coverage', 'bin/run-branching']) copy(directory, file);
+    for (const file of ['bin/run-coverage', 'bin/run-branching', 'bin/plan-branching', 'branching/configs/entrypoints.conf']) copy(directory, file);
     for (const file of ['.runtime', 'cow storage', 'commands']) fs.mkdirSync(path.join(directory, file));
     fs.writeFileSync(path.join(directory, '.runtime/installed'), '5');
     fs.writeFileSync(path.join(directory, 'workflow file.cjs'), 'module.exports = {};');
@@ -57,10 +57,92 @@ if (args[0] === 'run' && args.includes('node')) process.exit(37);
     return {directory, run: (args, env = {}) => {
         fs.writeFileSync(log, '');
         const result = spawnSync('bash', args, {cwd: directory, encoding: 'utf8', env: {...process.env,
-            PATH: `${directory}/commands:${process.env.PATH}`, MOCK_LOG: log, ...env}});
+            PATH: `${directory}/commands:${process.env.PATH}`, MOCK_LOG: log,
+            MAGELENS_BRANCHING_MANIFEST: '', MAGELENS_BRANCHING_CONFIG: '', MAGELENS_BRANCHING_STORAGE: '', ...env}});
         return {...result, calls: fs.readFileSync(log, 'utf8')};
     }};
 }
+function defaultProject(directory) {
+    fs.copyFileSync(path.join(directory, 'manifest.json'), path.join(directory, '.runtime/branching-plan.json'));
+    fs.copyFileSync(path.join(directory, 'workflow file.cjs'), path.join(directory, 'branching.config.cjs'));
+}
+test('branching and calibration use saved project paths and create default storage', t => {
+    const {directory, run} = launchFixture(t);
+    defaultProject(directory);
+    for (const options of [[], ['--calibrate']]) {
+        const result = run(['bin/run-coverage', '--branching', ...options]);
+        assert.equal(result.status, 37, result.stderr);
+        const worker = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse)
+            .find(args => args.includes('node'));
+        assert.deepEqual(worker.slice(-4), [options.length ? 'branching/calibration-cli.cjs' : 'branching/auto-cli.cjs',
+            path.join(directory, '.runtime/branching-plan.json'), path.join(directory, 'branching.config.cjs'),
+            path.join(directory, '.runtime/branching-storage')]);
+        assert.ok(fs.statSync(path.join(directory, '.runtime/branching-storage')).isDirectory());
+    }
+});
+test('branching supports partial paths, saved environment overrides and explicit path precedence', t => {
+    const {directory, run} = launchFixture(t);
+    defaultProject(directory);
+    const env = {MAGELENS_BRANCHING_MANIFEST: 'manifest.json', MAGELENS_BRANCHING_CONFIG: 'workflow file.cjs', MAGELENS_BRANCHING_STORAGE: 'cow storage'};
+    for (const options of [[], ['--calibrate']]) {
+        const result = run(['bin/run-coverage', '--branching', ...options], env);
+        assert.equal(result.status, 37, result.stderr);
+        assert.ok(result.calls.includes(JSON.stringify(path.join(directory, 'cow storage'))));
+    }
+    for (const paths of [['manifest.json'], ['manifest.json', 'workflow file.cjs']]) {
+        const result = run(['bin/run-coverage', '--branching', ...paths]);
+        assert.equal(result.status, 37, result.stderr);
+        assert.ok(result.calls.includes(JSON.stringify(path.join(directory, '.runtime/branching-storage'))));
+    }
+    const explicit = run(['bin/run-coverage', '--branching', 'manifest.json', 'workflow file.cjs', 'cow storage'],
+        Object.fromEntries(Object.keys(env).map(key => [key, 'missing'])));
+    assert.equal(explicit.status, 37, explicit.stderr);
+});
+test('missing default setup and active recovery fail before creating storage or starting containers', t => {
+    const {directory, run} = launchFixture(t);
+    let result = run(['bin/run-coverage', '--branching', '--calibrate']);
+    assert.equal(result.status, 1); assert.equal(result.calls, '');
+    assert.match(result.stderr, /plan-branching SOURCE_ROOT/);
+    fs.copyFileSync(path.join(directory, 'manifest.json'), path.join(directory, '.runtime/branching-plan.json'));
+    result = run(['bin/run-coverage', '--branching']);
+    assert.equal(result.status, 1); assert.equal(result.calls, '');
+    assert.match(result.stderr, /Branching configuration not found: branching.config.cjs/);
+    defaultProject(directory);
+    for (const marker of ['workflow.lock', 'branching-recovery.json']) {
+        const file = path.join(directory, '.runtime', marker);
+        fs.writeFileSync(file, '');
+        result = run(['bin/run-coverage', '--branching', '--calibrate']);
+        assert.equal(result.status, 1); assert.equal(result.calls, ''); assert.match(result.stderr, /recovery first/);
+        fs.rmSync(file);
+    }
+    assert.ok(!fs.existsSync(path.join(directory, '.runtime/branching-storage')));
+});
+test('default storage rejects symlinks and custom storage must already exist', t => {
+    const {directory, run} = launchFixture(t);
+    defaultProject(directory);
+    const storage = path.join(directory, '.runtime/branching-storage');
+    fs.symlinkSync(path.join(directory, 'cow storage'), storage);
+    let result = run(['bin/run-coverage', '--branching']);
+    assert.equal(result.status, 1); assert.match(result.stderr, /without symlinks/);
+    assert.doesNotMatch(result.calls, /--detach/);
+    fs.unlinkSync(storage);
+    result = run(['bin/run-coverage', '--branching'], {MAGELENS_BRANCHING_STORAGE: 'missing storage'});
+    assert.equal(result.status, 1); assert.match(result.stderr, /Checkpoint storage not found/);
+    assert.ok(!fs.existsSync(path.join(directory, 'missing storage')));
+});
+test('planner shares the default manifest and honors environment and positional overrides', t => {
+    const {directory, run} = launchFixture(t);
+    for (const [args, env, output] of [
+        [[], {}, '.runtime/branching-plan.json'],
+        [[], {MAGELENS_BRANCHING_MANIFEST: '.runtime/custom.json'}, '.runtime/custom.json'],
+        [['.runtime/explicit.json'], {MAGELENS_BRANCHING_MANIFEST: '.runtime/custom.json'}, '.runtime/explicit.json']
+    ]) {
+        const result = run(['bin/plan-branching', 'branching', ...args], env);
+        assert.equal(result.status, 0, result.stderr);
+        const call = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse).at(-1);
+        assert.deepEqual(call.slice(-3), ['plan', path.join(directory, 'branching'), path.join(directory, output)]);
+    }
+});
 test('explicit calibration uses the same isolated launcher without executing tests', t => {
     const {directory,run}=launchFixture(t);
     const result=run(['bin/run-coverage','--branching','--calibrate','manifest.json','workflow file.cjs','cow storage']);

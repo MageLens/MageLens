@@ -22,22 +22,23 @@ The included [blog module](src/app/code/Application/Blog/README.md) provides an 
 
 ## Faster tests with branching
 
-Branching saves shared setup—such as logging in and filling a cart—so related
-tests can continue from that point instead of repeating it. MageLens uses a
-baseline to choose checkpoints only when their expected time savings outweigh
+Branching reuses common journeys across different tests, so each test can
+continue from a shared checkpoint instead of repeating the same steps. MageLens
+uses a baseline to choose checkpoints only when their expected time savings outweigh
 the cost of saving and restoring state.
 
 The [default baseline](branching-baseline.json) starts conservatively at about
-126 seconds of repeated setup for two tests. Calibrate it for your project's
+126 seconds of shared steps for two tests. Calibrate it for your project's
 database and machine, especially before running branching in CI:
 
 ```bash
-./bin/run-coverage --branching --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
+./bin/run-coverage --branching --calibrate
 ```
 
 Calibration measures your environment and adjusts future checkpoint decisions.
-Use `./bin/run-coverage --branching --help` to run the suite and
-`./bin/branching-dashboard` to follow its progress. Branching currently requires
+Run `./bin/run-coverage --branching` to execute the suite and
+`./bin/branching-dashboard` to follow its progress. Project paths have defaults;
+use `--branching --help` for setup and overrides. Branching currently requires
 an isolated Linux test installation with Playwright and reflink storage;
 application coverage collection is not yet supported.
 

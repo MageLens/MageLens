@@ -159,9 +159,23 @@ within the normal integration suite. Public entry-point checks reject forced mod
 and manual checkpoint selections; provider recovery tests use an internal
 mechanism harness so safety failures remain covered independently of cost selection.
 
-AUTO is the only execution policy. Run
-`./bin/run-coverage --branching MANIFEST.json CONFIG.cjs COW_STORAGE`.
-The project configuration must set `native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
+## Run branching
+
+Save the project configuration as `branching.config.cjs` and generate its plan
+with `./bin/plan-branching SOURCE_ROOT`. Then use
+`./bin/run-coverage --branching` or `./bin/run-coverage --branching --calibrate`.
+Both commands read `.runtime/branching-plan.json` and create checkpoint storage
+at `.runtime/branching-storage`, which must be on a reflink-capable filesystem.
+Regenerate the plan after changing its source files.
+
+Override individual paths with `MAGELENS_BRANCHING_MANIFEST`,
+`MAGELENS_BRANCHING_CONFIG` or `MAGELENS_BRANCHING_STORAGE`, or supply
+`[MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]` after the command. Explicit paths
+take precedence; custom storage directories must already exist. The planner
+also honors `MAGELENS_BRANCHING_MANIFEST`.
+
+AUTO is the only execution policy. The project configuration must set
+`native: {config: require.resolve('./playwright.config.cjs')}` to preserve the
 complete Playwright inventory. Unprofitable AUTO plans run it in one native
 invocation. Mixing reviewed checkpoints with native tests requires an explicitly
 qualified `native.splitSafe: true`, matching Playwright launch/context settings in
@@ -169,6 +183,8 @@ qualified `native.splitSafe: true`, matching Playwright launch/context settings 
 project teardown or managed web server. Global setup must not return per-process
 cleanup when splitting execution. Skipped and missing tests remain visible
 and do not qualify as a fully passed run.
+Checkpoint execution also requires the project's `identity`, `state(runtime)`
+and `assertCheckpoint(runtime, checkpoint)` validation hooks.
 
 Set `maxCheckpointsPerTest` in the project configuration to change the checkpoint
 budget (a positive integer, default **9**). Rust selection and the execution guard
@@ -187,7 +203,7 @@ Fresh projects use the versioned checkpoint-cost defaults in
 as the conservative cost. Successful, fully cleaned checkpoint runs update
 operation averages for later runs by default; the current plan stays unchanged.
 Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
-`./bin/run-coverage --branching --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE`
+`./bin/run-coverage --branching --calibrate`
 to measure and replace the project baseline. Both modes retain overhead history
 and flag increases before averaging; see the performance matrix documentation.
 

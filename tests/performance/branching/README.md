@@ -167,7 +167,7 @@ Set `baseline: {updateOnSuccess: false}` in the project configuration to keep
 updates explicit. The project-setup calibration command works in either mode:
 
 ```bash
-./bin/run-coverage --branching --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE
+./bin/run-coverage --branching --calibrate
 ```
 
 It measures three real capture/restore cycles, validates restored state and
