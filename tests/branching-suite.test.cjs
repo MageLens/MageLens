@@ -62,6 +62,11 @@ test('suite rejects non-AUTO modes and manual configuration before discovery',as
     const f=fixture(t);f.project.checkpointSelection=['shared'];f.runner.collect=()=>assert.fail('must reject configuration override');
     await assert.rejects(runSuite({...f,directory:f.root}),/Manual checkpoint/);
 });
+test('a project checkpoint budget is validated even if every test would remain native',async t=>{
+    const f=fixture(t);f.project.maxCheckpointsPerTest=0;
+    f.runner.collect=()=>assert.fail('invalid budget must fail before discovery');
+    await assert.rejects(runSuite({...f,directory:f.root}),/Checkpoint limit/);
+});
 test('AUTO leaves unrelated cheap candidates native while branching profitable shared work', async t => {
     const f=fixture(t);
     for(const id of ['cheap-first','cheap-second']) {

@@ -69,6 +69,8 @@ pub struct Test {
     #[serde(skip)]
     context_identity: String,
     #[serde(skip)]
+    collection_bindings: assessment::Bindings,
+    #[serde(skip)]
     callback_start: usize,
     #[serde(skip)]
     callback_end: usize,
@@ -116,11 +118,7 @@ fn field<'a>(n: Node<'a>, key: &str) -> Option<Node<'a>> {
     n.child_by_field_name(key)
 }
 fn literal(n: Node, source: &str) -> Option<String> {
-    if n.kind() != "string" {
-        return None;
-    }
-    let s = text(n, source);
-    Some(s[1..s.len() - 1].to_string())
+    normalize::string(n, source)
 }
 // Token minification only. Never mangle names, fold expressions, reorder calls or
 // erase string/regexp/template contents: their values and side effects matter.
@@ -157,6 +155,33 @@ fn function_name(n: Node, s: &str) -> String {
     field(n, "function")
         .map(|n| minify(n, s).replace(' ', ""))
         .unwrap_or_default()
+}
+fn has_host_callback(n: Node, s: &str) -> bool {
+    if matches!(n.kind(), "arrow_function" | "function_expression") {
+        return true;
+    }
+    // Playwright serializes this predicate into the browser. Its local bindings
+    // cannot retain Node state once the standalone awaited wait has completed.
+    // Other arguments and ordinary callbacks still need lifecycle support.
+    if n.kind() == "call_expression"
+        && function_name(n, s) == "page.waitForFunction"
+        && let Some(arguments) = field(n, "arguments")
+    {
+        return children(arguments)
+            .iter()
+            .enumerate()
+            .any(|(index, argument)| {
+                !(index == 0
+                    && matches!(
+                        normalize::untyped(*argument).kind(),
+                        "arrow_function" | "function_expression"
+                    ))
+                    && has_host_callback(*argument, s)
+            });
+    }
+    children(n)
+        .into_iter()
+        .any(|child| has_host_callback(child, s))
 }
 fn callback(n: Node<'_>) -> Option<Node<'_>> {
     children(field(n, "arguments")?)
@@ -247,16 +272,18 @@ struct Scope {
     hooks: Vec<Step>,
     reasons: Vec<String>,
     identity: Vec<String>,
+    bindings: assessment::Bindings,
 }
 
 #[cfg(test)]
 fn parse_file(file: &str, source: &str) -> Result<(Vec<Test>, Vec<String>)> {
-    parse_file_with_aliases(file, source, BTreeMap::new())
+    parse_file_with_aliases(file, source, BTreeMap::new(), None)
 }
 fn parse_file_with_aliases(
     file: &str,
     source: &str,
     extra_aliases: BTreeMap<String, String>,
+    project: Option<&project::Project>,
 ) -> Result<(Vec<Test>, Vec<String>)> {
     let mut parser = Parser::new();
     let language = if file.ends_with("tsx") || file.ends_with("jsx") {
@@ -324,9 +351,12 @@ fn parse_file_with_aliases(
     }
     walk_scope(
         tree.root_node(),
-        file,
-        source,
-        &aliases,
+        &CollectionContext {
+            file,
+            source,
+            aliases: &aliases,
+            project,
+        },
         scope,
         &mut tests,
         &mut diagnostics,
@@ -337,15 +367,25 @@ fn parse_file_with_aliases(
     Ok((tests, diagnostics))
 }
 
+struct CollectionContext<'a> {
+    file: &'a str,
+    source: &'a str,
+    aliases: &'a BTreeMap<String, String>,
+    project: Option<&'a project::Project>,
+}
 fn walk_scope(
     n: Node,
-    file: &str,
-    s: &str,
-    aliases: &BTreeMap<String, String>,
+    context: &CollectionContext,
     mut scope: Scope,
     tests: &mut Vec<Test>,
     diagnostics: &mut Vec<String>,
 ) {
+    let CollectionContext {
+        file,
+        source: s,
+        aliases,
+        project,
+    } = *context;
     let nodes = children(n);
     // Hooks and test.use apply to the entire lexical suite even if declared last.
     for &node in &nodes {
@@ -383,6 +423,13 @@ fn walk_scope(
                     ));
                     continue;
                 }
+                if ["skip", "fixme", "fail", "slow"].contains(&method) && callback(c).is_none() {
+                    scope.identity.push(normalize::canonical(c, s));
+                    scope.reasons.push(format!(
+                        "test.{method} requires native Playwright lifecycle handling"
+                    ));
+                    continue;
+                }
                 if method.is_empty()
                     || ["only", "skip", "fixme", "fail"].contains(&method)
                     || method.starts_with("describe")
@@ -395,13 +442,48 @@ fn walk_scope(
         scope.reasons.push(
             "Module/suite setup or dynamic registration requires an execution adapter".into(),
         );
-        if contains(node, &|n| {
-            n.kind() == "call_expression" && aliases.keys().any(|a| function_name(n, s) == *a)
-        }) {
-            diagnostics.push(format!("{file}:{}: dynamic test registration is not expanded; native Playwright collection is required",node.start_position().row+1));
-        }
     }
     for node in nodes {
+        if tests.len() >= 10000 {
+            diagnostics.push(format!("{file}: static registration exceeds 10000 test limit; native Playwright collection is required"));
+            break;
+        }
+        if matches!(
+            node.kind(),
+            "lexical_declaration"
+                | "variable_declaration"
+                | "function_declaration"
+                | "class_declaration"
+        ) {
+            if let Some(project) = project
+                && n.kind() != "program"
+            {
+                project.collection_declaration(file, node, &mut scope.bindings);
+            }
+            continue;
+        }
+        let direct = call(node).is_some_and(|c| {
+            let name = function_name(c, s);
+            aliases.contains_key(name.split('.').next().unwrap_or(&name))
+        });
+        if !direct
+            && contains(node, &|n| {
+                n.kind() == "call_expression" && aliases.keys().any(|a| function_name(n, s) == *a)
+            })
+        {
+            if let Some(expanded) =
+                project.and_then(|p| p.collection_expand(file, node, &scope.bindings))
+            {
+                for (body, bindings) in expanded {
+                    let mut child = scope.clone();
+                    child.bindings = bindings;
+                    walk_scope(body, context, child, tests, diagnostics);
+                }
+            } else {
+                diagnostics.push(format!("{file}:{}: dynamic test registration is not expanded; native Playwright collection is required", node.start_position().row+1));
+            }
+            continue;
+        }
         let Some(c) = call(node) else { continue };
         let name = function_name(c, s);
         let (base, method) = name.split_once('.').unwrap_or((&name, ""));
@@ -415,6 +497,9 @@ fn walk_scope(
             continue;
         }
         let Some(cb) = callback(c) else {
+            if ["skip", "fixme", "fail", "slow"].contains(&method) {
+                continue;
+            }
             diagnostics.push(format!(
                 "{file}:{}: callback reference or modifier requires native Playwright collection",
                 c.start_position().row + 1
@@ -425,7 +510,16 @@ fn walk_scope(
             continue;
         };
         let args = children(field(c, "arguments").unwrap());
-        let Some(title) = args.first().and_then(|n| literal(*n, s)) else {
+        let title = args
+            .first()
+            .and_then(|n| {
+                literal(*n, s)
+                    .or_else(|| project.and_then(|p| p.collection_title(file, *n, &scope.bindings)))
+            })
+            .or_else(|| {
+                (method.starts_with("describe") && args.first() == Some(&cb)).then(String::new)
+            });
+        let Some(title) = title else {
             diagnostics.push(format!(
                 "{file}:{}: dynamic title requires native Playwright collection",
                 c.start_position().row + 1
@@ -434,13 +528,15 @@ fn walk_scope(
         };
         if method.starts_with("describe") {
             let mut child = scope.clone();
-            child.names.push(title);
+            if !title.is_empty() {
+                child.names.push(title);
+            }
             if method != "describe" {
                 child
                     .reasons
                     .push(format!("{method} scheduling must be preserved"));
             }
-            walk_scope(body, file, s, aliases, child, tests, diagnostics);
+            walk_scope(body, context, child, tests, diagnostics);
             continue;
         }
         if !method.is_empty() && !["only", "skip", "fixme", "fail"].contains(&method) {
@@ -498,17 +594,16 @@ fn walk_scope(
                 && statement
                     .named_child(0)
                     .is_some_and(|n| n.kind() == "await_expression");
-            // Assignments and callbacks may mutate outer state or create handles.
+            // Assignments and host callbacks may mutate outer state or create handles.
             prefix_portable &= !contains(statement, &|n| {
                 matches!(
                     n.kind(),
                     "assignment_expression"
                         | "augmented_assignment_expression"
                         | "update_expression"
-                        | "arrow_function"
-                        | "function_expression"
                 )
             });
+            prefix_portable &= !has_host_callback(statement, s);
             prefix_portable &= !contains(statement, &|n| {
                 n.kind() == "identifier"
                     && matches!(text(n, s), "Math" | "Date" | "crypto" | "performance")
@@ -549,8 +644,10 @@ fn walk_scope(
                 fixture,
                 field(cb, "parameters").map(|n| normalize::canonical(n, s)),
                 &scope.identity,
+                scope.bindings.identity(),
             ))
             .unwrap(),
+            collection_bindings: scope.bindings.clone(),
             callback_start: cb.start_byte(),
             callback_end: cb.end_byte(),
         });
@@ -615,11 +712,15 @@ pub fn plan(root: &Path) -> Result<Manifest> {
     let mut sources = vec![];
     scan(&root, &root, &mut sources)?;
     sources.sort_by(|a, b| a.path.cmp(&b.path));
+    let project = project::Project::load(&root, &mut sources)?;
+    sources.sort_by(|a, b| a.path.cmp(&b.path));
     let source_digest = hash(serde_json::to_vec(&sources).unwrap());
-    let project = project::Project::load(&root, &sources)?;
     let mut tests = vec![];
     let mut diagnostics = vec![];
     for src in &sources {
+        if src.path.split('/').any(|part| part == "node_modules") {
+            continue;
+        }
         if [
             ".spec.ts",
             ".spec.js",
@@ -645,8 +746,12 @@ pub fn plan(root: &Path) -> Result<Manifest> {
             if hash(&source) != src.sha256 {
                 return Err(format!("Source changed while planning: {}", src.path));
             }
-            let (mut found, mut warnings) =
-                parse_file_with_aliases(&src.path, &source, project.test_aliases(&src.path))?;
+            let (mut found, mut warnings) = parse_file_with_aliases(
+                &src.path,
+                &source,
+                project.test_aliases(&src.path),
+                Some(&project),
+            )?;
             tests.append(&mut found);
             diagnostics.append(&mut warnings);
         }
@@ -654,8 +759,17 @@ pub fn plan(root: &Path) -> Result<Manifest> {
     if tests.is_empty() {
         return Err("No statically declared Playwright tests found".into());
     }
-    for test in &mut tests {
-        project.assess(test);
+    // Module state can survive between tests. Propagate injected capabilities
+    // to a fixed point so estimates do not depend on discovery/execution order.
+    let mut tainted_libraries = BTreeSet::new();
+    loop {
+        let prior = tainted_libraries.len();
+        for test in &mut tests {
+            project.assess(test, &mut tainted_libraries);
+        }
+        if tainted_libraries.len() == prior {
+            break;
+        }
     }
     // Each entry is a prefix-trie node identified by its complete ancestry.
     let mut nodes: BTreeMap<String, (usize, Vec<usize>, BTreeSet<String>, bool)> = BTreeMap::new();
@@ -790,6 +904,8 @@ pub fn plan(root: &Path) -> Result<Manifest> {
         assessment: serde_json::Value::Null,
     };
     manifest.assessment = assessment::summary(&manifest)?;
+    manifest.assessment["dependencyAnalysis"] =
+        serde_json::to_value(&project.dependency_effects).unwrap();
     Ok(manifest)
 }
 
@@ -930,8 +1046,20 @@ mod tests {
                 .iter()
                 .map(|s| s.action_units)
                 .collect::<Vec<_>>(),
-            vec![Some(8), Some(1), Some(1), Some(1), None, Some(4), Some(1)]
+            vec![
+                Some(8),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(0),
+                Some(10),
+                Some(1)
+            ]
         );
+        let unknown = p.tests[0].steps[4].estimate.as_ref().unwrap();
+        assert!(!unknown.complete);
+        assert_eq!(unknown.upper_bound_points, None);
+        assert!(!unknown.reasons.is_empty());
     }
     #[test]
     fn detects_prefixes_and_only_captures_branch_points() {
@@ -1014,7 +1142,16 @@ mod tests {
         let f = Fixture::new(&format!(
             "{IMPORT} for(const x of ['a']){{test(x,async ({{page}})=>{{await page.goto('/');}})}}test('static',async ({{page}})=>{{await page.goto('/');}});"
         ));
-        assert_eq!(f.plan().diagnostics.len(), 1);
+        let static_plan = f.plan();
+        assert_eq!(static_plan.tests.len(), 2);
+        assert!(static_plan.diagnostics.is_empty());
+        fs::write(f.0.join("case.spec.ts"),format!("{IMPORT} for(const x of runtimeItems){{test(x,async ({{page}})=>{{await page.goto('/');}})}}test('static',async ({{page}})=>{{await page.goto('/');}});")).unwrap();
+        let dynamic_plan = f.plan();
+        assert_eq!(dynamic_plan.diagnostics.len(), 1);
+        assert_eq!(
+            dynamic_plan.assessment["analysis"]["collectionComplete"],
+            false
+        );
         fs::write(f.0.join("broken.spec.ts"), "test('unclosed'").unwrap();
         assert!(plan(&f.0).is_err());
     }
@@ -1042,6 +1179,39 @@ mod tests {
             "{IMPORT} test('a',async ({{page}})=>{{await page.evaluate(()=>1);await page.goto('/a');}});test('b',async ({{page}})=>{{await page.evaluate(()=>1);await page.goto('/b');}});"
         ));
         assert!(!f.plan().checkpoints[0].automatic);
+    }
+    #[test]
+    fn completed_browser_predicates_do_not_retain_node_closures() {
+        for (prefix, automatic) in [
+            (
+                "await page.waitForFunction(() => {const values = document.cookie.split('; '); return values.some(value => value.startsWith('ready='));});",
+                true,
+            ),
+            (
+                "await page.waitForFunction(function () {return document.querySelector('#ready');});",
+                true,
+            ),
+            (
+                "await page.waitForFunction(() => {window.changed = true; return true;});",
+                false,
+            ),
+            ("await page.waitForFunction(() => Date.now() > 1);", false),
+            (
+                "await page.waitForFunction(() => true, () => outer);",
+                false,
+            ),
+            ("await page.on('request', () => outer);", false),
+            (
+                "const token = 'ready'; await page.waitForFunction(value => document.cookie.includes(value), token);",
+                false,
+            ),
+        ] {
+            let f = Fixture::new(&format!(
+                "{IMPORT} test('a',async ({{page}})=>{{{prefix}await page.goto('/a');}});test('b',async ({{page}})=>{{{prefix}await page.goto('/b');}});"
+            ));
+            let p = f.plan();
+            assert_eq!(p.checkpoints[0].automatic, automatic, "{prefix}");
+        }
     }
     #[cfg(unix)]
     #[test]

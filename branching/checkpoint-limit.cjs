@@ -5,10 +5,15 @@
 const config = require('./configs/runtime.cjs');
 
 const {maxCheckpointsPerTest} = require('./planner/src/limits.json');
+function validateLimit(value = maxCheckpointsPerTest) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error('Checkpoint limit must be a positive safe integer');
+    return value;
+}
 
 // AUTO selects using Rust's complete cost model. Keep a defensive limit in the
 // execution mechanism, also exercised independently by provider recovery tests.
 function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime}) {
+    const maxCheckpointsPerTest = validateLimit(graph.maxCheckpointsPerTest);
     const paths = specs.map(spec => graph.chain(spec.parent));
     const consumers = new Map();
     for (const path of paths) for (const node of path) consumers.set(node.id, (consumers.get(node.id) ?? 0) + 1);
@@ -52,4 +57,4 @@ function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime
     return {chosen, report: {maxCheckpointsPerTest, warnings, selected: [...chosen],
         skipped: [...candidates].filter(id => !chosen.has(id)), basis: 'per-test-path-limit'}};
 }
-module.exports = {limitCheckpoints, maxCheckpointsPerTest};
+module.exports = {limitCheckpoints, maxCheckpointsPerTest, validateLimit};

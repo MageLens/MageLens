@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-use crate::baseline::{Baseline, PLAYWRIGHT_BRANCHING};
+use crate::baseline::Baseline;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,6 +19,10 @@ pub struct Stage {
 pub struct Input {
     pub stages: Vec<Stage>,
     pub parents: Vec<String>,
+    #[serde(default = "checkpoint_limit")]
+    pub max_checkpoints_per_test: usize,
+    #[serde(default)]
+    pub baseline: Baseline,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,8 +53,7 @@ pub struct Plan {
     pub max_checkpoints_per_test: usize,
 }
 
-// One versioned constant shared with the execution guard. Compiled into Rust;
-// no runtime calibration or per-run override.
+// Shared default; a project may supply a different positive per-test budget.
 pub fn checkpoint_limit() -> usize {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -63,9 +66,16 @@ pub fn checkpoint_limit() -> usize {
 }
 
 pub fn select(input: Input) -> Result<Plan, String> {
-    select_with(input, PLAYWRIGHT_BRANCHING)
+    input.baseline.validate()?;
+    let baseline = input.baseline.clone();
+    select_with(input, baseline)
 }
 fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
+    if input.max_checkpoints_per_test == 0
+        || input.max_checkpoints_per_test as u128 > 9_007_199_254_740_991
+    {
+        return Err("Checkpoint limit must be a positive safe integer".into());
+    }
     if input.stages.is_empty() || input.parents.is_empty() {
         return Err("Empty cost graph".into());
     }
@@ -125,8 +135,8 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
         .filter(|(i, s)| s.checkpoint && consumers[*i] > 1 && units[*i].is_some())
         .map(|(i, _)| i)
         .collect();
-    let margin = 1.0 + baseline.overhead_margin;
-    let limit = checkpoint_limit();
+    let margin = baseline.overhead_multiplier * (1.0 + baseline.overhead_margin);
+    let limit = input.max_checkpoints_per_test;
     let within_limit = |chosen: &BTreeSet<usize>| {
         paths
             .iter()
@@ -315,6 +325,48 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn production_baseline_doubles_overhead_adds_margin_and_charges_shared_work_once() {
+        let input = input(vec![stage("long", None, 5000, true)], &["long"; 2]);
+        let baseline = input.baseline.clone();
+        let plan = super::select(input).unwrap();
+        let overhead = baseline.backend_ms
+            + baseline.first_reset_ms
+            + baseline.capture_ms
+            + baseline.release_ms
+            + baseline.restore_ms;
+        let expected = 5000.0 * baseline.unit_ms - overhead * 2.0 * 1.20;
+        assert_eq!(plan.selected, vec!["long"]);
+        assert!((plan.estimated_saving_ms - expected).abs() < 0.001);
+        let mut changed = input_with_default();
+        changed.baseline.restore_ms = 1000000.0;
+        assert!(super::select(changed).unwrap().selected.is_empty());
+        let mut invalid = input_with_default();
+        invalid.baseline.unit_ms *= 2.0;
+        assert!(super::select(invalid).err().unwrap().contains("baseline"));
+    }
+    fn input_with_default() -> Input {
+        input(vec![stage("long", None, 5000, true)], &["long"; 2])
+    }
+    fn select(input: Input) -> Result<Plan, String> {
+        select_with(
+            input,
+            Baseline {
+                version: "independent-cost-model-reference".into(),
+                unit_ms: 125.0,
+                capture_ms: 4100.0,
+                restore_ms: 8500.0,
+                release_ms: 11.0,
+                reset_ms: 10000.0,
+                first_reset_ms: 17000.0,
+                backend_ms: 16200.0,
+                overhead_multiplier: 1.0,
+                overhead_margin: 0.2,
+                min_saving_ms: 50.0,
+            },
+        )
+    }
+
     fn stage(id: &str, parent: Option<&str>, units: u64, checkpoint: bool) -> Stage {
         Stage {
             id: id.into(),
@@ -325,6 +377,8 @@ mod tests {
     }
     fn input(stages: Vec<Stage>, parents: &[&str]) -> Input {
         Input {
+            baseline: Baseline::default(),
+            max_checkpoints_per_test: checkpoint_limit(),
             stages,
             parents: parents.iter().map(|s| s.to_string()).collect(),
         }
@@ -433,7 +487,13 @@ mod tests {
             .map(|i| stage(&format!("test{i}"), None, 10000, true))
             .collect();
         let parents = (0..5).map(|i| format!("test{i}")).collect();
-        let plan = select(Input { stages, parents }).unwrap();
+        let plan = select(Input {
+            baseline: Baseline::default(),
+            stages,
+            parents,
+            max_checkpoints_per_test: checkpoint_limit(),
+        })
+        .unwrap();
         assert!(plan.selected.is_empty());
         assert!(plan.decisions.iter().all(|d| d.reason == "single-consumer"));
     }
@@ -517,7 +577,13 @@ mod tests {
         let parents: Vec<_> = (0..12)
             .flat_map(|i| [format!("s{i:02}"), format!("s{i:02}")])
             .collect();
-        let p = select(Input { stages, parents }).unwrap();
+        let p = select(Input {
+            baseline: Baseline::default(),
+            stages,
+            parents,
+            max_checkpoints_per_test: checkpoint_limit(),
+        })
+        .unwrap();
         assert_eq!(p.max_checkpoints_per_test, 9);
         assert_eq!(p.selected.len(), 9);
         assert!(p.selected.contains(&"s11".into()));
@@ -535,7 +601,13 @@ mod tests {
             .iter()
             .flat_map(|s| [s.id.clone(), s.id.clone()])
             .collect();
-        let p = select(Input { stages, parents }).unwrap();
+        let p = select(Input {
+            baseline: Baseline::default(),
+            stages,
+            parents,
+            max_checkpoints_per_test: checkpoint_limit(),
+        })
+        .unwrap();
         assert_eq!(p.selected.len(), 12);
         let stages: Vec<_> = (0..12)
             .map(|i| {
@@ -549,6 +621,8 @@ mod tests {
             .collect();
         assert!(
             select(Input {
+                baseline: Baseline::default(),
+                max_checkpoints_per_test: checkpoint_limit(),
                 stages,
                 parents: vec!["s11".into(); 3]
             })
@@ -556,5 +630,46 @@ mod tests {
             .selected
             .is_empty()
         );
+    }
+
+    #[test]
+    fn configurable_checkpoint_budget_covers_both_sides_of_the_default() {
+        for limit in [1, 4, 9, 12, 16] {
+            let stages = (0..12)
+                .map(|i| {
+                    stage(
+                        &format!("s{i:02}"),
+                        (i > 0).then(|| format!("s{:02}", i - 1)).as_deref(),
+                        1000,
+                        true,
+                    )
+                })
+                .collect();
+            let parents = (0..12)
+                .flat_map(|i| [format!("s{i:02}"), format!("s{i:02}")])
+                .collect();
+            let p = select(Input {
+                baseline: Baseline::default(),
+                stages,
+                parents,
+                max_checkpoints_per_test: limit,
+            })
+            .unwrap();
+            assert_eq!(p.max_checkpoints_per_test, limit);
+            assert_eq!(p.selected.len(), limit.min(12));
+        }
+        let mut invalid = input(vec![stage("one", None, 1000, true)], &["one"; 2]);
+        invalid.max_checkpoints_per_test = 0;
+        assert!(select(invalid).err().unwrap().contains("Checkpoint limit"));
+        let default: Input = serde_json::from_str(r#"{"stages":[],"parents":[]}"#).unwrap();
+        assert_eq!(default.max_checkpoints_per_test, 9);
+        for limit in ["null", "-1", "1.5", "\"4\""] {
+            assert!(
+                serde_json::from_str::<Input>(&format!(
+                    r#"{{"stages":[],"parents":[],"maxCheckpointsPerTest":{limit}}}"#
+                ))
+                .is_err()
+            );
+        }
     }
 }

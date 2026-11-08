@@ -9,6 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use tree_sitter::{Node, Parser, Tree};
+mod dependencies;
+mod effects;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     pub file: String,
@@ -21,9 +23,15 @@ pub struct Module {
 }
 pub struct Project {
     pub modules: BTreeMap<String, Module>,
+    pub data: BTreeMap<String, serde_json::Value>,
     import_cache: BTreeMap<String, BTreeMap<String, (String, String)>>,
     paths: Vec<(String, Vec<String>)>,
     base: PathBuf,
+    dependencies: BTreeMap<(String, String, bool), String>,
+    pub data_modules: std::collections::BTreeSet<String>,
+    pub dependency_effects: Vec<serde_json::Value>,
+    data_methods: BTreeMap<(String, String), Vec<Reference>>,
+    write_cache: std::cell::RefCell<BTreeMap<(String, usize), bool>>,
 }
 // JSONC is configuration, never executable JavaScript. Preserve strings while
 // removing comments/trailing commas accepted by TypeScript configuration files.
@@ -87,9 +95,19 @@ fn jsonc(source: &str) -> Option<serde_json::Value> {
     serde_json::from_slice(&clean).ok()
 }
 impl Project {
-    pub fn load(root: &Path, sources: &[Source]) -> Result<Self> {
+    pub fn load(root: &Path, sources: &mut Vec<Source>) -> Result<Self> {
         let mut modules = BTreeMap::new();
-        for source in sources {
+        let mut data = BTreeMap::new();
+        for source in sources.iter() {
+            if source.path.ends_with(".json") {
+                let bytes = fs::read(root.join(&source.path)).map_err(|e| e.to_string())?;
+                if hash(&bytes) != source.sha256 {
+                    return Err(format!("Source changed while planning: {}", source.path));
+                }
+                if let Ok(value) = serde_json::from_slice(&bytes) {
+                    data.insert(source.path.clone(), value);
+                }
+            }
             if !["ts", "js", "tsx", "jsx", "mjs", "cjs", "mts", "cts"]
                 .iter()
                 .any(|ext| source.path.ends_with(&format!(".{ext}")))
@@ -150,16 +168,51 @@ impl Project {
             .unwrap_or_default();
         let mut project = Self {
             modules,
+            data,
             import_cache: BTreeMap::new(),
             paths,
             base,
+            dependencies: BTreeMap::new(),
+            data_modules: Default::default(),
+            dependency_effects: vec![],
+            data_methods: BTreeMap::new(),
+            write_cache: Default::default(),
         };
         project.import_cache = project
             .modules
             .keys()
             .map(|file| (file.clone(), project.scan_imports(file)))
             .collect();
+        project.discover(root, sources)?;
+        project.summarize_effects();
         Ok(project)
+    }
+    fn insert(&mut self, path: &str, bytes: &[u8]) -> Result<()> {
+        if path.ends_with(".json") {
+            if let Ok(value) = serde_json::from_slice(bytes) {
+                self.data.insert(path.into(), value);
+            }
+            return Ok(());
+        }
+        let code = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
+        let mut parser = Parser::new();
+        let language = if path.ends_with("tsx") || path.ends_with("jsx") {
+            tree_sitter_typescript::LANGUAGE_TSX
+        } else {
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT
+        };
+        parser
+            .set_language(&language.into())
+            .map_err(|e| e.to_string())?;
+        let tree = parser.parse(&code, None).ok_or("Parser returned no tree")?;
+        if tree.root_node().has_error() {
+            return Err(format!(
+                "{path}: invalid JavaScript/TypeScript; no partial plan was published"
+            ));
+        }
+        self.modules
+            .insert(path.into(), Module { source: code, tree });
+        Ok(())
     }
     pub fn reference(&self, file: &str, n: Node) -> Reference {
         Reference {
@@ -190,6 +243,9 @@ impl Project {
         Some(out.join("/"))
     }
     pub fn resolve(&self, file: &str, module: &str) -> Option<String> {
+        if let Some(target) = self.dependencies.get(&(file.into(), module.into(), false)) {
+            return Some(target.clone());
+        }
         let mut candidates = vec![];
         if module.starts_with('.') {
             candidates.push(Path::new(file).parent()?.join(module));
@@ -233,13 +289,14 @@ impl Project {
                     ".cts",
                     ".mjs",
                     ".cjs",
+                    ".json",
                     "/index.ts",
                     "/index.js",
                 ]
                 .iter()
                 .map(|ext| format!("{candidate}{ext}")),
             ) {
-                if self.modules.contains_key(&path) {
+                if self.modules.contains_key(&path) || self.data.contains_key(&path) {
                     return Some(path);
                 }
             }
@@ -346,6 +403,36 @@ impl Project {
     pub fn declaration<'a>(&'a self, file: &str, name: &str) -> Option<Node<'a>> {
         let m = self.modules.get(file)?;
         for n in children(m.tree.root_node()) {
+            if n.kind() == "expression_statement"
+                && let Some(assignment) = children(n).first().copied()
+                && assignment.kind() == "assignment_expression"
+                && let (Some(left), Some(right)) =
+                    (field(assignment, "left"), field(assignment, "right"))
+            {
+                let target = text(left, &m.source);
+                if target == format!("exports.{name}")
+                    || target == format!("module.exports.{name}")
+                    || target == "module.exports" && name == "default"
+                {
+                    return Some(right);
+                }
+                if target == "module.exports" && right.kind() == "object" {
+                    for item in children(right) {
+                        if field(item, "key").is_some_and(|key| {
+                            normalize::string(key, &m.source)
+                                .unwrap_or_else(|| text(key, &m.source).into())
+                                == name
+                        }) {
+                            return field(item, "value");
+                        }
+                        if item.kind() == "shorthand_property_identifier"
+                            && text(item, &m.source) == name
+                        {
+                            return Some(item);
+                        }
+                    }
+                }
+            }
             let default = n.kind() == "export_statement"
                 && text(n, &m.source)
                     .trim_start()
@@ -386,7 +473,7 @@ impl Project {
             return Some(self.reference(file, n));
         }
         if let Some((module, export)) = self.imports(file).get(name) {
-            let target = self.resolve(file, module)?;
+            let target = self.resolve_import(file, name, module)?;
             return self.symbol(&target, export, depth + 1);
         }
         // Named re-exports, including aliases, are resolved without executing modules.
@@ -398,6 +485,12 @@ impl Project {
             let target = field(node, "source")
                 .and_then(|n| normalize::string(n, &m.source))
                 .and_then(|s| self.resolve(file, &s));
+            if !children(node).iter().any(|n| n.kind() == "export_clause")
+                && let Some(target) = &target
+                && let Some(r) = self.symbol(target, name, depth + 1)
+            {
+                return Some(r);
+            }
             for clause in children(node)
                 .into_iter()
                 .filter(|n| n.kind() == "export_clause")
@@ -417,21 +510,182 @@ impl Project {
         }
         None
     }
+    pub fn external(&self, file: &str, name: &str, depth: usize) -> Option<(String, String)> {
+        if depth > 32 || self.declaration(file, name).is_some() {
+            return None;
+        }
+        if let Some((module, export)) = self.imports(file).get(name) {
+            return if let Some(target) = self.resolve_import(file, name, module) {
+                self.external(&target, export, depth + 1)
+            } else {
+                Some((module.clone(), export.clone()))
+            };
+        }
+        let m = self.modules.get(file)?;
+        for node in children(m.tree.root_node())
+            .into_iter()
+            .filter(|n| n.kind() == "export_statement")
+        {
+            let Some(module) = field(node, "source").and_then(|n| normalize::string(n, &m.source))
+            else {
+                continue;
+            };
+            let clauses: Vec<_> = children(node)
+                .into_iter()
+                .filter(|n| n.kind() == "export_clause")
+                .collect();
+            let original = if clauses.is_empty() {
+                Some(name)
+            } else {
+                clauses.into_iter().flat_map(children).find_map(|spec| {
+                    let original = field(spec, "name")?;
+                    let alias = field(spec, "alias").unwrap_or(original);
+                    (text(alias, &m.source) == name).then_some(text(original, &m.source))
+                })
+            };
+            if let Some(original) = original {
+                if let Some(target) = self.resolve(file, &module) {
+                    if let Some(found) = self.external(&target, original, depth + 1) {
+                        return Some(found);
+                    }
+                } else {
+                    return Some((module, original.into()));
+                }
+            }
+        }
+        None
+    }
+    pub fn mutable_binding(&self, r: &Reference) -> bool {
+        let key = (r.file.clone(), r.start);
+        if let Some(value) = self.write_cache.borrow().get(&key) {
+            return *value;
+        }
+        let Some(binding) = self
+            .node(r)
+            .and_then(|n| n.parent())
+            .filter(|n| n.kind() == "variable_declarator")
+        else {
+            return false;
+        };
+        let source = &self.modules[&r.file].source;
+        if binding
+            .parent()
+            .is_some_and(|n| text(n, source).trim_start().starts_with("const "))
+        {
+            return false;
+        }
+        let Some(name) = field(binding, "name").map(|n| text(n, source)) else {
+            return true;
+        };
+        fn names(n: Node, s: &str, name: &str) -> bool {
+            let mut bindings = std::collections::BTreeSet::new();
+            effects::binding(n, s, &mut bindings);
+            bindings.contains(name)
+        }
+        fn function(n: Node) -> bool {
+            matches!(
+                n.kind(),
+                "function_declaration"
+                    | "function_expression"
+                    | "arrow_function"
+                    | "method_definition"
+                    | "generator_function"
+                    | "generator_function_declaration"
+            )
+        }
+        fn declares(n: Node, s: &str, name: &str) -> bool {
+            match n.kind() {
+                "lexical_declaration" | "variable_declaration" => children(n)
+                    .into_iter()
+                    .any(|d| field(d, "name").is_some_and(|n| names(n, s, name))),
+                "class_declaration" | "function_declaration" | "generator_function_declaration" => {
+                    field(n, "name").is_some_and(|n| names(n, s, name))
+                }
+                _ => false,
+            }
+        }
+        fn function_var(n: Node, s: &str, name: &str) -> bool {
+            if function(n) {
+                return false;
+            }
+            if n.kind() == "variable_declaration" && declares(n, s, name) {
+                return true;
+            }
+            if n.kind() == "for_in_statement"
+                && field(n, "kind").is_some_and(|n| text(n, s) == "var")
+                && field(n, "left").is_some_and(|n| names(n, s, name))
+            {
+                return true;
+            }
+            children(n).into_iter().any(|n| function_var(n, s, name))
+        }
+        fn writes(n: Node, s: &str, name: &str) -> bool {
+            if function(n)
+                && (field(n, "parameters")
+                    .or_else(|| field(n, "parameter"))
+                    .is_some_and(|n| names(n, s, name))
+                    || field(n, "name").is_some_and(|n| names(n, s, name))
+                    || field(n, "body").is_some_and(|n| function_var(n, s, name)))
+            {
+                return false;
+            }
+            // A nested lexical declaration shadows the module binding for its
+            // entire block, including loop updates and catch bodies. A for-in
+            // assignment without let/const/var instead writes the outer binding.
+            if matches!(n.kind(), "statement_block" | "for_statement")
+                && children(n).into_iter().any(|n| declares(n, s, name))
+            {
+                return false;
+            }
+            if n.kind() == "for_in_statement" {
+                let local = field(n, "kind").is_some()
+                    || field(n, "left").is_some_and(|n| declares(n, s, name));
+                if local && field(n, "left").is_some_and(|n| names(n, s, name)) {
+                    return false;
+                }
+                if !local && field(n, "left").is_some_and(|n| names(n, s, name)) {
+                    return true;
+                }
+            }
+            if n.kind() == "catch_clause"
+                && field(n, "parameter").is_some_and(|n| names(n, s, name))
+            {
+                return false;
+            }
+            if matches!(
+                n.kind(),
+                "assignment_expression" | "augmented_assignment_expression" | "update_expression"
+            ) && field(n, "left")
+                .or_else(|| field(n, "argument"))
+                .is_some_and(|n| names(n, s, name))
+            {
+                return true;
+            }
+            children(n).into_iter().any(|n| writes(n, s, name))
+        }
+        let result = writes(self.modules[&r.file].tree.root_node(), source, name);
+        self.write_cache.borrow_mut().insert(key, result);
+        result
+    }
     pub fn context(&self, file: &str) -> Vec<(String, String)> {
         self.imports(file)
             .into_iter()
             .map(|(name, (module, export))| {
                 let target = self
-                    .resolve(file, &module)
+                    .resolve_import(file, &name, &module)
                     .map(|path| {
                         format!(
                             "{}:{}:{}",
                             path,
                             export,
-                            hash(normalize::canonical(
-                                self.modules[&path].tree.root_node(),
-                                &self.modules[&path].source
-                            ))
+                            if let Some(module) = self.modules.get(&path) {
+                                hash(normalize::canonical(
+                                    module.tree.root_node(),
+                                    &module.source,
+                                ))
+                            } else {
+                                hash(serde_json::to_vec(&self.data[&path]).unwrap())
+                            }
                         )
                     })
                     .unwrap_or_else(|| format!("{module}:{export}"));

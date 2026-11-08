@@ -8,10 +8,19 @@ use tree_sitter::Node;
 // escapes retain their original spelling instead of merging uncertain values.
 pub fn string(node: Node, source: &str) -> Option<String> {
     let raw = text(node, source);
-    if node.kind() != "string" || raw.len() < 2 {
+    if !(node.kind() == "string"
+        || node.kind() == "template_string"
+            && !children(node)
+                .iter()
+                .any(|n| n.kind() == "template_substitution"))
+        || raw.len() < 2
+    {
         return None;
     }
-    let mut chars = raw[1..raw.len() - 1].chars();
+    decode(&raw[1..raw.len() - 1])
+}
+pub(crate) fn decode(raw: &str) -> Option<String> {
+    let mut chars = raw.chars();
     let mut out = String::new();
     while let Some(c) = chars.next() {
         if c != '\\' {

@@ -110,6 +110,7 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 test('Rust source estimates are authoritative and never call handwritten weight callbacks',t=>{
     const {manifest,configuration}=fixture(t);
     manifest.implementation='rust-prefix-v2';
+    manifest.assessment={version:'js-ts-points-v3',boundsVersion:1};
     for(const entry of manifest.tests) {
         entry.fixtureEstimate={points:20,lowerBoundPoints:20,complete:true};
         for(const step of entry.steps) step.estimate={points:8,lowerBoundPoints:8,complete:true};
@@ -123,7 +124,15 @@ test('Rust source estimates are authoritative and never call handwritten weight 
         assert.equal(workflow.stages.get('cp-cart').actionUnits,8);
     }
     manifest.tests[0].steps[0].estimate.complete=false;
-    assert.equal(buildWorkflow(manifest,configuration).workflow.stages.get('cp-cart').actionUnits,null);
+    assert.equal(buildWorkflow(manifest,configuration).workflow.stages.get('cp-cart').actionUnits,8);
     manifest.tests[0].steps[0].estimate={points:8,lowerBoundPoints:-1,complete:true};
     assert.throws(()=>buildWorkflow(manifest,configuration),/Invalid static action units/);
+});
+
+test('outdated source cost models require replanning before workflow construction',t=>{
+    const {manifest,configuration}=fixture(t);manifest.implementation='rust-prefix-v2';
+    for(const assessment of [{version:'js-ts-points-v1'}, {version:'js-ts-points-v2',boundsVersion:1}]) {
+        manifest.assessment=assessment;
+        assert.throws(()=>buildWorkflow(manifest,configuration),/cost model.*replan/i);
+    }
 });

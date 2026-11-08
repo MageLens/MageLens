@@ -7,6 +7,16 @@ const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {createHash} = require('node:crypto');
 
+function sourceFiles(root, directory = 'src') {
+    return fs.readdirSync(path.join(root, directory), {withFileTypes: true}).flatMap(entry => {
+        const file = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) return sourceFiles(root, file);
+        if (!/\.(rs|json)$/.test(entry.name)) return [];
+        if (!entry.isFile()) throw new Error('Rust coverage source must be a regular file: ' + file);
+        return [file];
+    }).sort();
+}
+
 function rustCoverage(output) {
     if (process.env.MAGELENS_RUST_SELF_COVERAGE !== '1') return null;
     const container = process.env.MAGELENS_ORCHESTRATOR_CONTAINER;
@@ -16,8 +26,8 @@ function rustCoverage(output) {
     fs.mkdirSync(raw, {recursive: true});
     const previous = process.env.LLVM_PROFILE_FILE;
     process.env.LLVM_PROFILE_FILE = path.join(raw, '%m-%p.profraw');
-    const files = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.rs')).map(name => 'src/' + name);
-    const hashes = Object.fromEntries(files.map(file => [file, createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')]));
+    const inputs = sourceFiles(root), files = inputs.filter(file => file.endsWith('.rs'));
+    const hashes = Object.fromEntries(inputs.map(file => [file, createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')]));
     return {
         finish() {
             if (previous === undefined) delete process.env.LLVM_PROFILE_FILE; else process.env.LLVM_PROFILE_FILE = previous;
@@ -40,8 +50,10 @@ function rustCoverage(output) {
                     if (file !== 'src/baseline.rs' || /\bfn\s+/.test(fs.readFileSync(path.join(root, file), 'utf8'))) throw new Error('Missing Rust source in coverage: ' + file);
                     nonExecutableSources.push({file, reason: 'Constants and derived-data type; no LLVM instrumentable regions.'});
                 }
-                if (createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex') !== hashes[file]) throw new Error('Rust source changed during coverage');
             }
+            if (JSON.stringify(sourceFiles(root)) !== JSON.stringify(inputs)) throw new Error('Rust source inventory changed during coverage');
+            for (const file of inputs)
+                if (createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex') !== hashes[file]) throw new Error('Rust source changed during coverage');
             const result = {schemaVersion: 1, compiler: 'rustc 1.91.0', sourceSha256: hashes, files: inventory,
                 totals: exported.data[0].totals, profiles: profiles.length, originalSourcesUnchanged: true, nonExecutableSources,
                 scope: 'Native planner commands executed by the Playwright dashboard self-tests; third-party Rust dependencies excluded.'};
@@ -51,4 +63,4 @@ function rustCoverage(output) {
         }
     };
 }
-module.exports = {rustCoverage};
+module.exports = {rustCoverage, sourceFiles};

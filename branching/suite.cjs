@@ -36,6 +36,7 @@ async function runSuite(options) {
     costs.assertAutomatic(options);
     const {manifest, project, directory, runner, runCheckpoint} = options;
     costs.assertAutomatic(project);
+    require('./checkpoint-limit.cjs').validateLimit(project.maxCheckpointsPerTest);
     const mode = 'AUTO';
     verifySources(manifest);
     const started = performance.now(), phases = [], inventory = await runner.collect(project.native.config, directory);

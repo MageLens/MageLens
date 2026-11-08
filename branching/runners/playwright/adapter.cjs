@@ -12,6 +12,13 @@ async function open(environment = process.env, {launchOptions = {}, contextOptio
     return {
         description: {name: 'Chrome for Testing', version: browser.version(), playwright: version},
         run: options => runBranches({...options, browser, baseURL: environment.PLAYWRIGHT_BASE_URL, contextOptions: {ignoreHTTPSErrors: true, ...contextOptions}}),
+        calibrate: ({backend,root,samples}) => {
+            const {RetainedProvider}=require('../../../branching/retained-provider.cjs');
+            const provider=new RetainedProvider({browser,backend,baseURL:environment.PLAYWRIGHT_BASE_URL,contextOptions:{ignoreHTTPSErrors:true,...contextOptions},
+                state:async runtime=>({url:runtime.page.url(),database:runtime.sql('SELECT 1')})});
+            return require('../../../branching/calibration.cjs').measure({provider,root,samples,
+                warmup:async runtime=>{await runtime.page.goto(environment.PLAYWRIGHT_BASE_URL);await runtime.page.locator('body').waitFor();}});
+        },
         close: () => browser.close()
     };
 }

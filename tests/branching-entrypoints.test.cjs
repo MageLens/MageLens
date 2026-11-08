@@ -61,6 +61,15 @@ if (args[0] === 'run' && args.includes('node')) process.exit(37);
         return {...result, calls: fs.readFileSync(log, 'utf8')};
     }};
 }
+test('explicit calibration uses the same isolated launcher without executing tests', t => {
+    const {directory,run}=launchFixture(t);
+    const result=run(['bin/run-coverage','--branching','--disposable','--calibrate','manifest.json','workflow file.cjs','cow storage']);
+    assert.equal(result.status,37,result.stderr);
+    const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
+    const worker=calls.find(args=>args.includes('node'));
+    assert.deepEqual(worker.slice(-4),['branching/calibration-cli.cjs',path.join(directory,'manifest.json'),path.join(directory,'workflow file.cjs'),path.join(directory,'cow storage')]);
+    assert.ok(calls.some(args=>args[0]==='rm'&&args[1]==='--force'));
+});
 test('branching opt-in preserves literal arguments, worker status and controller cleanup', t => {
     const {directory, run} = launchFixture(t);
     const result = run(['bin/run-coverage', '--disposable', 'manifest.json', 'workflow file.cjs', 'cow storage', '--branching']);
