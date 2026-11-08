@@ -9,9 +9,12 @@ on:
     paths:
       - 'branching/planner/**'
       - 'branching/images.cjs'
+      - 'branching/build-runner.sh'
       - 'branching/runners/**'
       - 'bin/branching-image'
       - 'bin/image-inputs.cjs'
+      - 'bin/sync-dependencies.cjs'
+      - 'bin/sync-runner-dependencies'
       - 'docker/runner/**'
       - '.dockerignore'
       - 'dependencies.yaml'

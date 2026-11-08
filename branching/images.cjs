@@ -21,7 +21,8 @@ function describe(root, kind) {
     if (!adapter) {
         files.push(...['Dockerfile', '.dockerignore', 'Cargo.toml', 'Cargo.lock'].map(file => `branching/planner/${file}`));
         visit('branching/planner/src'); visit('branching/planner/tests');
-    } else files.push('branching/runners/index.cjs', `${adapter.context}/Dockerfile`);
+    } else files.push('branching/runners/index.cjs', 'branching/build-runner.sh', 'bin/sync-dependencies.cjs',
+        'bin/sync-runner-dependencies', `${adapter.context}/Dockerfile`);
     const hash = createHash('sha256').update(kind + '\0');
     for (const file of files.sort()) hash.update(file + '\0').update(fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')).update('\0');
     const baseInputs = adapter ? releaseImages.inputs(root, adapter.baseImage) : null;

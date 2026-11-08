@@ -48,7 +48,8 @@ if [[ "$mode" == 0 ]]; then
 fi
 build_args=()
 if [[ "$kind" != orchestrator ]]; then
-    base=$(docker run --rm --user "$(id -u):$(id -g)" --mount "type=bind,source=$root,target=/workspace,readonly" --workdir /workspace --entrypoint node "$PLAYWRIGHT_RUNNER_IMAGE" branching/images.cjs base "$kind")
+    base="magelens-$package-base:inputs-$fingerprint-$architecture"
+    bash branching/build-runner.sh "$kind" "$base" "$fingerprint" >&2
     build_args=(--build-arg "RUNNER_IMAGE=$base")
 fi
 docker build --quiet --tag "$image" --label "org.magelens.inputs=$fingerprint" \

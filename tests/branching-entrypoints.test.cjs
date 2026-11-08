@@ -230,7 +230,7 @@ test('image inputs separate Rust from browser dependencies and track their own s
     const directory = temporary(t);
     const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
     for (const file of new Set(files)) {
-        if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'dependencies.yaml', '.dockerignore', 'package.json'].includes(file))) copy(directory, file);
+        if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'bin/sync-dependencies.cjs', 'bin/sync-runner-dependencies', 'dependencies.yaml', '.dockerignore', 'package.json'].includes(file))) copy(directory, file);
     }
     const before = {core: describe(directory, 'orchestrator').fingerprint, browser: describe(directory, 'playwright').fingerprint};
     fs.appendFileSync(path.join(directory, 'branching/runners/playwright/Dockerfile'), '\n');
@@ -240,27 +240,39 @@ test('image inputs separate Rust from browser dependencies and track their own s
     fs.appendFileSync(path.join(directory, 'branching/planner/src/lib.rs'), '\n');
     assert.notEqual(describe(directory, 'orchestrator').fingerprint, before.core);
     assert.equal(describe(directory, 'playwright').fingerprint, changedBrowser);
+    const changedCore = describe(directory, 'orchestrator').fingerprint;
+    fs.appendFileSync(path.join(directory, 'branching/build-runner.sh'), '\n');
+    assert.notEqual(describe(directory, 'playwright').fingerprint, changedBrowser);
+    assert.equal(describe(directory, 'orchestrator').fingerprint, changedCore);
 });
-function imageFixture(t) {
+function imageFixture(t, kind = 'orchestrator') {
     const directory = temporary(t);
-    for (const file of ['bin/branching-image', 'bin/dependencies', 'dependencies.yaml']) copy(directory, file);
+    for (const file of ['bin/branching-image', 'bin/common', 'bin/dependencies', 'bin/sync-dependencies.cjs',
+        'bin/sync-runner-dependencies', 'branching/build-runner.sh', 'docker/runner/Dockerfile',
+        'dependencies.yaml', 'package.json', 'package-lock.json', '.dockerignore']) copy(directory, file);
     fs.mkdirSync(path.join(directory, 'commands'));
     command(directory, 'commands/docker', `#!${process.execPath}
 const fs = require('node:fs'), args = process.argv.slice(2), fingerprint = 'c'.repeat(64);
 fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify(args) + '\\n');
 if (args[0] === 'info') console.log('linux/x86_64');
-if (args.includes('describe')) console.log(fingerprint + '\\torchestrator\\tbranching/planner');
+if (args.includes('describe')) console.log(fingerprint + (args.at(-1) === 'playwright'
+    ? '\\tbranching-playwright\\tbranching/runners/playwright' : '\\torchestrator\\tbranching/planner'));
+if (args.includes('base')) process.exit(99);
 if (args[0] === 'image' && args[1] === 'inspect') {
     if (!args.includes('--format')) process.exit(process.env.TEST_CACHE === '1' ? 0 : 1);
     console.log('linux/amd64 ' + (process.env.TEST_BAD_LABEL === '1' ? 'bad' : fingerprint));
 }
 if (args[0] === 'pull' && process.env.TEST_PULL_FAIL === '1') process.exit(1);
+if (args[0] === 'build' && args.includes('--target') && process.env.TEST_BASE_BUILD_FAIL === '1') process.exit(29);
 `);
     const log = path.join(directory, 'calls');
     return (args = [], extra = {}) => {
         fs.writeFileSync(log, '');
-        const result = spawnSync('bash', ['bin/branching-image', 'orchestrator', ...args], {cwd: directory, encoding: 'utf8', env: {...process.env,
+        const original = ['package.json', 'package-lock.json'].map(file => fs.readFileSync(path.join(directory, file), 'utf8'));
+        const result = spawnSync('bash', ['bin/branching-image', kind, ...args], {cwd: directory, encoding: 'utf8', env: {...process.env,
             MAGELENS_BRANCHING_BUILD_FROM_SOURCE: '0', PATH: `${directory}/commands:${process.env.PATH}`, MOCK_LOG: log, ...extra}});
+        assert.deepEqual(['package.json', 'package-lock.json'].map(file => fs.readFileSync(path.join(directory, file), 'utf8')), original);
+        assert.deepEqual(fs.existsSync(path.join(directory, '.runtime')) ? fs.readdirSync(path.join(directory, '.runtime')) : [], []);
         return {...result, calls: fs.readFileSync(log, 'utf8')};
     };
 }
@@ -277,4 +289,21 @@ test('default images use cache or pull; missing images never silently build on t
     assert.equal(stale.status, 1); assert.match(stale.stderr, /does not match/); assert.doesNotMatch(stale.calls, /"build"|"pull"/);
     const developer = run(['--build-from-source']);
     assert.equal(developer.status, 0, developer.stderr); assert.match(developer.calls, /"build"/); assert.doesNotMatch(developer.calls, /"pull"/);
+});
+test('explicit browser builds compile the product runner without release lookup and clean their context', t => {
+    const run = imageFixture(t, 'playwright');
+    const result = run(['--build-from-source']);
+    assert.equal(result.status, 0, result.stderr);
+    const calls = result.calls.trim().split('\n').map(JSON.parse);
+    const builds = calls.filter(args => args[0] === 'build');
+    assert.equal(builds.length, 2);
+    assert.ok(builds[0].includes('playwright'));
+    assert.ok(builds[0].some(arg => arg.endsWith('/docker/runner/Dockerfile')));
+    assert.ok(calls.some(args => args.includes('bin/sync-dependencies.cjs') && args.includes('MAGELENS_RUNNER')));
+    assert.ok(builds[1].includes('RUNNER_IMAGE=magelens-branching-playwright-base:inputs-' + 'c'.repeat(64) + '-amd64'));
+    assert.match(result.stdout, /^magelens-branching-playwright:inputs-c{64}-amd64\n$/);
+    assert.ok(!calls.some(args => args.includes('base')));
+    const failed = run(['--build-from-source'], {TEST_BASE_BUILD_FAIL: '1'});
+    assert.equal(failed.status, 29, failed.stderr);
+    assert.equal(failed.calls.trim().split('\n').map(JSON.parse).filter(args => args[0] === 'build').length, 1);
 });
