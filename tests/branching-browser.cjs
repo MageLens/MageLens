@@ -20,10 +20,12 @@ const {probe} = require('../branching/storage.cjs');
 const command = args => execFileSync('docker', args, {encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe']}).trim();
 class Backend {
     constructor() { this.name = 'magelens-branching-check-' + randomUUID(); this.identity = {kind: 'real-mariadb-fixture'}; }
-    sql(query) { return command(['exec', this.name, 'mariadb', '-uroot', '-ptest-only', '-Nse', query]); }
+    sql(query, tcp = false) { return command(['exec', this.name, 'mariadb', ...(tcp ? ['--protocol=tcp', '-h127.0.0.1'] : []), '-uroot', '-ptest-only', '-Nse', query]); }
     async ready() {
         for (let i = 0; i < 120; i++) {
-            try { this.sql('SELECT 1'); return; } catch { await delay(250); }
+            // The image's temporary initialization server accepts socket SQL,
+            // then exits. TCP opens only on the final server used by the test.
+            try { this.sql('SELECT 1', true); return; } catch { await delay(250); }
         }
         throw new Error('MariaDB failed to become ready');
     }
@@ -76,6 +78,7 @@ async function main() {
         assert.equal(browser.version(), '156.0.8078.80');
         assert.equal(require('@playwright/test/package.json').version, '1.65.0');
         await require('./branching-browser-ready.cjs').checkReadiness(browser);
+        await require('./branching-browser-cache.cjs').checkCacheIsolation(browser);
         const backend = new Backend();
         const provider = new BranchingProvider({browser, backend, baseURL: 'http://127.0.0.1', state: async () => ({
             database: backend.sql('SELECT * FROM probe.state ORDER BY id'),
@@ -86,7 +89,6 @@ async function main() {
         const workflow = {identity: {source: 'real-browser-check-v1', fixture: 'mariadb-files-storage', configuration: 'three-siblings', dependencies: 'pw1.65-chrome156', implementation: 'branching'}, stages: [
             {id: 'customer-ready', run: async p => {
                 // The fixture receives an ephemeral port only after reset.
-                p.browserState.cache.origin = `http://127.0.0.1:${backend.port}`;
                 await p.page.goto(`http://127.0.0.1:${backend.port}`);
                 context = p.context;
                 await p.page.evaluate(async () => {
@@ -124,7 +126,8 @@ async function main() {
         assert.equal(result.status, 'passed', JSON.stringify(result.errors));
         assert.equal(result.counts.prefixExecutions, 2); assert.equal(result.counts.reuseHits, 2);
         assert.equal(result.counts.firstReuseValidations, 1); assert.equal(new Set(ids).size, 3);
-        assert.equal(backend.staticRequests, 1); assert.ok(provider.browserState.cache.stats.hits >= 2);
+        assert.equal(backend.staticRequests, 3, 'Each restored branch fetches its own assets');
+        assert.equal(provider.browserState.cache.stats.clears, 3);
         const summary = {status: result.status, browser: {name: 'Chrome for Testing', version: browser.version()},
             playwright: require('@playwright/test/package.json').version, tests: result.results.length,
             counts: result.counts, cache: provider.browserState.cache.stats, wallMs: result.metrics.wallMs};

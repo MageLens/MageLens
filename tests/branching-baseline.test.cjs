@@ -32,6 +32,40 @@ test('successful runs learn weighted operation averages for subsequent runs with
     assert.equal(before.source,'default');assert.equal(before.baseline.restoreMs,baseline.defaults.restoreMs);
     assert.equal(learned.baseline.resetMs,baseline.defaults.resetMs,'unobserved resets retain defaults');
 });
+test('test work and environment setup never train checkpoint overhead',t=>{
+    const {store}=fixture(t),short=report(),long=report();
+    const expected=baseline.samples(short);
+    long.wallMs=900000;
+    long.setupDiagnostics={wallMs:120000};
+    Object.assign(long.phases[0].report.phases,{prefix:124000,suffix:90000,terminalState:1000});
+    long.phases[0].report.segments=[{wallMs:124000}];
+    long.phases.unshift({kind:'native',report:{status:'passed',wallMs:600000}});
+    assert.deepEqual(baseline.samples(long),expected);
+    store.update(short);
+    const before=store.load();
+    store.update(long);
+    assert.deepEqual(store.load().baseline,before.baseline);
+    assert.equal(store.load().decisionBaselineMs,before.decisionBaselineMs);
+    const calibration={...long.phases[1].report,kind:'baseline-calibration',wallMs:900000};
+    calibration.phases={...calibration.phases,warmup:500000};
+    assert.deepEqual(baseline.samples(calibration),expected);
+});
+test('restore calibration uses per-operation cost and keeps one-time lifecycle costs separate',t=>{
+    const {store}=fixture(t),input=report(Array(8).fill(7500));
+    const phase=input.phases[0].report;
+    phase.costs.captures=[{ms:3000}];
+    phase.costs.releases=[{ms:8}];
+    phase.costs.resets=[16500];
+    phase.phases={prepare:4500,cleanup:12000,prefix:124000,suffix:22000,restore:60000};
+    store.update(input);
+    const learned=store.load();
+    assert.equal(learned.baseline.restoreMs,7500);
+    assert.equal(learned.samples.restoreMs,8);
+    assert.equal(learned.baseline.captureMs,3000);
+    assert.equal(learned.baseline.firstResetMs,16500);
+    assert.equal(learned.baseline.backendMs,16500);
+    assert.equal(learned.decisionBaselineMs,(33000+3000+7500+8)*2*1.2+50);
+});
 test('failed runs, fallback, missing releases and incomplete cleanup cannot train the baseline',t=>{
     const {store}=fixture(t);store.update(report());const saved=fs.readFileSync(store.file,'utf8');
     for(const mutate of [r=>{r.status='failed';},r=>{r.results[0].status='skipped';},

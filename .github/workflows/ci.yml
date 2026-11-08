@@ -103,7 +103,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        row: [short-5, reuse-2, boundary-5, large-5, strong-5, unrelated-5, large-9, medium-9, deep-shallow, deep-large]
+        row: [short-5, reuse-2, boundary-5, large-5, strong-5, unrelated-5, large-9, medium-9, deep-shallow, deep-large, fixture-small-5, fixture-large-9, fixture-state-9]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

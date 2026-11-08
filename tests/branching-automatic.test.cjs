@@ -110,10 +110,10 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 test('Rust source estimates are authoritative and never call handwritten weight callbacks',t=>{
     const {manifest,configuration}=fixture(t);
     manifest.implementation='rust-prefix-v2';
-    manifest.assessment={version:'js-ts-points-v3',boundsVersion:1};
+    manifest.assessment={version:'js-ts-points-v4',boundsVersion:1};
     for(const entry of manifest.tests) {
-        entry.fixtureEstimate={points:20,lowerBoundPoints:20,complete:true};
-        for(const step of entry.steps) step.estimate={points:8,lowerBoundPoints:8,complete:true};
+        entry.fixtureEstimate={points:20,estimatedPoints:20,lowerBoundPoints:2,complete:false};
+        for(const step of entry.steps) step.estimate={points:8,estimatedPoints:8,lowerBoundPoints:1,complete:false};
     }
     const adapter={identity:'execution-only',supports:()=>true,execute:async()=>{},prepare:async()=>{},
         fixtureUnits:()=>{throw new Error('Handwritten fixture cost must not run');},
@@ -125,13 +125,13 @@ test('Rust source estimates are authoritative and never call handwritten weight 
     }
     manifest.tests[0].steps[0].estimate.complete=false;
     assert.equal(buildWorkflow(manifest,configuration).workflow.stages.get('cp-cart').actionUnits,8);
-    manifest.tests[0].steps[0].estimate={points:8,lowerBoundPoints:-1,complete:true};
+    manifest.tests[0].steps[0].estimate={points:8,estimatedPoints:-1,lowerBoundPoints:1,complete:false};
     assert.throws(()=>buildWorkflow(manifest,configuration),/Invalid static action units/);
 });
 
 test('outdated source cost models require replanning before workflow construction',t=>{
     const {manifest,configuration}=fixture(t);manifest.implementation='rust-prefix-v2';
-    for(const assessment of [{version:'js-ts-points-v1'}, {version:'js-ts-points-v2',boundsVersion:1}]) {
+    for(const assessment of [{version:'js-ts-points-v1'}, {version:'js-ts-points-v2',boundsVersion:1}, {version:'js-ts-points-v3',boundsVersion:1}]) {
         manifest.assessment=assessment;
         assert.throws(()=>buildWorkflow(manifest,configuration),/cost model.*replan/i);
     }

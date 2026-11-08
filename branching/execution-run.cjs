@@ -39,6 +39,7 @@ async function executePlan({
 }) {
     const graph = workflow instanceof Graph ? workflow : new Graph(workflow),
         selected = graph.select(specs);
+    provider = require('./runtime-state.cjs').withRuntimeState(provider, graph.runtimeState);
     if (!config.executionApproaches.includes(approach)) throw new Error(messages.unknownExecutionApproach);
     if (!provider.approaches.includes(approach)) throw new Error(messages.providerDoesNotImplement(approach));
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) throw new Error(messages.invalidCheckpointTtl);

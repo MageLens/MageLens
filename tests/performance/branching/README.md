@@ -29,6 +29,9 @@ seven coupon rules; it is not a large-production-database benchmark.
 | `large-9` | 16 | 9 | Measure more consumers of a longer prefix |
 | `deep-shallow` | 1–12 | 24 | Twelve nested shallow branch boundaries |
 | `deep-large` | 6–72 | 36 | Twelve substantial boundaries and the checkpoint cap |
+| `fixture-small-5` | 1 | 5 | Shared helper and custom fixture with conditional cart setup; predicted linear |
+| `fixture-large-9` | 80 | 9 | The same fixture with substantial work; automatically restored |
+| `fixture-state-9` | 80 | 9 | Restore dependent fixtures, mutable values, nested aliases and locators; verify teardown after every order |
 
 The default matrix contains `short-5`, `reuse-2`, `boundary-5`, `strong-5` and
 `unrelated-5`, with three pairs per row.
@@ -38,9 +41,21 @@ contain more than nine candidates along a path. The cap limits selected
 checkpoints, never the test actions or the number of tests. It is not a byte
 limit: snapshot size still depends on the application and database.
 
+The fixture rows use an ordinary `test.extend` fixture and a shared helper.
+They check the current cart at runtime and add products when it is empty. This
+exercises approximate estimation without custom execution adapters or fixed
+delays. The small row stays linear; the large rows reuse the setup at the fixture's
+`await use(value)` boundary. `fixture-state-9` requires a fresh empty history and
+counter in every sibling, preserves shared-object identity between dependent
+fixtures, and uses a restored locator. After placing and verifying the order, it
+mutates those values; fixture teardown verifies those mutations and the order page.
+`estimatedCheckpoints`, `checkpoints` and `selectionReason` separate forecasts from
+executed checkpoints. `plan.cjs` enforces the same configurable checkpoint cap and
+reports unsupported execution boundaries explicitly.
+
 ## Required CI performance check
 
-The normal PR CI runs **all ten rows, with three alternating pairs per row** on
+The normal PR CI runs **all thirteen rows, with three alternating pairs per row** on
 `ubuntu-24.04`. Each job installs two isolated Mage-OS/Luma/Playwright environments,
 calibrates on that CI machine through `--calibrate`, then freezes the measured
 baseline for its timed pairs. Real checkout assertions, matching test inventories,
@@ -61,7 +76,7 @@ requires a fresh reference. These thresholds are in [`ci-policy.json`](ci-policy
 functional failures always fail regardless of timing. References never update
 automatically, and a regression cannot be averaged away.
 
-After reviewing all ten artifacts from one commit, run and attempt, prepare a
+After reviewing all thirteen artifacts from one commit, run and attempt, prepare a
 replacement reference file from the downloaded artifacts:
 
 ```bash
@@ -106,6 +121,10 @@ Save a private configuration file under `.runtime/`. Use absolute host paths;
 the driver mounts them at the same paths inside Docker. Select existing prebuilt
 orchestrator and branching Playwright images with the repository image commands.
 `plannerBinary` is the current release build from the isolated Rust build container.
+`driverMemoryMiB` defaults to 2048 and applies equally to both drivers. Large
+fixture rows may need more memory; set the same budget before measuring a pair.
+Reports retain cgroup memory events, and OOM events invalidate the measurement
+and prevent baseline updates even if the main driver process survives.
 
 ```json
 {
@@ -152,6 +171,19 @@ The original shared prefix still runs once. Short work may become useful when ma
 must not claim the same saving twice. Use complete paired test time to confirm a
 benefit; do not subtract checkpoint overhead from it.
 
+The source model uses approximate operation points when a fixture depends on
+runtime data. It preserves minimum/maximum bounds, estimated operation counts,
+confidence and the assumptions used. The versioned defaults in
+[`estimation.json`](../../../branching/planner/src/estimation.json) use a 50/50
+branch prior, three iterations for an unknown collection, and request payload
+bands of up to 4 KiB/16 items, up to 64 KiB/256 items, and larger. Medium and large
+payloads receive 4× and 16× the base request cost; unknown payloads retain the
+small cost with reduced confidence. These are tunable heuristic priors, not
+measured SQL costs. Actual query counts, indexes and response sizes behind an API
+remain unknown. Existing operation timing calibration and checkpoint overhead
+history remain separate; automatic baseline updates do not silently change these
+source-model assumptions.
+
 ## Project baseline and overhead history
 
 Fresh projects use the root [checkpoint decision baseline](../../../branching-baseline.json).
@@ -190,3 +222,7 @@ capture, one restore and release, with 2× overhead plus 20% headroom and a 50 m
 minimum saving. Fanout and nested graphs use the complete operation model;
 the two-test value is a summary, not a universal per-test cutoff. Calibration
 changes the project measurements, not the tracked root default.
+Test fixtures, shared steps, test suffixes and environment startup do not enter
+checkpoint overhead calibration. Capture is charged once, restoration per reuse,
+and provider preparation/cleanup once per checkpoint phase. The safety factor is
+already included in the displayed break-even value; do not double it again.

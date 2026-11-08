@@ -41,6 +41,8 @@ def digest(value):
 class Campaign:
     def __init__(self, config, directory):
         self.config = config
+        self.driver_memory_mib = config.get('driverMemoryMiB', 2048)
+        assert type(self.driver_memory_mib) is int and 512 <= self.driver_memory_mib <= 16384, 'driverMemoryMiB must be 512..16384'
         self.directory = directory.resolve()
         self.directory.relative_to(ROOT / '.runtime')
         self.directory.mkdir(parents=True, exist_ok=False)
@@ -122,6 +124,7 @@ class Campaign:
         self.browser = versions[0]
         save(self.directory / 'provenance.json', {'commit': output(['git', '-C', ROOT, 'rev-parse', 'HEAD']),
              'seedDigest': self.seed_digest, 'browser': self.browser, 'checkpointLimit': 4,
+             'driverMemoryMiB': self.driver_memory_mib,
              'trackedDiffDigest': digest(subprocess.check_output(['git', '-C', ROOT, 'diff'])),
              'harnessDigests': {str(p.relative_to(ROOT)): digest(p.read_bytes()) for p in HERE.rglob('*') if p.is_file()}})
 
@@ -164,7 +167,7 @@ class Campaign:
             with (directory / 'setup.log').open('w') as log:
                 self.compose(arm, 'up', '-d', '--wait', '--wait-timeout', '180', *SERVICES, stdout=log, stderr=subprocess.STDOUT)
             database_ownership = self.database_ownership(arm)
-            cmd = ['docker', 'run', '--rm', '--init', '--memory', '2g', '--memory-swap', '2g', '--shm-size', '512m',
+            cmd = ['docker', 'run', '--rm', '--init', '--memory', f'{self.driver_memory_mib}m', '--memory-swap', f'{self.driver_memory_mib}m', '--shm-size', '512m',
                    '--name', 'magelens-perf-' + identity, '--network', self.config[arm]['project'] + '_default',
                    '--mount', f'type=bind,source={ROOT},target={ROOT}',
                    '--env', 'NODE_PATH=/workspace/node_modules', '--env', 'PLAYWRIGHT_VERSION=1.65.0', '--env', 'CHROME_VERSION=156.0.8078.80',
@@ -220,6 +223,8 @@ class Campaign:
                       'phpDigest': self.php_digest, 'seedDigest': self.seed_digest,
                       'sourceDigest': digest((suite / 'journeys.spec.js').read_bytes() + (suite / 'bootstrap.setup.js').read_bytes()),
                       'browser': self.browser, 'checkpoints': report.get('checkpoints', 0), 'restores': report.get('reuseHits', 0),
+                      'estimatedCheckpoints': len(report.get('assessment', {}).get('costPlan', {}).get('selected', [])),
+                      'selectionReason': report.get('selectionReason'),
                       'fallbacks': sum(p['counts']['fallbacks'] for p in phases), 'cleanup': True,
                       'resources': report['benchmarkResources'], 'baseline': report.get('baseline')}
             if planner_peak is not None:

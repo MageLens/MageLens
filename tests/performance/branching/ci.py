@@ -24,6 +24,20 @@ def output(args, **kwargs):
     return subprocess.check_output([str(arg) for arg in args], text=True, **kwargs).strip()
 
 
+def build_adapter(site, runner_id, adapter, fingerprint, runner_base):
+    runner_image = json.loads(output(['docker', 'inspect', runner_id]))[0]['Image']
+    # BuildKit parses a bare sha256:ID as a repository/tag, not a local image
+    # identity. Give this exact installed image an owned, buildable reference.
+    call(['docker', 'tag', runner_image, runner_base])
+    try:
+        if output(['docker', 'image', 'inspect', '--format', '{{.Id}}', runner_base]) != runner_image:
+            raise RuntimeError('Adapter base differs from the installed runner')
+        call(['docker', 'build', '--quiet', '--tag', adapter, '--label', 'org.magelens.inputs=' + fingerprint,
+              '--build-arg', 'RUNNER_IMAGE=' + runner_base, site / 'branching/runners/playwright'])
+    finally:
+        call(['docker', 'image', 'rm', runner_base])
+
+
 def main():
     assert os.environ.get('GITHUB_ACTIONS') == 'true', 'This provisioner owns disposable CI resources only'
     row, cow = sys.argv[1:]
@@ -83,12 +97,10 @@ def main():
         # Use the actual installed runner as the adapter base; identical product
         # Dockerfile, without requiring a release-published image for this PR.
         runner_id = output([site / 'bin/application-compose', 'ps', '-a', '-q', 'runner'], cwd=site, env=env)
-        runner_image = json.loads(output(['docker', 'inspect', runner_id]))[0]['Image']
         description = output(['node', 'branching/images.cjs', 'describe', 'playwright'], cwd=site).split('\t')
         fingerprint, package = description[:2]
         adapter = 'magelens-' + package + ':inputs-' + fingerprint + '-amd64'
-        call(['docker', 'build', '--quiet', '--tag', adapter, '--label', 'org.magelens.inputs=' + fingerprint,
-              '--build-arg', 'RUNNER_IMAGE=' + runner_image, site / 'branching/runners/playwright'])
+        build_adapter(site, runner_id, adapter, fingerprint, projects['branching']['project'] + '-runner-base:local')
         planner = work / 'magelens-plan'
         controller = output(['docker', 'create', core_image])
         call(['docker', 'cp', controller + ':/usr/local/bin/magelens-plan', planner])
@@ -112,7 +124,7 @@ def main():
         config_file = work / 'campaign.json'
         config_file.write_text(json.dumps({**projects, 'seed': str(seed), 'cowRoot': str(Path(cow).resolve()),
             'origin': 'https://performance.test:18443/', 'coreImage': core_image,
-            'branchingImage': adapter, 'plannerBinary': str(planner)}))
+            'branchingImage': adapter, 'plannerBinary': str(planner), 'driverMemoryMiB': 3072}))
         config_file.chmod(0o600)
         campaign = work / 'campaign'
         call([sys.executable, HERE / 'run.py', '--config', config_file, '--output', campaign,

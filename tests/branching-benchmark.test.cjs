@@ -21,6 +21,48 @@ test('performance matrix includes profitable candidates and independent negative
     }
 });
 
+test('fixture matrix covers automatic restoration, sibling isolation and per-test teardown', () => {
+    const rows=matrix.filter(row=>row.fixture);
+    assert.equal(rows.length,3);
+    assert.deepEqual(new Set(rows.map(row=>row.expectedCost)),new Set(['linear','branching']));
+    for(const row of rows) {
+        assert.equal(row.expected,row.expectedCost);
+        const source=renderSuite(row);
+        assert.match(source,/base\.extend/);
+        assert.match(source,/await prepareCheckout\(page\)/);
+        assert.match(source,/if \(await page\.locator\(.+\)\.count\(\) === 0\)/);
+        assert.equal((source.match(/async \(\{page,(?:checkoutState,)?checkoutReady\}\)/g)??[]).length,row.consumers);
+        assert.equal((source.match(/function prepareCheckout/g)??[]).length,1);
+        assert.doesNotMatch(source,/adapter|actionUnits|fixtureUnits|checkpointSelection/);
+        if(row.products===80) {
+            const single=renderSuite({...row,consumers:1});
+            assert.equal((single.match(/toHaveText\("\$1,042\.00"\)/g)??[]).length,2,'Both checkout and saved-order totals retain their exact formatted amount');
+            assert.doesNotMatch(source,/\$1042\.00/);
+        }
+    }
+});
+
+test('Rust assesses the reusable fixture rows with approximate costs and the matrix checkpoint cap', t => {
+    const fs=require('node:fs'),path=require('node:path');
+    const {planner}=require('../branching/planner-client.cjs');
+    const {assess}=require('./performance/branching/plan.cjs');
+    const directory=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-fixture-matrix-');
+    for(const row of matrix.filter(row=>row.fixture)) {
+        const root=path.join(directory,row.id);fs.mkdirSync(root);
+        fs.writeFileSync(path.join(root,'journeys.spec.ts'),renderSuite(row));
+        const output=path.join(directory,row.id+'.json');
+        planner(['plan',root,output],{stdio:'pipe'});
+        const manifest=JSON.parse(fs.readFileSync(output));
+        const result=assess(manifest,4);
+        assert.equal(result.decision.maxCheckpointsPerTest,4);
+        assert.equal(result.decision.selected.length>0,row.expectedCost==='branching',row.id);
+        assert.notEqual(result.execution?.eligible,false);
+        assert.ok(manifest.tests.every(test=>test.restoration?.version===1&&test.disposition==='automatic'));
+        assert.equal(manifest.tests.length,row.consumers);
+        assert.ok(manifest.tests.every(test=>test.fixtureEstimate.estimatedPoints>test.fixtureEstimate.lowerBoundPoints));
+    }
+});
+
 const arm = (branching = false) => ({status:'passed', tests:['a','b','c','d','e'], passed:5,
     setupMs:1000, testsMs:branching?7000:10000, totalMs:branching?8000:11000,
     phpDigest:'same', seedDigest:'seed', sourceDigest:'source', browser:'156.0.8078.80',
@@ -33,6 +75,16 @@ test('performance comparisons reject incomplete, mismatched or degraded runs', (
     }
     const result=summarize([{row:'positive',pair:1,...good},{row:'positive',pair:2,...good},{row:'positive',pair:3,...good}]);
     assert.equal(result.rows[0].samples,3);assert.equal(result.rows[0].allTestsFasterByTenPercent,true);
+});
+
+test('performance comparisons reject driver OOM events and unequal memory limits', () => {
+    const resources={driverMemoryLimitBytes:3*1024**3,driverMemoryEvents:{oom:0,oom_kill:0}};
+    const linear={...arm(),resources},branching={...arm(true),resources};
+    assert.ok(comparePair(linear,branching).testsSpeedup>0);
+    for(const patch of [{driverMemoryLimitBytes:2*1024**3},
+        {driverMemoryEvents:{oom:1,oom_kill:0}},{driverMemoryEvents:{oom:1,oom_kill:1}}]) {
+        assert.throws(()=>comparePair(linear,{...branching,resources:{...resources,...patch}}));
+    }
 });
 
 test('calibration uses matching successful source prefixes and never invents unmeasured reset costs', t => {

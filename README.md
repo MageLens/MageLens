@@ -33,7 +33,7 @@ setup and configuration data. Smaller databases reduce checkpoint storage and
 the time needed to save and restore state.
 
 The [default baseline](branching-baseline.json) starts conservatively at about
-126 seconds of shared steps for two tests. Calibrate it for your project's
+107 seconds of shared steps for two tests. Calibrate it for your project's
 database and machine, especially before running branching in CI:
 
 ```bash

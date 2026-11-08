@@ -6,7 +6,7 @@ use crate::baseline::Baseline;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Stage {
     pub id: String,
@@ -14,7 +14,7 @@ pub struct Stage {
     pub checkpoint: bool,
     pub units: Option<u64>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Input {
     pub stages: Vec<Stage>,

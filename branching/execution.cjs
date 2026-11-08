@@ -91,7 +91,18 @@ function createExecution({
     }
 
     const reuse = approach === config.APPROACH.branching;
-    async function restoreCheckpoint(node, ref) {
+    function nextPrefetch(next) {
+        if (!next || !provider.prefetch || graph.chain(next.parent).some(node => failed.has(node.id))) return null;
+        for (const node of graph.chain(next.parent).reverse()) {
+            const ref = reuse && store.available.get(node.id);
+            if (!ref) continue;
+            try { store.verify(ref, graph.key(node.id)); }
+            catch { continue; } // Normal restore owns invalidation/fallback.
+            return {directory: path.join(ref.directory, config.files.payload), next: next.id};
+        }
+        return {directory: null, next: next.id};
+    }
+    async function restoreCheckpoint(node, ref, next) {
         const id = node.id;
         const restoreStart = performance.now();
         emit(protocol.event.nodeStart, {node: id, operation: protocol.operation.restore});
@@ -100,7 +111,10 @@ function createExecution({
             await fault?.('beforeRestore', {ref, stage: id});
             // Recheck after external delays/fault hooks, before consuming any bytes.
             store.verify(ref, graph.key(id));
-            await measured('restore', () => provider.restore(path.join(ref.directory, config.files.payload)));
+            // Only published snapshots for an actual next consumer may be prepared
+            // while the current browser is being reconstructed.
+            const prefetch = nextPrefetch(next);
+            await measured('restore', () => provider.restore(path.join(ref.directory, config.files.payload), {prefetch}));
             await measured('readiness', () => node.assert(provider, node.inputs));
             if (manifest.restoreValidation === config.checkpoint.restoreValidation && !ref.restoreValidated) {
                 await measured('firstReuseValidation', async () => {
@@ -126,17 +140,17 @@ function createExecution({
         return null;
     }
 
-    async function resolve(id) {
+    async function resolve(id, next) {
         const node = graph.stages.get(id);
         for (const ancestor of graph.chain(id))
             if (failed.has(ancestor.id)) throw new ParentFailure(ancestor.id, failed.get(ancestor.id));
         const ref = reuse && store.available.get(id);
         if (ref) {
-            const restored = await restoreCheckpoint(node, ref);
+            const restored = await restoreCheckpoint(node, ref, next);
             if (restored) return restored;
         }
         const prior = node.parent
-            ? await resolve(node.parent)
+            ? await resolve(node.parent, next)
             : await measured('reset', async () => {
                   const time = performance.now();
                   await provider.reset();
@@ -178,7 +192,7 @@ function createExecution({
                 invalidate(id, 'capture', protocol.operation.capture, error);
                 // A failed validation may have partially mutated the runtime. Replay
                 // from a verified ancestor, never continue from that partial restore.
-                return resolve(id);
+                return resolve(id, next);
             }
         }
         return prior;
@@ -193,23 +207,12 @@ function createExecution({
         const first = report.segments.length;
         emit(protocol.event.specStart, {node: spec.id, index});
         try {
-            const state = await resolve(spec.parent);
             const next = selected[index + 1];
-            if (next && provider.prefetch && !graph.chain(next.parent).some(node => failed.has(node.id))) {
-                // Prepare the deepest published ancestor the next test can use.
-                // Capture publication, cost filtering and nested branches have
-                // already been resolved; no separate speculative schedule.
-                let directory = null;
-                for (const node of graph.chain(next.parent).reverse()) {
-                    const ref = reuse && store.available.get(node.id);
-                    if (!ref) continue;
-                    try { store.verify(ref, graph.key(node.id)); }
-                    catch { continue; } // Normal restore owns invalidation/fallback.
-                    directory = path.join(ref.directory, config.files.payload);
-                    break;
-                }
-                await provider.prefetch({directory, next: next.id});
-            }
+            const state = await resolve(spec.parent, next);
+            // Resolve can publish a deeper checkpoint. The provider deduplicates
+            // the earlier import or settles it before preparing that new snapshot.
+            const prefetch = nextPrefetch(next);
+            if (prefetch) await provider.prefetch(prefetch);
             result.parentCheckpoint = state.parent;
             result.lineage = [...state.lineage, await measured('suffix', () => segment(spec, 'Spec'))];
             const observed = new Set(report.segments.slice(first).map((item) => item.id));

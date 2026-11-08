@@ -5,6 +5,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {assess} = require('./performance/branching/ci-report.cjs');
+test('CI schedules every reusable performance matrix row', () => {
+    const fs=require('node:fs'),path=require('node:path');
+    const {matrix}=require('./performance/branching/matrix.cjs');
+    const workflow=fs.readFileSync(path.join(__dirname,'../.github/workflows/ci.yml'),'utf8');
+    const rows=workflow.match(/row: \[([^\]]+)\]/)[1].split(',').map(row=>row.trim());
+    assert.deepEqual(rows.sort(),matrix.map(row=>row.id).sort());
+});
 const environment = {
     provider: 'github-actions',
     runner: 'ubuntu-24.04',
