@@ -8,6 +8,8 @@ License: see LICENSE in the repository root.
 
 ## 1.9.2 - 2026-11-08
 
+- Update Cypress code coverage to 4.1.3 and pin patched glob/minimatch dependencies in the coverage toolchain.
+- Recover from temporary PIE and Electron download failures during image builds, and verify snapshot tools before packaging Cypress.
 - Use stable Chrome for Testing 157.0.8103.38 for Cypress, Playwright and browser recovery checks, with verified Linux x64 and ARM64 archive checksums.
 
 Rerun installation with your saved platform, theme and runner selections to rebuild the browser runner, then regenerate coverage reports.
