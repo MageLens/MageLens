@@ -119,23 +119,39 @@ plans a repository-owned two-test fixture and checks its repeated-prefix graph.
 
 The planner parses JavaScript/TypeScript into a normalized syntax tree before
 matching shared prefixes. Comments, formatting and type-only assertions do not
-change matching; literal values and preceding setup remain significant. Rust
-follows local imports, helpers, page objects, fixture dependencies and bounded
-loops, then assigns versioned operation points from
+change matching; literal values and preceding setup remain significant. Fixed
+array registrations using `for...of` or `forEach`, static template titles and
+unnamed suites are collected without executing JavaScript. Parameter values stay
+part of checkpoint identity. Runtime-generated inventories remain explicit native
+collection diagnostics; `assessment.analysis.collectionComplete` reports this.
+Rust follows local and installed dependency imports, re-exports, JSON data, recursive
+helpers, inherited page objects, fixture dependencies, hooks and bounded loops,
+then assigns versioned operation points from
 [`points.rs`](../branching/planner/src/points.rs). No per-test weight callbacks or
 runtime calibration are required. Fixture setup and shared test steps are assessed
 together; worker setup and fixture teardown are excluded from reusable work.
 
-Manifests expose statement estimates, unresolved-analysis reasons and the source
-cost plan under `assessment`. Unknown work has an explicit incomplete estimate
-and cannot justify a checkpoint. These are static forecasts, not measured test
-durations. A profitable source prefix still needs a supported execution boundary:
+Use a source root containing the tests, their helpers and installed `node_modules`
+for dependency analysis. Reached dependency files and package metadata participate
+in source validation; unrelated packages are not scanned. Missing dependencies
+are reported explicitly. The analyzer reads source without executing imported code.
+
+Manifests expose minimum/maximum statement estimates, structured issues and the
+source cost plan under `assessment`. `analysisComplete` means the analyzer could
+model the statement; `complete` means its modeled cost is exact. The CLI and
+`assessment.analysis` summarize statements, fixtures and worker setup separately.
+Runtime-dependent branches retain cost ranges; unresolved work contributes no minimum credit but does not erase known
+work in the same prefix. Candidate diagnostics distinguish prefixes below the
+modeled checkpoint cost from those whose benefit remains uncertain. These are
+static forecasts of framework operations, not measured test durations or arbitrary
+JavaScript CPU costs. A profitable source prefix still needs a supported execution boundary:
 cost analysis does not restore arbitrary JavaScript closures or process state.
 The suite report includes both this assessment and the actual execution decision.
 
 `branching/planner/tests/assessment.rs` exercises the real CLI with independent
 source projects, including normalization, inputs, imported helpers, fixtures,
-control flow, cost selection and stale-source invalidation.
+control flow, installed dependency resolution, library state mutation, cost selection
+and stale-source invalidation.
 
 `tests/branching-automatic.test.cjs` covers automatic execution, selection,
 source changes, failure cleanup, last-consumer lifetime and retained evidence
@@ -153,6 +169,27 @@ qualified `native.splitSafe: true`, matching Playwright launch/context settings 
 project teardown or managed web server. Global setup must not return per-process
 cleanup when splitting execution. Skipped and missing tests remain visible
 and do not qualify as a fully passed run.
+
+Set `maxCheckpointsPerTest` in the project configuration to change the checkpoint
+budget (a positive integer, default **9**). Rust selection and the execution guard
+use the same budget. The limit applies to each test's ancestor path, not the number
+of tests or the whole suite. Excess candidates produce warnings; their actions
+still execute, and AUTO prioritizes the checkpoints with greater estimated savings.
+
+The reusable [performance matrix](performance/branching/README.md) compares
+isolated linear and AUTO runs on real Luma orders. It uses a budget of **4** and
+includes short, unrelated, highly reused and twelve-boundary journeys. It records
+setup, tests including checkpoint overhead, total, memory peaks and cleanup, with
+PHP-FPM and database parity checks before accepting measurements.
+
+Fresh projects use the versioned checkpoint-cost defaults in
+[`baseline.json`](../branching/planner/src/baseline.json), with **2 × overhead × 1.20**
+as the conservative cost. Successful, fully cleaned checkpoint runs update
+operation averages for later runs by default; the current plan stays unchanged.
+Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
+`./bin/run-coverage --branching --disposable --calibrate MANIFEST.json CONFIG.cjs COW_STORAGE`
+to measure and replace the project baseline. Both modes retain overhead history
+and flag increases before averaging; see the performance matrix documentation.
 
 ## Dashboard self-tests and self-coverage
 
@@ -176,6 +213,8 @@ it needs neither Magento nor a planner binary inside the browser image.
 The application runner and production planner images are unchanged. The required
 branching CI job runs this self-test and the real MariaDB/Chrome provider check
 on private XFS reflink storage.
+The provider check also verifies that restored browser pages wait for deferred
+initialization and fail within the configured timeout when requests cannot settle.
 
 The Playwright checks use pinned Chrome for Testing and real engine execution
 with a small contract provider. They cover active nodes, depth colors, edges,
@@ -196,9 +235,8 @@ Each invocation creates a new `.runtime/branching-dashboard-self-test/` folder:
 - `rust-coverage/html/index.html`, `coverage.json`, `summary.json` and raw LLVM
   profiles: native planner coverage from the commands exercised by these
   Playwright checks. Third-party crate code is excluded; native Rust and
-  JavaScript percentages remain separate. `baseline.rs` remains in the source-hash
-  inventory but has no LLVM executable regions (constants and a derived-data
-  type); the report records this explicitly.
+  JavaScript percentages remain separate. Nested estimator modules are included;
+  source fingerprints also cover the embedded baseline and limit configuration.
 - Browser screenshots, including failure screenshots when needed.
 
 `npm run test:branching-dashboard` is the underlying command inside a prepared
