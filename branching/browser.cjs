@@ -11,11 +11,10 @@ class PlaywrightState {
     constructor(browser, {baseURL, timeout = 30000, contextOptions = {}}) {
         this.browser = browser; this.baseURL = baseURL; this.timeout = timeout;
         this.options = {...contextOptions, baseURL, serviceWorkers: 'block'};
-        this.cache = new CodeCache(new URL(baseURL).origin);
+        this.cache = new CodeCache();
         this.requests = new Map(); this.errors = []; this.sessions = new Map(); this.sockets = new Set();
     }
     check() {
-        if (this.cache.errors.length) throw new Error(`Static cache failure: ${this.cache.errors[0]}`);
         if (this.errors.length) throw new Error(`Application browser error: ${this.errors[0]}`);
         if (this.context.pages().length !== 1) throw new Error('branching supports exactly one open page at a checkpoint');
     }
@@ -25,7 +24,7 @@ class PlaywrightState {
         const session = await this.context.newCDPSession(page);
         this.sessions.set(page, session);
         await session.send('Network.enable');
-        await session.send('Network.setCacheDisabled', {cacheDisabled: true});
+        await this.cache.install(session);
         await session.send('Page.enable');
         session.on('Network.requestWillBeSent', ({requestId, loaderId}) => this.requests.set(requestId, loaderId));
         session.on('Network.loadingFinished', ({requestId}) => this.requests.delete(requestId));
@@ -43,7 +42,6 @@ class PlaywrightState {
         if (this.context) await this.context.unrouteAll({behavior: 'wait'});
         const restored = await restoreContext(this.browser, this.context, saved.storage, this.options);
         this.context = restored.context; this.requests.clear(); this.sessions.clear(); this.sockets.clear(); this.frozen = false;
-        await this.cache.install(this.context);
         this.page = await this.context.newPage();
         this.page.setDefaultTimeout(this.timeout); this.page.setDefaultNavigationTimeout(this.timeout);
         await this.track(this.page);

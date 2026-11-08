@@ -38,7 +38,7 @@ async function prepareRetained(backend, {run, directory}) {
     const inventory = b.controlSql('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA').split('\n');
     assert.ok(b.schemas.every(s => !inventory.includes(s)), 'Run schema already exists');
     b.control = path.join(directory, 'control'); fs.mkdirSync(b.control);
-    for (const name of ['fastcgi.php', 'retained-probe.php', 'retained-env.php']) {
+    for (const name of ['fastcgi.php', 'retained-probe.php', 'retained-env.php', 'retained-queues.php']) {
         fs.copyFileSync(path.join(__dirname, 'configs', name), path.join(b.control, name));
     }
     fs.writeFileSync(path.join(b.control, 'schemas.json'), JSON.stringify(['magento', ...b.schemas]));

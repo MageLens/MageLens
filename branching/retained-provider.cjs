@@ -14,9 +14,9 @@ class RetainedProvider extends BranchingProvider {
         this.identity.retained = implementationDigest([__filename, require.resolve('./storage.cjs')]);
     }
     async prefetch({directory}) {
-        this.backend.prefetch(path.join(directory ?? this.base, 'database', 'snapshot.sql'));
+        await this.backend.prefetch(path.join(directory ?? this.base, 'database', 'snapshot.sql'));
     }
-    async restore(directory) {
+    async restore(directory, {prefetch = null} = {}) {
         if (this.context) await this.browserState.freeze();
         await this.backend.drain();
         if (this.context) for (const page of this.context.pages()) await page.close();
@@ -26,6 +26,7 @@ class RetainedProvider extends BranchingProvider {
         }
         await this.backend.resetCaches();
         await this.backend.start();
+        if (prefetch) await this.prefetch(prefetch);
         await this.browserState.open(JSON.parse(fs.readFileSync(path.join(directory, 'browser.json'), 'utf8')));
     }
     async cleanup() {

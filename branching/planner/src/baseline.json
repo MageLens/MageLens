@@ -1,13 +1,13 @@
 {
-  "version": "pw1.65-calibrated-checkpoint-2026-11-07-v5",
+  "version": "pw1.65-calibrated-checkpoint-2026-11-08-v6",
   "unitMs": 55,
-  "captureMs": 3600,
-  "restoreMs": 11700,
-  "releaseMs": 7,
+  "captureMs": 3000,
+  "restoreMs": 8200,
+  "releaseMs": 12,
   "resetMs": 11700,
   "firstResetMs": 16600,
-  "backendMs": 20400,
+  "backendMs": 16600,
   "overheadMultiplier": 2,
-  "overheadMargin": 0.20,
+  "overheadMargin": 0.2,
   "minSavingMs": 50
 }

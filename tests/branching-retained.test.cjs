@@ -11,6 +11,8 @@ const {execute} = require('./fixtures/branching/engine.cjs');
 const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
 const {SchemaDatabase, foreignTransactions} = require('../branching/retained-database.cjs');
 const {replaceContents} = require('../branching/storage.cjs');
+const {fileDigest} = require('../branching/identity.cjs');
+const {RetainedProvider} = require('../branching/retained-provider.cjs');
 
 function temporary(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-retained-'));
@@ -79,4 +81,49 @@ test('live directory restoration refuses unowned destinations and symlinked stat
     assert.throws(()=>replaceContents(source,destination,root),/Unsupported state file/);
     assert.throws(()=>replaceContents(source,os.tmpdir(),root),/unowned/);
     assert.equal(fs.readdirSync(destination).length,0);
+});
+test('early preparation follows the next consumer and stops after the last test', async t => {
+    const provider = new FixtureProvider(), options = [];
+    const restore = provider.restore.bind(provider);
+    provider.prefetch = async () => {};
+    provider.restore = async (directory, next) => {options.push(next?.prefetch);await restore(directory);};
+    const report = await execute({root:temporary(t),workflow:fixtureWorkflow(),provider,checkpointLifetime:'last-consumer'});
+    assert.equal(report.status,'passed');
+    const restores = options.filter(value=>value !== undefined);
+    assert.equal(restores.length,2);
+    assert.equal(restores[0].next,'coupon-1');
+    assert.equal(restores[1],null,'The final consumer must not start another import');
+    assert.equal(report.releases.length,report.checkpoints.length);
+});
+test('inactive-schema preparation deduplicates a snapshot and settles a different one before replacement', async t => {
+    const root=temporary(t),file=path.join(root,'snapshot.sql');fs.writeFileSync(file,'current');
+    const database=new SchemaDatabase({diagnostics:{discardedPrefetches:0}});
+    let settled=false,imports=0;
+    database.job={key:fileDigest(file),promise:Promise.resolve().then(()=>{settled=true;})};
+    database.prefetch=()=>{assert.equal(settled,true);imports++;};
+    await database.prepare(file);assert.equal(imports,0);
+    fs.writeFileSync(file,'new descendant');
+    await database.prepare(file);assert.equal(imports,1);
+    assert.equal(database.backend.diagnostics.discardedPrefetches,1);
+});
+test('early import failures propagate for both duplicate and replacement snapshots', async t => {
+    const file=path.join(temporary(t),'snapshot.sql');fs.writeFileSync(file,'snapshot');
+    for (const key of [fileDigest(file),'different']) {
+        const database=new SchemaDatabase({diagnostics:{discardedPrefetches:0}});
+        database.job={key,promise:Promise.resolve(),error:new Error('import failed')};
+        database.prefetch=()=>assert.fail('A failed import must not be overwritten');
+        await assert.rejects(database.prepare(file),/import failed/);
+    }
+});
+test('retained restore starts next preparation after the schema switch and before browser reconstruction', async t => {
+    const directory=temporary(t),events=[];
+    fs.writeFileSync(path.join(directory,'browser.json'),'{}');
+    const provider=Object.create(RetainedProvider.prototype);
+    provider.backend={paths:{},drain:async()=>{},stop:async()=>{},resetCaches:async()=>{},start:async()=>events.push('switch')};
+    provider.browserState={open:async()=>events.push('browser')};
+    provider.prefetch=async options=>{assert.equal(options.next,'next');events.push('prefetch');};
+    await provider.restore(directory,{prefetch:{directory,next:'next'}});
+    assert.deepEqual(events,['switch','prefetch','browser']);
+    events.length=0;await provider.restore(directory);
+    assert.deepEqual(events,['switch','browser']);
 });

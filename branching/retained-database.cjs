@@ -60,6 +60,20 @@ class SchemaDatabase {
         });
         b.diagnostics.imports++;
     }
+    async prepare(file) {
+        if (this.job) {
+            if (this.job.key === fileDigest(file)) {
+                if (this.job.error) throw this.job.error;
+                return;
+            }
+            // A newly published descendant can supersede early preparation.
+            // Never write two snapshots into the same inactive schema at once.
+            const error = await this.settle();
+            if (error) throw error;
+            this.backend.diagnostics.discardedPrefetches++;
+        }
+        this.prefetch(file);
+    }
     async consume(file) {
         const b = this.backend, key = fileDigest(file), started = performance.now();
         let job = this.job;

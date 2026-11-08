@@ -11,10 +11,7 @@ const {SchemaDatabase, foreignTransactions} = require('./retained-database.cjs')
 const {prepareRetained} = require('./retained-workspace.cjs');
 const {implementationDigest} = require('./identity.cjs');
 const {settings} = require('./configs/magento.cjs');
-
-const consumers = new Set(['sales.rule.update.coupon.usage', 'sales.rule.quote.trigger.recollect',
-    'inventory.reservations.updateSalabilityStatus', 'inventory.reservations.update',
-    'inventory.indexer.sourceItem', 'inventory.indexer.stock', 'inventory.source.items.cleanup']);
+const {command} = require('./command.cjs');
 
 class RetainedMagentoBackend extends MagentoBackend {
     constructor(options) {
@@ -22,13 +19,41 @@ class RetainedMagentoBackend extends MagentoBackend {
         this.retainsServices = true;
         this.identity = {kind: 'magento-retained-two-schema-v1', base: this.identity, implementation: implementationDigest([
             __filename, ...['retained-workspace.cjs', 'retained-database.cjs', 'configs/retained-env.php',
-                'configs/retained-validate.php', 'configs/retained-probe.php', 'configs/fastcgi.php'].map(file => require.resolve('./' + file))
+                'configs/retained-validate.php', 'configs/retained-probe.php', 'configs/retained-queues.php', 'configs/fastcgi.php'].map(file => require.resolve('./' + file))
         ])};
         this.database = new SchemaDatabase(this);
         this.ownedSchemas = []; this.activeSchema = 'magento';
         this.warmReady = false; this.ingressPaused = false;
+        this.containers = new Map();
         this.diagnostics = {imports: 0, prefetchHits: 0, discardedPrefetches: 0, importWaitMs: 0, importWorkMs: 0,
             schemaSwitches: 0, queueDrains: [], continuityChecks: 0};
+    }
+    containerId(service) {
+        if (!this.containers.has(service)) {
+            const id = super.dc(['ps', '-a', '-q', service]);
+            assert.match(id, /^[a-f0-9]{12,64}$/, 'Expected exactly one retained service container');
+            this.containers.set(service, id);
+        }
+        return this.containers.get(service);
+    }
+    dc(args, original = false) {
+        if (['up', 'down', 'rm', 'create', 'restart'].includes(args[0])) this.containers.clear();
+        const service = args[0] === 'exec' && args[1] === '-T' ? args[2] : args[1];
+        if (!original && this.warmReady && settings.services.includes(service) &&
+            ((args[0] === 'exec' && args[1] === '-T') || (['pause', 'unpause'].includes(args[0]) && args.length === 2))) {
+            const id = this.containerId(service);
+            return command('docker', args[0] === 'exec' ? ['exec', id, ...args.slice(3)] : [args[0], id], {cwd: this.workspace});
+        }
+        const result = super.dc(args, original);
+        if (this.warmReady && args.length === 2 && args[0] === 'ps' && args[1] === '-q') {
+            const active = new Set(result.split('\n'));
+            for (const id of this.containers.values()) assert.ok(active.has(id), 'Retained service container was replaced');
+        }
+        return result;
+    }
+    inspect(service) {
+        if (!this.warmReady) return super.inspect(service);
+        return JSON.parse(command('docker', ['inspect', this.containerId(service)]))[0];
     }
     controlSql(query) {
         return this.dc(['exec', '-T', 'db', 'sh', '-c',
@@ -63,18 +88,8 @@ class RetainedMagentoBackend extends MagentoBackend {
         }
     }
     async drainQueues() {
-        for (let round = 0; round < 8; round++) {
-            const pending = JSON.parse(this.dc(['exec', '-T', 'phpfpm', 'php', '/branching-control/retained-probe.php', 'queues']));
-            if (!pending.length) return;
-            for (const queue of pending) {
-                assert.equal(Number(queue.status), 2, 'Queue in progress, retry or error needs recovery');
-                assert.ok(consumers.has(queue.name), 'Queue requires a qualified checkpoint consumer: ' + queue.name);
-                const count = Number(queue.count); assert.ok(Number.isSafeInteger(count) && count > 0 && count < 10000);
-                this.dc(['exec', '-T', 'phpfpm', 'php', 'bin/magento', 'queue:consumers:start', queue.name, '--max-messages=' + count]);
-                this.diagnostics.queueDrains.push({name: queue.name, count});
-            }
-        }
-        throw new Error('Queue drain did not converge');
+        const drained = JSON.parse(this.dc(['exec', '-T', 'phpfpm', 'php', '/branching-control/retained-queues.php']));
+        this.diagnostics.queueDrains.push(...drained);
     }
     async drain() {
         if (!this.warmReady) return super.drain();
@@ -93,7 +108,7 @@ class RetainedMagentoBackend extends MagentoBackend {
     async pause() { this.database.dump(path.join(this.paths.database, 'snapshot.sql')); }
     async unpause() {} // MariaDB is never frozen in this backend.
     async stop() { this.needsImport = true; }
-    prefetch(file) { this.database.prefetch(file); }
+    prefetch(file) { return this.database.prepare(file); }
     async start() {
         assert.equal(this.inspect('db').State.StartedAt, this.databaseStartedAt, 'Database restarted during branching');
         if (this.needsImport) {

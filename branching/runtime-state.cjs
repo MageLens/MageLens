@@ -9,7 +9,7 @@ function withRuntimeState(provider,state) {
     if(!state)return provider;
     const lifecycle={
         capture:async directory=>{const snapshot=state.capture(provider);await provider.capture(directory);fs.writeFileSync(path.join(directory,'runner-state.json'),JSON.stringify(snapshot),{mode:0o600});},
-        restore:async directory=>{await provider.restore(directory);await state.restore(JSON.parse(fs.readFileSync(path.join(directory,'runner-state.json'),'utf8')),provider);},
+        restore:async (directory,options)=>{await provider.restore(directory,options);await state.restore(JSON.parse(fs.readFileSync(path.join(directory,'runner-state.json'),'utf8')),provider);},
         reset:async()=>{await state.cleanup(provider);await provider.reset();},
         normalizedState:async()=>({application:await provider.normalizedState(),runner:state.capture(provider)}),
         cleanup:async()=>{let error;try{await state.cleanup(provider);}catch(cause){error=cause;}try{await provider.cleanup();}catch(cause){error=error?new AggregateError([error,cause],'Runner and backend cleanup failed'):cause;}if(error)throw error;},

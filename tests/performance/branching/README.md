@@ -222,3 +222,7 @@ capture, one restore and release, with 2× overhead plus 20% headroom and a 50 m
 minimum saving. Fanout and nested graphs use the complete operation model;
 the two-test value is a summary, not a universal per-test cutoff. Calibration
 changes the project measurements, not the tracked root default.
+Test fixtures, shared steps, test suffixes and environment startup do not enter
+checkpoint overhead calibration. Capture is charged once, restoration per reuse,
+and provider preparation/cleanup once per checkpoint phase. The safety factor is
+already included in the displayed break-even value; do not double it again.
