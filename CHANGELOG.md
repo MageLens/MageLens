@@ -8,6 +8,8 @@ License: see LICENSE in the repository root.
 
 ## 1.9.2 - 2026-11-08
 
+- Update template coverage to 2.0.0 for parse5 security fixes in HTML/PHTML analysis, using the existing Node.js 24 runners.
+
 - Update Cypress code coverage to 4.1.3 and pin patched glob/minimatch dependencies in the coverage toolchain.
 - Recover from temporary PIE and Electron download failures during image builds, and verify snapshot tools before packaging Cypress.
 - Use stable Chrome for Testing 157.0.8103.38 for Cypress, Playwright and browser recovery checks, with verified Linux x64 and ARM64 archive checksums.
