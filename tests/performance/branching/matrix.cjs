@@ -21,7 +21,7 @@ const customer = {email:'magelens.performance@example.test', password:'MageLens-
 const discounts = [0,10,25,100,-1,5,15,20,30];
 // Luma initializes cached form keys asynchronously. Wait for the actual token
 // and cookie to agree before submitting; do not retry a rejected login.
-const loginReady = `() => {const cookie = document.cookie.split('; ').find(value => value.startsWith('form_key=')); return Boolean(cookie && cookie.length > 9 && document.querySelector('#login-form input[name="form_key"]')?.value === decodeURIComponent(cookie.slice(9)));}`;
+const loginReady = `() => {const cookie = document.cookie.split('; ').find(value => value.startsWith('form_key=')); return Boolean(cookie && cookie.length > 9 && document.querySelector('.login-container #login-form input[name="form_key"]')?.value === decodeURIComponent(cookie.slice(9)));}`;
 const quote = JSON.stringify;
 const money = value => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(value);
 const product = index => ({sku:`MLPERF-${String(index).padStart(3,'0')}`, path:`/magelens-performance-${index}.html`, name:`MageLens performance product ${index}`, price:10 + index % 7});
@@ -40,7 +40,7 @@ function renderSuite(row) {
         step(`page.locator('#email').fill(${quote(customer.email)})`);
         step(`page.locator('input[name="login[password]"]').fill(${quote(customer.password)})`);
         step(`page.waitForFunction(${loginReady})`);
-        step("page.locator('#send2').click()");
+        step("page.locator('.login-container #send2').click()");
         step("expect(page.locator('.box-information')).toBeVisible()");
         items.forEach((item,index)=>{
             step(`page.goto(${quote(item.path)})`);

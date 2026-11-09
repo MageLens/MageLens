@@ -109,10 +109,16 @@ def main():
         call(['./bin/run-coverage', '--branching', '--calibrate',
               calibration / 'manifest.json', config, cow], cwd=site, env=calibration_env)
         call([compose, 'stop', '-t', '30'], cwd=site, env=env)
+        calibration_reports = list((site / '.runtime/branching-results').glob('calibration-*.json'))
+        assert len(calibration_reports) == 1, 'Expected the one explicit CLI calibration'
+        calibrated_baseline = json.loads(calibration_reports[0].read_text())['baseline']['update']['decisionBaselineMs']
         config_file = work / 'campaign.json'
         config_file.write_text(json.dumps({**projects, 'seed': str(seed), 'cowRoot': str(Path(cow).resolve()),
             'origin': 'https://performance.test:18443/', 'coreImage': core_image,
-            'branchingImage': adapter, 'plannerBinary': str(planner), 'driverMemoryMiB': 3072}))
+            'branchingImage': adapter, 'plannerBinary': str(planner), 'driverMemoryMiB': 3072,
+            'predictorModel': os.environ.get('MAGELENS_PREDICTOR_MODEL'),
+            'predictorBaselineMs': calibrated_baseline,
+            'predictorMultiplier': float(os.environ.get('MAGELENS_PREDICTOR_MULTIPLIER', '1'))}))
         config_file.chmod(0o600)
         campaign = work / 'campaign'
         call([sys.executable, HERE / 'run.py', '--config', config_file, '--output', campaign,

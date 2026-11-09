@@ -48,6 +48,15 @@ $address->setCustomerId((int)$customer->getId())->setFirstname('MageLens')->setL
     ->setCountryId('US')->setRegion($region)->setRegionId(12)->setCity('Beverly Hills')->setPostcode('90210')
     ->setStreet(['100 Test Avenue'])->setTelephone('5550100042')->setIsDefaultShipping(true)->setIsDefaultBilling(true);
 $addresses->save($address);
+
+// A failed campaign can leave this fixture customer's cart active. Preparing
+// the fixture again must restore the empty-cart starting condition.
+$quotes = $om->get(\Magento\Quote\Model\ResourceModel\Quote\CollectionFactory::class)->create()
+    ->addFieldToFilter('customer_id', (int)$customer->getId())
+    ->addFieldToFilter('is_active', 1);
+foreach ($quotes as $quote) {
+    $om->get(\Magento\Quote\Api\CartRepositoryInterface::class)->delete($quote);
+}
 $products = $om->get(\Magento\Catalog\Api\ProductRepositoryInterface::class);
 $attributeSet = (int)$om->get(\Magento\Eav\Model\Config::class)->getEntityType('catalog_product')->getDefaultAttributeSetId();
 for ($i = 1; $i <= 80; $i++) {

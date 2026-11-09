@@ -118,6 +118,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y xfsprogs
           bash tests/ci/cow-storage.sh create "$RUNNER_TEMP/performance-cow"
+      - name: Freeze prediction model
+        env:
+          MAGELENS_PREDICTOR_MODEL_JSON: ${{ vars.MAGELENS_PREDICTOR_MODEL_JSON }}
+          MAGELENS_PREDICTOR_MODEL_GZIP_BASE64: ${{ vars.MAGELENS_PREDICTOR_MODEL_GZIP_BASE64 }}
+          MAGELENS_PREDICTOR_MODEL_SHA256: ${{ vars.MAGELENS_PREDICTOR_MODEL_SHA256 }}
+        run: node tests/ci/predictor-model.cjs
       - name: Run calibrated Mage-OS Luma checkout comparisons
         env:
           PERFORMANCE_ROW: ${{ matrix.row }}
@@ -143,7 +149,7 @@ jobs:
         with:
           name: performance-${{ matrix.row }}-attempt-${{ github.run_attempt }}
           path: ci-reports/performance/${{ matrix.row }}/
-          retention-days: 1
+          retention-days: 30
           if-no-files-found: error
   e2e:
     name: Mage-OS E2E

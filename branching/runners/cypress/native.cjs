@@ -3,13 +3,13 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
-async function invoke(configuration, directory, {list = false, tests} = {}) {
+async function invoke(configuration, directory, {list = false, tests, profile} = {}) {
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
     const config = fs.realpathSync(configuration);
     fs.mkdirSync(directory, {recursive: true});
     const run = fs.mkdtempSync(path.join(directory, 'cypress-'));
     const wrapper = path.join(path.dirname(config), `.magelens-native-${path.basename(run)}.cjs`);
-    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, selected: tests?.map(test => test.id)};
+    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, selected: tests?.map(test => test.id)};
     fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, retries: 0, e2e: {...c.e2e, retries: 0, setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
     fs.writeFileSync(input, JSON.stringify({resultFile, options: {project: path.dirname(config), configFile: wrapper, browser: 'chrome-for-testing', headed: true,
@@ -39,17 +39,24 @@ async function invoke(configuration, directory, {list = false, tests} = {}) {
                 const match = selected.filter(item => item.file === spec.spec.absolute && JSON.stringify(item.titlePath) === key)[occurrence];
                 if (!match) throw new Error('Native Cypress result does not match the selected inventory');
                 const id = match.id;
-                results.push({id, status: test.state === 'pending' ? 'skipped' : test.state,
-                    durationMs: test.attempts.reduce((sum, attempt) => sum + (attempt.wallClockDuration ?? attempt.duration ?? 0), 0),
-                    attempts: test.attempts.length, errors: test.attempts.flatMap(attempt => attempt.error ? [attempt.error] : [])});
+                results.push({id, ...testResult(test)});
             }
         }
         const errors = inventories.flatMap(item => item.errors.map(message => ({message})));
         if (result.failures) errors.push({message: result.message ?? 'Cypress failed before test completion'});
         const status = exitCode === 0 && !errors.length && results.length === selected.length && results.every(test => ['passed', 'skipped'].includes(test.status)) ? 'passed' : 'failed';
-        return {schemaVersion: 1, config: JSON.parse(fs.readFileSync(files.metadata)), tests: tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory,
+        const report = {schemaVersion: 1, config: JSON.parse(fs.readFileSync(files.metadata)), tests: tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory,
             results: list ? [] : results, status, errors, exitCode, wallMs: performance.now() - started, reportFile: resultFile,
             browser: {name: result.browserName, version: result.browserVersion}};
+        if (profile && !list) report.prediction = require('../../predictor/native.cjs').finish(run,report);
+        return report;
     } finally { fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }
 }
-module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke};
+function testResult(test) {
+    const errors = test.attempts.flatMap(attempt => attempt.error ? [attempt.error] : []);
+    if (test.displayError && !errors.length) errors.push({message: test.displayError});
+    return {status: test.state === 'pending' ? 'skipped' : test.state,
+        durationMs: test.duration ?? test.attempts.reduce((sum, attempt) => sum + (attempt.wallClockDuration ?? attempt.duration ?? 0), 0),
+        attempts: test.attempts.length, errors};
+}
+module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke, testResult};

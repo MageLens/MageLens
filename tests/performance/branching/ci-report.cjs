@@ -10,6 +10,7 @@ const {comparePair, median} = require('./analyze.cjs');
 const {matrix} = require('./matrix.cjs');
 const policy = require('./ci-policy.json');
 const references = require('./references.json');
+const predictor = require('../../../branching/predictor/index.cjs');
 
 // Only the workload and measurement contract invalidate a timing comparison.
 // Product implementation changes are what the performance gate must compare.
@@ -81,6 +82,13 @@ function assess(row, pairs, environment, provenance, reference) {
         improvements: [],
         matrixRefreshRequired: false
     };
+    const samples = pairs.flatMap(pair => ['linear', 'branching'].map(arm => pair[arm].prediction).filter(Boolean));
+    result.prediction = {...predictor.evaluate(samples), expected: pairs.length * 2, missing: pairs.length * 2 - samples.length};
+    if (result.prediction.missing) result.prediction.status = 'incomplete';
+    // Sanitized numeric observations permit later training; never upload source,
+    // credentials, paths or parser diagnostics from a private project.
+    result.predictionSamples = samples.map(({predictionError, ...sample}) => ({...sample,
+        predictionError: predictionError ? {code: 'ESTIMATION_FAILED', statusCode: 500} : null}));
     if (!reference || JSON.stringify(reference.environment) !== JSON.stringify(environment)) {
         result.status = 'baseline-required';
         result.matrixRefreshRequired = true;
@@ -153,7 +161,9 @@ function main() {
     );
     fs.mkdirSync(output, {recursive: true});
     fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
-    const summary = `Branching performance ${row}: ${result.status}. Matrix refresh required: ${result.matrixRefreshRequired}.\n`;
+    const quality = result.prediction;
+    const summary = `Branching performance ${row}: ${result.status}. Matrix refresh required: ${result.matrixRefreshRequired}.\n` +
+        `Predictor: ${quality.status}; ${quality.samples}/${quality.expected} scored; raw p90 error ${quality.raw.p90AbsolutePercentError ?? 'unavailable'}%; calibrated p90 error ${quality.p90AbsolutePercentError ?? 'unavailable'}%; bias ${quality.biasMs ?? 'unavailable'} ms.\n`;
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
     if (result.matrixRefreshRequired)
         console.log(

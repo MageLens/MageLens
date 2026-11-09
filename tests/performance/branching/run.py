@@ -155,6 +155,16 @@ class Campaign:
         directory.mkdir()
         suite = directory / 'suite'
         run(self.node(HERE / 'generate.cjs', suite, row))
+        prediction_context = directory / 'prediction-context.json'
+        save(prediction_context, {'group': row, 'sourceFamily': 'performance-matrix',
+             'extraFeatures': {'execution.branching': int(arm == 'branching')},
+             'baselineMs': self.config.get('predictorBaselineMs'),
+             'manualMultiplier': self.config.get('predictorMultiplier', 1),
+             'environment': {'boundary': 'first-test-through-driver-cleanup', 'browser': self.browser,
+                             'phpDigest': self.php_digest, 'seedDigest': self.seed_digest,
+                             'driverMemoryMiB': self.driver_memory_mib}})
+        predictor_args = [self.config['predictorModel']] if self.config.get('predictorModel') else []
+        run(self.node(HERE / 'predictor.cjs', 'capture', directory, prediction_context, *predictor_args))
         self.reset(arm, directory)
         for other in self.sites:
             assert all(not self.inspect(other, service)['State']['Running'] for service in SERVICES), 'Start both arms stopped'
@@ -229,6 +239,8 @@ class Campaign:
                       'resources': report['benchmarkResources'], 'baseline': report.get('baseline')}
             if planner_peak is not None:
                 record['resources']['plannerCgroupPeakBytes'] = planner_peak
+            save(directory / 'timing.json', record)
+            record['prediction'] = json.loads(output(self.node(HERE / 'predictor.cjs', 'complete', directory, directory / 'timing.json')))
             save(directory / 'timing.json', record)
             print(json.dumps({'row': row, 'pair': pair, 'arm': arm, **record}), flush=True)
             return record

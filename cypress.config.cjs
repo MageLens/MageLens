@@ -29,6 +29,7 @@ module.exports = defineConfig({
                 });
             } else {
                 require('@cypress/code-coverage/task')(on, config);
+                require('./branching/predictor/browser.cjs').installCypress(on, config);
             }
             return config;
         }

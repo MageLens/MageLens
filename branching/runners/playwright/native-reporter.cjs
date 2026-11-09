@@ -16,6 +16,18 @@ class NativeReporter {
                 selector: `[${project.name}] › ${path.relative(config.rootDir, test.location.file).replaceAll(path.sep, '/')} › ${test.titlePath().slice(3).join(' › ')}`,
                 expectedStatus: test.expectedStatus, annotations: test.annotations};
         });
+        if(process.env.MAGELENS_NATIVE_PROFILE) {
+            this.profile=JSON.parse(process.env.MAGELENS_NATIVE_PROFILE);
+            fs.mkdirSync(this.profile.directory,{recursive:true});
+            const timing=require('../../predictor/native.cjs');
+            const lifecycle=require('../../predictor/playwright.cjs');
+            const loaded=new Map(suite.allTests().filter(test=>test.expectedStatus!=='skipped').map(test=>[test.id,lifecycle.describe(test)]));
+            const collect=timing.collector(this.profile,this.profile.directory,config.rootDir);
+            for(const file of new Set(this.tests.map(test=>test.file)))collect({file,hooks:[],lifecycle:'playwright-loaded-fixtures/v1',
+                files:this.tests.filter(test=>test.file===file).flatMap(test=>loaded.get(test.id)?.files ?? []),
+                tests:this.tests.filter(test=>test.file===file).map(test=>({...test,titlePath:[],
+                    ...(loaded.get(test.id) ?? {timingSource:''})}))});
+        }
     }
     onTestEnd(test, result) {
         const previous = this.results.get(test.id);
@@ -28,6 +40,7 @@ class NativeReporter {
     onEnd(result) {
         const report = {schemaVersion: 1, config: this.config, tests: this.tests ?? [], results: [...this.results.values()],
             status: result.status, durationMs: result.duration, errors: this.errors};
+        if(this.profile)report.prediction=require('../../predictor/native.cjs').finish(this.profile.directory,report);
         fs.writeFileSync(process.env.MAGELENS_NATIVE_REPORT, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
     }
 }

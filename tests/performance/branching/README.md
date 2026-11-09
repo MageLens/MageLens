@@ -226,3 +226,7 @@ Test fixtures, shared steps, test suffixes and environment startup do not enter
 checkpoint overhead calibration. Capture is charged once, restoration per reuse,
 and provider preparation/cleanup once per checkpoint phase. The safety factor is
 already included in the displayed break-even value; do not double it again.
+
+The experimental [timing predictor](../../../branching/predictor/README.md) records
+pre-run forecasts and CI errors. Each run freezes its model and planning baseline;
+post-run operation measurements can improve the baseline for the next run.

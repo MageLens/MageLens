@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, search, visitBlog, waitForBlog, storefrontMessage} from './support';
+import {fixtures, headers, get, search, visitBlog, waitForBlog, waitForStorefront, storefrontMessage} from './support';
 
 describe('Blog storefront', () => {
     it('searches, filters, paginates, reads articles, and retains favorites', () => {
@@ -73,6 +73,7 @@ describe('Blog storefront', () => {
                 .its('status').should('equal', 404);
         }
         cy.visit('/blog/post/view/slug/' + f.prefix + 'article-1');
+        waitForStorefront();
         get('comment-form').invoke('attr', 'action').then(url => {
             cy.intercept('POST', url).as('rejectedComment');
         });

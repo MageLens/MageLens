@@ -12,6 +12,14 @@ const {install} = require('../branching/runners/cypress/native-plugin.cjs');
 const {open} = require('../branching/runners/cypress/adapter.cjs');
 const {CypressState} = require('../branching/runners/cypress/browser.cjs');
 
+test('native Cypress preserves version 16 durations and failure details', () => {
+    const {testResult} = require('../branching/runners/cypress/native.cjs');
+    assert.deepEqual(testResult({state:'failed',duration:74785,displayError:'Shipment count mismatch',attempts:[{state:'failed'}]}),
+        {status:'failed',durationMs:74785,attempts:1,errors:[{message:'Shipment count mismatch'}]});
+    assert.deepEqual(testResult({state:'passed',duration:1200,displayError:null,attempts:[{state:'passed'}]}),
+        {status:'passed',durationMs:1200,attempts:1,errors:[]});
+});
+
 test('Cypress rejects unsupported lifecycle and non-JSON configuration before browser startup', async () => {
     for (const e2e of [{supportFile: 'support.js'}, {supportFile: false, setupNodeEvents() {}}, {supportFile: false, testIsolation: false}])
         await assert.rejects(open({}, {config: {e2e}}), /test isolation.*support hooks/);
@@ -98,4 +106,39 @@ test('Cypress native plugin composes hooks and suppresses execution hooks during
         if (list) assert.equal(events.has('before:run'), false);
         else { await events.get('before:run')(); assert.deepEqual(calls, ['first', 'second']); }
     }
+});
+
+for (const selectedOnly of [false,true]) test(`Cypress profiling preserves native registrations and snapshots before project hooks (selection: ${selectedOnly})`, () => {
+    const vm = require('node:vm'), before = [], after = [], registrations = [], tasks = [];
+    const context = {module:{exports:{}}, Cypress:{spec:{absolute:'/suite/example.cy.js'}},
+        cy:{task(name, value) { tasks.push({name,value:structuredClone(value)}); return Promise.resolve(null); }}};
+    for (const name of ['describe','context']) context[name] = (_,callback) => callback();
+    for (const name of ['it','specify']) {
+        context[name] = (...args) => registrations.push(args);
+        context[name].skip = context[name];
+    }
+    context.before = callback => before.push(callback);
+    context.after = callback => after.push(callback);
+    context.beforeEach = context.afterEach = callback => registrations.push(callback);
+    vm.runInNewContext(fs.readFileSync(require.resolve('../branching/runners/cypress/native-support.cjs'),'utf8'),context);
+    const selected=selectedOnly?[context.module.exports.identity('/suite/example.cy.js',['suite','journey'],0)]:undefined;
+    context.module.exports.install({profile:true,selected});
+    const hook = () => { throw Error('Must not execute project code while registering'); };
+    context.describe('suite', () => {
+        context.before(hook);
+        if(selectedOnly) context.it('unselected',()=>{});
+        context.it('journey',hook);
+    });
+    assert.equal(before[1],hook);
+    assert.equal(registrations[0][1],hook);
+    return before[0]().then(() => {
+        assert.equal(tasks[0].name,'magelens:timing:prepare');
+        assert.equal(tasks[0].value.tests.length,1);
+        assert.match(tasks[0].value.tests[0].timingSource,/Must not execute/);
+        assert.deepEqual(tasks[0].value.hooks[0].scope,['suite']);
+        return after[0]();
+    }).then(() => {
+        assert.equal(tasks[1].name,'magelens:inventory');
+        assert.equal(tasks[1].value.tests[0].timingSource,undefined);
+    });
 });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {test, expect, fixtures, headers, get, visitBlog, waitForBlog, search, fillComment, storefrontMessage} = require('./support');
+const {test, expect, fixtures, headers, get, visitBlog, waitForBlog, waitForStorefront, search, fillComment, storefrontMessage} = require('./support');
 
 test.describe('Blog storefront', () => {
     test('searches, filters, paginates, reads articles, and retains favorites', async ({page}) => {
@@ -68,6 +68,7 @@ test.describe('Blog storefront', () => {
             expect((await page.request.get('/blog/post/view/slug/' + f.prefix + slug, {headers: headers()})).status()).toBe(404);
         }
         await page.goto('/blog/post/view/slug/' + f.prefix + 'article-1');
+        await waitForStorefront(page);
         const action = await get(page, 'comment-form').getAttribute('action');
         // Keep the forged POST, redirect and rejection cookie in one browser navigation.
         const response = page.waitForResponse(response => response.url() === action && response.request().method() === 'POST');

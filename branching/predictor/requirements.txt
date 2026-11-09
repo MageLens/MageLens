@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+scikit-learn==1.7.2
+numpy==2.2.6
+scipy==1.15.3
+joblib==1.5.2
+threadpoolctl==3.6.0

@@ -40,9 +40,9 @@ test('committed browser dependencies and locks match the central version setting
     assert.equal(lock.packages[''].version, manifest.version, 'Root package versions must match');
     const runner = process.env.MAGELENS_RUNNER || 'cypress';
     const selected = Object.entries(browserPackages).filter(([key]) => runner === 'cypress' ? key !== 'PLAYWRIGHT_VERSION' : !['CYPRESS_VERSION', 'CYPRESS_CODE_COVERAGE_VERSION'].includes(key));
-    const lintPackages = ['eslint', '@eslint/js', 'globals'];
-    assert.deepEqual(Object.keys(manifest.devDependencies).sort(), [...selected.map(([, name]) => name), ...lintPackages].sort());
-    for (const name of lintPackages) {
+    const toolingPackages = ['eslint', '@eslint/js', 'globals', '@babel/parser'];
+    assert.deepEqual(Object.keys(manifest.devDependencies).sort(), [...selected.map(([, name]) => name), ...toolingPackages].sort());
+    for (const name of toolingPackages) {
         const version = manifest.devDependencies[name];
         assert.match(version, /^\d+\.\d+\.\d+$/, `${name} must be pinned`);
         assert.equal(lock.packages[''].devDependencies[name], version, name);
