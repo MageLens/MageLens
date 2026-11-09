@@ -5,6 +5,7 @@
 name: CI
 on:
   pull_request:
+    types: [labeled]
 permissions:
   contents: read
   actions: read
@@ -13,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   static:
+    if: github.event.label.name == 'run-ci'
     name: Static syntax and workflow checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -27,6 +29,7 @@ jobs:
       - run: node tests/ci/static.cjs
       - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
   integration:
+    if: github.event.label.name == 'run-ci'
     name: Integration and PHP unit checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -59,6 +62,7 @@ jobs:
           php tests/collection.test.php
           # PCOV/report tests run in each E2E case with the production PHP image.
   copyright:
+    if: github.event.label.name == 'run-ci'
     name: Copyright and license notices
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -73,6 +77,7 @@ jobs:
       - run: npm run check:copyright
       - run: node --test tests/copyright.test.cjs
   e2e:
+    if: github.event.label.name == 'run-ci'
     name: Mage-OS E2E
     strategy:
       fail-fast: false
@@ -107,6 +112,7 @@ jobs:
       runner: ${{ matrix.runner }}
       sha: ${{ github.sha }}
   magento:
+    if: github.event.label.name == 'run-ci'
     name: Magento E2E
     strategy:
       fail-fast: false
@@ -125,7 +131,7 @@ jobs:
       sha: ${{ github.sha }}
   gate:
     name: Required CI gate
-    if: always()
+    if: always() && github.event.label.name == 'run-ci'
     needs: [static, integration, copyright, e2e, magento]
     runs-on: ubuntu-latest
     timeout-minutes: 10
