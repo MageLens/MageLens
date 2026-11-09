@@ -32,7 +32,7 @@ It makes those gaps visible across PHP, JavaScript and templates, with **low cov
 
 ## Quick start
 
-On Linux, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
+On Linux or macOS with Apple Silicon, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
 
 ```bash
 bash -c "$(wget -qO- https://raw.githubusercontent.com/MageLens/MageLens/main/bootstrap.sh)" --
@@ -55,7 +55,7 @@ The command above installs Magento Open Source with Luma and Cypress. Add `--mag
 
 On Windows, run the commands from Ubuntu 24.04 under WSL2 and keep the project in the Linux filesystem. Append `--mageos --container-only` to the bootstrap command above to select the Mage-OS, Luma, and Cypress profile tested in Windows CI.
 
-On macOS (Apple Silicon or Intel), run the commands with Docker (Docker Desktop or Colima with vz virtualization, e.g. `colima start --vm-type vz --cpu 4 --memory 8`). Apple Silicon (`arm64`) automatically compiles container images locally from source during installation. Keep the project within your user home directory so the Docker engine can mount workspace files.
+On macOS with Apple Silicon (Intel Macs are not supported), run the commands with Docker (Docker Desktop or Colima with vz virtualization, e.g. `colima start --vm-type vz --cpu 4 --memory 8`). Apple Silicon (`arm64`) automatically compiles container images locally from source during installation. Keep the project within your user home directory so the Docker engine can mount workspace files.
 
 Each installation includes its selected runner and browser, with the same live viewer for Cypress and Playwright. Both run entirely in Docker. The installer saves the platform, theme and runner; `./bin/run-coverage` uses them automatically. Repeat the same flags when rerunning installation; omitted flags select Magento Open Source/Luma/Cypress.
 
