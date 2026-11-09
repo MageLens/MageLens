@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  prepare:
     if: github.ref == 'refs/heads/main' && github.repository == 'MageLens/MageLens'
     permissions:
       contents: write
@@ -88,12 +88,88 @@ jobs:
           printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
       - name: Remove leftovers from previous failed releases
         run: node tests/release/prune-images.cjs
-      - name: Build, test and publish public tooling images
-        id: images
+  images:
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_SHA: ${{ inputs.release-sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release-sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Prepare native image builder
+        run: |
+          bash tests/ci/prepare-disk.sh
+          sudo apt-get update -qq
+          sudo apt-get install -y skopeo
+          printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+      - name: Build, test and publish native tooling images
         run: bash tests/release/build-images.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-images-${{ matrix.arch }}-${{ github.run_attempt }}
+          path: .runtime/release-images/
+          retention-days: 1
+          if-no-files-found: error
+  publish:
+    needs: [prepare, images]
+    if: always() && needs.prepare.result == 'success'
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_SHA: ${{ inputs.release-sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.release-sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.images.result == 'success'
+        with:
+          pattern: release-images-*-${{ github.run_attempt }}
+          path: .runtime/release-images
+          merge-multiple: true
+      - name: Validate complete native image set
+        if: needs.images.result == 'success'
+        run: node tests/release/images.cjs manifest .runtime/release-images .runtime/release-images/images.json
       - name: Publish release and image manifest
+        if: needs.images.result == 'success'
         run: |
           RELEASE_TAG="v$(jq -r .version package.json)"
+          awk -v version="${RELEASE_TAG#v}" '
+            /^## / { if (selected) exit; selected = ($2 == version); next }
+            selected { print }
+          ' CHANGELOG.md > release-notes.md
+          [[ -s release-notes.md ]]
           if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
             gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$RELEASE_SHA"
           fi
@@ -106,5 +182,5 @@ jobs:
           gh release upload "$RELEASE_TAG" .runtime/release-images/images.json --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest
       - name: Retain only images referenced by the latest published release
-        if: always() && steps.images.outcome != 'skipped'
+        if: always() && needs.images.result != 'skipped'
         run: node tests/release/prune-images.cjs

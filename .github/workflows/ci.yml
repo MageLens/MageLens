@@ -129,10 +129,30 @@ jobs:
       theme: ${{ matrix.theme }}
       runner: ${{ matrix.runner }}
       sha: ${{ github.sha }}
+  images:
+    if: github.event.label.name == 'run-ci'
+    name: Native tooling images
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: bash tests/ci/prepare-disk.sh
+      - name: Build and validate all three native images without publishing
+        run: bash tests/release/build-images.sh test
   gate:
     name: Required CI gate
     if: always() && github.event.label.name == 'run-ci'
-    needs: [static, integration, copyright, e2e, magento]
+    needs: [static, integration, copyright, e2e, magento, images]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

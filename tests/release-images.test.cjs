@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {kinds, inputs} = require('../bin/image-inputs.cjs');
+const {kinds, inputs, platforms} = require('../bin/image-inputs.cjs');
 const {manifest} = require('./release/images.cjs');
 const {obsoleteVersions, prune} = require('./release/prune-images.cjs');
 const digest = letter => 'sha256:' + letter.repeat(64);
@@ -58,13 +58,41 @@ test('first image publication retains only one candidate per package for public 
     assert.equal(deletions.length, 6);
     for (const args of deletions) assert.match(args.at(-1), /\/versions\/[12]$/);
 });
-test('release manifest accepts only all three images from the current commit, run and attempt', t => {
+test('release manifest accepts only all six native images from the current commit, run and attempt', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-release-manifest-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     const env = {RELEASE_SHA: 'candidate', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2'};
-    for (const kind of kinds) fs.writeFileSync(path.join(directory, `${kind}.json`), JSON.stringify({kind, ...published.images[kind], sha: 'candidate', run: '123', attempt: '2'}));
-    assert.deepEqual(manifest(directory, root, env), published);
+    for (const platform of platforms) {
+        fs.mkdirSync(path.join(directory, platform.split('/')[1]));
+        for (const kind of kinds) fs.writeFileSync(path.join(directory, platform.split('/')[1], `${kind}.json`), JSON.stringify({kind, platform, ...published.images[kind], sha: 'candidate', run: '123', attempt: '2'}));
+    }
+    assert.deepEqual(manifest(directory, root, env), {schema: 2, version: published.version,
+        platforms: Object.fromEntries(platforms.map(platform => [platform, published.images]))});
+    const arm = path.join(directory, 'arm64/php.json');
+    const original = fs.readFileSync(arm);
+    for (const [key, value] of Object.entries({platform: 'linux/amd64', inputs: '0'.repeat(64), digest: 'latest', run: 'old', attempt: 'old', sha: 'old'})) {
+        fs.writeFileSync(arm, JSON.stringify({...JSON.parse(original), [key]: value}));
+        assert.throws(() => manifest(directory, root, env));
+    }
+    fs.writeFileSync(arm, original);
     for (const key of Object.keys(env)) assert.throws(() => manifest(directory, root, {...env, [key]: 'stale'}), /Wrong release/);
-    fs.rmSync(path.join(directory, 'php.json'));
+    fs.rmSync(path.join(directory, 'arm64/php.json'));
     assert.throws(() => manifest(directory, root, env), /ENOENT/);
+});
+
+test('retention preserves both native architectures and refuses a partially missing release', () => {
+    const versions = ['a', 'b', 'c'].map((letter, index) => ({id: index + 1, name: digest(letter)}));
+    assert.deepEqual(obsoleteVersions(versions, [digest('a'), digest('b')]), [3]);
+    assert.throws(() => obsoleteVersions(versions, [digest('a'), digest('d')]), /Published image missing/);
+});
+test('cleanup retains both native digests from schema 2', () => {
+    const legacy = mockApi();
+    prune(args => {
+        if (args.at(-1).includes('/releases/assets/')) return JSON.stringify({schema: 2, version: published.version,
+            platforms: {'linux/amd64': published.images, 'linux/arm64': Object.fromEntries(kinds.map(kind => [kind, {...published.images[kind], digest: digest('b')}]))}});
+        return legacy.execute(args);
+    });
+    const deletions = legacy.calls.filter(args => args.includes('DELETE'));
+    assert.equal(deletions.length, 3);
+    for (const args of deletions) assert.match(args.at(-1), /versions\/3$/);
 });

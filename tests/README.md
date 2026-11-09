@@ -31,7 +31,7 @@ gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 
 After fixing a failure, push the new candidate, then remove and reapply `run-ci`. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-The **Required CI gate** is not a required status check for merging; it remains the qualification gate for releases. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. When requested, pull requests, including forks, run the same matrix against their exact merge candidate.
+The **Required CI gate** is not a required status check for merging; it remains the qualification gate for releases. Static syntax/workflow checks, integration/PHP unit checks, copyright/license notices, and native amd64/arm64 tooling image builds are separate jobs. Image builds run the PHP report checks and browser runner regressions on both architectures without publishing. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. When requested, pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
