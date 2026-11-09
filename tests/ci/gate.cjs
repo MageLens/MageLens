@@ -60,7 +60,7 @@ function gate() {
     const root = process.argv[2] || 'ci-artifacts';
     const needs = JSON.parse(process.env.CI_NEEDS);
     const errors = [];
-    for (const name of ['static', 'integration', 'copyright', 'e2e', 'magento']) {
+    for (const name of ['static', 'integration', 'copyright', 'e2e', 'magento', 'images']) {
         if (needs[name]?.result !== 'success') errors.push(`${name}: ${needs[name]?.result || 'missing'}`);
     }
     const reports = [], themeReports = [], runIds = new Set();

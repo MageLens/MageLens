@@ -6,6 +6,12 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.3 - 2026-11-09
+
+- Publish native PHP/PCOV, Cypress and Playwright images for Linux amd64 and arm64, including Apple Silicon installations.
+- Validate all six native images before release and preserve both architectures during registry cleanup.
+- Clarify macOS setup and make pull request CI opt-in with the `run-ci` label; full release qualification remains mandatory.
+
 ## 1.9.2 - 2026-11-08
 
 - Support Apple Silicon (`darwin/arm64` hosts running `linux/arm64` containers) across all eight Magento Open Source and Mage-OS storefront and browser runner combinations.

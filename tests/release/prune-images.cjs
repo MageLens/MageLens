@@ -4,15 +4,16 @@
 
 const assert = require('node:assert/strict');
 const {execFileSync} = require('node:child_process');
-const {kinds, validateManifest} = require('../../bin/image-inputs.cjs');
+const {kinds, validateManifest, platformImages} = require('../../bin/image-inputs.cjs');
 const api = args => execFileSync('gh', ['api', ...args], {encoding: 'utf8'});
 function obsoleteVersions(versions, keepDigest) {
-    if (keepDigest) assert.ok(versions.some(version => version.name === keepDigest), 'Published image missing; refusing cleanup');
+    const keep = Array.isArray(keepDigest) ? keepDigest : keepDigest ? [keepDigest] : [];
+    for (const digest of keep) assert.ok(versions.some(version => version.name === digest), 'Published image missing; refusing cleanup');
     for (const version of versions) {
         assert.ok(Number.isSafeInteger(version.id) && version.id > 0, 'Invalid package version');
         assert.match(version.name, /^sha256:[a-f0-9]{64}$/);
     }
-    return versions.filter(version => version.name !== keepDigest).map(version => version.id);
+    return versions.filter(version => !keep.includes(version.name)).map(version => version.id);
 }
 function prune(execute = api) {
     // Read the actually published release, including after a partially failed run.
@@ -39,7 +40,7 @@ function prune(execute = api) {
         const versions = JSON.parse(execute(['--paginate', '--slurp', `${endpoint}/versions?per_page=100`])).flat();
         // GHCR refuses deletion of the last tagged version. Before the first
         // image release, retain one candidate per package for visibility setup.
-        const keepDigest = manifest?.images[kind].digest || versions.reduce((newest, version) => !newest || version.id > newest.id ? version : newest, null)?.name;
+        const keepDigest = (manifest && Object.values(platformImages(manifest)).map(images => images[kind].digest)) || versions.reduce((newest, version) => !newest || version.id > newest.id ? version : newest, null)?.name;
         for (const id of obsoleteVersions(versions, keepDigest)) deletions.push(`${endpoint}/versions/${id}`);
     }
     // Validate all three keep lists before deleting any older or failed image.

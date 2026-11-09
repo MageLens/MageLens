@@ -12,7 +12,7 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 ## Run CI
 
-[CI](https://github.com/MageLens/MageLens/actions/workflows/ci.yml) runs only on pull requests. Merging and creating release tags do not rerun the matrix. The required matrix is:
+[CI](https://github.com/MageLens/MageLens/actions/workflows/ci.yml) runs on pull requests when a maintainer applies the `run-ci` label. It is optional for merging. Remove and reapply the label to run CI again for an updated candidate. Merging and creating release tags do not rerun the matrix. The release qualification matrix is:
 
 | Host | Platform | Theme | Runner | Cases |
 | --- | --- | --- | --- | --- |
@@ -21,7 +21,7 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 The host probe records the actual runner image, architecture, Bash and Docker/Compose versions. It requires Linux containers, writable host mounts, symlinks, container DNS and a published port reachable from the host before installation. A failed probe leaves the required case incomplete; it never substitutes a Linux runner.
 
-Open or update a pull request to qualify its merge candidate. Inspect the run and download its evidence with:
+Apply the `run-ci` label to an open pull request to qualify its current merge candidate. Inspect the run and download its evidence with:
 
 ```bash
 gh run list --workflow ci.yml --branch BRANCH
@@ -29,9 +29,9 @@ gh run view RUN_ID
 gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 ```
 
-After fixing a failure, push the new candidate. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
+After fixing a failure, push the new candidate, then remove and reapply `run-ci`. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Configure the branch protection/ruleset to require **Required CI gate**. Static syntax/workflow checks, integration/PHP unit checks, and copyright/license notices are separate jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
+The **Required CI gate** is not a required status check for merging; it remains the qualification gate for releases. Static syntax/workflow checks, integration/PHP unit checks, copyright/license notices, and native amd64/arm64 tooling image builds are separate jobs. Image builds run the PHP report checks and browser runner regressions on both architectures without publishing. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. When requested, pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
@@ -111,7 +111,7 @@ Omitting these settings selects Magento Open Source/Luma/Cypress. The full matri
 
 Dependent MageLens drafts can include `.github/dependency-previews.json` with schema `1` and `templateCoverage` and/or `pcov` entries. Each entry contains the fixed upstream `repository`, source `pullRequest`, full 40-character `sha`, and planned stable `version` matching `dependencies.yaml`. Only `VitaliyBoyko/magento-template-coverage` and `VitaliyBoyko/pcov` are accepted.
 
-Draft PRs run the existing complete CI matrix. In disposable Actions workspaces, template previews are packed from the exact source commit without package scripts and installed through the existing local-tarball path. PCOV previews compile that exact extension source in the normal PHP image and use report tools from the same tree. Windows prepares previews inside its own WSL2 checkout. The nine cases retain their existing acceptance checks, source preservation, report comparisons and required gate. Source commits, trees and archive digests are recorded and must match across all cases; missing or stale preview evidence fails the gate.
+When requested with `run-ci`, draft PRs run the existing complete CI matrix. In disposable Actions workspaces, template previews are packed from the exact source commit without package scripts and installed through the existing local-tarball path. PCOV previews compile that exact extension source in the normal PHP image and use report tools from the same tree. Windows prepares previews inside its own WSL2 checkout. The nine cases retain their existing acceptance checks, source preservation, report comparisons and required gate. Source commits, trees and archive digests are recorded and must match across all cases; missing or stale preview evidence fails the gate.
 
 A preview pass is integration feedback, not release qualification. The publisher rejects qualification containing preview dependencies. After the library PR is merged and its version is actually published, remove its preview entry (and remove the file and license sidecar when empty), resolve the real version into all manifests and lockfiles, and rerun the entire matrix before publication. Concurrent dependent drafts share MageLens's single planned next version.
 
