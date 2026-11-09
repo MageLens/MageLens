@@ -43,7 +43,7 @@ dc() {
     local sources=() images=()
     [[ ! -f "$ROOT/.runtime/compose.sources.json" ]] || sources=(-f "$ROOT/.runtime/compose.sources.json")
     [[ ! -f "$ROOT/.runtime/compose.images.yaml" ]] || images=(-f "$ROOT/.runtime/compose.images.yaml")
-    MAGELENS_PHP_IMAGE="$APPLICATION_PHP_IMAGE" docker compose --project-directory "$ROOT" -f "$ROOT/compose.yaml" "${sources[@]}" "${images[@]}" "$@"
+    MAGELENS_PHP_IMAGE="$APPLICATION_PHP_IMAGE" docker compose --project-directory "$ROOT" -f "$ROOT/compose.yaml" ${sources[@]+"${sources[@]}"} ${images[@]+"${images[@]}"} "$@"
 }
 say() { printf '\n==> %s\n' "$*"; }
 fail() { printf '\nError: %s\n' "$*" >&2; exit 1; }

@@ -4,6 +4,7 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
+export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true
 source "$(dirname "$0")/../bin/common"
 preflight
 [[ $# == 0 ]] || fail 'Usage: bash tests/e2e-isolated.sh (see tests/README.md for configuration)'
@@ -85,6 +86,11 @@ trap 'exit 143' TERM
 for file in bin docker patches cypress playwright tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
     cp -a "$file" "$scratch/"
 done
+if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
+    mkdir -p "$scratch/.runtime"
+    cp -a "$original_root/.runtime/docker-magento" "$scratch/.runtime/"
+    git -C "$scratch/.runtime/docker-magento" remote set-url origin "$original_root/.runtime/docker-magento"
+fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php "$scratch/docker/php/e2e/"
@@ -126,7 +132,7 @@ fi
 
 (
     unset COMPOSE_PROJECT_NAME
-    ./install.sh --project-name "$project" --container-only "${install_options[@]}" "$APPLICATION_DOMAIN"
+    ./install.sh --project-name "$project" --container-only ${install_options[@]+"${install_options[@]}"} "$APPLICATION_DOMAIN"
     [[ "$(cat .runtime/compose-project-name)" == "$project" ]]
     grep -qxF "COMPOSE_PROJECT_NAME=$project" .env
     database=$(./bin/application-compose ps -q db)

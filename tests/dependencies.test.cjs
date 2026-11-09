@@ -52,7 +52,7 @@ test('committed browser dependencies and locks match the central version setting
 });
 
 function workspace(t) {
-    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-test-'));
+    const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-test-')));
     t.after(() => fs.rmSync(temporary, {recursive: true, force: true}));
     return temporary;
 }

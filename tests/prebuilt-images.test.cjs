@@ -118,7 +118,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify(args) + '\\n');
 const selected = JSON.parse(process.env.MOCK_SELECTION);
-if (args[0] === 'info') console.log('linux/x86_64');
+if (args[0] === 'info') console.log(process.env.MOCK_ARCH || 'linux/x86_64');
 if (args.includes('resolve')) fs.writeFileSync('.runtime/prebuilt-images.json', JSON.stringify(selected));
 if (args.includes('/images.json') || args.some(arg => arg.includes('require("/images.json")'))) {
     const data = JSON.parse(fs.readFileSync('.runtime/prebuilt-images.json'));
@@ -172,11 +172,11 @@ test('stale labels and Cypress provenance stop installation before any build', t
 });
 test('missing compatible images build locally', t => {
     const {run} = prepareFixture(t);
-    const result = run('0', {}, {});
+    const result = run('0', {MOCK_ARCH: 'linux/aarch64'}, {});
     assert.equal(result.status, 0, result.stderr);
+    assert.match(result.calls, /MAGELENS_IMAGE_PLATFORM=linux\/arm64/);
     assert.match(result.calls, /source-php/);
     assert.match(result.calls, /"build","--pull","runner"/);
-
 });
 
 
