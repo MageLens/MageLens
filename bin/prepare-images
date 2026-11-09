@@ -10,7 +10,10 @@ build_from_source=$2
 rm -f .runtime/compose.images.yaml .runtime/prebuilt-images.json
 if [[ "$build_from_source" == 0 ]]; then
     architecture=$(docker info --format '{{.OSType}}/{{.Architecture}}')
-    case "$architecture" in linux/x86_64|linux/amd64) architecture=linux/amd64 ;; esac
+    case "$architecture" in
+        linux/x86_64|linux/amd64) architecture=linux/amd64 ;;
+        linux/aarch64|linux/arm64) architecture=linux/arm64 ;;
+    esac
     docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
         --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
         --env MAGELENS_RUNNER \

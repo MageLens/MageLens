@@ -35,7 +35,7 @@ for kind in php runner-cypress runner-playwright; do
             --build-arg "CHROME_LINUX_ARM64_SHA256=$CHROME_LINUX_ARM64_SHA256" .
         checks=()
         [[ "$MAGELENS_RUNNER" != cypress ]] || checks=(--cypress-regressions)
-        bash tests/runner-container.sh "$image" "${checks[@]}"
+        bash tests/runner-container.sh "$image" ${checks[@]+"${checks[@]}"}
         if [[ "$MAGELENS_RUNNER" == cypress ]]; then
             node -e 'const a=require("node:assert/strict");const r=require("./coverage/cypress-runner-results.json");a.equal(r.browserVersion,process.env.CHROME_VERSION);a.equal(r.browserName,"chrome-for-testing");'
         fi

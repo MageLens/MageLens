@@ -11,7 +11,7 @@ const {spawnSync} = require('node:child_process');
 
 for (const runner of ['cypress', 'playwright']) {
     test(`${runner}: runner helper uses Docker, preserves arguments and returns command failures`, t => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-runner-cli-'));
+        const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-runner-cli-')));
         t.after(() => fs.rmSync(root, {recursive: true, force: true}));
         fs.mkdirSync(path.join(root, 'bin'));
         fs.mkdirSync(path.join(root, '.runtime'));

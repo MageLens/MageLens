@@ -29,7 +29,7 @@ test('Electron downloads recover only from transient transport failures and stay
     }
 });
 
-function fixture(t, failure) {
+function fixture(t, failure, arch = 'x64') {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-electron-download-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const config = {afterPack: './scripts/after-pack-hook.js', linux: {executableName: 'Cypress'}};
@@ -37,7 +37,7 @@ function fixture(t, failure) {
     const requests = [];
     let metadataWrites = 0;
     const dependencies = {
-        version: '41.7.0', platform: 'linux', arch: 'x64', snapshot: {binDir: path.join(root, 'snapshot-tools')},
+        version: '41.7.0', platform: 'linux', arch, snapshot: {binDir: path.join(root, 'snapshot-tools')},
         async downloadArtifact(options) {
             requests.push(options);
             if (failure === 'checksum') throw new Error('Checksum mismatch');
@@ -66,6 +66,19 @@ test('Cypress packaging uses the verified exact-version distribution and retains
         downloadOptions: {timeout: {request: 120000}, retry: {limit: 0}}
     })));
     assert.equal(f.writes(), 1);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'electron-builder.json'))), {
+        ...f.config, electronDist: path.join(f.root, '.magelens-electron')
+    });
+});
+
+test('Cypress arm64 packaging verifies the exact Electron distribution without x64 snapshot tools', async t => {
+    const f = fixture(t, undefined, 'arm64');
+    await prepareElectron(f.root, f.dependencies);
+    assert.deepEqual(f.requests, [{
+        artifactName: 'electron', version: '41.7.0', platform: 'linux', arch: 'arm64',
+        downloadOptions: {timeout: {request: 120000}, retry: {limit: 0}}
+    }]);
+    assert.equal(f.writes(), 0);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'electron-builder.json'))), {
         ...f.config, electronDist: path.join(f.root, '.magelens-electron')
     });

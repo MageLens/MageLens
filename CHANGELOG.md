@@ -6,6 +6,13 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## Unreleased
+
+- Support Apple Silicon (`darwin/arm64` hosts running `linux/arm64` containers) across all eight Magento Open Source and Mage-OS storefront and browser runner combinations.
+- Build Cypress 16.2.1 from source on Linux arm64 with `DISABLE_SNAPSHOT_REQUIRE=1` packaging, Electron arm64 distribution verification, and test fixture pre-fetching to prevent network timeouts.
+- Handle Bash 3.2 empty array expansion on macOS in `bin/common` and E2E runner scripts.
+- Normalize `linux/aarch64` and `linux/arm64` architecture tags during prebuilt image resolution.
+
 ## 1.9.2 - 2026-11-08
 
 - Update Cypress code coverage to 4.1.3 and pin patched glob/minimatch dependencies in the coverage toolchain.
