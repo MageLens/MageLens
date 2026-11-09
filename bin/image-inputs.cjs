@@ -29,17 +29,19 @@ function inputs(root, kind) {
 }
 const platforms = ['linux/amd64', 'linux/arm64'];
 function platformImages(manifest) {
-    return manifest.schema === 1 ? {[manifest.platform]: manifest.images} : manifest.platforms;
+    return manifest.platforms || {[manifest.platform]: manifest.images};
 }
 function validateManifest(manifest) {
-    if (![1, 2].includes(manifest.schema) || !/^\d+\.\d+\.\d+$/.test(manifest.version)) throw new Error('Invalid image manifest');
+    if (manifest.schema !== 1 || !/^\d+\.\d+\.\d+$/.test(manifest.version)) throw new Error('Invalid image manifest');
     const entries = platformImages(manifest);
-    const expected = manifest.schema === 1 ? ['linux/amd64'] : platforms;
+    const expected = manifest.platforms ? platforms : ['linux/amd64'];
+    if (manifest.platform !== 'linux/amd64') throw new Error('Invalid image manifest platform');
     if (!entries || Object.keys(entries).sort().join() !== [...expected].sort().join()) throw new Error('Invalid image manifest platforms');
     for (const platform of expected) for (const kind of kinds) {
         const entry = entries[platform]?.[kind];
         if (!entry || !/^[a-f0-9]{64}$/.test(entry.inputs) || !digestPattern.test(entry.digest)) throw new Error(`Invalid ${platform} ${kind} image provenance`);
     }
+    if (manifest.platforms && kinds.some(kind => manifest.images?.[kind]?.inputs !== entries['linux/amd64'][kind].inputs || manifest.images?.[kind]?.digest !== entries['linux/amd64'][kind].digest)) throw new Error('Invalid legacy image provenance');
     return manifest;
 }
 function select(root, manifest, platform, runner) {

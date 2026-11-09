@@ -195,7 +195,7 @@ test('only a missing latest-release manifest falls back; network, authorization 
 
 test('multi-platform releases select native digests for both runners and retain provenance checks', () => {
     const legacy = candidate();
-    const manifest = {schema: 2, version: legacy.version, platforms: {
+    const manifest = {schema: 1, platform: legacy.platform, images: legacy.images, version: legacy.version, platforms: {
         'linux/amd64': legacy.images,
         'linux/arm64': Object.fromEntries(kinds.map(kind => [kind, {...legacy.images[kind], digest: 'sha256:' + 'c'.repeat(64)}]))
     }};
@@ -208,6 +208,9 @@ test('multi-platform releases select native digests for both runners and retain 
     manifest.platforms['linux/arm64'].php.inputs = '0'.repeat(64);
     assert.equal(select(root, manifest, 'linux/arm64', 'cypress').php, null);
     assert.ok(select(root, manifest, 'linux/amd64', 'cypress').php);
+    const mismatched = JSON.parse(JSON.stringify(manifest));
+    mismatched.images.php.digest = 'sha256:' + 'd'.repeat(64);
+    assert.throws(() => validateManifest(mismatched), /legacy image provenance/);
     delete manifest.platforms['linux/arm64'];
     assert.throws(() => validateManifest(manifest), /platforms/);
 });

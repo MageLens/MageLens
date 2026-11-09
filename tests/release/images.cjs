@@ -19,7 +19,7 @@ function manifest(directory, root = process.cwd(), env = process.env) {
         assert.equal(entry.inputs, inputs(root, kind), 'Stale image inputs');
         return [kind, {inputs: entry.inputs, digest: entry.digest}];
     }))]));
-    return validateManifest({schema: 2, version: read(path.join(root, 'package.json')).version, platforms: entries});
+    return validateManifest({schema: 1, platform: 'linux/amd64', images: entries['linux/amd64'], version: read(path.join(root, 'package.json')).version, platforms: entries});
 }
 module.exports = {manifest};
 if (require.main === module) {

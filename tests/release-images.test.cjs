@@ -66,7 +66,7 @@ test('release manifest accepts only all six native images from the current commi
         fs.mkdirSync(path.join(directory, platform.split('/')[1]));
         for (const kind of kinds) fs.writeFileSync(path.join(directory, platform.split('/')[1], `${kind}.json`), JSON.stringify({kind, platform, ...published.images[kind], sha: 'candidate', run: '123', attempt: '2'}));
     }
-    assert.deepEqual(manifest(directory, root, env), {schema: 2, version: published.version,
+    assert.deepEqual(manifest(directory, root, env), {schema: 1, platform: 'linux/amd64', images: published.images, version: published.version,
         platforms: Object.fromEntries(platforms.map(platform => [platform, published.images]))});
     const arm = path.join(directory, 'arm64/php.json');
     const original = fs.readFileSync(arm);
@@ -85,10 +85,10 @@ test('retention preserves both native architectures and refuses a partially miss
     assert.deepEqual(obsoleteVersions(versions, [digest('a'), digest('b')]), [3]);
     assert.throws(() => obsoleteVersions(versions, [digest('a'), digest('d')]), /Published image missing/);
 });
-test('cleanup retains both native digests from schema 2', () => {
+test('cleanup retains both native digests from the extended manifest', () => {
     const legacy = mockApi();
     prune(args => {
-        if (args.at(-1).includes('/releases/assets/')) return JSON.stringify({schema: 2, version: published.version,
+        if (args.at(-1).includes('/releases/assets/')) return JSON.stringify({schema: 1, platform: 'linux/amd64', images: published.images, version: published.version,
             platforms: {'linux/amd64': published.images, 'linux/arm64': Object.fromEntries(kinds.map(kind => [kind, {...published.images[kind], digest: digest('b')}]))}});
         return legacy.execute(args);
     });
