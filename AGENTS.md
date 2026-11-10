@@ -113,19 +113,6 @@ The public `./bin/run-coverage --branching` command supplies this acknowledgment
 internally; keep it out of user-facing documentation and help. Direct internal
 callers of `bin/run-branching --branching` must supply it explicitly.
 
-After preparing the isolated installations and private configuration described in
-[the performance guide](tests/performance/branching/README.md), run a focused
-local campaign with:
-
-```bash
-python3 tests/performance/branching/run.py \
-  --config .runtime/performance-local.json \
-  --output .runtime/performance-matrix-01 --disposable \
-  --rows strong-5,deep-shallow,deep-large --pairs 1
-```
-
-Use a fresh output directory. Full performance matrices run in GitHub Actions.
-
 ## Preserve application data and report integrity
 
 - Keep original source bytes and PHP line numbers unchanged during coverage. Instrument disposable copies and retain source-hash and symlink checks.

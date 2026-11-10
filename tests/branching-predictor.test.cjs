@@ -140,17 +140,6 @@ test('shared-source feature caching preserves numeric maxima and isolates return
     assert.equal(changed.vector[7],Math.log1p(90000));
     assert.notEqual(changed.sourceDigest,expected.sourceDigest);
 });
-test('matrix captures predictions once before execution and detects source changes', t => {
-    const {file,directory}=model(t),matrix=require('./performance/branching/predictor.cjs');
-    fs.mkdirSync(path.join(directory,'suite'));
-    for(const name of ['journeys.spec.js','bootstrap.setup.js']) fs.writeFileSync(path.join(directory,'suite',name),'const items = [1,2];');
-    matrix.capture(directory,request(),file);
-    assert.throws(()=>matrix.capture(directory,request(),file),/EEXIST/);
-    const timing={testsMs:200,status:'passed',passed:1,tests:['a'],fallbacks:0,cleanup:true};
-    assert.equal(matrix.complete(directory,timing).eligible,true);
-    fs.appendFileSync(path.join(directory,'suite/journeys.spec.js'),'\nconst changed = true;');
-    assert.equal(matrix.complete(directory,timing).eligible,false);
-});
 
 test('native profiling freezes per-test inputs before results and quarantines invalid observations', t => {
     const {directory}=model(t), native=require('../branching/predictor/native.cjs');

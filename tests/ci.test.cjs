@@ -70,7 +70,7 @@ test('final gate fails when reports are missing even if all job results claim su
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-gate-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/gate.cjs'), 'absent'], {cwd: directory, encoding: 'utf8', env: {...process.env,
-        CI_SHA: 'candidate', GITHUB_STEP_SUMMARY: '', CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'branching', 'performance', 'e2e', 'magento', 'images'].map(job => [job, {result: 'success'}])))}});
+        CI_SHA: 'candidate', GITHUB_STEP_SUMMARY: '', CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'branching', 'e2e', 'magento', 'images'].map(job => [job, {result: 'success'}])))}});
     assert.equal(result.status, 1);
     const report = JSON.parse(fs.readFileSync(`${directory}/ci-gate/qualification.json`));
     assert.equal(report.passed, false);
@@ -123,7 +123,7 @@ test('final gate consumes only artifacts from the current workflow attempt', t =
     const run = () => {
         const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/gate.cjs')], {cwd: root, encoding: 'utf8', env: {...process.env,
             CI_SHA: 'candidate', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2', GITHUB_STEP_SUMMARY: '',
-            CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'branching', 'performance', 'e2e', 'magento', 'images'].map(job => [job, {result: 'success'}])))}});
+            CI_NEEDS: JSON.stringify(Object.fromEntries(['static', 'integration', 'branching', 'e2e', 'magento', 'images'].map(job => [job, {result: 'success'}])))}});
         assert.equal(result.status, 1, 'A single report must never qualify the full matrix');
         return JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/qualification.json')));
     };
@@ -209,12 +209,12 @@ test('invalid full report fails its case while retaining safe acceptance and leg
 });
 
 
-test('required gate rejects incomplete static, branching browser, performance and image jobs', () => {
+test('required gate rejects incomplete static, branching browser and image jobs', () => {
     const {verifyRequiredJobs} = require('./ci/gate.cjs');
-    const needs = Object.fromEntries(['static', 'integration', 'branching', 'performance', 'e2e', 'magento', 'images']
+    const needs = Object.fromEntries(['static', 'integration', 'branching', 'e2e', 'magento', 'images']
         .map(name => [name, {result: 'success'}]));
     assert.deepEqual(verifyRequiredJobs(needs), []);
-    for (const name of ['static', 'branching', 'performance', 'images']) {
+    for (const name of ['static', 'branching', 'images']) {
         for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
             const candidate = {...needs, [name]: result ? {result} : undefined};
             assert.deepEqual(verifyRequiredJobs(candidate), [`${name}: ${result ?? 'missing'}`]);

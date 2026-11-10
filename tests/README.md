@@ -36,7 +36,7 @@ gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 
 After fixing a failure, push the new candidate, then remove and reapply `run-ci`. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-The **Required CI gate** is not a required status check for merging; it remains the qualification gate for releases. Static checks (ESLint, script syntax, copyright/license notices and workflows), integration/PHP unit checks, branching provider/dashboard checks, the [branching performance matrix](performance/branching/README.md), and native amd64/arm64 tooling image builds are separate jobs. Image builds run the PHP report checks and browser runner regressions on both architectures without publishing. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. When requested, pull requests, including forks, run the same matrix against their exact merge candidate.
+The **Required CI gate** is not a required status check for merging; it remains the qualification gate for releases. Static checks (ESLint, script syntax, copyright/license notices and workflows), integration/PHP unit checks, branching provider/dashboard checks, and native amd64/arm64 tooling image builds are separate jobs. Image builds run the PHP report checks and browser runner regressions on both architectures without publishing. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. When requested, pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
@@ -50,7 +50,7 @@ The gate compares all five Luma reports with each other (including Windows) and 
 
 Cypress uses the same source-built 16.2.1 binary locally and in CI, with the pinned cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`. `coverage/installation.json` records its upstream commit and patch digest. Each Cypress case also runs eleven isolated regressions (nine cookie/authorization journeys, document initialization and a delayed-response check); `cypress-runner-results.json` is included in its sanitized artifact and required by the final gate. For focused local investigation in an isolated installed runner, use `./bin/runner node tests/cypress-regressions.cjs`. This does not replace the final CI matrix. The source build runs upstream document-classifier, proxy and CDP unit tests and preserves Cypress's packaging and integrity checks; its build inputs and dependencies are discarded before the final image is produced.
 
-Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case and the qualification artifact are limited to **5 MiB**, for at most **50 MiB** of application qualification payload per complete attempt. The branching provider/dashboard job and each of the ten performance rows add separate report artifacts capped at **5 MiB** each. Oversized qualification reports block upload and fail the gate. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. PR images are built on disposable runners and discarded with them; no image archives are stored as Actions artifacts. Release publication reuses the successful PR qualification when the released files are identical.
+Uploads run even after failures. Only explicitly selected counters and structured diagnostics leave the runner. Raw HTML/source reports, fixture payloads, auth files, private packages, databases, certificates, screenshots and raw service/install logs are excluded. Inspect the failed Actions step for additional diagnostics; never upload the temporary checkout or all of `.runtime/`. Artifacts expire after **one day**; download the sanitized evidence promptly. Each case and the qualification artifact are limited to **5 MiB**, for at most **50 MiB** of application qualification payload per complete attempt. The branching provider/dashboard job adds a separate report artifact capped at **5 MiB**. Oversized qualification reports block upload and fail the gate. Artifact names include the run attempt; the gate and publisher select that exact attempt so a rerun cannot reuse an older report. No dependency, image or result caches are uploaded. PR images are built on disposable runners and discarded with them; no image archives are stored as Actions artifacts. Release publication reuses the successful PR qualification when the released files are identical.
 
 Every job runs one installation, with at most four Mage-OS and two Magento jobs in parallel on separate standard hosted VMs. E2E jobs have a 150-minute timeout and a 130-minute harness limit, allowing time for cleanup and uploads. CI stores installations under `MAGELENS_TEST_TMPDIR` on disk, avoiding Ubuntu 26’s RAM-backed `/tmp`. Disposable hosted Linux jobs remove unused Android/.NET/GHC/CodeQL SDK directories. Before installation, both the host and its Linux Docker engine must provide at least 25 GiB free disk and 6 GiB RAM; a sparse VM disk cannot hide an exhausted Windows host drive. Docker resources are never globally pruned. No local RAM or disk is consumed by installations. Cleanup addresses only the registered test project and volumes. Canceled/force-terminated jobs cannot qualify, and GitHub disposes of the hosted VM.
 
@@ -222,15 +222,6 @@ use the same budget. The limit applies to each test's ancestor path, not the num
 of tests or the whole suite. Excess candidates produce warnings; their actions
 still execute, and AUTO prioritizes the checkpoints with greater estimated savings.
 
-The reusable [performance matrix](performance/branching/README.md) compares
-isolated linear and AUTO runs on real Luma orders. It uses a budget of **4** and
-includes short, unrelated, highly reused and twelve-boundary journeys. It records
-setup, tests including checkpoint overhead, total, memory peaks and cleanup, with
-PHP-FPM and database parity checks before accepting measurements.
-The additional fixture rows cover small and expensive runtime-dependent setup,
-mutable values shared between dependent fixtures, browser references and per-test
-teardown. Cost forecasts and actual checkpoint counts are reported separately.
-
 Fresh projects use the versioned checkpoint-cost defaults in
 [`baseline.json`](../branching/planner/src/baseline.json), with **2 × overhead × 1.20**
 as the conservative cost. Successful, fully cleaned checkpoint runs update
@@ -238,7 +229,7 @@ operation averages for later runs by default; the current plan stays unchanged.
 Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
 `./bin/run-coverage --branching --calibrate`
 to measure and replace the project baseline. Both modes retain overhead history
-and flag increases before averaging; see the performance matrix documentation.
+and flag increases before averaging.
 
 ## Dashboard self-tests and self-coverage
 

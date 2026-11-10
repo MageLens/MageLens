@@ -111,14 +111,10 @@ keep them outside Git and public CI artifacts. Ordinary profiling does not save 
 
 ## CI evaluation
 
-Both native runners and every performance matrix pair retain forecasts made before
-execution. Native CI evaluates individual tests; performance pairs require their
-own `suite-tests` model because their totals include orchestration and checkpoint
-work. A model for a different boundary produces a missing forecast, not a score.
+Both native runners retain forecasts made before execution. Native CI evaluates individual tests. A model for a different boundary produces a missing forecast, not a score.
 Reports show model ID, missing forecasts, raw and adjusted errors, signed
 bias, interval coverage and out-of-range inputs. Missing models are reported as
-incomplete, never as zero error. Whole-suite reports mark checkpoint-decision accuracy
-as unmeasured. Performance artifacts retain sanitized observations for 30 days.
+incomplete, never as zero error.
 
 To select a frozen CI model, run `node branching/predictor/cli.cjs pack-ci model.json model.b64`.
 Set repository variable `MAGELENS_PREDICTOR_MODEL_GZIP_BASE64` to the generated file's
@@ -131,9 +127,7 @@ its numbered repository variables (`MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_1` thro
 `_4`, as needed), plus the printed model digest. Clear unused chunks and the two
 single-variable representations. Chunks preserve the original bytes and are each
 bounded by the CI variable limit. There is no automatic model-weight promotion. Baseline updates use existing
-validated checkpoint measurements after the run, without replaying tests. Matrix campaigns accept
-`predictorModel`, `predictorBaselineMs` and `predictorMultiplier` in their configuration;
-CI uses its existing explicit CLI calibration for `predictorBaselineMs`.
+validated checkpoint measurements after the run, without replaying tests.
 
 Keep original training data and model snapshots outside Git, alongside compact
 provenance. Clean obsolete browser output and disposable resources after collection.
