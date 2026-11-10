@@ -6,6 +6,11 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## Unreleased
+
+- Update Cypress code coverage to 4.1.3 and pin patched glob/minimatch dependencies in the coverage toolchain.
+- Recover from temporary PIE and Electron download failures during image builds, and verify snapshot tools before packaging Cypress.
+
 ## 1.9.0 - 2026-11-06
 
 - Install compatible, digest-pinned Cypress, Playwright and PHP/PCOV images from GHCR, with Cypress patch verification and local PHP user mapping. Use `--build-from-source` to compile locally; older releases and modified image inputs also build from source.

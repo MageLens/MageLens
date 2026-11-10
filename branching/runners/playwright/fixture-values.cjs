@@ -4,6 +4,8 @@
 
 // Data graphs preserve aliases/cycles. Browser objects are recipes, never stale
 // protocol handles. Constructors and fixture preparation are not replayed.
+// TODO: Detect locator-producing APIs from the installed Playwright version and
+// project extensions instead of hardcoding methods; preserve replayable recipes.
 const locatorMethods=new Set(['locator','getByRole','getByText','getByLabel','getByPlaceholder','getByAltText','getByTitle','getByTestId','filter','first','last','nth','and','or','frameLocator']);
 class FixtureCodec {
     constructor(runtime,factory){this.runtime=runtime;this.factory=factory;this.handles=new WeakMap();this.roots=new Map();}

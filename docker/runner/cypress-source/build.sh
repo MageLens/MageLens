@@ -38,6 +38,9 @@ yarn workspace @packages/proxy check-ts
 yarn workspace @packages/network-interception check-ts
 yarn workspace @packages/server check-ts
 env -u ELECTRON_RUN_AS_NODE node scripts/binary.js build --version "$version" --platform linux
+# Fetch the exact Electron release and snapshot tools before packaging. Keep
+# download recovery separate from compilation, tests and snapshot generation.
+node /input/prepare-electron.cjs "$PWD"
 xvfb-run -a env -u ELECTRON_RUN_AS_NODE node scripts/binary.js package --version "$version" --platform linux
 case "$(node -p process.arch)" in
     x64) packaged=/build/tmp/cypress-build/linux/build/linux-unpacked ;;

@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 function drainCheckpointQueues(object $resource, object $factory): array
 {
+    // TODO: Discover checkpoint-safe consumers from the installed project's queue
+    // configuration instead of hardcoding names; retain state and convergence checks.
     $allowed = ['sales.rule.update.coupon.usage', 'sales.rule.quote.trigger.recollect',
         'inventory.reservations.updateSalabilityStatus', 'inventory.reservations.update',
         'inventory.indexer.sourceItem', 'inventory.indexer.stock', 'inventory.source.items.cleanup'];

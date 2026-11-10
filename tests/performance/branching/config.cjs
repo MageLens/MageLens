@@ -3,9 +3,10 @@
 // License: see LICENSE in the repository root.
 
 const path=require('node:path');
-const {expect}=require('@playwright/test');
 const assertionTimeout=30000;
-const configuredExpect=expect.configure({timeout:assertionTimeout});
+// Cost assessment builds the workflow without launching browser assertions.
+let assertions;
+const configuredExpect=(...args)=>(assertions??=require('@playwright/test').expect.configure({timeout:assertionTimeout}))(...args);
 const observedPages=new WeakSet();
 const runnerOptions={launchOptions:{args:['--disable-features=ViewTransition,ViewTransitionOnNavigation']},
     contextOptions:{ignoreHTTPSErrors:true,viewport:{width:1280,height:720},userAgent:'Playwright',serviceWorkers:'block'}};
