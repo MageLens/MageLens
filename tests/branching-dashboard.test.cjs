@@ -129,7 +129,7 @@ test('live updates transmit only appended events and reconstruct the same final 
     const file = path.join(input.eventDirectory, report.run + '.ndjson'), lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n');
     const split = Math.floor(lines.length / 2), prefix = lines.slice(0, split).join('\n') + '\n', suffix = lines.slice(split).join('\n') + '\n';
     fs.writeFileSync(file, prefix);
-    const manifest = path.join(input.root, 'manifest.json'); fs.writeFileSync(manifest, '{"preview":"unchanged"}');
+    const manifest = path.join(input.root, 'manifest.json'); fs.writeFileSync(manifest, JSON.stringify(require('./fixtures/branching/assessment.cjs').assessed({schemaVersion:1, sources:[], diagnostics:[], schedule:['a'], checkpoints:[], tests:[{id:'a', steps:[], disposition:'automatic'}]})));
     const app = await startDashboard({directory: input.eventDirectory, manifest, port: 0}); t.after(() => app.close());
     const response = await fetch(app.url + '/events'), reader = response.body.getReader(); let buffer = '';
     async function next() {

@@ -86,6 +86,14 @@ trap 'exit 143' TERM
 for file in bin docker patches cypress playwright tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
     cp -a "$file" "$scratch/"
 done
+mkdir -p "$scratch/branching"
+cp -a branching/predictor branching/runners branching/estimation.cjs "$scratch/branching/"
+cp branching-baseline.json "$scratch/"
+mkdir -p "$scratch/.runtime/predictor"
+touch "$scratch/.runtime/predictor/enabled"
+if [[ -f .runtime/predictor/model.json ]]; then
+    cp .runtime/predictor/model.json "$scratch/.runtime/predictor/"
+fi
 if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
     mkdir -p "$scratch/.runtime"
     cp -a "$original_root/.runtime/docker-magento" "$scratch/.runtime/"

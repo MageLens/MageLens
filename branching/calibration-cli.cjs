@@ -9,9 +9,13 @@ const {RetainedMagentoBackend}=require('./retained-magento.cjs');
 const leases=require('./workflow-lease.cjs');
 const {probe}=require('./storage.cjs');
 async function run(args=process.argv.slice(2)) {
+    try {return await execute(args);}
+    catch(error){require('./estimation.cjs').recordFailure(args[0],error);throw error;}
+}
+async function execute(args) {
     if(args.length!==3)throw new Error('Expected MANIFEST.json CONFIG.cjs COW_STORAGE');
     const [manifestFile,configuration,storage]=args;
-    const manifest=JSON.parse(fs.readFileSync(manifestFile));
+    const manifest=require('./estimation.cjs').readManifest(manifestFile);
     require('./automatic.cjs').verifySources(manifest);
     const supplied=require(path.resolve(configuration));
     const project=typeof supplied==='function'?await supplied(manifest):supplied;
@@ -20,8 +24,12 @@ async function run(args=process.argv.slice(2)) {
     const workspace=process.cwd(),workflowLease=leases.acquire(workspace);
     let runtime,report;
     try {
+        const runner=loadRunner(process.env.MAGELENS_RUNNER??'playwright');
+        const discovery=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'magelens-calibration-inventory-'));
+        try {await require('./suite.cjs').collectAssessed(manifest,project,discovery,runner.native);}
+        finally {fs.rmSync(discovery,{recursive:true,force:true});}
         const store=openProject(workspace,project.baseline),used=store.load();
-        runtime=await loadRunner(process.env.MAGELENS_RUNNER??'playwright').open(process.env,project.runnerOptions);
+        runtime=await runner.open(process.env,project.runnerOptions);
         if(typeof runtime.calibrate!=='function')throw new Error('This runner does not support checkpoint calibration');
         const backend=new RetainedMagentoBackend({workspace,helperImage:process.env.MAGELENS_BRANCHING_IMAGE,disposable:true,workflowLease});
         report=await runtime.calibrate({backend,root:storage,samples:3});
@@ -43,5 +51,5 @@ async function run(args=process.argv.slice(2)) {
         finally {if(!leases.release(workflowLease)){console.error('Calibration workflow lock retained for recovery');process.exitCode=1;}}
     }
 }
-if(require.main===module)run().catch(error=>{console.error(error.message);process.exitCode=1;});
+if(require.main===module)run().catch(error=>{console.error(require('./estimation.cjs').formatError(error));process.exitCode=1;});
 module.exports={run};

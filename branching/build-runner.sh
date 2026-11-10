@@ -6,7 +6,7 @@
 # Build the adapter's browser base with the same dependency resolver and Dockerfile
 # as installation, without changing the current installation's package selection.
 source "$(dirname "$0")/../bin/common"
-[[ $# == 3 && "$1" == playwright && "$3" =~ ^[a-f0-9]{64}$ ]] || fail 'Expected playwright IMAGE INPUT_FINGERPRINT.'
+[[ $# == 3 && ( "$1" == playwright || "$1" == cypress ) && "$3" =~ ^[a-f0-9]{64}$ ]] || fail 'Expected RUNNER IMAGE INPUT_FINGERPRINT.'
 export MAGELENS_RUNNER=$1 TEMPLATE_COVERAGE_PACKAGE=''
 image=$2
 fingerprint=$3

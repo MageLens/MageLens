@@ -18,6 +18,7 @@ collect_reports() {
     trap - EXIT
     mkdir -p ci-reports/branching
     if [[ -f "$output/provider.json" ]]; then cp "$output/provider.json" ci-reports/branching/; fi
+    if [[ -f "$output/cypress.log" ]]; then cp "$output/cypress.log" ci-reports/branching/; fi
     if [[ -f "$dashboard_output/coverage/qualification.json" ]]; then
         cp "$dashboard_output/coverage/qualification.json" ci-reports/branching/dashboard.json
     fi
@@ -39,3 +40,5 @@ docker run --rm --init --network none --memory 2g --memory-swap 2g --shm-size 51
     --mount "type=bind,source=$output,target=/artifacts" \
     --workdir /driver --entrypoint node "$image" tests/branching-browser.cjs "$cow" /artifacts/provider.json
 bash tests/branching-dashboard.sh "$image" "$dashboard_output"
+cypress_image=$(./bin/branching-image cypress --build-from-source)
+bash tests/ci/cypress-image.sh "$cypress_image" > "$output/cypress.log" 2>&1 || { cat "$output/cypress.log"; exit 1; }

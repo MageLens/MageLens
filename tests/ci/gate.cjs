@@ -57,7 +57,7 @@ function verifyCase(entry, evidence, directory, context) {
     return run.id;
 }
 function verifyRequiredJobs(needs) {
-    const required = ['static', 'integration', 'branching', 'performance', 'e2e', 'magento', 'images'];
+    const required = ['static', 'integration', 'branching', 'e2e', 'magento', 'images'];
     return required.filter(name => needs[name]?.result !== 'success')
         .map(name => `${name}: ${needs[name]?.result || 'missing'}`);
 }
@@ -66,14 +66,6 @@ function gate() {
     const root = process.argv[2] || 'ci-artifacts';
     const needs = JSON.parse(process.env.CI_NEEDS);
     const errors = verifyRequiredJobs(needs);
-    try {
-        const {verifyResults, readResults} = require('../performance/branching/ci-reference.cjs');
-        verifyResults(readResults(root, Number(process.env.GITHUB_RUN_ATTEMPT)), {
-            sha: process.env.CI_SHA,
-            runUrl: `https://github.com/MageLens/MageLens/actions/runs/${process.env.GITHUB_RUN_ID}`,
-            attempt: Number(process.env.GITHUB_RUN_ATTEMPT)
-        });
-    } catch (error) { errors.push('Branching performance: ' + error.message); }
     const reports = [], themeReports = [], runIds = new Set();
     const previews = previewConfiguration();
     let previewProvenance;

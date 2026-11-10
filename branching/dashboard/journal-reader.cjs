@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {applyEvent, manifestView} = require('./model.cjs');
+const {assertAssessed, readFailure, EstimationError} = require('../estimation.cjs');
 const limits = require('../planner/src/limits.json');
 const {dashboard, warnings: messages} = require('../configs/dashboard.cjs');
 const MAX_JOURNAL_BYTES = dashboard.maxJournalBytes;
@@ -13,6 +14,7 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
     const journals = new Map();
     const warnings = new Map();
     let manifestText = null,
+        assessmentError = null,
         manifestStamp = null,
         version = 0,
         uiRevision,
@@ -41,7 +43,7 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
             }
         }
         try {
-            if (manifestText) plan = manifestView(JSON.parse(manifestText));
+            if (manifestText && !assessmentError) plan = manifestView(JSON.parse(manifestText));
         } catch {
             problems.push(messages.manifestInvalid);
         }
@@ -50,6 +52,7 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
             uiRevision,
             runs: runs.filter(Boolean).sort((a, b) => b.startedAt - a.startedAt),
             plan,
+            error: assessmentError,
             warnings: problems
         };
     }
@@ -61,7 +64,8 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
             reset,
             journals: updates,
             removed,
-            ...(reset || manifestChanged ? {manifest: manifestText} : {}),
+            ...(reset || manifestChanged ? {manifest: assessmentError ? null : manifestText} : {}),
+            error: assessmentError,
             warnings: [...warnings.values()]
         };
     }
@@ -149,6 +153,8 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
             }
         }
         if (manifest) {
+            const previousError = JSON.stringify(assessmentError);
+            assessmentError = null;
             try {
                 const stat = await fs.promises.lstat(manifest);
                 if (!stat.isFile() || stat.size > MAX_JOURNAL_BYTES) throw new Error('Invalid manifest file');
@@ -167,8 +173,18 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
                     manifestChanged = true;
                 }
                 manifestStamp = null;
-                if (error.code !== 'ENOENT') warnings.set('manifest', messages.manifestInvalid);
+                if (error.code !== 'ENOENT') assessmentError = new EstimationError([{phase: 'manifest', message: error.message}]).toJSON();
             }
+            try {
+                const failure = readFailure(manifest);
+                if (failure) assessmentError = failure;
+                else if (manifestText) assertAssessed(JSON.parse(manifestText));
+            } catch (error) {
+                assessmentError = (error instanceof EstimationError ? error : new EstimationError([{phase: 'manifest', message: error.message}])).toJSON();
+            }
+            if (assessmentError) warnings.set('manifest', `500 ESTIMATION_FAILED: ${assessmentError.message} (${assessmentError.issues.length} issues). ${assessmentError.remediation}`);
+            else warnings.delete('manifest');
+            if (JSON.stringify(assessmentError) !== previousError) { changed = true; manifestChanged = true; }
         }
         if (changed || previousWarnings !== JSON.stringify([...warnings.values()])) {
             version++;

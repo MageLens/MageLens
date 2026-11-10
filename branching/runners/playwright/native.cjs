@@ -6,11 +6,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {spawn} = require('node:child_process');
-async function invoke(configuration, directory, {list = false, tests, setup = true, teardown = true} = {}) {
+async function invoke(configuration, directory, {list = false, tests, setup = true, teardown = true, profile} = {}) {
     if (require('playwright/package.json').version !== '1.65.0') throw new Error('Native execution requires the pinned Playwright 1.65.0');
     const config = fs.realpathSync(configuration);
     fs.mkdirSync(directory, {recursive: true});
     const token = randomUUID(), reportFile = path.join(directory, `${token}.json`);
+    const timing = profile && !list ? {...profile, runner:'playwright', directory:path.join(directory, `${token}-timing`)} : null;
     // Keep relative config paths relative to the user's original config. The
     // temporary wrapper is hidden, never changes test bytes, and is removed.
     const wrapper = path.join(path.dirname(config), `.magelens-native-${token}.cjs`);
@@ -24,7 +25,8 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
     if (tests) { fs.writeFileSync(selection, tests.map(test => test.selector).join('\n') + '\n', {mode: 0o600}); args.push('--test-list', selection, '--no-deps'); }
     const started = performance.now();
     try {
-        const child = spawn(process.execPath, args, {cwd: path.dirname(config), env: {...process.env, MAGELENS_NATIVE_REPORT: reportFile}, stdio: 'inherit'});
+        const child = spawn(process.execPath, args, {cwd: path.dirname(config), env: {...process.env, MAGELENS_NATIVE_REPORT: reportFile,
+            MAGELENS_NATIVE_PROFILE:timing ? JSON.stringify(timing) : ''}, stdio: 'inherit'});
         const signals = ['SIGINT', 'SIGTERM'];
         const forward = signal => child.kill(signal);
         const handlers = signals.map(signal => () => forward(signal));

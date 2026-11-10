@@ -27,20 +27,9 @@ impl Fixture {
         Self(root)
     }
     fn plan(&self) -> Value {
-        let out = Command::new(env!("CARGO_BIN_EXE_magelens-plan"))
-            .args([
-                "plan",
-                self.0.join("src").to_str().unwrap(),
-                self.0.join("manifest.json").to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        serde_json::from_slice(&fs::read(self.0.join("manifest.json")).unwrap()).unwrap()
+        // Keep inspecting diagnostics, including intentionally unsupported fixtures.
+        // CLI tests separately require production planning to reject these reports.
+        serde_json::to_value(magelens_plan::assess(&self.0.join("src")).unwrap()).unwrap()
     }
 }
 impl Drop for Fixture {
@@ -61,7 +50,427 @@ fn points(v: &Value) -> u64 {
         .as_u64()
         .expect("every statement has a point estimate")
 }
+
+#[test]
+fn array_from_assesses_iterables_array_like_values_and_mapping_callbacks() {
+    let f = Fixture::new(&[(
+        "flow.cy.js",
+        r#"
+        it('sets',()=>{Array.from(new Set(['a','b','a'])).forEach(value=>cy.request('/'+value));});
+        it('maps',()=>{Array.from(new Map([['a',1],['b',2],['a',3]])).forEach(([key,value])=>cy.request('/'+key));});
+        it('arraylike',()=>{Array.from({length:2,0:'a',1:'b'},function(value,index){this.request('/'+value);},{request:url=>cy.request(url)});});
+        it('string',()=>{Array.from('a🛒',value=>cy.request('/'+value));});
+        it('runtime',()=>{Array.from(Cypress.env('records'),value=>cy.request('/'+value));});
+        it('cleanup',()=>{cy.request('/create');});
+        after(()=>Array.from(Cypress.env('created')).forEach(value=>cy.request('/delete/'+value)));
+    "#,
+    )]);
+    let p = f.plan();
+    assert_eq!(p["assessment"]["analysis"]["status"], "complete");
+    for title in ["sets", "maps", "arraylike", "string"] {
+        assert_eq!(
+            test(&p, title)["estimate"]["operations"]["request"],
+            2,
+            "{title}"
+        );
+    }
+    assert_eq!(
+        test(&p, "runtime")["estimate"]["estimatedOperations"]["request"],
+        3.0
+    );
+    assert_eq!(
+        test(&p, "cleanup")["lifecycleEstimate"]["estimatedOperations"]["request"],
+        3.0
+    );
+    assert!(magelens_plan::plan(&f.0.join("src")).is_ok());
+}
+
+#[test]
+fn cypress_collects_native_declarations_and_costs_serial_chains() {
+    let fixture = Fixture::new(&[(
+        "cart.cy.js",
+        r#"
+        describe('cart', () => {
+            it('one', () => { cy.visit('/cart'); cy.get('button').click(); cy.url().should('include', 'one'); });
+            specify('two', () => { cy.visit('/cart'); cy.get('button').click(); cy.url().should('include', 'two'); });
+        });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    assert_eq!(manifest["tests"].as_array().unwrap().len(), 2);
+    assert_eq!(manifest["diagnostics"], json!([]));
+    assert_eq!(manifest["checkpoints"].as_array().unwrap().len(), 1);
+    assert_eq!(manifest["checkpoints"][0]["automatic"], true);
+    let first = test(&manifest, "cart › one");
+    assert_eq!(first["fixture"], "cypress:it");
+    assert_eq!(first["disposition"], "automatic");
+    assert_eq!(first["estimate"]["operations"]["navigation"], 1);
+    assert_eq!(first["estimate"]["operations"]["interaction"], 1);
+    assert_eq!(first["estimate"]["operations"]["assertion"], 1);
+    assert_eq!(first["estimate"]["estimatedPoints"], 10);
+}
+
+#[test]
+fn cypress_imports_are_costed_without_authorizing_module_restoration() {
+    let fixture = Fixture::new(&[
+        (
+            "helper.js",
+            r#"export class Cart { static open() { cy.visit('/cart'); cy.get('h1').should('be.visible'); } }"#,
+        ),
+        (
+            "cart.cy.js",
+            r#"import {Cart} from './helper'; it('one', () => { Cart.open(); cy.contains('one'); }); it('two', () => { Cart.open(); cy.contains('two'); });"#,
+        ),
+    ]);
+    let manifest = fixture.plan();
+    assert_eq!(
+        test(&manifest, "one")["estimate"]["operations"]["navigation"],
+        1
+    );
+    assert_eq!(test(&manifest, "one")["disposition"], "adapter-required");
+    assert!(
+        manifest["checkpoints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|checkpoint| checkpoint["automatic"] == false)
+    );
+}
+
+#[test]
+fn cypress_hooks_aliases_and_lexical_values_stay_native() {
+    let fixture = Fixture::new(&[(
+        "cart.cy.ts",
+        r#"
+        context('cart', () => {
+            beforeEach(() => { cy.visit('/cart'); });
+            after(() => { cy.request('/cleanup'); });
+            it('one', () => { cy.get('button').as('button'); cy.get('@button').click(); });
+            it('two', () => { const selector: string = 'button'; cy.get(selector).click(); });
+        });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    assert_eq!(manifest["tests"].as_array().unwrap().len(), 2);
+    assert!(
+        manifest["tests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|test| test["disposition"] == "adapter-required")
+    );
+    assert!(
+        test(&manifest, "cart › one")["estimate"]["operations"]["navigation"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
+}
+
+#[test]
+fn cypress_callbacks_are_serial_costs_and_unresolved_tasks_remain_visible() {
+    let fixture = Fixture::new(&[(
+        "cart.cy.js",
+        r#"it('one', () => { cy.request('/seed').then(() => { cy.visit('/cart'); cy.get('h1').should('be.visible'); }); cy.task('database'); });"#,
+    )]);
+    let manifest = fixture.plan();
+    let first = test(&manifest, "one");
+    assert_eq!(first["estimate"]["operations"]["navigation"], 1);
+    assert_eq!(first["estimate"]["operations"]["request"], 1);
+    assert_eq!(first["estimate"]["analysisComplete"], false);
+    assert_eq!(first["disposition"], "adapter-required");
+}
 const IMPORT: &str = "import {test,expect} from '@playwright/test';";
+
+#[test]
+fn static_factory_forwarders_preserve_receiver_rest_arguments_and_getters() {
+    let fixture = Fixture::new(&[
+        (
+            "helpers.js",
+            r#"
+        const factory = () => ({
+            seed(paths) { return this.send(...paths); },
+            send(...paths) { for (const path of paths) cy.request(path); }
+        });
+        const methods = factory();
+        class Base { static get paths() { return ['/first', '/second']; } }
+        export class Api extends Base {
+            static seed(...args) { return methods.seed.apply(Api, args); }
+            static send(...args) { return methods.send.call(this, ...args); }
+        }
+    "#,
+        ),
+        (
+            "case.cy.js",
+            "import {Api} from './helpers'; it('seed', () => { Api.seed(Api.paths); });",
+        ),
+    ]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "seed")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["request"], 2);
+}
+
+#[test]
+fn cypress_subjects_preserve_dom_callbacks_and_array_iteration() {
+    let fixture = Fixture::new(&[(
+        "case.cy.js",
+        r#"
+        it('subjects', () => {
+            cy.get('body').should(($body) => {
+                expect($body.find('.loader').is(':visible')).to.equal(false);
+                expect(Number.parseFloat($body.css('opacity'))).to.be.closeTo(1, 0.01);
+            });
+            cy.wrap(['/a', '/b']).each(path => { cy.request(path); });
+            cy.get('input').invoke('val').then(value => { expect(value).to.be.a('string'); });
+            cy.wait(110);
+        });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "subjects")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["request"], 2);
+    assert_eq!(estimate["operations"]["explicit-wait"], 1);
+    assert_eq!(estimate["estimatedPoints"], 11);
+}
+
+#[test]
+fn static_and_instance_methods_have_distinct_dispatch() {
+    let fixture = Fixture::new(&[(
+        "case.cy.js",
+        r#"
+        class Api {
+            static run() { cy.request('/static'); }
+            run() { cy.visit('/instance'); }
+        }
+        it('dispatch', () => { Api.run(); const api = new Api(); api.run(); });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "dispatch")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["request"], 1);
+    assert_eq!(estimate["operations"]["navigation"], 1);
+}
+
+#[test]
+fn conditional_helper_returns_preserve_chain_types_and_default_parameters() {
+    let fixture = Fixture::new(&[(
+        "case.cy.js",
+        r#"
+        function load(flag, paths = []) {
+            paths.push('/added');
+            if (flag) return cy.wrap([]);
+            const label = 'items';
+            return cy.fixture(label).then(() => paths);
+        }
+        it('return paths', () => {
+            load(Cypress.env('flag')).then(() => { cy.request('/a'); });
+            load(Cypress.env('flag'), undefined).then(() => { cy.request('/b'); });
+        });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "return paths")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["request"], 2);
+}
+
+#[test]
+fn helper_mutations_keep_new_fields_and_queued_chain_types() {
+    let fixture = Fixture::new(&[(
+        "case.cy.js",
+        r#"
+        function identify(item) { item.path = String(Date.now()); }
+        function load(flag) {
+            let chain = cy.wrap(null);
+            if (flag) chain = chain.then(() => cy.request('/conditional'));
+            return chain;
+        }
+        function maybe(flag) { load(flag); if (flag) return cy.wrap(null); }
+        it('mutations', () => {
+            const item = {}; identify(item);
+            cy.visit(item.path.endsWith('/') ? item.path : item.path + '/');
+            load(Cypress.env('flag')).then(() => cy.request('/last'));
+            ['/a'].concat(['/b'], '/c').forEach(path => cy.request(path));
+        });
+        it('fallthrough', () => { maybe(Cypress.env('flag')).then(() => cy.request('/unsafe')); });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "mutations")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["navigation"], 1);
+    assert_eq!(estimate["operations"]["request"], 5);
+    assert_eq!(
+        test(&manifest, "fallthrough")["estimate"]["complete"],
+        false
+    );
+    assert!(
+        test(&manifest, "fallthrough")["estimate"]["reasons"]
+            .to_string()
+            .contains("nullish")
+    );
+}
+
+#[test]
+fn deep_forwarders_are_analyzed_with_a_bounded_call_stack() {
+    for (depth, complete) in [(40, true), (80, false)] {
+        let mut source = String::from("function step0() { return cy.request('/seed'); }\n");
+        for index in 1..=depth {
+            source.push_str(&format!(
+                "function step{index}() {{ return step{}(); }}\n",
+                index - 1
+            ));
+        }
+        source.push_str(&format!("it('deep', () => {{ step{depth}(); }});"));
+        let manifest = Fixture::new(&[("case.cy.js", &source)]).plan();
+        let estimate = &test(&manifest, "deep")["estimate"];
+        assert_eq!(estimate["analysisComplete"], complete, "{estimate}");
+        if complete {
+            assert_eq!(estimate["operations"]["request"], 1);
+        } else {
+            assert!(
+                estimate["issues"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|issue| issue["kind"] == "analysis-limit")
+            );
+        }
+    }
+}
+
+#[test]
+fn browser_timers_modules_nullable_dom_and_destructured_sequences_are_costed() {
+    let fixture = Fixture::new(&[(
+        "case.cy.js",
+        r#"
+        function poll() { return cy.request('/status').then(response => response.body.ready ? response.body : poll()); }
+        it('browser APIs', () => {
+            const [local, domain] = String(Cypress.env('email')).split('@');
+            cy.log(local.replace(/prefix/, ''), domain);
+            cy.get('input').then(input => { const label = Cypress.env('label') ? input.closest('label') : null; if (label) cy.wrap(label.first()).click(); });
+            cy.window().then(win => {
+                win.setTimeout(() => cy.request('/timer'), 100);
+                win.require(['components/navigation'], navigation => { navigation.enabled = true; });
+            });
+            poll().then(() => cy.request('/done'));
+        });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "browser APIs")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["complete"], false);
+    assert_eq!(estimate["upperBoundPoints"], Value::Null);
+    assert_eq!(estimate["operations"]["browser-module-load"], 1);
+    assert!(
+        estimate["reasons"]
+            .to_string()
+            .contains("runtime measurement")
+    );
+}
+
+#[test]
+fn collection_expands_static_class_tables_without_trusting_them_during_tests() {
+    let fixture = Fixture::new(&[
+        (
+            "examples.js",
+            "export class Examples { static cases = [{name:'one'}, {name:'two'}]; }",
+        ),
+        (
+            "case.cy.js",
+            r#"import {Examples} from './examples'; Examples.cases.forEach(item => { it(item.name, () => { Examples.cases.forEach(() => cy.request('/seed')); }); });"#,
+        ),
+    ]);
+    let manifest = fixture.plan();
+    assert_eq!(manifest["diagnostics"], json!([]));
+    assert_eq!(manifest["tests"].as_array().unwrap().len(), 2);
+    assert_eq!(test(&manifest, "one")["estimate"]["complete"], false);
+}
+
+#[test]
+fn package_main_can_reference_its_own_directory() {
+    let fixture = Fixture::new(&[
+        (
+            "node_modules/helper/package.json",
+            r#"{"name":"helper","main":"."}"#,
+        ),
+        (
+            "node_modules/helper/index.js",
+            "exports.open = () => cy.visit('/cart');",
+        ),
+        (
+            "case.cy.js",
+            "import {open} from 'helper'; it('open', () => open());",
+        ),
+    ]);
+    let manifest = fixture.plan();
+    assert_eq!(
+        test(&manifest, "open")["estimate"]["operations"]["navigation"],
+        1
+    );
+}
+
+#[test]
+fn cypress_tasks_follow_node_registration_and_expose_external_work() {
+    let fixture = Fixture::new(&[
+        (
+            "cypress.config.cjs",
+            r#"
+        const {execFileSync} = require('node:child_process');
+        const fs = require('node:fs');
+        module.exports = {e2e:{setupNodeEvents(register) {
+            register('task', {
+                'read:data'(file) { return fs.readFileSync(file, 'utf8'); },
+                'process:run'(file) { return execFileSync('tool', [file]); }
+            });
+        }}};
+    "#,
+        ),
+        (
+            "case.cy.js",
+            r#"it('tasks', () => { cy.task('read:data', 'fixture.json'); cy.task('process:run','fixture.json'); });"#,
+        ),
+    ]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "tasks")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["local-io"], 1);
+    assert_eq!(estimate["operations"]["external-process"], 1);
+    assert_eq!(estimate["complete"], false);
+    assert!(
+        estimate["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason.as_str().unwrap().contains("runtime measurement"))
+    );
+}
+
+#[test]
+fn hash_values_dom_elements_and_builtin_collection_callbacks_keep_types() {
+    let fixture = Fixture::new(&[(
+        "case.cy.js",
+        r#"
+        import {createHash} from 'node:crypto';
+        it('values', () => {
+            const key = createHash('sha256').update('fixture').digest('hex').substring(0,22);
+            cy.get('input').then($input => {
+                const input = $input[0], EventConstructor = input.ownerDocument.defaultView.Event;
+                input.dispatchEvent(new EventConstructor('input', {bubbles:true}));
+            });
+            [null, key].filter(Boolean).forEach(value => cy.request('/data/'+value));
+        });
+    "#,
+    )]);
+    let manifest = fixture.plan();
+    let estimate = &test(&manifest, "values")["estimate"];
+    assert_eq!(estimate["analysisComplete"], true, "{estimate}");
+    assert_eq!(estimate["operations"]["request"], 1);
+}
 
 #[test]
 fn generic_fixture_restoration_lowers_dependencies_values_and_teardown() {
@@ -241,10 +650,13 @@ fn approximate_counts_preserve_small_unknown_and_non_database_fixture_controls()
     );
     assert_eq!(repeated["estimatedOperations"]["interaction"], 3.0);
     assert!(
-        p["assessment"]["costPlan"]["selected"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["assessment"]["costPlan"].is_null(),
+        "Incomplete assessment must not select checkpoints"
+    );
+    assert!(
+        magelens_plan::plan(&f.0.join("src"))
+            .unwrap_err()
+            .contains("ESTIMATION_FAILED")
     );
 }
 
@@ -426,10 +838,13 @@ fn unknown_calls_recursion_and_unbounded_loops_have_explanations_not_fake_precis
         assert_eq!(s["estimate"]["lowerBoundPoints"], 0);
     }
     assert!(
-        p["assessment"]["costPlan"]["selected"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["assessment"]["costPlan"].is_null(),
+        "Incomplete assessment must not select checkpoints"
+    );
+    assert!(
+        magelens_plan::plan(&f.0.join("src"))
+            .unwrap_err()
+            .contains("ESTIMATION_FAILED")
     );
 }
 #[test]
@@ -920,7 +1335,7 @@ fn runtime_early_returns_bound_the_remaining_helper_body() {
 }
 
 #[test]
-fn known_expensive_work_can_justify_reuse_despite_an_unpriced_dependency() {
+fn known_expensive_work_cannot_bypass_an_unpriced_dependency() {
     let f = Fixture::new(&[
         (
             "fixtures.ts",
@@ -934,18 +1349,15 @@ fn known_expensive_work_can_justify_reuse_despite_an_unpriced_dependency() {
     let p = f.plan();
     assert_eq!(test(&p, "a")["fixtureEstimate"]["complete"], false);
     assert!(
-        !p["assessment"]["costPlan"]["selected"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["assessment"]["costPlan"].is_null(),
+        "Incomplete assessment must not select checkpoints"
     );
     assert!(
-        p["assessment"]["costPlan"]["decisions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|d| d["combinedUnits"] == 2400)
+        magelens_plan::plan(&f.0.join("src"))
+            .unwrap_err()
+            .contains("ESTIMATION_FAILED")
     );
+    assert_eq!(p["assessment"]["analysis"]["status"], "partial");
 }
 
 #[test]

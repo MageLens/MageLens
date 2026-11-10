@@ -7,6 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 [[ $# == 1 ]] || { echo 'Usage: tests/ci/orchestrator-image.sh IMAGE' >&2; exit 1; }
 image=$1
+bash tests/ci/predictor-image.sh "$image"
 root=$(pwd -P)
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT

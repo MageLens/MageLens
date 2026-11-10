@@ -5,6 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {assessed, estimate} = require('./fixtures/branching/assessment.cjs');
 const os = require('node:os');
 const path = require('node:path');
 const {buildWorkflow, compileFragment} = require('../branching/automatic.cjs');
@@ -27,12 +28,33 @@ function fixture(t) {
     class Provider extends FixtureProvider {
         get page(){return {goto:async url=>{this.state.browser.url=url;this.hit(url);if(url==='/cart')this.state.db.cart=['sku'];}};}
     }
+    assessed(manifest);
     return {root,manifest,configuration,Provider};
 }
 
 test('compiled fragments preserve strict module semantics',async()=>{
     assert.equal(await compileFragment([], 'return this;')(),undefined);
     await assert.rejects(compileFragment([], 'unboundAutomaticTestVariable = 1;')(),ReferenceError);
+});
+
+test('Cypress fragments use their own queue with original UTF-8 source bytes', async t => {
+    const {root, manifest, configuration} = fixture(t);
+    const source = "// 🛒\ncy.visit('/cart');\ncy.visit('/one');\ncy.visit('/two');";
+    const file = path.join(root, 'flow.spec.ts'); fs.writeFileSync(file, source);
+    manifest.sources[0].sha256 = fileDigest(file);
+    for (const [index, item] of manifest.tests.entries()) {
+        item.fixture = 'cypress:it';
+        item.steps = ["cy.visit('/cart');", `cy.visit('/${index ? 'two' : 'one'}');`].map(code => {
+            const start = Buffer.byteLength(source.slice(0, source.indexOf(code)));
+            return {start, end: start + Buffer.byteLength(code), kind: 'statement', portable: true, actionUnits: 1};
+        });
+    }
+    assessed(manifest);
+    const built = buildWorkflow(manifest, configuration), executed = [];
+    const runtime = {executeCypress: async code => executed.push(code)};
+    await built.workflow.stages.get('cp-cart').run(runtime);
+    await built.workflow.specs.get('test-two').run(runtime);
+    assert.deepEqual(executed, ["cy.visit('/cart');", "cy.visit('/two');"]);
 });
 
 test('automatic fragments preserve UTF-8, branch states and last-consumer cleanup',async t=>{
@@ -60,8 +82,8 @@ test('unsupported fixture, missing assertion, stale dependencies and dynamic tes
     assert.throws(()=>buildWorkflow(manifest,configuration),/Authenticated fixture/);
     manifest.tests[0].disposition='automatic';
     assert.throws(()=>buildWorkflow(manifest,{...configuration,assertCheckpoint:null}),/assertCheckpoint/);
-    manifest.diagnostics.push('dynamic tests');assert.throws(()=>buildWorkflow(manifest,configuration),/Dynamic tests/);
-    assert.doesNotThrow(()=>buildWorkflow(manifest,configuration,['test-one']));manifest.diagnostics=[];
+    manifest.diagnostics.push('dynamic tests');assert.throws(()=>buildWorkflow(manifest,configuration),/Cost assessment failed/);
+    assert.throws(()=>buildWorkflow(manifest,configuration,['test-one']),error=>error.statusCode===500);manifest.diagnostics=[];
     fs.appendFileSync(path.join(root,'flow.spec.ts'),'\n//changed');assert.throws(()=>buildWorkflow(manifest,configuration),/Stale source/);
 });
 
@@ -70,7 +92,7 @@ test('invalid selections and syntax are rejected before provider preparation',t=
     assert.throws(()=>buildWorkflow(manifest,configuration,['missing']),/Unknown test/);
     assert.throws(()=>buildWorkflow(manifest,configuration,['test-one','test-one']),/Duplicate/);
     const file=path.join(root,'flow.spec.ts');fs.writeFileSync(file,'await (');
-    manifest.sources[0].sha256=fileDigest(file);manifest.tests[0].steps=[{start:0,end:7}];manifest.checkpoints=[];
+    manifest.sources[0].sha256=fileDigest(file);manifest.tests[0].steps=[{start:0,end:7}];manifest.checkpoints=[];assessed(manifest);
     assert.throws(()=>buildWorkflow(manifest,configuration,['test-one']),SyntaxError);
 });
 
@@ -110,10 +132,10 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 test('Rust source estimates are authoritative and never call handwritten weight callbacks',t=>{
     const {manifest,configuration}=fixture(t);
     manifest.implementation='rust-prefix-v2';
-    manifest.assessment={version:'js-ts-points-v4',boundsVersion:1};
+    assessed(manifest);
     for(const entry of manifest.tests) {
-        entry.fixtureEstimate={points:20,estimatedPoints:20,lowerBoundPoints:2,complete:false};
-        for(const step of entry.steps) step.estimate={points:8,estimatedPoints:8,lowerBoundPoints:1,complete:false};
+        entry.fixtureEstimate={...estimate(20),points:20,estimatedPoints:20,lowerBoundPoints:2,complete:false};
+        for(const step of entry.steps) step.estimate={...estimate(8),points:8,estimatedPoints:8,lowerBoundPoints:1,complete:false};
     }
     const adapter={identity:'execution-only',supports:()=>true,execute:async()=>{},prepare:async()=>{},
         fixtureUnits:()=>{throw new Error('Handwritten fixture cost must not run');},
@@ -126,7 +148,7 @@ test('Rust source estimates are authoritative and never call handwritten weight 
     manifest.tests[0].steps[0].estimate.complete=false;
     assert.equal(buildWorkflow(manifest,configuration).workflow.stages.get('cp-cart').actionUnits,8);
     manifest.tests[0].steps[0].estimate={points:8,estimatedPoints:-1,lowerBoundPoints:1,complete:false};
-    assert.throws(()=>buildWorkflow(manifest,configuration),/Invalid static action units/);
+    assert.throws(()=>buildWorkflow(manifest,configuration),/Cost assessment failed/);
 });
 
 test('outdated source cost models require replanning before workflow construction',t=>{

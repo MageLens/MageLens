@@ -17,7 +17,7 @@ module.exports = [
         languageOptions: {globals: {...globals.browser, ...globals.amd}}
     },
     {
-        files: ['cypress/**/*.js', '**/*.cy.js', '**/Test/Cypress/*.js'],
+        files: ['cypress/**/*.js', '**/*.cy.js', '**/Test/Cypress/*.js', 'branching/runners/cypress/native-support.cjs'],
         languageOptions: {globals: {...globals.mocha, cy: 'readonly', Cypress: 'readonly', expect: 'readonly', assert: 'readonly'}}
     },
     {

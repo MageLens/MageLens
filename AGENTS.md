@@ -113,19 +113,6 @@ The public `./bin/run-coverage --branching` command supplies this acknowledgment
 internally; keep it out of user-facing documentation and help. Direct internal
 callers of `bin/run-branching --branching` must supply it explicitly.
 
-After preparing the isolated installations and private configuration described in
-[the performance guide](tests/performance/branching/README.md), run a focused
-local campaign with:
-
-```bash
-python3 tests/performance/branching/run.py \
-  --config .runtime/performance-local.json \
-  --output .runtime/performance-matrix-01 --disposable \
-  --rows strong-5,deep-shallow,deep-large --pairs 1
-```
-
-Use a fresh output directory. Full performance matrices run in GitHub Actions.
-
 ## Preserve application data and report integrity
 
 - Keep original source bytes and PHP line numbers unchanged during coverage. Instrument disposable copies and retain source-hash and symlink checks.
@@ -135,3 +122,4 @@ Use a fresh output directory. Full performance matrices run in GitHub Actions.
 - Never print or commit Composer auth, `.env`, installed `env.php`, certificates or credential volumes. Do not prune unrelated Docker resources or remove an existing application's volumes.
 - Preserve dependency pins and lockfiles together. Do not publish a release unless requested.
 - Exclude generated runtime files, coverage reports and incidental badge changes from unrelated work. Report which validation actually passed and any checks blocked by unavailable services, images, repositories or credentials.
+- Clean up task-owned artifacts after validation: stopped test containers, disposable volumes and networks, obsolete images and build caches, temporary checkouts, database dumps, browser output and checkpoint disk images. Check ownership and active workflows first, unmount loop filesystems before deleting their backing files, and preserve application data, credentials and uncommitted source. Retain only the compact evidence and resources needed for ongoing work; check free disk space before and after substantial runs instead of accumulating old campaigns.

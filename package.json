@@ -14,6 +14,7 @@
     "test:branching-dashboard": "node tests/branching-dashboard-browser.cjs"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.9",
     "@cypress/code-coverage": "4.1.3",
     "@eslint/js": "10.0.1",
     "@vitaliiboiko/magento-template-coverage": "2.0.0",

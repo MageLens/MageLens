@@ -11,6 +11,7 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::Node;
 mod collection;
+mod cypress;
 mod restoration;
 mod runtime;
 pub(crate) use collection::Bindings;
@@ -37,6 +38,10 @@ enum Value {
     Map(Option<Vec<(Value, Value)>>),
     Set(Option<Vec<Value>>),
     Browser,
+    CypressChain(Box<Value>),
+    Dom,
+    Nullable(Box<Value>),
+    Chai,
     Request,
     Expect,
     Assertion(bool),
@@ -50,6 +55,77 @@ enum Value {
     DataLibrary(String),
 }
 impl Value {
+    fn contains_callback(&self) -> bool {
+        match self {
+            Self::Function(..) | Self::Class(..) | Self::RetryAssertion(..) | Self::Builtin(..) => {
+                true
+            }
+            Self::Object(fields) | Self::Instance(_, fields) => {
+                fields.values().any(Self::contains_callback)
+            }
+            Self::Array(values) => values.iter().any(Self::contains_callback),
+            Self::Map(Some(values)) => values
+                .iter()
+                .any(|(key, value)| key.contains_callback() || value.contains_callback()),
+            Self::Set(Some(values)) => values.iter().any(Self::contains_callback),
+            Self::Promise(value)
+            | Self::Sequence(value)
+            | Self::Nullable(value)
+            | Self::CypressChain(value) => value.contains_callback(),
+            _ => false,
+        }
+    }
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Unknown => "unresolved value",
+            Self::Undefined => "undefined",
+            Self::Null => "null",
+            Self::Array(_) | Self::Sequence(_) => "array",
+            Self::Object(_) => "object",
+            Self::Function(..) => "function",
+            Self::Class(_) => "class",
+            Self::Instance(..) => "instance",
+            Self::Builtin(_) => "platform value",
+            Self::CypressChain(_) => "Cypress chain",
+            Self::Promise(_) => "promise",
+            Self::Text | Self::String(_) => "string",
+            Self::Dom => "DOM element",
+            _ => "runtime value",
+        }
+    }
+    fn join(self, other: Self) -> Self {
+        if self == other {
+            return self;
+        }
+        match (self, other) {
+            (Self::CypressChain(a), Self::CypressChain(b)) => {
+                Self::CypressChain(Box::new(a.join(*b)))
+            }
+            (Self::Promise(a), Self::Promise(b)) => Self::Promise(Box::new(a.join(*b))),
+            (Self::Nullable(a), Self::Null | Self::Undefined)
+            | (Self::Null | Self::Undefined, Self::Nullable(a)) => Self::Nullable(a),
+            (Self::Nullable(a), Self::Nullable(b)) => Self::Nullable(Box::new(a.join(*b))),
+            (Self::Null | Self::Undefined, value) | (value, Self::Null | Self::Undefined) => {
+                Self::Nullable(Box::new(value))
+            }
+            (Self::Nullable(a), b) | (b, Self::Nullable(a)) => Self::Nullable(Box::new(a.join(b))),
+            (Self::String(_) | Self::Text, Self::String(_) | Self::Text) => Self::Text,
+            (Self::Array(a), Self::Array(b)) => Self::Sequence(Box::new(
+                a.into_iter()
+                    .chain(b)
+                    .reduce(Self::join)
+                    .unwrap_or(Self::Data),
+            )),
+            (Self::Object(a), Self::Object(b)) => Self::Object(
+                a.into_iter()
+                    .filter_map(|(key, value)| {
+                        b.get(&key).cloned().map(|other| (key, value.join(other)))
+                    })
+                    .collect(),
+            ),
+            _ => Self::Data,
+        }
+    }
     fn settled() -> Self {
         Self::Object(Env::from([
             ("status".into(), Self::Text),
@@ -69,6 +145,7 @@ impl Value {
             Self::Array(v) => v.iter().all(Self::data_only),
             Self::Object(v) => v.values().all(Self::data_only),
             Self::Sequence(v) => v.data_only(),
+            Self::Nullable(v) => v.data_only(),
             _ => false,
         }
     }
@@ -80,6 +157,8 @@ impl Value {
             }
             Self::Sequence(v) => Self::Sequence(v.clone()),
             Self::Promise(v) => Self::Promise(Box::new(v.widen())),
+            Self::CypressChain(v) => Self::CypressChain(Box::new(v.widen())),
+            Self::Nullable(v) => Self::Nullable(Box::new(v.widen())),
             Self::Map(_) => Self::Map(None),
             Self::Set(_) => Self::Set(None),
             Self::Object(v) => {
@@ -90,6 +169,8 @@ impl Value {
                 v.iter().map(|(k, v)| (k.clone(), v.widen())).collect(),
             ),
             Self::Browser
+            | Self::Dom
+            | Self::Chai
             | Self::Request
             | Self::Function(..)
             | Self::Class(_)
@@ -128,6 +209,9 @@ impl Value {
             | Self::Function(..)
             | Self::Class(_)
             | Self::Browser
+            | Self::CypressChain(_)
+            | Self::Dom
+            | Self::Chai
             | Self::Request => Some(true),
             _ => None,
         }
@@ -184,6 +268,9 @@ struct Eval {
     flow: Flow,
     this: Option<Value>,
     writes: Env,
+    returned: Option<Value>,
+    terminates: bool,
+    mutations: Vec<(Value, Value)>,
 }
 impl Eval {
     fn value(value: Value) -> Self {
@@ -200,20 +287,30 @@ impl Eval {
     }
 }
 struct Context {
+    cypress: bool,
+    return_probe: bool,
+    collecting: bool,
+    depth: usize,
     budget: usize,
     stack: Vec<String>,
     module_values: BTreeMap<(String, usize), Value>,
     tainted_libraries: BTreeSet<String>,
     lexical_envs: BTreeMap<(String, usize), Env>,
+    node_tasks: Option<Env>,
 }
 impl Default for Context {
     fn default() -> Self {
         Self {
+            cypress: false,
+            return_probe: false,
+            collecting: false,
+            depth: 0,
             budget: points::NODE_LIMIT,
             stack: vec![],
             module_values: BTreeMap::new(),
             tainted_libraries: BTreeSet::new(),
             lexical_envs: BTreeMap::new(),
+            node_tasks: None,
         }
     }
 }
@@ -226,6 +323,9 @@ fn params(n: Node) -> Vec<Node> {
         .unwrap_or_else(|| field(n, "parameter").into_iter().collect())
 }
 fn pattern(n: Node) -> Node {
+    if n.kind() == "assignment_pattern" {
+        return field(n, "left").unwrap_or(n);
+    }
     field(n, "pattern")
         .or_else(|| field(n, "name"))
         .unwrap_or(n)
@@ -248,6 +348,11 @@ fn names(n: Node, s: &str) -> Vec<String> {
 fn bind(n: Node, value: Value, s: &str, env: &mut Env) {
     let n = pattern(n);
     match n.kind() {
+        "rest_pattern" => {
+            if let Some(target) = children(n).first() {
+                bind(*target, value, s, env);
+            }
+        }
         "identifier" | "shorthand_property_identifier_pattern" => {
             env.insert(text(n, s).into(), value);
         }
@@ -282,13 +387,14 @@ fn bind(n: Node, value: Value, s: &str, env: &mut Env) {
             }
         }
         "array_pattern" => {
-            let values = if let Value::Array(v) = value {
-                v
-            } else {
-                vec![]
-            };
             for (i, n) in children(n).into_iter().enumerate() {
-                bind(n, values.get(i).cloned().unwrap_or_default(), s, env);
+                let item = match &value {
+                    Value::Array(values) => values.get(i).cloned().unwrap_or(Value::Undefined),
+                    Value::Sequence(item) => *item.clone(),
+                    Value::Data => Value::Data,
+                    _ => Value::Unknown,
+                };
+                bind(n, item, s, env);
             }
         }
         _ => {}
@@ -379,6 +485,35 @@ fn store_value(target: Node, value: Value, source: &str, env: &mut Env) {
     }
 }
 fn invalidate_call(env: &mut Env, result: &Eval) {
+    fn update(value: &mut Value, old: &Value, new: &Value) {
+        if value == old {
+            // Equal abstract objects may alias. Preserve new field types but
+            // never infer concrete loop bounds from an uncertain alias.
+            *value = new.widen();
+        } else {
+            match value {
+                Value::Object(fields) | Value::Instance(_, fields) => {
+                    for value in fields.values_mut() {
+                        update(value, old, new);
+                    }
+                }
+                Value::Array(values) => {
+                    for value in values {
+                        update(value, old, new);
+                    }
+                }
+                Value::Sequence(value) | Value::Promise(value) | Value::CypressChain(value) => {
+                    update(value, old, new)
+                }
+                _ => {}
+            }
+        }
+    }
+    for (old, new) in &result.mutations {
+        for value in env.values_mut() {
+            update(value, old, new);
+        }
+    }
     if result
         .cost
         .reasons
@@ -443,15 +578,54 @@ impl Project {
         if let Some(v) = env.get(name) {
             return v.clone();
         }
+        if let Some((module, export)) = self.imports(file).get(name) {
+            let module = module.strip_prefix("node:").unwrap_or(module);
+            if matches!(
+                module,
+                "fs" | "fs/promises"
+                    | "path"
+                    | "url"
+                    | "os"
+                    | "assert"
+                    | "assert/strict"
+                    | "crypto"
+                    | "child_process"
+            ) {
+                return Value::Builtin(if matches!(export.as_str(), "default" | "*") {
+                    module.into()
+                } else {
+                    format!("{module}.{export}")
+                });
+            }
+        }
+        if let Some((module, export)) = self.imports(file).get(name)
+            && matches!(module.as_str(), "jsrsasign" | "crypto-js")
+            && self.resolve_import(file, name, module).is_some()
+        {
+            return Value::Builtin(if matches!(export.as_str(), "default" | "*") {
+                module.clone()
+            } else {
+                format!("{module}.{export}")
+            });
+        }
         // A star re-export exposes names to importers, not new local bindings.
         // In particular it must not turn JSON, Set or Promise into fake runner exports.
         if !self.imports(file).contains_key(name) && self.declaration(file, name).is_none() {
+            if ctx.cypress {
+                match name {
+                    "cy" | "Cypress" => return Value::Builtin(name.into()),
+                    "expect" => return Value::Expect,
+                    _ => {}
+                }
+            }
             match name {
                 "process" | "console" | "Object" | "Array" | "JSON" | "Math" | "Number"
                 | "String" | "Boolean" | "RegExp" | "URL" | "Error" | "TypeError" | "Map"
                 | "Set" | "WeakMap" | "WeakSet" | "Promise" | "parseInt" | "parseFloat"
                 | "Date" | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
-                | "queueMicrotask" | "fetch" => return Value::Builtin(name.into()),
+                | "queueMicrotask" | "fetch" | "structuredClone" | "encodeURIComponent"
+                | "decodeURIComponent" | "encodeURI" | "decodeURI" | "btoa" | "atob" | "escape"
+                | "unescape" | "Buffer" => return Value::Builtin(name.into()),
                 "undefined" => return Value::Undefined,
                 "__dirname" | "__filename" => return Value::Text,
                 _ => {}
@@ -469,7 +643,14 @@ impl Project {
             let module = module.strip_prefix("node:").unwrap_or(&module);
             if matches!(
                 module,
-                "fs" | "fs/promises" | "path" | "url" | "os" | "assert" | "assert/strict"
+                "fs" | "fs/promises"
+                    | "path"
+                    | "url"
+                    | "os"
+                    | "assert"
+                    | "assert/strict"
+                    | "crypto"
+                    | "child_process"
             ) {
                 return Value::Builtin(if matches!(export.as_str(), "default" | "*") {
                     module.into()
@@ -523,6 +704,20 @@ impl Project {
         if self.mutable_binding(&r) {
             return Value::Data;
         }
+        if let Some(node) = self.node(&r)
+            && matches!(
+                node.kind(),
+                "function_declaration"
+                    | "function_expression"
+                    | "arrow_function"
+                    | "class"
+                    | "class_declaration"
+            )
+        {
+            // Reading a function/class does not enter its body or consume a
+            // helper call frame. Recursion is bounded when the value is invoked.
+            return self.eval(&r.file, node, &mut Env::new(), ctx).value;
+        }
         let cache_key = (r.file.clone(), r.start);
         if let Some(value) = ctx.module_values.get(&cache_key) {
             return value.clone();
@@ -561,8 +756,23 @@ impl Project {
             || args.iter().all(|v| v.json().is_none())
                 && ctx.stack.iter().any(|key| key.starts_with(&call_prefix))
         {
+            let mut value = self.recursive_return(r, this.as_ref());
+            if ctx.cypress && !ctx.return_probe {
+                // Cypress returns a chain even when its queued callback recurses.
+                // Probe the synchronous return path without traversing callbacks;
+                // the recursive operation count remains explicitly unbounded.
+                let mut probe = Context {
+                    cypress: true,
+                    return_probe: true,
+                    ..Context::default()
+                };
+                let result = self.invoke(r, closure, args.clone(), this.clone(), &mut probe);
+                if matches!(result.value, Value::CypressChain(_)) {
+                    value = result.value;
+                }
+            }
             return Eval {
-                value: self.recursive_return(r, this.as_ref()),
+                value,
                 cost: Estimate::unknown("Recursive helper depends on runtime data"),
                 ..Eval::default()
             };
@@ -593,14 +803,19 @@ impl Project {
         ctx.stack.push(key);
         let mut defaults = Estimate::default();
         for (i, param) in params(n).into_iter().enumerate() {
-            let mut value = if let Some(value) = args.get(i) {
+            let mut value = if pattern(param).kind() == "rest_pattern" {
+                Value::Array(args.get(i..).unwrap_or_default().to_vec())
+            } else if let Some(value) = args
+                .get(i)
+                .filter(|value| !matches!(value, Value::Undefined))
+            {
                 value.clone()
-            } else if let Some(value) = field(param, "value") {
+            } else if let Some(value) = field(param, "value").or_else(|| field(param, "right")) {
                 let r = self.eval(&r.file, value, &mut env, ctx);
                 defaults.add(r.cost);
                 r.value
             } else {
-                Value::Unknown
+                Value::Undefined
             };
             if matches!(value, Value::Unknown)
                 && let Some(annotation) = field(param, "type")
@@ -623,6 +838,29 @@ impl Project {
         let mut result = field(n, "body")
             .map(|n| self.eval(&r.file, n, &mut env, ctx))
             .unwrap_or_default();
+        if let Some(value) = result.returned.take() {
+            result.value = if result.terminates {
+                value
+            } else {
+                value.join(Value::Undefined)
+            };
+        } else if field(n, "body").is_some_and(|body| body.kind() == "statement_block")
+            && result.flow == Flow::Continue
+        {
+            result.value = Value::Undefined;
+        }
+        for (parameter, original) in params(n).into_iter().zip(&args) {
+            if matches!(
+                original,
+                Value::Object(_) | Value::Array(_) | Value::Instance(..)
+            ) {
+                if let Some(changed) = env.get(text(pattern(parameter), s))
+                    && changed != original
+                {
+                    result.mutations.push((original.clone(), changed.clone()));
+                }
+            }
+        }
         ctx.stack.pop();
         result.cost.add(defaults);
         let writes = field(n, "body")
@@ -658,12 +896,23 @@ impl Project {
         if matches!(result.flow, Flow::Return | Flow::Maybe) {
             result.flow = Flow::Continue;
         }
+        // A callee returning does not terminate its caller's statement block.
+        result.terminates = result.flow == Flow::Throw;
         if function_async(n) && result.flow != Flow::Use {
             result.value = Value::Promise(Box::new(result.value.resolved()));
         }
         result
     }
     fn eval(&self, file: &str, node: Node, env: &mut Env, ctx: &mut Context) -> Eval {
+        if ctx.depth >= 512 {
+            return Eval::cost(Estimate::unknown("Static expression depth limit"));
+        }
+        ctx.depth += 1;
+        let result = self.eval_node(file, node, env, ctx);
+        ctx.depth -= 1;
+        result
+    }
+    fn eval_node(&self, file: &str, node: Node, env: &mut Env, ctx: &mut Context) -> Eval {
         if ctx.budget == 0 {
             return Eval::cost(Estimate::unknown("Static analysis node budget exceeded"));
         }
@@ -794,7 +1043,7 @@ impl Project {
                         && let Some(name) = field(c, "name")
                     {
                         values.insert(
-                            text(name, s).into(),
+                            normalize::string(name, s).unwrap_or_else(|| text(name, s).into()),
                             Value::Function(self.reference(file, c), Box::new(env.clone())),
                         );
                     } else if c.kind() == "spread_element" {
@@ -901,6 +1150,16 @@ impl Project {
                     }
                     ctx.lexical_envs.insert(scope_key.clone(), env.clone());
                     let r = self.eval(file, c, env, ctx);
+                    result.mutations.extend(r.mutations);
+                    if let Some(value) = r.returned {
+                        result.returned = Some(
+                            result
+                                .returned
+                                .take()
+                                .map_or(value.clone(), |prior| prior.join(value)),
+                        );
+                    }
+                    result.terminates |= r.terminates;
                     result.cost.add(if result.flow == Flow::Maybe {
                         r.cost.optional("A prior branch may exit before this work")
                     } else {
@@ -986,6 +1245,7 @@ impl Project {
                     .map(|n| self.eval(file, *n, env, ctx))
                     .unwrap_or_default();
                 r.flow = Flow::Throw;
+                r.terminates = true;
                 r
             }
             "return_statement" => {
@@ -994,6 +1254,8 @@ impl Project {
                     .map(|n| self.eval(file, n, env, ctx))
                     .unwrap_or_default();
                 r.flow = Flow::Return;
+                r.returned = Some(r.value.clone());
+                r.terminates = true;
                 r
             }
             "member_expression" => {
@@ -1014,6 +1276,7 @@ impl Project {
                     }
                     (Value::Object(v), Value::String(s)) => v.get(&s).cloned().unwrap_or_default(),
                     (Value::Sequence(v), _) => *v,
+                    (Value::Dom, Value::Number(_)) => Value::Dom,
                     (Value::Data | Value::Text | Value::Builtin(_), _) => Value::Data,
                     _ => Value::Unknown,
                 };
@@ -1042,7 +1305,7 @@ impl Project {
                         b.cost = b
                             .cost
                             .optional("Short-circuit operation depends on runtime data");
-                        b.value = Value::Data;
+                        b.value = a.value.join(b.value);
                         invalidate_changed(env, &branch_env);
                     } else {
                         *env = branch_env;
@@ -1147,11 +1410,12 @@ impl Project {
                     } else {
                         Flow::Maybe
                     };
-                    let value = if a.value == b.value {
-                        a.value
-                    } else {
-                        Value::Data
+                    let value = a.value.join(b.value);
+                    let returned = match (a.returned, b.returned) {
+                        (Some(a), Some(b)) => Some(a.join(b)),
+                        (a, b) => a.or(b),
                     };
+                    let terminates = a.terminates && b.terminates;
                     let mut cost = Estimate::choice(
                         a.cost,
                         b.cost,
@@ -1162,6 +1426,8 @@ impl Project {
                         cost,
                         value,
                         flow,
+                        returned,
+                        terminates,
                         ..Eval::default()
                     }
                 }
@@ -1475,6 +1741,30 @@ impl Project {
             }
         }
     }
+    fn modeled_call(&self, file: &str, node: Node, args: &[Value], env: &mut Env) -> Option<Eval> {
+        let model = self
+            .models
+            .get(&(file.to_string(), node.start_byte(), node.end_byte()))?;
+        if args.iter().any(Value::contains_callback) {
+            return Some(Eval::cost(Estimate::unknown(format!(
+                "Unsupported project call model with callback arguments at {file}:{}",
+                node.start_position().row + 1
+            ))));
+        }
+        for value in env.values_mut() {
+            *value = value.widen();
+        }
+        let value = match model.returns {
+            crate::models::ReturnValue::Data => Value::Data,
+            crate::models::ReturnValue::Text => Value::Text,
+            crate::models::ReturnValue::Undefined => Value::Undefined,
+        };
+        Some(Eval {
+            cost: model.estimate(),
+            value,
+            ..Eval::default()
+        })
+    }
     fn call_eval(&self, file: &str, n: Node, env: &mut Env, ctx: &mut Context) -> Eval {
         let s = &self.modules[file].source;
         let Some(function) = field(n, "function") else {
@@ -1551,15 +1841,44 @@ impl Project {
         };
         let mut cost = Estimate::default();
         let mut args = vec![];
+        let receiver_kind = receiver
+            .as_ref()
+            .map(|receiver| receiver.value.kind())
+            .unwrap_or("function");
         for arg in argument_nodes {
             let r = self.eval(file, arg, env, ctx);
             cost.add(r.cost);
-            args.push(r.value);
+            if arg.kind() == "spread_element" {
+                if let Value::Array(values) = r.value {
+                    args.extend(values);
+                } else {
+                    cost.add(Estimate::unknown("Call argument spread has runtime length"));
+                    args.push(Value::Data);
+                }
+            } else {
+                args.push(r.value);
+            }
         }
         if let Some(mut receiver) = receiver {
             cost.add(receiver.cost);
             let previous_receiver = receiver.value.clone();
             if let Some(mut r) = self.value_call(&mut receiver.value, method, &args, ctx) {
+                // Built-in runner dispatch reports opaque project commands here.
+                // Replace only that unresolved command, never nested argument,
+                // dependency, callback or analysis-limit failures.
+                if r.cost.reasons.len() == 1
+                    && r.cost.reasons.iter().any(|reason| {
+                        reason.starts_with("Unsupported Cypress command:")
+                            || reason.starts_with("Unsupported Cypress API:")
+                            || reason == "Unresolved Cypress task registration or runtime task name"
+                    })
+                    && let Some(mut modeled) = self.modeled_call(file, n, &args, env)
+                {
+                    if matches!(r.value, Value::CypressChain(_)) {
+                        modeled.value = Value::CypressChain(Box::new(modeled.value));
+                    }
+                    r = modeled;
+                }
                 if receiver.value != previous_receiver
                     && let Some(object) = field(function, "object")
                 {
@@ -1570,6 +1889,15 @@ impl Project {
                 return r;
             }
             match receiver.value {
+                Value::Undefined | Value::Null => {
+                    return Eval {
+                        cost: cost
+                            .uncertain("A method call on a nullish receiver throws on this path"),
+                        flow: Flow::Throw,
+                        terminates: true,
+                        ..Eval::default()
+                    };
+                }
                 Value::MissingDependency(module) => {
                     cost.add(Estimate::unknown(format!("Missing dependency: {module}")));
                     return Eval::cost(cost);
@@ -1827,9 +2155,24 @@ impl Project {
                         return r;
                     }
                 }
+                Value::Class(class) => {
+                    if let Some(member) = self.class_static_method(&class, method, 0) {
+                        let mut result =
+                            self.invoke(&member, &Env::new(), args, Some(Value::Class(class)), ctx);
+                        invalidate_call(env, &result);
+                        result.cost.add(cost);
+                        return result;
+                    }
+                }
                 Value::Object(fields) => {
                     if let Some(Value::Function(reference, closure)) = fields.get(method) {
-                        let mut r = self.invoke(reference, closure, args, None, ctx);
+                        let mut r = self.invoke(
+                            reference,
+                            closure,
+                            args,
+                            Some(Value::Object(fields.clone())),
+                            ctx,
+                        );
                         invalidate_call(env, &r);
                         r.cost.add(cost);
                         return r;
@@ -1870,7 +2213,9 @@ impl Project {
                 Value::Expect => {
                     return Eval {
                         cost,
-                        value: if let Some(Value::Function(r, closure)) = args.first() {
+                        value: if ctx.cypress {
+                            Value::Chai
+                        } else if let Some(Value::Function(r, closure)) = args.first() {
                             Value::RetryAssertion(r.clone(), closure.clone())
                         } else {
                             Value::Assertion(
@@ -1902,9 +2247,14 @@ impl Project {
         for value in env.values_mut() {
             *value = value.widen();
         }
+        if let Some(mut result) = self.modeled_call(file, n, &args, env) {
+            result.cost.add(cost);
+            return result;
+        }
         cost.add(Estimate::unknown(format!(
-            "Unresolved call at {file}:{}",
-            n.start_position().row + 1
+            "Unresolved call at {file}:{} ({} on {receiver_kind})",
+            n.start_position().row + 1,
+            if method.is_empty() { "call" } else { method }
         )));
         Eval::cost(cost)
     }
@@ -2089,6 +2439,7 @@ impl Project {
     }
     pub fn assess(&self, test: &mut Test, tainted_libraries: &mut BTreeSet<String>) {
         let mut ctx = Context {
+            cypress: test.fixture.starts_with("cypress:"),
             tainted_libraries: tainted_libraries.clone(),
             ..Context::default()
         };
@@ -2170,7 +2521,7 @@ impl Project {
                     );
                 }
             }
-        } else if test.fixture != "@playwright/test:test" {
+        } else if test.fixture != "@playwright/test:test" && !ctx.cypress {
             costs
                 .repeated
                 .add(Estimate::unknown("Unresolved fixture provider"));
@@ -2185,6 +2536,7 @@ impl Project {
             }
             ancestor = node.parent();
         }
+        let mut cleanup_hooks = vec![];
         for scope in scopes.into_iter().rev() {
             for statement in children(scope) {
                 let call = if statement.kind() == "expression_statement" {
@@ -2196,30 +2548,56 @@ impl Project {
                     continue;
                 }
                 let name = crate::function_name(call, &module.source);
-                let Some(alias) = name.strip_suffix(".beforeAll") else {
-                    continue;
+                let (alias, phase) = if ctx.cypress {
+                    match name.as_str() {
+                        "before" => ("", "beforeAll"),
+                        "after" => ("", "afterAll"),
+                        "afterEach" => ("", "afterEach"),
+                        _ => continue,
+                    }
+                } else {
+                    let Some((alias, phase)) = name.rsplit_once('.') else {
+                        continue;
+                    };
+                    if !["beforeAll", "afterAll", "afterEach"].contains(&phase)
+                        || self
+                            .provider(&test.file, alias, &mut BTreeSet::new())
+                            .is_none()
+                    {
+                        continue;
+                    }
+                    (alias, phase)
                 };
-                if self
-                    .provider(&test.file, alias, &mut BTreeSet::new())
-                    .is_none()
-                {
-                    continue;
-                }
                 let hook = field(call, "arguments").and_then(|n| {
                     children(n)
                         .into_iter()
                         .find(|n| matches!(n.kind(), "arrow_function" | "function_expression"))
                 });
                 if let Some(hook) = hook {
+                    if phase != "beforeAll" {
+                        cleanup_hooks.push((alias.to_string(), hook));
+                        continue;
+                    }
                     let mut inputs = values.clone();
+                    let fixtures = self.provider(&test.file, alias, &mut BTreeSet::new());
                     for dependency in params(hook)
                         .first()
                         .map(|n| names(*n, &module.source))
                         .unwrap_or_default()
                     {
-                        inputs
-                            .entry(dependency.clone())
-                            .or_insert_with(|| builtin(&dependency));
+                        let value = if let Some(fixtures) = &fixtures {
+                            self.fixture_value(
+                                &dependency,
+                                fixtures,
+                                &mut values,
+                                &mut BTreeSet::new(),
+                                &mut costs,
+                                &mut ctx,
+                            )
+                        } else {
+                            builtin(&dependency)
+                        };
+                        inputs.insert(dependency, value);
                     }
                     let result = self.invoke(
                         &self.reference(&test.file, hook),
@@ -2246,7 +2624,6 @@ impl Project {
         costs.repeated.finalize();
         costs.worker.finalize();
         test.fixture_estimate = Some(costs.repeated.clone());
-        test.worker_estimate = Some(costs.worker);
         let module = &self.modules[&test.file];
         let callback_body = callback.and_then(|n| field(n, "body"));
         if let Some(body) = callback_body {
@@ -2312,6 +2689,39 @@ impl Project {
             step.estimate = Some(result.cost.clone());
             costs.repeated.add(result.cost);
         }
+        let mut lifecycle = Estimate::default();
+        for (alias, hook) in cleanup_hooks.into_iter().rev() {
+            let mut inputs = values.clone();
+            if let Some(fixtures) = self.provider(&test.file, &alias, &mut BTreeSet::new()) {
+                for dependency in params(hook)
+                    .first()
+                    .map(|n| names(*n, &module.source))
+                    .unwrap_or_default()
+                {
+                    let value = self.fixture_value(
+                        &dependency,
+                        &fixtures,
+                        &mut values,
+                        &mut BTreeSet::new(),
+                        &mut costs,
+                        &mut ctx,
+                    );
+                    inputs.insert(dependency, value);
+                }
+            }
+            let result = self.invoke(
+                &self.reference(&test.file, hook),
+                &env,
+                vec![Value::Object(inputs), Value::TestInfo],
+                None,
+                &mut ctx,
+            );
+            lifecycle.add(result.cost);
+        }
+        lifecycle.finalize();
+        test.lifecycle_estimate = Some(lifecycle);
+        costs.worker.finalize();
+        test.worker_estimate = Some(costs.worker);
         costs.repeated.finalize();
         test.estimate = Some(costs.repeated);
         tainted_libraries.extend(ctx.tainted_libraries);
@@ -2380,7 +2790,12 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         max_checkpoints_per_test: crate::cost::checkpoint_limit(),
     };
     let cost_input = serde_json::to_value(&input).map_err(|e| e.to_string())?;
-    let plan = crate::cost::select(input)?;
+    let complete = crate::estimation::issues(manifest).is_empty();
+    let plan = if complete {
+        Some(crate::cost::select(input)?)
+    } else {
+        None
+    };
     let baseline = &*crate::baseline::PLAYWRIGHT_BRANCHING;
     let candidates:Vec<_>=manifest.checkpoints.iter().map(|cp| {
         let test=manifest.tests.iter().find(|t| t.id==cp.representative).unwrap();
@@ -2392,7 +2807,7 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         // save more than capture/release and its own restores. This gives a
         // useful rejection test without pretending uncertain work is free.
         let variable_ms=(baseline.capture_ms+baseline.release_ms+reuses*baseline.restore_ms)*baseline.overhead_multiplier*(1.0+baseline.overhead_margin);
-        let classification=if plan.selected.contains(&cp.id) { "estimated-saving" }
+        let classification=if !complete { "assessment-failed" } else if plan.as_ref().is_some_and(|plan| plan.selected.contains(&cp.id)) { "estimated-saving" }
           else if reuses>0.0 && estimate.upper_bound_points.is_some_and(|upper| upper as f64*baseline.unit_ms*reuses<=variable_ms) { "below-variable-cost" }
           else if estimate.estimated_points as f64*baseline.unit_ms*reuses<=variable_ms { "estimated-below-variable-cost" }
           else { "shared-overhead-not-recovered" };
@@ -2407,6 +2822,7 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
         .iter()
         .flat_map(|t| t.steps.iter().filter_map(|s| s.estimate.as_ref()))
         .collect();
+    let total: usize = manifest.tests.iter().map(|t| t.steps.len()).sum();
     let analyzed = statements.iter().filter(|e| e.analysis_complete).count();
     let exact = statements.iter().filter(|e| e.complete).count();
     let fixture_gaps = manifest
@@ -2427,7 +2843,16 @@ pub fn summary(manifest: &Manifest) -> crate::Result<serde_json::Value> {
                 .is_none_or(|e| !e.analysis_complete)
         })
         .count();
-    let analysis = serde_json::json!({"status":if analyzed==statements.len()&&fixture_gaps==0&&worker_gaps==0&&manifest.diagnostics.is_empty() {"complete"}else{"partial"},"totalStatements":statements.len(),"analyzedStatements":analyzed,"exactStatements":exact,"runtimeDependentStatements":analyzed.saturating_sub(exact),"fixturesWithGaps":fixture_gaps,"workersWithGaps":worker_gaps,"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()});
+    let lifecycle_gaps = manifest
+        .tests
+        .iter()
+        .filter(|t| {
+            t.lifecycle_estimate
+                .as_ref()
+                .is_none_or(|e| !e.analysis_complete)
+        })
+        .count();
+    let analysis = serde_json::json!({"status":if complete {"complete"}else{"partial"},"totalStatements":total,"lifecycleWithGaps":lifecycle_gaps,"analyzedStatements":analyzed,"exactStatements":exact,"runtimeDependentStatements":analyzed.saturating_sub(exact),"fixturesWithGaps":fixture_gaps,"workersWithGaps":worker_gaps,"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()});
     Ok(
         serde_json::json!({"version":points::VERSION,"boundsVersion":1,"weights":points::weights(),"costBasis":"approximate-operation-points", "analysis":analysis,"runtimeEligibility":"Cost selection alone does not authorize restoring JavaScript state", "candidates":candidates, "costInput":cost_input, "costPlan":plan}),
     )

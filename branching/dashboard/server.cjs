@@ -26,6 +26,7 @@ async function startDashboard({
             './journal-reader.cjs',
             './event-stream.cjs',
             './http.cjs',
+            '../estimation.cjs',
             '../configs/dashboard-assets.cjs',
             '../configs/dashboard.cjs',
             '../planner/src/limits.json'

@@ -20,7 +20,12 @@ const options = warmup ? {
     }
 } : {expose: {warmup: false, coverageRun: run.id, projectFixtures}};
 const resultsFile = warmup ? 'coverage/warmup-results.json' : 'coverage/cypress-results.json';
+const prediction = warmup ? null : require('../branching/predictor/session.cjs').start(expectedSpecs, 'cypress');
 cypress.run({browser: 'chrome-for-testing', headed: true, ...options}).then(results => {
+    const complete = !results.failures && results.totalTests > 0 && results.totalPassed === results.totalTests &&
+        results.totalFailed === 0 && results.totalPending === 0 && results.totalSkipped === 0 &&
+        JSON.stringify((results.runs || []).map(result => result.spec.relative).sort()) === JSON.stringify(expectedSpecs);
+    prediction?.finish({passed:complete, results, attempts:Math.max(1,...(results.runs || []).flatMap(run => run.tests.map(test => test.attempts?.length ?? 1)))});
     fs.writeFileSync(resultsFile, JSON.stringify({
         run: run.id, browser: {name: results.browserName, version: results.browserVersion},
         totalTests: results.totalTests, totalPassed: results.totalPassed,

@@ -40,6 +40,15 @@ function sanitizedCoverage(source) {
             path: entry.path, statements: entry.statements.map(statement => pick(statement, ['start', 'syntax', 'hits']))
         }))}
     };
+    const predictionFile = path.join(source, 'prediction.json');
+    if (fs.existsSync(predictionFile)) {
+        const prediction = read(predictionFile);
+        for (const sample of prediction.samples ?? [prediction.sample]) {
+            delete sample.sourceArchive;
+            if (sample.predictionError) sample.predictionError = {code:'ESTIMATION_FAILED',statusCode:500};
+        }
+        projected['prediction.json'] = prediction;
+    }
     if (runner === 'cypress') {
         projected['cypress-runner-results.json'] = runnerResults(read(path.join(source, 'cypress-runner-results.json')));
     }
@@ -111,6 +120,11 @@ function writeEvidence() {
     }
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
         `## ${entry.id}\n\n${report.passed ? 'PASS: 7/7 acceptance scenarios and all harness checks.' : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
+    const predictionFile = `${directory}/coverage/prediction.json`;
+    if (process.env.GITHUB_STEP_SUMMARY) {
+        const quality = fs.existsSync(predictionFile) ? read(predictionFile).quality : null;
+        fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Predictor: ${quality?.status ?? 'missing'}; raw error ${quality?.raw?.medianAbsolutePercentError ?? 'unavailable'}%; baseline-adjusted error ${quality?.medianAbsolutePercentError ?? 'unavailable'}%.\n`);
+    }
     if (report.steps.e2e?.outcome === 'success' && !report.passed) process.exitCode = 1;
 }
 module.exports = {sanitizedCoverage, testResults};

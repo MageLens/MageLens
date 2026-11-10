@@ -4,7 +4,7 @@
 
 const adapters = Object.freeze({
     playwright: Object.freeze({id: 'playwright', implemented: true, image: 'branching-playwright', baseImage: 'runner-playwright', context: 'branching/runners/playwright'}),
-    cypress: Object.freeze({id: 'cypress', implemented: false})
+    cypress: Object.freeze({id: 'cypress', implemented: true, image: 'branching-cypress', baseImage: 'runner-cypress', context: 'branching/runners/cypress'})
 });
 function descriptor(name) {
     const adapter = adapters[name];

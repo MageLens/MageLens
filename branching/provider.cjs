@@ -18,14 +18,14 @@ const {implementationDigest} = require('./identity.cjs');
 // browser and backend are fenced together; a filesystem clone alone is not a
 // valid application checkpoint.
 class BranchingProvider {
-    constructor({browser, backend, baseURL, state, contextOptions}) {
+    constructor({browser, backend, baseURL, state, contextOptions, browserState}) {
         if (typeof state !== 'function') throw new Error(messages.missingStateReader);
         for (const name of config.provider.lifecycle) {
             if (typeof backend[name] !== 'function') throw new Error(messages.missingBackendLifecycle(name));
         }
         this.backend = backend;
         this.readState = state;
-        this.browserState = new PlaywrightState(browser, {baseURL, contextOptions});
+        this.browserState = browserState ?? new PlaywrightState(browser, {baseURL, contextOptions});
         this.approaches = config.executionApproaches;
         this.workload = config.provider.workload;
         this.capability = config.provider.capability;
@@ -102,11 +102,9 @@ class BranchingProvider {
         await this.browserState.resume();
     }
     async restore(directory) {
-        if (this.context) await this.browserState.freeze();
+        if (this.browserState.active) await this.browserState.freeze();
         await this.backend.drain();
-        if (this.context) {
-            for (const page of this.context.pages()) await page.close();
-        }
+        await this.browserState.closePages();
         await this.backend.stop();
         const browser = restoreState(this.backend.paths, directory, this.directory);
         await this.backend.resetCaches();
@@ -114,7 +112,7 @@ class BranchingProvider {
         await this.browserState.open(browser);
     }
     async beginSegment() {
-        if (this.context) this.browserState.check();
+        if (this.browserState.active) this.browserState.check();
     }
     async endSegment() {
         this.browserState.check();

@@ -12,10 +12,15 @@ const {assertAutomatic} = require('./costs.cjs');
 const {runSuite} = require('./suite.cjs');
 const {loadRunner} = require('./runners/index.cjs');
 async function run(args = process.argv.slice(2)) {
+    try { return await execute(args); }
+    catch (error) { require('./estimation.cjs').recordFailure(args[0], error); throw error; }
+}
+async function execute(args) {
     const [manifestPath, configPath, storage, approach = 'AUTO', ...extra] = args;
     if (!manifestPath || !configPath || !storage || extra.length) throw new Error(messages.automaticUsage);
     assertAutomatic({approach});
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const manifest = require('./estimation.cjs').readManifest(manifestPath);
+    require('./automatic.cjs').verifySources(manifest);
     const supplied = require(path.resolve(configPath));
     const project = typeof supplied === 'function' ? await supplied(manifest) : supplied;
     assertAutomatic(project);
@@ -44,5 +49,5 @@ async function run(args = process.argv.slice(2)) {
     if (report.status !== 'passed') process.exitCode = 1;
     return report;
 }
-if (require.main === module) run().catch(error => {console.error(error.message); process.exitCode = 1;});
+if (require.main === module) run().catch(error => {console.error(require('./estimation.cjs').formatError(error)); process.exitCode = 1;});
 module.exports = {run};

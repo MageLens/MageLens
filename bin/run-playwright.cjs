@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const {chromium} = require('@playwright/test');
-const {warmupPaths} = require('./project.cjs');
+const {warmupPaths, specPatterns} = require('./project.cjs');
 const {disablePageTransitions} = require('./browser-navigation.cjs');
 
 async function main() {
@@ -27,7 +27,12 @@ async function main() {
         } finally { await browser.close(); }
         return;
     }
+    const prediction = require('../branching/predictor/session.cjs').start(fs.globSync(specPatterns('playwright')).sort(), 'playwright');
     const result = spawnSync(process.execPath, [require.resolve('@playwright/test/cli'), 'test', '--config=playwright.config.cjs'], {stdio: 'inherit'});
+    const completed = fs.existsSync('coverage/playwright-results.json') ? JSON.parse(fs.readFileSync('coverage/playwright-results.json')) : null;
+    prediction.finish({passed:result.status === 0 && completed?.status === 'passed' && completed.totalTests > 0 &&
+        completed.totalPassed === completed.totalTests && !completed.totalFailed && !completed.totalSkipped && !completed.totalPending,
+        attempts:completed?.maxAttempts ?? 1});
     if (result.error) throw result.error;
     if (result.status !== 0) throw new Error('Playwright failed. Inspect coverage/playwright-results.json and coverage/playwright-artifacts.');
     const tests = JSON.parse(fs.readFileSync('coverage/playwright-results.json'));

@@ -9,7 +9,17 @@ const os = require('node:os');
 const path = require('node:path');
 const Reporter = require('../playwright/reporter.cjs');
 const {isCoverageExcluded} = require('../bin/project.cjs');
-const {observeStorefrontReadiness} = require('../src/app/code/Application/Blog/Test/storefront-readiness.cjs');
+const {observeStorefrontReadiness, lumaMessagesReady} = require('../src/app/code/Application/Blog/Test/storefront-readiness.cjs');
+
+test('Luma readiness waits for the message component, not just the loaded AMD module', () => {
+    assert.equal(lumaMessagesReady({}), false);
+    let component;
+    const require = () => ({get: () => component});
+    require.defined = () => true;
+    assert.equal(lumaMessagesReady({require}), false);
+    component = {};
+    assert.equal(lumaMessagesReady({require}), true);
+});
 
 test('storefront readiness observes both real message sources in either order and resets for each document', () => {
     for (const order of [['messages-loaded', 'private-content-loaded'], ['private-content-loaded', 'messages-loaded']]) {

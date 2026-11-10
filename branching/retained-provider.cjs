@@ -17,9 +17,9 @@ class RetainedProvider extends BranchingProvider {
         await this.backend.prefetch(path.join(directory ?? this.base, 'database', 'snapshot.sql'));
     }
     async restore(directory, {prefetch = null} = {}) {
-        if (this.context) await this.browserState.freeze();
+        if (this.browserState.active) await this.browserState.freeze();
         await this.backend.drain();
-        if (this.context) for (const page of this.context.pages()) await page.close();
+        await this.browserState.closePages();
         await this.backend.stop();
         for (const [name, destination] of Object.entries(this.backend.paths)) {
             replaceContents(path.join(directory, name), destination, this.directory);

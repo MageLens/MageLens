@@ -42,7 +42,7 @@ pub const LOCAL_IO: u64 = 1;
 pub const UNKNOWN: u64 = 1;
 pub const LOOP_LIMIT: usize = 1000;
 pub const NODE_LIMIT: usize = 100000;
-pub const CALL_LIMIT: usize = 32;
+pub const CALL_LIMIT: usize = 64;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Issue {
@@ -182,8 +182,15 @@ impl Estimate {
             *current = current.saturating_add(count);
         }
         for reason in other.reasons {
-            if !self.reasons.contains(&reason) && self.reasons.len() < 128 {
-                self.reasons.push(reason);
+            if !self.reasons.contains(&reason) {
+                if self.reasons.len() < 128 {
+                    self.reasons.push(reason);
+                } else if self.reasons.len() == 128 {
+                    self.reasons.push(
+                        "Analysis issue budget exceeded; additional issues cannot be reported"
+                            .into(),
+                    );
+                }
             }
         }
         for assumption in other.assumptions {
@@ -296,4 +303,25 @@ pub fn weights() -> serde_json::Value {
       "wait": WAIT, "localIo": LOCAL_IO, "unknown": UNKNOWN, "pureDeclarations": 0, "maxLoopIterations": LOOP_LIMIT,
       "maxCallDepth": CALL_LIMIT, "maxAnalysisNodes": NODE_LIMIT, "millisecondsPerPoint": crate::baseline::PLAYWRIGHT_BRANCHING.unit_ms,
       "approximation": &*APPROXIMATION})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn bounded_diagnostics_cannot_hide_a_later_analysis_failure() {
+        let mut estimate = Estimate::default();
+        for index in 0..128 {
+            estimate.add(Estimate::unknown(format!("Runtime condition {index}")));
+        }
+        estimate.add(Estimate::unknown("Unsupported late operation"));
+        estimate.finalize();
+        assert!(!estimate.analysis_complete);
+        assert!(
+            estimate
+                .issues
+                .iter()
+                .any(|issue| issue.kind == "analysis-limit")
+        );
+    }
 }

@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const {test} = require('node:test');
+const {assessed} = require('./fixtures/branching/assessment.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,11 +18,16 @@ function fixture(t) {
     const file = path.join(root, 'flow.spec.ts'); fs.writeFileSync(file, 'await page.goto("/");');
     const tests = ['first', 'second'].map(id => ({id, file:'flow.spec.ts',line:1,title:id,scope:'same',disposition:'automatic',reasons:[],steps:[{start:0,end:21,kind:'statement',portable:true,actionUnits:1}]}));
     const manifest = {schemaVersion:1,implementation:'rust-prefix-v1',root,sourceDigest:'test',sources:[{path:'flow.spec.ts',sha256:fileDigest(file)}],tests,schedule:tests.map(t=>t.id),
-        diagnostics:['dynamic registration'],checkpoints:[{id:'shared',depth:1,representative:'first',consumers:['first','second'],automatic:true}]};
+        diagnostics:[],checkpoints:[{id:'shared',depth:1,representative:'first',consumers:['first','second'],automatic:true}]};
     const setup = {id:'setup',project:'setup',file,line:2,title:'seed',expectedStatus:'passed'};
     const inventory = {exitCode:0,errors:[],config:{projects:[{name:'setup'},{name:'browser',dependencies:['setup']}]},tests:[setup,
         ...tests.map(t=>({...t,id:'native-'+t.id,project:'browser',file,expectedStatus:'passed'})),
         ...Array.from({length:100},(_,i)=>({id:'dynamic-'+i,title:'generated '+i,project:'browser',file,line:10,expectedStatus:'passed'}))]};
+    // Every native test, including setup and the unbranched remainder, must be assessed.
+    manifest.tests.push(...inventory.tests.filter(test => test.id === 'setup' || test.id.startsWith('dynamic-'))
+        .map(test => ({...test, file: 'flow.spec.ts', scope: test.id, steps: [], disposition: 'adapter-required', reasons: ['Native lifecycle']})));
+    manifest.schedule = manifest.tests.map(test => test.id);
+    assessed(manifest);
     const project = {identity:'suite',state:async()=>({}),assertCheckpoint:async()=>{},native:{config:'config',splitSafe:true}};
     const calls = [];
     const runner = {collect:async()=>inventory, run:async(_config,_directory,options={})=>{
@@ -31,7 +37,7 @@ function fixture(t) {
     const runCheckpoint = async ({specs: ids, workflow, plan}) => {costs.resolvePlan(workflow, ids, plan);calls.push({checkpoint:ids});return {status:'passed',results:ids.map(spec=>({spec,status:'passed'})),checkpoints:[{id:'shared'}],counts:{reuseHits:1}};};
     return {root,manifest,inventory,project,runner,calls,runCheckpoint};
 }
-test('native inventory preserves every dynamic and fixture-based test beyond the old subset',t=>{
+test('native inventory preserves every assessed generated and fixture-based test beyond the old subset',t=>{
     const f=fixture(t),g=partition(f.manifest,f.inventory,f.project);
     assert.equal(g.setup.length,1);assert.equal(g.checkpoint.length,2);assert.equal(g.native.length,100);
     assert.equal(new Set([...g.setup,...g.checkpoint,...g.native].map(t=>t.id)).size,103);
@@ -74,6 +80,7 @@ test('AUTO leaves unrelated cheap candidates native while branching profitable s
         f.manifest.tests.push(item);f.manifest.schedule.push(id);
         f.inventory.tests.push({...item,id:'native-'+id,project:'browser',file:path.join(f.root,item.file),expectedStatus:'passed'});
     }
+    assessed(f.manifest);
     f.manifest.checkpoints.push({id:'cheap',depth:1,representative:'cheap-first',consumers:['cheap-first','cheap-second'],automatic:true});
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});
     assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
@@ -86,6 +93,25 @@ test('a fully checkpoint-eligible suite needs no artificial native remainder', a
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});
     assert.equal(report.status,'passed');assert.equal(f.calls.length,2);
     assert.equal(report.results.length,3);assert.equal(report.checkpoints,1);
+});
+test('independent Cypress tests match native titles without a synthetic setup project', async t => {
+    const f = fixture(t), file = path.join(f.root, 'flow.spec.ts');
+    fs.writeFileSync(file, 'cy.visit("/");');
+    f.manifest.sources[0].sha256 = fileDigest(file);
+    for (const item of f.manifest.tests) {
+        item.fixture = 'cypress:it'; if (item.steps.length) item.steps[0].end = Buffer.byteLength('cy.visit("/");');
+    }
+    f.inventory.config = {projects: [{name: 'cypress'}], checkpointLifecycle: 'independent-cypress'};
+    f.inventory.tests = f.inventory.tests.slice(1, 3).map(item => ({...item, project: 'cypress', framework: 'cypress', line: 0}));
+    const checkpoint = f.runCheckpoint;
+    f.runCheckpoint = async options => {
+        assert.equal(options.runnerOptions.nativeConfig, f.project.native.config);
+        return checkpoint(options);
+    };
+    const report = await runSuite({...f, directory: f.root});
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(f.calls, [{checkpoint: ['first', 'second']}]);
+    assert.equal(report.results.length, 2);
 });
 test('ambiguous static matches across browser projects and skipped tests stay native',t=>{
     const f=fixture(t); f.inventory.tests.push({...f.inventory.tests[1],id:'other-browser',project:'other'});
@@ -108,14 +134,22 @@ test('native skips remain visible and never become a fully passed qualification'
     const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'completed-with-skips');assert.equal(report.skipped.length,102);
 });
-test('unqualified global lifecycle or teardown projects keep the complete native invocation',async t=>{
-    for (const change of [f=>{f.project.native.splitSafe=false;}, f=>{f.inventory.config.globalTeardown=true;},
-        f=>{f.inventory.config.webServer=true;}, f=>{f.inventory.config.projects[1].teardown='cleanup';},
+test('assessed teardown projects and unsplittable suites keep the complete native invocation',async t=>{
+    for (const change of [f=>{f.project.native.splitSafe=false;}, f=>{f.inventory.config.projects[1].teardown='cleanup';},
         f=>{f.inventory.config.projects[1].dependencies=[];}, f=>{f.inventory.config.projects[0].dependencies=['another-setup'];}]) {
         const f=fixture(t);change(f);
         const report=await runSuite({...f,mode:'AUTO',directory:f.root});
         assert.equal(f.calls.length,1);assert.equal(f.calls[0].options.tests,undefined);
         assert.deepEqual(report.routing.checkpoint,[]);assert.equal(report.routing.native.length,103);
+    }
+});
+test('unassessed external runner lifecycle stops before native or checkpoint execution',async t=>{
+    for (const config of [{globalSetup:true},{globalTeardown:true},{webServer:true},
+        {unassessedLifecycle:['Cypress support-file hooks and command registrations']},
+        {unassessedLifecycle:['Cypress setupNodeEvents and plugin lifecycle']}]) {
+        const f=fixture(t);Object.assign(f.inventory.config,config);
+        await assert.rejects(runSuite({...f,directory:f.root}),error=>error.statusCode===500&&error.issues.some(i=>i.phase==='native-lifecycle'));
+        assert.equal(f.calls.length,0);
     }
 });
 test('expected failures remain visible instead of qualifying as passed',async t=>{

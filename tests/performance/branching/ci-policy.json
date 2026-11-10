@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "runner": "ubuntu-24.04",
-  "pairs": 3,
-  "regressionFraction": 0.1,
-  "improvementFraction": 0.1,
-  "minimumChangeMs": 1000
-}

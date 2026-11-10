@@ -22,6 +22,7 @@ pub struct Module {
     pub tree: Tree,
 }
 pub struct Project {
+    pub models: crate::models::Models,
     pub modules: BTreeMap<String, Module>,
     pub data: BTreeMap<String, serde_json::Value>,
     import_cache: BTreeMap<String, BTreeMap<String, (String, String)>>,
@@ -167,6 +168,7 @@ impl Project {
             })
             .unwrap_or_default();
         let mut project = Self {
+            models: crate::models::load(root, &modules, sources)?,
             modules,
             data,
             import_cache: BTreeMap::new(),

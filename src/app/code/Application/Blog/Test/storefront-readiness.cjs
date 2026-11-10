@@ -10,4 +10,9 @@ function observeStorefrontReadiness(win = window) {
     win.addEventListener('messages-loaded', () => { state.messages = true; });
     win.addEventListener('private-content-loaded', () => { state.privateContent = true; });
 }
-module.exports = {observeStorefrontReadiness};
+function lumaMessagesReady(win = window) {
+    // RequireJS modules can initialize after window:load. The registered
+    // component has finished reading and clearing the current message cookie.
+    return Boolean(win.require?.defined?.('uiRegistry') && win.require('uiRegistry').get('messages'));
+}
+module.exports = {observeStorefrontReadiness, lumaMessagesReady};
