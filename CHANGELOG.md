@@ -6,10 +6,31 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
-## Unreleased
+## 1.9.3 - 2026-11-09
 
+- Publish native PHP/PCOV, Cypress and Playwright images for Linux amd64 and arm64, including Apple Silicon installations.
+- Validate all six native images before release and preserve both architectures during registry cleanup.
+- Clarify macOS setup and make pull request CI opt-in with the `run-ci` label; full release qualification remains mandatory.
+
+## 1.9.2 - 2026-11-08
+
+- Support Apple Silicon (`darwin/arm64` hosts running `linux/arm64` containers) across all eight Magento Open Source and Mage-OS storefront and browser runner combinations.
+- Build Cypress 16.2.1 from source on Linux arm64 with `DISABLE_SNAPSHOT_REQUIRE=1` packaging, Electron arm64 distribution verification, and test fixture pre-fetching to prevent network timeouts.
+- Handle Bash 3.2 empty array expansion on macOS in `bin/common` and E2E runner scripts.
+- Normalize `linux/aarch64` and `linux/arm64` architecture tags during prebuilt image resolution.
+- Update template coverage to 2.0.0 for parse5 security fixes in HTML/PHTML analysis, using the existing Node.js 24 runners.
 - Update Cypress code coverage to 4.1.3 and pin patched glob/minimatch dependencies in the coverage toolchain.
 - Recover from temporary PIE and Electron download failures during image builds, and verify snapshot tools before packaging Cypress.
+- Use stable Chrome for Testing 157.0.8103.38 for Cypress, Playwright and browser recovery checks, with verified Linux x64 and ARM64 archive checksums.
+
+Rerun installation with your saved platform, theme and runner selections to rebuild the browser runner, then regenerate coverage reports.
+
+## 1.9.1 - 2026-11-07
+
+- Update template coverage to 1.5.5 for Acorn 8.19 parsing fixes and Unicode 17/18 identifiers in Alpine, Knockout and template expressions.
+- Exercise unpublished template coverage and PCOV changes from pinned source commits in the full draft-PR CI matrix, with matching source provenance and a separate published-package release gate.
+
+Rerun installation with your saved platform, theme and runner selections to update the runner dependencies, then regenerate reports with `./bin/run-coverage`.
 
 ## 1.9.0 - 2026-11-06
 
@@ -127,7 +148,7 @@ After updating, rerun `./install.sh` with your existing theme and runner flags (
 ## 1.3.1 - 2026-10-18
 
 - Add `withCoverage(test)` to preserve existing Playwright fixtures while collecting PHP, JavaScript and template coverage.
-- Keep external suite selection explicit in the project configuration. The presence of an external suite directory no longer changes MageLens’s default fixture or path aliases.
+- Keep external suite selection explicit in the project configuration. External test directories do not change MageLens’s default fixture or path aliases.
 
 ## 1.3.0 - 2026-10-18
 
@@ -152,7 +173,7 @@ After updating, rerun `./install.sh` with your selected theme and runner flags, 
 - Each installation includes only its selected runner, browser cache, and tooling. Playwright installations omit the Cypress desktop viewer.
 - `./bin/run-coverage` uses the saved runner selection and generates PHP, JavaScript, and template reports with either runner.
 - Added execution coverage for regular Hyvä/Alpine directives in PHTML while preserving original PHP source lines.
-- `npm run test:e2e:matrix` checks all four combinations in separate temporary installations, including external Playwright guest fixtures and generated coverage reports.
+- `npm run test:e2e:matrix` checks all four combinations in separate temporary installations, including Playwright coverage probes and generated coverage reports.
 - The bundled Blog supports Hyvä and provides equivalent publishing, moderation, validation, permissions, and storefront scenarios in both browser runners.
 - The installation matrix verifies all seven scenarios in every mode and compares coverage for shared application code.
 - Updated Magento template coverage to 1.2.0 from npm.

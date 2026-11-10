@@ -9,8 +9,10 @@ const {execFileSync} = require('node:child_process');
 const {cases} = require('./cases.cjs');
 const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
 const {provenance} = require('../../docker/runner/cypress-source/provenance.cjs');
+const {configuration: previewConfiguration, verifyEvidence: verifyPreviewEvidence} = require('./dependency-previews.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 function verifyCase(entry, evidence, directory, context) {
+    verifyPreviewEvidence(context.previews || {}, evidence.dependencyPreviews || {});
     for (const key of ['id', 'os', 'platform', 'theme', 'runner']) assert.equal(evidence[key], entry[key], key);
     assert.equal(evidence.sha, context.sha, 'Wrong commit');
     assert.equal(evidence.workflowRun, context.run, 'Wrong workflow run');
@@ -55,7 +57,7 @@ function verifyCase(entry, evidence, directory, context) {
     return run.id;
 }
 function verifyRequiredJobs(needs) {
-    const required = ['static', 'integration', 'branching', 'performance', 'e2e', 'magento'];
+    const required = ['static', 'integration', 'branching', 'performance', 'e2e', 'magento', 'images'];
     return required.filter(name => needs[name]?.result !== 'success')
         .map(name => `${name}: ${needs[name]?.result || 'missing'}`);
 }
@@ -72,14 +74,18 @@ function gate() {
             attempt: Number(process.env.GITHUB_RUN_ATTEMPT)
         });
     } catch (error) { errors.push('Branching performance: ' + error.message); }
-
     const reports = [], themeReports = [], runIds = new Set();
+    const previews = previewConfiguration();
+    let previewProvenance;
     for (const entry of cases) {
         try {
             const artifact = `case-${entry.id}-attempt-${process.env.GITHUB_RUN_ATTEMPT}`;
             const directory = path.join(root, artifact, 'coverage');
-            const id = verifyCase(entry, read(path.join(root, artifact, 'evidence.json')), directory,
-                {sha: process.env.CI_SHA, run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT});
+            const evidence = read(path.join(root, artifact, 'evidence.json'));
+            const id = verifyCase(entry, evidence, directory,
+                {sha: process.env.CI_SHA, run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT, previews});
+            if (previewProvenance === undefined) previewProvenance = evidence.dependencyPreviews || {};
+            else assert.deepEqual(evidence.dependencyPreviews || {}, previewProvenance, 'Cases tested different library sources or archives');
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
             themeReports.push({...entry, snapshot: read(path.join(directory, 'equivalence.json'))});
@@ -97,6 +103,7 @@ function gate() {
     fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');
     errors.push(...themes.errors);
     const report = {sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+        dependencyPreviews: previews,
         expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 7, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
     fs.writeFileSync('ci-gate/qualification.json', JSON.stringify(report, null, 2) + '\n');
     const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/${cases.length} complete cases; ${report.expectedAcceptanceTests} acceptance tests required.\n${errors.join('\n')}`;

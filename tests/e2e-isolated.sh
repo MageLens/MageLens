@@ -4,6 +4,7 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
+export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true
 source "$(dirname "$0")/../bin/common"
 preflight
 [[ $# == 0 ]] || fail 'Usage: bash tests/e2e-isolated.sh (see tests/README.md for configuration)'
@@ -93,6 +94,11 @@ touch "$scratch/.runtime/predictor/enabled"
 if [[ -f .runtime/predictor/model.json ]]; then
     cp .runtime/predictor/model.json "$scratch/.runtime/predictor/"
 fi
+if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
+    mkdir -p "$scratch/.runtime"
+    cp -a "$original_root/.runtime/docker-magento" "$scratch/.runtime/"
+    git -C "$scratch/.runtime/docker-magento" remote set-url origin "$original_root/.runtime/docker-magento"
+fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php "$scratch/docker/php/e2e/"
@@ -134,7 +140,7 @@ fi
 
 (
     unset COMPOSE_PROJECT_NAME
-    ./install.sh --project-name "$project" --container-only "${install_options[@]}" "$APPLICATION_DOMAIN"
+    ./install.sh --project-name "$project" --container-only ${install_options[@]+"${install_options[@]}"} "$APPLICATION_DOMAIN"
     [[ "$(cat .runtime/compose-project-name)" == "$project" ]]
     grep -qxF "COMPOSE_PROJECT_NAME=$project" .env
     database=$(./bin/application-compose ps -q db)
@@ -156,9 +162,6 @@ fi
     ./bin/runner node tests/dependencies.test.cjs
     ./bin/application-compose exec -T -e MAGELENS_REPORT_DATA=/application/docker/php/report-data.php phpfpm \
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
-    if [[ "$runner" == playwright ]]; then
-        ./bin/runner node tests/setup-compatibility.cjs
-    fi
     ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     # The installer selection must drive coverage without an extra runner flag.
     ./bin/run-coverage

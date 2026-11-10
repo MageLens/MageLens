@@ -124,7 +124,7 @@ jobs:
         env:
           MAGELENS_E2E_RESULT_FILE: ${{ runner.temp }}/magelens-result
           MAGELENS_E2E_RESOURCE_FILE: ${{ runner.temp }}/magelens-resource
-        run: bash tests/ci/on-host.sh bash tests/e2e-isolated.sh
+        run: bash tests/ci/on-host.sh bash tests/ci/with-dependency-previews.sh bash tests/e2e-isolated.sh
       - id: cleanup
         name: Remove only this installation and credentials
         if: always()

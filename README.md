@@ -62,7 +62,7 @@ It makes those gaps visible across PHP, JavaScript and templates, with **low cov
 
 ## Quick start
 
-On Linux, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
+On Linux or macOS with Apple Silicon, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
 
 ```bash
 bash -c "$(wget -qO- https://raw.githubusercontent.com/MageLens/MageLens/main/bootstrap.sh)" --
@@ -72,7 +72,7 @@ To install a specific release, prefix the command with `MAGELENS_VERSION=v1.8.2`
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
 
-Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches the latest published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Only Linux amd64 images are published. GHCR retains the latest successful release; older releases build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
+Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches the latest published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Linux amd64 and arm64 images are published, including native images for Apple Silicon. GHCR retains the latest successful release; older releases build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
 
 The command above installs Magento Open Source with Luma and Cypress. Add `--mageos` to install Mage-OS instead. On Linux, both platforms are tested with every storefront and browser runner combination:
 
@@ -84,6 +84,8 @@ The command above installs Magento Open Source with Luma and Cypress. Add `--mag
 | `./install.sh --hyva --playwright` | `./install.sh --mageos --hyva --playwright` | Hyvä CSP | Playwright |
 
 On Windows, run the commands from Ubuntu 24.04 under WSL2 and keep the project in the Linux filesystem. Append `--mageos --container-only` to the bootstrap command above to select the Mage-OS, Luma, and Cypress profile tested in Windows CI.
+
+On macOS with Apple Silicon (Intel Macs are not supported), run the commands with Docker (Docker Desktop or Colima with vz virtualization, e.g. `colima start --vm-type vz --cpu 4 --memory 8`). Apple Silicon (`arm64`) automatically compiles container images locally from source during installation. Keep the project within your user home directory so the Docker engine can mount workspace files.
 
 Each installation includes its selected runner and browser, with the same live viewer for Cypress and Playwright. Both run entirely in Docker. The installer saves the platform, theme and runner; `./bin/run-coverage` uses them automatically. Repeat the same flags when rerunning installation; omitted flags select Magento Open Source/Luma/Cypress.
 
