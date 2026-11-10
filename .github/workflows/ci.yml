@@ -5,6 +5,7 @@
 name: CI
 on:
   pull_request:
+    types: [labeled]
 permissions:
   contents: read
   actions: read
@@ -13,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   static:
+    if: github.event.label.name == 'run-ci'
     name: Static checks and copyright
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -28,6 +30,7 @@ jobs:
       - run: npm run check:static
       - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
   integration:
+    if: github.event.label.name == 'run-ci'
     name: Integration and PHP unit checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -39,6 +42,8 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Prepare pinned unpublished library sources, when configured
+        run: node tests/ci/dependency-previews.cjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Rust checkpoint planner and repository-owned fixture
         env:
@@ -64,6 +69,7 @@ jobs:
           php tests/collection.test.php
           # PCOV/report tests run in each E2E case with the production PHP image.
   branching:
+    if: github.event.label.name == 'run-ci'
     name: Branching browser, provider and dashboard checks
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -96,6 +102,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
   performance:
+    if: github.event.label.name == 'run-ci'
     name: Branching performance / ${{ matrix.row }}
     runs-on: ubuntu-24.04
     timeout-minutes: 300
@@ -146,6 +153,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
   e2e:
+    if: github.event.label.name == 'run-ci'
     name: Mage-OS E2E
     strategy:
       fail-fast: false
@@ -180,6 +188,7 @@ jobs:
       runner: ${{ matrix.runner }}
       sha: ${{ github.sha }}
   magento:
+    if: github.event.label.name == 'run-ci'
     name: Magento E2E
     strategy:
       fail-fast: false
@@ -196,10 +205,30 @@ jobs:
       theme: ${{ matrix.theme }}
       runner: ${{ matrix.runner }}
       sha: ${{ github.sha }}
+  images:
+    if: github.event.label.name == 'run-ci'
+    name: Native tooling images
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: bash tests/ci/prepare-disk.sh
+      - name: Build and validate all three native images without publishing
+        run: bash tests/release/build-images.sh test
   gate:
     name: Required CI gate
-    if: always()
-    needs: [static, integration, branching, performance, e2e, magento]
+    if: always() && github.event.label.name == 'run-ci'
+    needs: [static, integration, branching, performance, e2e, magento, images]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

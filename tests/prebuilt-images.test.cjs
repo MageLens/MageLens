@@ -118,7 +118,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify(args) + '\\n');
 const selected = JSON.parse(process.env.MOCK_SELECTION);
-if (args[0] === 'info') console.log('linux/x86_64');
+if (args[0] === 'info') console.log(process.env.MOCK_ARCH || 'linux/x86_64');
 if (args.includes('resolve')) fs.writeFileSync('.runtime/prebuilt-images.json', JSON.stringify(selected));
 if (args.includes('/images.json') || args.some(arg => arg.includes('require("/images.json")'))) {
     const data = JSON.parse(fs.readFileSync('.runtime/prebuilt-images.json'));
@@ -172,11 +172,11 @@ test('stale labels and Cypress provenance stop installation before any build', t
 });
 test('missing compatible images build locally', t => {
     const {run} = prepareFixture(t);
-    const result = run('0', {}, {});
+    const result = run('0', {MOCK_ARCH: 'linux/aarch64'}, {});
     assert.equal(result.status, 0, result.stderr);
+    assert.match(result.calls, /MAGELENS_IMAGE_PLATFORM=linux\/arm64/);
     assert.match(result.calls, /source-php/);
     assert.match(result.calls, /"build","--pull","runner"/);
-
 });
 
 
@@ -191,4 +191,33 @@ test('only a missing latest-release manifest falls back; network, authorization 
     await assert.rejects(resolve(root, env, async () => ({status: 403, ok: false})), /403/);
     await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({})})), /manifest/);
     assert.deepEqual(await resolve(root, env, async () => ({status: 200, ok: true, json: async () => candidate()})), select(root, candidate(), 'linux/amd64', 'cypress'));
+});
+
+test('multi-platform releases select native digests for both runners and retain provenance checks', () => {
+    const legacy = candidate();
+    const manifest = {schema: 1, platform: legacy.platform, images: legacy.images, version: legacy.version, platforms: {
+        'linux/amd64': legacy.images,
+        'linux/arm64': Object.fromEntries(kinds.map(kind => [kind, {...legacy.images[kind], digest: 'sha256:' + 'c'.repeat(64)}]))
+    }};
+    for (const platform of ['linux/amd64', 'linux/arm64']) for (const runner of ['cypress', 'playwright']) {
+        for (const entry of Object.values(select(root, manifest, platform, runner))) {
+            assert.equal(entry.digest, manifest.platforms[platform].php.digest);
+        }
+    }
+    assert.deepEqual(Object.values(select(root, manifest, 'linux/ppc64le', 'cypress')), [null, null]);
+    manifest.platforms['linux/arm64'].php.inputs = '0'.repeat(64);
+    assert.equal(select(root, manifest, 'linux/arm64', 'cypress').php, null);
+    assert.ok(select(root, manifest, 'linux/amd64', 'cypress').php);
+    const mismatched = JSON.parse(JSON.stringify(manifest));
+    mismatched.images.php.digest = 'sha256:' + 'd'.repeat(64);
+    assert.throws(() => validateManifest(mismatched), /legacy image provenance/);
+    delete manifest.platforms['linux/arm64'];
+    assert.throws(() => validateManifest(manifest), /platforms/);
+});
+test('Apple Silicon installation selects qualified native images without a source build', t => {
+    const {run} = prepareFixture(t);
+    const result = run('0', {MOCK_ARCH: 'linux/aarch64'});
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.calls, /MAGELENS_IMAGE_PLATFORM=linux\/arm64/);
+    assert.doesNotMatch(result.calls, /source-php|"build","--pull","runner"/);
 });

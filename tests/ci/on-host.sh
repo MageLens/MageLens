@@ -23,6 +23,7 @@ wsl.exe --distribution Ubuntu-24.04 --user magelens --exec env \
     RUNNER_OS=Windows CI_HOST_RUNTIME=WSL2 RUNNER_TEMP=/tmp/magelens-ci MAGELENS_TEST_TMPDIR=/home/magelens/e2e-tmp \
     ImageOS="$ImageOS" ImageVersion="$ImageVersion" \
     GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+    GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}" \
     GITHUB_STEP_SUMMARY="$summary" MAGELENS_CI_HOST_PATH="$host_workspace" \
     MAGELENS_E2E_PLATFORM="$MAGELENS_E2E_PLATFORM" MAGELENS_E2E_THEME="$MAGELENS_E2E_THEME" MAGELENS_E2E_RUNNER="$MAGELENS_E2E_RUNNER" \
     MAGELENS_E2E_RESULT_FILE=/tmp/magelens-ci/magelens-result \

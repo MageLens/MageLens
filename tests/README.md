@@ -17,7 +17,7 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 ## Run CI
 
-[CI](https://github.com/MageLens/MageLens/actions/workflows/ci.yml) runs only on pull requests. Merging and creating release tags do not rerun the matrix. The required matrix is:
+[CI](https://github.com/MageLens/MageLens/actions/workflows/ci.yml) runs on pull requests when a maintainer applies the `run-ci` label. It is optional for merging. Remove and reapply the label to run CI again for an updated candidate. Merging and creating release tags do not rerun the matrix. The release qualification matrix is:
 
 | Host | Platform | Theme | Runner | Cases |
 | --- | --- | --- | --- | --- |
@@ -26,7 +26,7 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 
 The host probe records the actual runner image, architecture, Bash and Docker/Compose versions. It requires Linux containers, writable host mounts, symlinks, container DNS and a published port reachable from the host before installation. A failed probe leaves the required case incomplete; it never substitutes a Linux runner.
 
-Open or update a pull request to qualify its merge candidate. Inspect the run and download its evidence with:
+Apply the `run-ci` label to an open pull request to qualify its current merge candidate. Inspect the run and download its evidence with:
 
 ```bash
 gh run list --workflow ci.yml --branch BRANCH
@@ -34,9 +34,9 @@ gh run view RUN_ID
 gh run download RUN_ID --pattern 'case-*' --dir ci-artifacts
 ```
 
-After fixing a failure, push the new candidate. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
+After fixing a failure, push the new candidate, then remove and reapply `run-ci`. Use **Re-run all jobs** when retrying the same candidate; the gate rejects evidence from an earlier attempt. A partial rerun is useful only for diagnosis.
 
-Configure the branch protection/ruleset to require **Required CI gate**. Static checks (ESLint, script syntax, copyright/license notices and workflows), integration/PHP unit checks, branching provider/dashboard checks, and the [branching performance matrix](performance/branching/README.md) are required jobs. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. All pull requests, including forks, run the same matrix against their exact merge candidate.
+The **Required CI gate** is not a required status check for merging; it remains the qualification gate for releases. Static checks (ESLint, script syntax, copyright/license notices and workflows), integration/PHP unit checks, branching provider/dashboard checks, the [branching performance matrix](performance/branching/README.md), and native amd64/arm64 tooling image builds are separate jobs. Image builds run the PHP report checks and browser runner regressions on both architectures without publishing. The final gate requires all nine E2E cases, **63/63 shared acceptance scenarios**, completed cleanup and all reports, then runs the original eight-way Linux comparison. Failed, skipped, pending, canceled, missing and stale results prevent success. When requested, pull requests, including forks, run the same matrix against their exact merge candidate.
 
 ## Marketplace credentials
 
@@ -102,7 +102,7 @@ Cypress installations also verify Node-side certificate and hostname validation,
 
 All eight combinations check input updates, loops, navigation, and form submissions against the installed platform. Coverage checks require executed PHP, JavaScript, and template lines, along with uncovered branches and unvisited templates. Hyvä checks also cover Alpine model updates, PHP-generated event names, conditional listeners, modifier-only form prevention and unclicked event handlers. CSP runs include the original vendor theme templates and require the gallery, price and cancellation-modal directives to have no unsupported-directive warnings. Each combination runs the same seven acceptance scenarios: five Blog scenarios covering publishing, moderation, image handling, validation, permissions, and storefront interaction, plus two coverage probes. Inline PHTML scripts must execute normally and appear only in template coverage, with called functions, unused functions and both branch outcomes reported. PHP-rendered child scripts must link to their original template and keep unused child functions and branches uncovered. Original source files and PHP line numbers must remain unchanged. Patch cleanup is checked against the original framework files on both platforms.
 
-Hyvä tests use the installer-selected default theme, with package versions pinned in [hyva-packages.json](../docker/php/hyva-packages.json). Playwright tests include a project-owned external guest fixture with TypeScript path aliases. CSP runs require an enforcing script policy and verify that unauthorized inline scripts and dynamic code are blocked. Licensed Hyvä Checkout and external checkout suites are outside this installation matrix.
+Hyvä tests use the installer-selected default theme, with package versions pinned in [hyva-packages.json](../docker/php/hyva-packages.json). CSP runs require an enforcing script policy and verify that unauthorized inline scripts and dynamic code are blocked. Licensed Hyvä Checkout and external checkout suites are outside this installation matrix.
 
 The matrix also compares covered and uncovered lines in the shared Blog PHP and Admin JavaScript across all eight installations. Within each platform and theme, Cypress and Playwright must produce the same Blog PHP and JavaScript line coverage and template statement coverage. The comparison is saved to `.runtime/e2e/matrix-comparison.json`. Missing or duplicate combinations fail the comparison. Overall percentages can differ between Luma and Hyvä because their storefront implementations differ and inactive application files remain uncovered.
 
@@ -111,6 +111,14 @@ The CI case workflow selects `MAGELENS_E2E_PLATFORM=magento|mageos`, `MAGELENS_E
 Omitting these settings selects Magento Open Source/Luma/Cypress. The full matrix always checks all eight combinations, regardless of individual selection settings.
 
 ## Test a local template coverage package
+
+### Dependent library PRs
+
+Dependent MageLens drafts can include `.github/dependency-previews.json` with schema `1` and `templateCoverage` and/or `pcov` entries. Each entry contains the fixed upstream `repository`, source `pullRequest`, full 40-character `sha`, and planned stable `version` matching `dependencies.yaml`. Only `VitaliyBoyko/magento-template-coverage` and `VitaliyBoyko/pcov` are accepted.
+
+When requested with `run-ci`, draft PRs run the existing complete CI matrix. In disposable Actions workspaces, template previews are packed from the exact source commit without package scripts and installed through the existing local-tarball path. PCOV previews compile that exact extension source in the normal PHP image and use report tools from the same tree. Windows prepares previews inside its own WSL2 checkout. The nine cases retain their existing acceptance checks, source preservation, report comparisons and required gate. Source commits, trees and archive digests are recorded and must match across all cases; missing or stale preview evidence fails the gate.
+
+A preview pass is integration feedback, not release qualification. The publisher rejects qualification containing preview dependencies. After the library PR is merged and its version is actually published, remove its preview entry (and remove the file and license sidecar when empty), resolve the real version into all manifests and lockfiles, and rerun the entire matrix before publication. Concurrent dependent drafts share MageLens's single planned next version.
 
 Test unpublished collector changes in a reviewed CI branch: pack the library in the runner workspace and pass `MAGELENS_TEMPLATE_COVERAGE_PACKAGE` to the existing harness. Record the tarball digest in the run evidence and do not replace the final published-pin qualification with an unpublished-package run. Local packing and focused browser debugging are permitted; the full matrix remains in CI.
 

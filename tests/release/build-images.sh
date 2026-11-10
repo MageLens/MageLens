@@ -3,10 +3,19 @@
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
-# Called only by the manually dispatched publisher after PR/tree qualification.
+# Shared native image build and regression checks for PR CI and the qualified publisher.
 source "$(dirname "$0")/../../bin/common"
-[[ "${GITHUB_REPOSITORY:-}" == MageLens/MageLens && "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ]] || fail 'Images are published only by the MageLens release workflow.'
-output="$ROOT/.runtime/release-images"
+mode=${1:-publish}
+[[ "$mode" == test || "$mode" == publish ]] || fail 'Unknown image build mode.'
+[[ "$mode" == test ]] || [[ "${GITHUB_REPOSITORY:-}" == MageLens/MageLens && "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ]] || fail 'Images are published only by the MageLens release workflow.'
+architecture=$(docker info --format '{{.Architecture}}')
+case "$architecture" in
+    x86_64|amd64) architecture=amd64 ;;
+    aarch64|arm64) architecture=arm64 ;;
+    *) fail "Unsupported image architecture: $architecture" ;;
+esac
+export MAGELENS_IMAGE_PLATFORM="linux/$architecture"
+output="$ROOT/.runtime/release-images/$architecture"
 mkdir -p "$output" .runtime/template-package coverage
 touch .runtime/template-package/.keep
 version=$(node -p 'require("./package.json").version')
@@ -35,23 +44,24 @@ for kind in php runner-cypress runner-playwright; do
             --build-arg "CHROME_LINUX_ARM64_SHA256=$CHROME_LINUX_ARM64_SHA256" .
         checks=()
         [[ "$MAGELENS_RUNNER" != cypress ]] || checks=(--cypress-regressions)
-        bash tests/runner-container.sh "$image" "${checks[@]}"
+        bash tests/runner-container.sh "$image" ${checks[@]+"${checks[@]}"}
         if [[ "$MAGELENS_RUNNER" == cypress ]]; then
             node -e 'const a=require("node:assert/strict");const r=require("./coverage/cypress-runner-results.json");a.equal(r.browserVersion,process.env.CHROME_VERSION);a.equal(r.browserName,"chrome-for-testing");'
         fi
     fi
-    [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" == linux/amd64 ]] || fail 'Only qualified Linux amd64 images may be published.'
+    [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" == "$MAGELENS_IMAGE_PLATFORM" ]] || fail 'Image architecture does not match the builder.'
+    [[ "$mode" == publish ]] || continue
     # Push directly: Docker/OCI archives never enter Actions artifact storage.
     # A retry must not move the tag off the currently published digest. GHCR
     # requires a tagged version to remain when deleting a failed candidate.
-    reference="ghcr.io/magelens/$kind:$version-linux-amd64-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+    reference="ghcr.io/magelens/$kind:$version-linux-$architecture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
     skopeo copy --format oci --digestfile "$output/$kind.digest" "docker-daemon:$image" "docker://$reference"
     digest=$(cat "$output/$kind.digest")
     node tests/release/images.cjs record "$kind" "$fingerprint" "$digest" "$output/$kind.json"
 done
+[[ "$mode" == publish ]] || exit 0
 for kind in php runner-cypress runner-playwright; do
     digest=$(cat "$output/$kind.digest")
     skopeo inspect --no-creds "docker://ghcr.io/magelens/$kind@$digest" >/dev/null || \
         fail 'Anonymous image pull failed. For the first image release, set all three MageLens GHCR packages to Public in package settings, then rerun the publisher.'
 done
-node tests/release/images.cjs manifest "$output" "$output/images.json"

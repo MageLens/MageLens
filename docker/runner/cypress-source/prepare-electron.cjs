@@ -34,17 +34,19 @@ async function prepareElectron(root, dependencies) {
         throw new Error('Downloaded Electron version differs from the pinned source');
     }
     fs.accessSync(path.join(directory, 'electron'), fs.constants.X_OK);
-    const snapshotZip = await download('mksnapshot');
-    await extractZip(snapshotZip, {dir: snapshot.binDir});
-    // Upstream syncAndRun logs download failures but still writes metadata. Only
-    // mark an exact-version download ready after its required tools are present.
-    for (const executable of ['mksnapshot', 'v8_context_snapshot_generator']) {
-        const file = path.join(snapshot.binDir, executable);
-        if (!fs.statSync(file).isFile() || fs.statSync(file).size === 0) throw new Error(`Missing snapshot tool: ${executable}`);
-        fs.chmodSync(file, 0o755);
-        fs.accessSync(file, fs.constants.X_OK);
+    if (arch === 'x64') {
+        const snapshotZip = await download('mksnapshot');
+        await extractZip(snapshotZip, {dir: snapshot.binDir});
+        // Upstream syncAndRun logs download failures but still writes metadata. Only
+        // mark an exact-version download ready after its required tools are present.
+        for (const executable of ['mksnapshot', 'v8_context_snapshot_generator']) {
+            const file = path.join(snapshot.binDir, executable);
+            if (!fs.statSync(file).isFile() || fs.statSync(file).size === 0) throw new Error(`Missing snapshot tool: ${executable}`);
+            fs.chmodSync(file, 0o755);
+            fs.accessSync(file, fs.constants.X_OK);
+        }
+        await writeMetadata();
     }
-    await writeMetadata();
     const configFile = path.join(root, 'electron-builder.json');
     const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
     // Supply the verified distribution through electron-builder's normal input.
@@ -54,8 +56,8 @@ async function prepareElectron(root, dependencies) {
 }
 
 async function main(root) {
-    if (process.platform !== 'linux' || process.arch !== 'x64') {
-        throw new Error('The pinned upstream mksnapshot tools require a Linux x64 source build');
+    if (process.platform !== 'linux' || !['x64', 'arm64'].includes(process.arch)) {
+        throw new Error('Cypress source builds require Linux x64 or arm64');
     }
     const upstream = createRequire(path.join(root, 'package.json'));
     const version = upstream('./packages/electron').getElectronVersion();
