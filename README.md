@@ -8,9 +8,9 @@ License: see LICENSE in the repository root.
   <img src="assets/magelens.svg" alt="MageLens logo" width="320">
 </p>
 
-# MageLens: Magento 2 and Mage-OS E2E code coverage with Docker
+# MageLens: Magento 2 and Mage-OS full stack coverage with Docker
 
-**See which PHP, JavaScript and templates your end-to-end tests execute.** MageLens sets up a local Magento Open Source or Mage-OS environment in Docker and collects PHP, JavaScript, and template coverage from a Cypress or Playwright run.
+**See which PHP, JavaScript and templates your end-to-end and functional tests execute.** MageLens sets up a local Magento Open Source or Mage-OS environment in Docker and collects full stack coverage from Cypress or Playwright runs.
 
 **[Website](https://magelens.dev/)** · [Real-world Magento E2E coverage guide](https://magelens.dev/guides/parallel-magento-e2e-coverage/)
 
@@ -30,9 +30,11 @@ MageLens grew out of a real-world Magento project with **600+ E2E tests**, where
 
 It makes those gaps visible across PHP, JavaScript and templates, with **low coverage overhead and near-native performance** observed in that project.
 
+Use the same browser-based flows for **functional testing** by mocking external integrations such as ERP, shipping and tax services. This keeps tests independent of those services and helps provide faster pull request feedback. For release testing, run end-to-end scenarios against the integrations you need to validate.
+
 ## Quick start
 
-On Linux or macOS with Apple Silicon, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
+On Linux, Windows with WSL2, or macOS with Apple Silicon, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
 
 ```bash
 bash -c "$(wget -qO- https://raw.githubusercontent.com/MageLens/MageLens/main/bootstrap.sh)" --
