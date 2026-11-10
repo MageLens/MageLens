@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 pub fn error(message: &str, issues: Vec<Value>) -> Value {
     json!({"statusCode":500,"code":"ESTIMATION_FAILED","message":message,"issues":issues,
-        "remediation":"Resolve every analysis issue and replan. Project call models are documented in docs/branching-estimation.md."})
+        "remediation":"Resolve every analysis issue and replan."})
 }
 
 pub fn issues(manifest: &Manifest) -> Vec<Value> {

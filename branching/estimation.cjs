@@ -11,7 +11,7 @@ class EstimationError extends Error {
         this.statusCode = 500;
         this.code = 'ESTIMATION_FAILED';
         this.issues = issues;
-        this.remediation = 'Resolve every analysis issue and replan. Project call models are documented in docs/branching-estimation.md.';
+        this.remediation = 'Resolve every analysis issue and replan.';
     }
     toJSON() {
         return {statusCode: this.statusCode, code: this.code, message: this.message, issues: this.issues, remediation: this.remediation};
@@ -20,7 +20,7 @@ class EstimationError extends Error {
 function assertAssessed(manifest) {
     const issues = [], assessment = manifest?.assessment, analysis = assessment?.analysis;
     if (manifest?.schemaVersion !== 1 || manifest?.implementation !== 'rust-prefix-v2' ||
-        assessment?.version !== 'js-ts-points-v6' || assessment?.boundsVersion !== 1)
+        assessment?.version !== 'js-ts-points-v4' || assessment?.boundsVersion !== 1)
         throw new EstimationError([{phase: 'manifest', message: 'Outdated source cost model; replan before execution'}], 'Outdated source cost model; replan before execution');
     if (!Array.isArray(manifest.diagnostics) || manifest.diagnostics.length)
         issues.push({phase: 'collection', reasons: manifest.diagnostics ?? ['Missing collection diagnostics']});

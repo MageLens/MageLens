@@ -718,7 +718,7 @@ fn formatting_comments_quotes_and_types_do_not_hide_shared_work() {
     assert_eq!(a["fingerprint"], b["fingerprint"]);
     assert_eq!(points(a), points(b));
     assert!(points(a) > 0);
-    assert_eq!(p["assessment"]["version"], "js-ts-points-v6");
+    assert_eq!(p["assessment"]["version"], "js-ts-points-v4");
 }
 #[test]
 fn literal_whitespace_inputs_and_preceding_state_are_never_erased() {

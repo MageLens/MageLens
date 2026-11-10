@@ -15,7 +15,7 @@ function assessed(manifest) {
     }
     const total = manifest.tests.reduce((sum, test) => sum + test.steps.length, 0);
     manifest.implementation = 'rust-prefix-v2';
-    manifest.assessment = {version: 'js-ts-points-v6', boundsVersion: 1, analysis: {status: 'complete', totalStatements: total,
+    manifest.assessment = {version: 'js-ts-points-v4', boundsVersion: 1, analysis: {status: 'complete', totalStatements: total,
         analyzedStatements: total, collectionComplete: true, collectionDiagnostics: 0, fixturesWithGaps: 0, workersWithGaps: 0, lifecycleWithGaps: 0}};
     return manifest;
 }
