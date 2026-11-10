@@ -15,6 +15,9 @@ and verifies the embedded model SHA-256
 `f5621bb710749ca616117ef979b0a039c12680dee08f79a1cce46cde3413a8c3`.
 Weights are distributed through the package registry. Training data, private
 source archives and credentials remain outside the product repository.
+Model versions have a separate manual lifecycle: CI does not publish or update
+the model package. Multiple product releases reuse the pinned package until an
+explicit model update is validated, published manually and selected by digest.
 
 Inference supports the packaged feature schema, including syntax counts from
 called helpers. Helper matching is a static name-based approximation; dynamic

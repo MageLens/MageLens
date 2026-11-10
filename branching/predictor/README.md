@@ -142,5 +142,12 @@ The selected evaluation snapshot is published in the package registry as
 `ghcr.io/magelens/predictor.ai:0.0.1`. Model bytes and training data stay outside Git.
 The orchestrator Dockerfile consumes the package by registry digest, copies the
 model to `/opt/magelens/predictor/model.json`, and verifies its SHA-256 during the
-build. Orchestrator builds do not need the publishing variables or retrain the model.
+build. Multiple product releases reuse this same immutable model package.
+Model updates are a separate manual operation; CI does not train, publish or update
+the packaged model. Retain the training code and packaging Dockerfile in Git.
+For a deliberate model update, train and validate a candidate privately, update
+the packaging Dockerfile's version and model digest, then build and push a new
+package version manually. Verify the published bytes before updating the
+orchestrator's package version, registry digest and model checksum. Never overwrite
+an existing package version. Ordinary product releases leave these pins unchanged.
 Packaging does not qualify the model or enable checkpoint decisions.
