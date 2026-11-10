@@ -3,6 +3,14 @@
 # License: see LICENSE in the repository root.
 
 /.runtime/
+# Predictor source is tracked; generated models and training inputs are private.
+/branching/predictor/model.json
+/branching/predictor/models/
+/branching/predictor/registry/
+/branching/predictor/datasets/
+/branching/predictor/source-archives/
+/branching/predictor/*.b64
+/branching/predictor/__pycache__/
 /branching/planner/target/
 # Track only application sources inside the otherwise generated Magento tree.
 /src/*

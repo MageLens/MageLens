@@ -29,6 +29,16 @@ License: see LICENSE in the repository root.
 - Focus on installation, configuration, features, and practical usage. Keep internal reasoning, implementation nuances, debugging history, and task execution details in engineering reports, outside user-facing documentation.
 - Ensure installation commands target the latest published release. Verify it through the project's authoritative release source; use a supported latest-release URL where available, otherwise the verified current version. Do not guess or advertise an unpublished candidate. This rule does not authorize unrelated dependency or lockfile upgrades.
 
+## Domain naming and publishing discipline
+
+- Name code identifiers, modules, commands, branches, commits, pull requests, workflows, runs, packages, images, artifacts and releases using the project's domain vocabulary. Describe the capability, domain object or user-visible outcome; keep terminology consistent across code and published surfaces.
+- Keep internal instructions, agent reasoning, implementation constraints, debugging history and task-management details out of names and titles. Put necessary technical context in the appropriate description, documentation or engineering report. For example, use `Publish predictor.ai 0.0.1`, not `Publish predictor without committing model data`.
+- Do not mention companies other than MageLens in authored product names, titles, descriptions, plans or examples. Refer to private projects and service providers by domain role, never by company or customer name. Preserve required license attribution and functional dependency identifiers, paths and URLs; do not turn them into promotional prose.
+- Use established product and domain names. Avoid invented jargon and unexplained internal status labels. Include a version, platform or lifecycle qualifier only when it helps the intended audience distinguish the deliverable. Preserve accurate qualification status in package metadata and documentation; a cleaner title must not imply readiness that has not been verified.
+- Before publishing, inspect every visible name, including titles inherited from commit messages or pull requests, image labels, tags, artifact filenames and summaries. Set an explicit domain-focused `run-name` for publishing workflows so internal commit wording does not become the publication title.
+- Verify the displayed names and published identifiers after publication. Some historical titles cannot be edited; check them before triggering the action. Do not delete publication evidence, rewrite shared history or republish an immutable version merely to improve a title.
+- Apply these rules to new and changed names within the task. Preserve established public interfaces and existing resources unless their renaming is part of the requested work; naming cleanup does not authorize unrelated migrations or publication.
+
 ## Mandatory gate before every release
 
 1. Identify the complete E2E suite and required configuration matrix from project instructions, scripts, and CI configuration: eight Linux combinations and Windows Mage-OS/Luma/Cypress (nine cases, 63 acceptance scenarios). macOS is explicitly deferred because hosted execution is too slow; Apple Silicon awaits a self-hosted Mac. Do not claim macOS qualification. A filtered subset of the active matrix or a single entry does not satisfy this gate.

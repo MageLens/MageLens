@@ -20,12 +20,14 @@ function main(args) {
         const measurement = read(extra);
         write(output, predictor.observe(read(input), measurement.actualMs, measurement));
     } else if (command === 'evaluate') write(output, predictor.evaluate(read(input)));
-    else if(command==='pack-ci') {
+    else if(command==='pack-ci' || command==='pack-ci-chunks') {
         const bytes=fs.readFileSync(input),id=predictor.sha256(bytes);
         predictor.loadModel(input,id);
-        fs.writeFileSync(output,require('./transport.cjs').pack(bytes)+'\n',{flag:'wx',mode:0o600});
-        console.log(JSON.stringify({modelId:id,variable:'MAGELENS_PREDICTOR_MODEL_GZIP_BASE64'}));
-    } else throw new Error('Usage: predictor/cli.cjs prepare request.json snapshot.json [model.json] | observe snapshot.json sample.json measurement.json | evaluate samples.json report.json | pack-ci model.json model.b64');
+        const transport=require('./transport.cjs');
+        const payload=command==='pack-ci' ? transport.pack(bytes) : JSON.stringify(Object.fromEntries(transport.packChunks(bytes).map((chunk,i)=>[`MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_${i+1}`,chunk])),null,2);
+        fs.writeFileSync(output,payload+'\n',{flag:'wx',mode:0o600});
+        console.log(JSON.stringify({modelId:id,...(command==='pack-ci' ? {variable:'MAGELENS_PREDICTOR_MODEL_GZIP_BASE64'} : {variables:Object.keys(JSON.parse(payload))})}));
+    } else throw new Error('Usage: predictor/cli.cjs prepare request.json snapshot.json [model.json] | observe snapshot.json sample.json measurement.json | evaluate samples.json report.json | pack-ci model.json model.b64 | pack-ci-chunks model.json variables.json');
 }
 module.exports = {main};
 if (require.main === module) {

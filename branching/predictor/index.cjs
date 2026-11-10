@@ -6,15 +6,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createHash, randomUUID} = require('node:crypto');
 const {EstimationError} = require('../estimation.cjs');
+const {reachableContext} = require('./reachable.cjs');
 const COUNTS_SCHEMA = 'syntax-hash-v2-babel-7.29.9';
 const FEATURE_SCHEMA = 'syntax-roles-v3-babel-7.29.9';
-const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA];
-const COUNTS_WIDTH = 72, WIDTH = COUNTS_WIDTH * 2;
-const width = schema => schema === FEATURE_SCHEMA ? WIDTH : COUNTS_WIDTH;
+const REACHABLE_SCHEMA = 'syntax-reachable-v4-babel-7.29.9';
+const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA];
+const COUNTS_WIDTH = 72, WIDTH = COUNTS_WIDTH * 2, REACHABLE_WIDTH = 1024, HALF_REACHABLE = 512;
+const width = schema => schema === REACHABLE_SCHEMA ? REACHABLE_WIDTH : schema === FEATURE_SCHEMA ? WIDTH : COUNTS_WIDTH;
 // Bounded syntax-vector cache: helpers shared by many tests are parsed once.
 // Keys include source bytes and schema; no project source or AST is retained.
 const syntaxCache = new Map();
 const sha256 = value => createHash('sha256').update(value).digest('hex');
+const qualified = n => !n ? '' : n.type === 'Identifier' ? n.name : n.type === 'ThisExpression' ? 'this' : n.type === 'MemberExpression' || n.type === 'OptionalMemberExpression' ? qualified(n.object) + '.' + (n.computed ? '[]' : n.property.name) : n.type === 'CallExpression' ? qualified(n.callee) + '()' : n.type;
 function fail(message) { throw new EstimationError([{phase: 'predictor', message}]); }
 function ensure(condition, message) { if (!condition) fail(message); }
 function counts(request) {
@@ -23,11 +26,13 @@ function counts(request) {
     const schema = request.featureSchema;
     ensure(SCHEMAS.includes(schema), 'Unknown feature schema');
     ensure(Array.isArray(request.sources) && request.sources.length > 0, 'Source corpus is required');
-    const vector = Array(COUNTS_WIDTH).fill(0), fingerprints = [];
+    const roleWidth = schema === REACHABLE_SCHEMA ? HALF_REACHABLE : COUNTS_WIDTH;
+    const bucketCount = schema === REACHABLE_SCHEMA ? HALF_REACHABLE - 8 : 64;
+    const vector = Array(roleWidth).fill(0), fingerprints = [];
     vector[0] = request.runner === 'playwright' ? 1 : 0;
     vector[1] = request.runner === 'cypress' ? 1 : 0;
     vector[2] = request.unit === 'prefix' ? 1 : 0;
-    const add = (target, name, amount = 1) => { target[8 + parseInt(sha256(name).slice(0, 8), 16) % 64] += amount; };
+    const add = (target, name, amount = 1) => { target[8 + parseInt(sha256(name).slice(0, 8), 16) % bucketCount] += amount; };
     const parser = require('@babel/parser');
     ensure(require('@babel/parser/package.json').version === '7.29.9', 'Feature parser version changed; retrain');
     for (const {name, source} of [...request.sources].sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
@@ -38,10 +43,10 @@ function counts(request) {
         const cached=syntaxCache.get(cacheKey);
         if(cached) {
             vector[5]+=cached[5];vector[6]+=cached[6];vector[7]=Math.max(vector[7],cached[7]);
-            for(let i=8;i<COUNTS_WIDTH;i++)vector[i]+=cached[i];
+            for(let i=8;i<roleWidth;i++)vector[i]+=cached[i];
             continue;
         }
-        const counts=Array(COUNTS_WIDTH).fill(0);
+        const counts=Array(roleWidth).fill(0);
         let ast;
         try { ast = parser.parse(source, {sourceType: 'unambiguous', plugins: ['typescript', 'jsx']}); }
         catch (error) { fail(`Cannot parse source ${name}: ${error.message}`); }
@@ -54,6 +59,8 @@ function counts(request) {
             add(counts,'syntax:' + node.type); counts[5]++;
             if (schema === COUNTS_SCHEMA && ['CallExpression', 'OptionalCallExpression'].includes(node.type))
                 add(counts,'call:' + (node.callee.property?.name ?? node.callee.name ?? node.callee.type));
+            if (schema === REACHABLE_SCHEMA && ['CallExpression', 'OptionalCallExpression', 'NewExpression'].includes(node.type))
+                add(counts, 'call:' + qualified(node.callee));
             if (node.type === 'NumericLiteral') {
                 counts[6] += Math.log1p(Math.abs(node.value));
                 counts[7] = Math.max(counts[7], Math.log1p(Math.abs(node.value)));
@@ -63,7 +70,7 @@ function counts(request) {
                 if (!['loc', 'extra', 'comments', 'leadingComments', 'trailingComments', 'innerComments'].includes(key) && value && typeof value === 'object') pending.push(value);
         }
         vector[5]+=counts[5];vector[6]+=counts[6];vector[7]=Math.max(vector[7],counts[7]);
-        for(let i=8;i<COUNTS_WIDTH;i++)vector[i]+=counts[i];
+        for(let i=8;i<roleWidth;i++)vector[i]+=counts[i];
         if(syntaxCache.size>=1024)syntaxCache.delete(syntaxCache.keys().next().value);
         syntaxCache.set(cacheKey,counts);
     }
@@ -76,6 +83,19 @@ function counts(request) {
 }
 function features(request) {
     const schema=request.featureSchema ?? FEATURE_SCHEMA;
+    if (schema === REACHABLE_SCHEMA) {
+        ensure(Array.isArray(request.sources) && request.sources.length>0, 'Source corpus is required');
+        ensure(request.sources.every(s=>['work','context'].includes(s.role ?? 'work')), 'Unknown source role');
+        ensure(new Set(request.sources.map(s=>s.name)).size===request.sources.length, 'Duplicate source in corpus');
+        const work=request.sources.filter(s=>s.role!=='context');
+        ensure(work.length>0, 'Work source is required');
+        const reachable = reachableContext(request.sources);
+        const primary = counts({...request, featureSchema: REACHABLE_SCHEMA, sources: work});
+        const supporting = reachable.length ? counts({...request, featureSchema: REACHABLE_SCHEMA, sources: reachable, extraFeatures: {}}).vector : Array(HALF_REACHABLE).fill(0);
+        const fingerprints = [...request.sources].sort((a,b)=>a.name.localeCompare(b.name,'en'))
+            .map(s=>[s.name,sha256(s.source),s.role ?? 'work']);
+        return {featureSchema: schema, vector: [...primary.vector, ...supporting], sourceDigest: sha256(JSON.stringify(fingerprints))};
+    }
     if(schema!==FEATURE_SCHEMA)return counts({...request,featureSchema:schema});
     ensure(Array.isArray(request.sources) && request.sources.length>0, 'Source corpus is required');
     ensure(request.sources.every(s=>['work','context'].includes(s.role ?? 'work')), 'Unknown source role');
@@ -187,4 +207,4 @@ function evaluate(rows) {
         groups: Object.fromEntries(Object.entries(groups).map(([key, items]) => [key, metrics(items)])),
         checkpointDecisions: {status: 'unmeasured', reason: 'Whole-suite durations are not shared-prefix labels'}};
 }
-module.exports = {FEATURE_SCHEMA, WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate};
+module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate};

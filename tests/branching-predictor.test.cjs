@@ -351,3 +351,75 @@ test('timing boundary revisions reject old models even for shadow forecasts', t 
     assert.equal(p.prepare(input,loaded).prediction,null);
     assert.throws(()=>p.prepare({...input,timingBoundary:{}},loaded),e=>e.statusCode===500);
 });
+
+
+test('reachable helper schema extracts 1024-wide vectors and isolates called helpers from unused context', () => {
+    const input = {
+        ...request(),
+        featureSchema: p.REACHABLE_SCHEMA,
+        sources: [
+            {name: 'test.ts', source: 'function run() { helperCalled(); }', role: 'work'},
+            {name: 'helpers.ts', source: 'function helperCalled() { return 1; }\nfunction helperUnused() { return 2; }', role: 'context'}
+        ]
+    };
+    const features = p.features(input);
+    assert.equal(features.featureSchema, p.REACHABLE_SCHEMA);
+    assert.equal(features.vector.length, p.REACHABLE_WIDTH);
+    assert.equal(p.REACHABLE_WIDTH, 1024);
+    assert.ok(features.vector.every(Number.isFinite));
+    // Verify work and context parts are populated
+    assert.ok(features.vector.slice(0, 512).some(x => x > 0));
+    assert.ok(features.vector.slice(512).some(x => x > 0));
+    // Changing unused helper in context does not change reachable context vector
+    const changed = {
+        ...input,
+        sources: [
+            input.sources[0],
+            {name: 'helpers.ts', source: 'function helperCalled() { return 1; }\nfunction helperUnused() { return "heavily modified content with lots of extra statements and syntax nodes"; }', role: 'context'}
+        ]
+    };
+    const changedFeatures = p.features(changed);
+    assert.deepEqual(features.vector, changedFeatures.vector);
+});
+
+test('chunked CI model transport preserves large snapshots and rejects gaps, conflicts and corruption', t => {
+    const {spawnSync}=require('node:child_process'),{randomBytes}=require('node:crypto');
+    const {pack,packChunks,unpackChunks}=require('../branching/predictor/transport.cjs');
+    const {directory,file}=model(t),data=JSON.parse(fs.readFileSync(file));
+    data.training={note:randomBytes(60000).toString('hex')};
+    const bytes=Buffer.from(JSON.stringify(data)),chunks=packChunks(bytes);
+    assert.throws(()=>pack(bytes),/variable size limit/);
+    assert.ok(chunks.length>1);assert.ok(chunks.every(chunk=>chunk.length<=48*1024));
+    assert.deepEqual(unpackChunks(chunks),bytes);
+    assert.throws(()=>unpackChunks([chunks[0],'',chunks[1]]));
+    assert.throws(()=>unpackChunks(Array(5).fill('AAAA')));
+    assert.throws(()=>unpackChunks(['A'.repeat(48*1024+1)]));
+    const env={...process.env,MAGELENS_PREDICTOR_MODEL_JSON:'',MAGELENS_PREDICTOR_MODEL_GZIP_BASE64:'',MAGELENS_PREDICTOR_MODEL_SHA256:p.sha256(bytes)};
+    for(let i=0;i<4;i++)env[`MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_${i+1}`]=chunks[i]??'';
+    const invoke=(name,overrides)=>{
+        const cwd=path.join(directory,name);fs.mkdirSync(cwd);
+        const result=spawnSync(process.execPath,[path.join(__dirname,'ci/predictor-model.cjs')],{cwd,encoding:'utf8',env:{...env,GITHUB_ENV:path.join(cwd,'environment'),...overrides}});
+        return {result,file:path.join(cwd,'.runtime/predictor/model.json')};
+    };
+    const valid=invoke('valid');assert.equal(valid.result.status,0,valid.result.stderr);assert.deepEqual(fs.readFileSync(valid.file),bytes);
+    for(const [name,overrides] of [
+        ['gap',{MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_1:''}],
+        ['conflict',{MAGELENS_PREDICTOR_MODEL_JSON:'{}'}],
+        ['corrupt',{MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_2:'AAAA'}],
+        ['digest',{MAGELENS_PREDICTOR_MODEL_SHA256:'0'.repeat(64)}]
+    ]) {const failed=invoke(name,overrides);assert.notEqual(failed.result.status,0);assert.equal(fs.existsSync(failed.file),false);}
+});
+
+test('native observations exclude declared lifecycle projects without relying on project names', t => {
+    const {directory}=model(t),native=require('../branching/predictor/native.cjs');
+    const file=path.join(directory,'journey.spec.js');fs.writeFileSync(file,'const work = async () => {};');
+    const tests=['prepare-account','storefront','clean-account','setup'].map(id=>({id,project:id,titlePath:[id],timingSource:'async () => {}',expectedStatus:'passed'}));
+    native.collector({runner:'playwright',sourceFamily:'fixture',baselineMs:100},directory,directory)({file,tests,hooks:[]});
+    const report={config:{projects:[{name:'storefront',dependencies:['prepare-account']},{name:'prepare-account',teardown:'clean-account'},{name:'setup'}]},tests,
+        results:tests.map(({id})=>({id,status:'passed',attempts:1,durationMs:100,errors:[]}))};
+    native.finish(directory,report);
+    const rows=JSON.parse(fs.readFileSync(path.join(directory,'prediction-samples.json')));
+    assert.deepEqual(rows.map(row=>row.eligible),[false,true,false,true]);
+    assert.equal(rows[0].exclusion,'Project lifecycle dependency');
+    assert.equal(rows[2].actualMs,100);
+});

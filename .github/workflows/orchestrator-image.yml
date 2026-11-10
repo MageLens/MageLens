@@ -3,11 +3,14 @@
 # License: see LICENSE in the repository root.
 
 name: Build branching images
+run-name: Build MageLens branching images
 on:
   push:
     branches: [branching]
     paths:
       - 'branching/planner/**'
+      - 'branching/predictor/**'
+      - 'tests/ci/predictor-model.cjs'
       - 'branching/images.cjs'
       - 'branching/build-runner.sh'
       - 'branching/runners/**'
@@ -19,6 +22,7 @@ on:
       - '.dockerignore'
       - 'dependencies.yaml'
       - 'package.json'
+      - 'package-lock.json'
       - 'tests/ci/*-image.sh'
       - 'tests/branching-plan-smoke.cjs'
       - 'tests/branching-cypress-browser.cjs'

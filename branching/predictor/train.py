@@ -15,7 +15,7 @@ import sklearn
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
-SCHEMAS = {'syntax-hash-v2-babel-7.29.9': 72, 'syntax-roles-v3-babel-7.29.9': 144}
+SCHEMAS = {'syntax-hash-v2-babel-7.29.9': 72, 'syntax-roles-v3-babel-7.29.9': 144, 'syntax-reachable-v4-babel-7.29.9': 1024}
 
 
 def digest(value):
@@ -26,11 +26,85 @@ def encode(value):
     return (json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
 
 
+class CoupledRidge:
+    def __init__(self, alpha_runner=0.001, alpha_core=1.0, alpha_work=5.0, alpha_ctx=20.0, alpha_runner_ctx=50.0, gamma=2.0, delta_pw=0.0, delta_cy=0.0, huber_delta=0.5):
+        self.alpha_runner = alpha_runner
+        self.alpha_core = alpha_core
+        self.alpha_work = alpha_work
+        self.alpha_ctx = alpha_ctx
+        self.alpha_runner_ctx = alpha_runner_ctx
+        self.gamma = gamma
+        self.delta_pw = delta_pw
+        self.delta_cy = delta_cy
+        self.huber_delta = huber_delta
+        self.intercept_ = 0.0
+        self.coef_ = None
+
+    def fit(self, Z, y, scale):
+        n_samples, n_features = Z.shape
+        y_mean = np.mean(y)
+        y_centered = y - y_mean
+        Delta = np.zeros((n_features, n_features), dtype=float)
+        half = n_features // 2
+        alpha_diag = np.full(n_features, self.alpha_work)
+        if n_features in (144, 1024):
+            alpha_diag = np.full(n_features, self.alpha_ctx)
+            alpha_diag[0:2] = self.alpha_runner
+            alpha_diag[half:half+2] = self.alpha_runner_ctx
+            alpha_diag[2:8] = self.alpha_core
+            alpha_diag[half+2:half+8] = self.alpha_core
+            alpha_diag[8:half] = self.alpha_work
+            for k in range(8, half):
+                Delta[k, k] += 1.0
+                Delta[k + half, k + half] += 1.0
+                Delta[k, k + half] -= 1.0
+                Delta[k + half, k] -= 1.0
+        else:
+            alpha_diag[0:2] = self.alpha_runner
+            alpha_diag[2:8] = self.alpha_core
+        w = np.ones(n_samples)
+        coef = np.zeros(n_features)
+        n_iter = 5 if self.huber_delta else 1
+        for _ in range(n_iter):
+            A = Z.T @ (w[:, None] * Z) + np.diag(alpha_diag) + self.gamma * Delta
+            b = Z.T @ (w * y_centered)
+            coef = np.linalg.solve(A, b)
+            if self.huber_delta:
+                res = np.abs(y_centered - Z @ coef)
+                w = np.minimum(1.0, self.huber_delta / np.maximum(res, 1e-4))
+        self.coef_ = coef
+        self.intercept_ = float(y_mean - np.dot(np.mean(Z, axis=0), self.coef_))
+        if self.delta_pw != 0.0 or self.delta_cy != 0.0:
+            L = np.log1p(1.0)
+            mean0 = scale.mean_[0]
+            scale0 = scale.scale_[0]
+            d_coef0 = (scale0 / L) * (self.delta_cy - self.delta_pw)
+            self.coef_[0] += d_coef0
+            self.intercept_ += -self.delta_cy + (mean0 / scale0) * d_coef0
+        return self
+
+    def predict(self, Z):
+        return self.intercept_ + Z @ self.coef_
+
+
 def fit(x, y):
     # Compress count magnitudes before scaling: raw counts with a log target
     # turn modest source-size extrapolation into exponential time estimates.
+    # Bound standard deviation so sparse hash buckets cannot inflate z-scores,
+    # while preserving true scale and signal for core continuous predictors.
     scale = StandardScaler().fit(np.log1p(x))
-    model = Ridge(alpha=10.0, solver='svd').fit(scale.transform(np.log1p(x)), y)
+    n_features = x.shape[1]
+    if n_features in (144, 1024):
+        half = n_features // 2
+        scale.scale_[8:half] = np.maximum(scale.scale_[8:half], 1.0)
+        scale.scale_[half+8:] = np.maximum(scale.scale_[half+8:], 1.0)
+        scale.scale_[:8] = np.maximum(scale.scale_[:8], 0.05)
+        scale.scale_[half:half+8] = np.maximum(scale.scale_[half:half+8], 0.05)
+    else:
+        scale.scale_[8:] = np.maximum(scale.scale_[8:], 1.0)
+        scale.scale_[:8] = np.maximum(scale.scale_[:8], 0.05)
+    model = CoupledRidge(alpha_runner=0.001, alpha_core=1.0, alpha_work=5.0, alpha_ctx=20.0, alpha_runner_ctx=50.0, gamma=2.0, delta_pw=0.0, delta_cy=0.0)
+    model.fit(scale.transform(np.log1p(x)), y, scale)
     return scale, model
 
 
@@ -58,9 +132,14 @@ def train(rows, dataset_digest):
     assert np.isfinite(baseline).all() and (baseline > 0).all(), 'Every label needs its pre-run baseline'
     reference_baseline = float(np.median(baseline))
     y = np.log1p(actual * reference_baseline / baseline)
+    families = sorted({row['sourceFamily'] for row in rows})
     groups = sorted({row['group'] for row in rows}, key=lambda group: digest(group.encode()))
     assert len(groups) >= 2, 'At least two independent workload groups required'
-    folds = {group: index % min(5, len(groups)) for index, group in enumerate(groups)}
+    folds = {}
+    for family in families:
+        family_groups = sorted({row['group'] for row in rows if row['sourceFamily'] == family}, key=lambda group: digest(group.encode()))
+        for index, group in enumerate(family_groups):
+            folds[group] = index % min(5, len(family_groups))
     predictions = np.empty(len(rows))
     naive_predictions = np.empty(len(rows))
     for fold in sorted(set(folds.values())):
@@ -73,7 +152,6 @@ def train(rows, dataset_digest):
     percent = np.abs(predicted_ms - actual) / actual * 100
     naive_ms = np.expm1(naive_predictions) * baseline / reference_baseline
     naive_percent = np.abs(naive_ms - actual) / actual * 100
-    families = sorted({row['sourceFamily'] for row in rows})
     by_source = []
     for runner, family in sorted({(r['runner'], r['sourceFamily']) for r in rows}):
         selected = np.array([r['runner'] == runner and r['sourceFamily'] == family for r in rows])
@@ -103,7 +181,7 @@ def train(rows, dataset_digest):
                           'mean': scale.mean_.tolist(), 'scale': scale.scale_.tolist()},
             'errorLogP90': percentile(residuals, .9), 'domains': domains,
             'training': {'datasetDigest': dataset_digest, 'samples': len(rows), 'groups': len(groups),
-                         'sourceFamilies': families, 'folds': folds, 'recipe': 'log1p-features/standard-scaler/log1p-ms/ridge-alpha10-svd/v2',
+                         'sourceFamilies': families, 'folds': folds, 'recipe': 'log1p-features/standard-scaler-floor-sparse1-core005/log1p-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
                          'python': platform.python_version(), 'sklearn': sklearn.__version__, 'numpy': np.__version__},
             'validation': {'method': 'grouped-cross-validation', 'percentileMethod': 'nearest-rank',
                            'medianAbsolutePercentError': percentile(percent, .5),

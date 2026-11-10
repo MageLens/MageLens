@@ -7,8 +7,10 @@
 const fs = require('node:fs'), path = require('node:path');
 const {loadModel,sha256} = require('../../branching/predictor/index.cjs');
 const json=process.env.MAGELENS_PREDICTOR_MODEL_JSON, compressed=process.env.MAGELENS_PREDICTOR_MODEL_GZIP_BASE64;
-if(json && compressed)throw new Error('Configure exactly one predictor model representation');
-const bytes = compressed ? require('../../branching/predictor/transport.cjs').unpack(compressed) : json;
+const chunks=Array.from({length:4},(_,i)=>process.env[`MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_${i+1}`] ?? '');
+while(chunks.length && !chunks.at(-1))chunks.pop();
+if([!!json,!!compressed,!!chunks.length].filter(Boolean).length>1)throw new Error('Configure exactly one predictor model representation');
+const bytes = chunks.length ? require('../../branching/predictor/transport.cjs').unpackChunks(chunks) : compressed ? require('../../branching/predictor/transport.cjs').unpack(compressed) : json;
 if (bytes) {
     if (!/^[a-f0-9]{64}$/.test(process.env.MAGELENS_PREDICTOR_MODEL_SHA256 ?? '')) throw new Error('A pinned predictor SHA-256 is required');
     if(sha256(bytes)!==process.env.MAGELENS_PREDICTOR_MODEL_SHA256)throw new Error('Predictor model digest mismatch');

@@ -67,9 +67,13 @@ function sourceAt(file, line, column) {
 function finish(directory, report) {
     const file=path.join(directory,'predictions.json');
     if (!fs.existsSync(file)) throw new Error('Missing pre-run test predictions');
+    const dependencyProjects = new Set((report.config?.projects ?? []).flatMap(project =>
+        [...(project.dependencies ?? []), ...(project.teardown ? [project.teardown] : [])]));
+    const setupIds = new Set((report.tests ?? []).filter(t => dependencyProjects.has(t.project)).map(t => t.id));
     const rows=JSON.parse(fs.readFileSync(file)).map(row=>{
         const result=report.results.find(r=>r.id===row.id);
         if (!result || !(result.durationMs>0)) return {...row.snapshot,eligible:false,exclusion:'Missing or invalid native result',actualMs:null};
+        if (setupIds.has(row.id)) return {...row.snapshot,eligible:false,exclusion:'Project lifecycle dependency',actualMs:result.durationMs};
         const unchanged=(row.files ?? [{file:row.file,hash:row.fileHash}]).every(item=>
             fs.existsSync(item.file) && p.sha256(fs.readFileSync(item.file))===item.hash);
         const preparationMs = row.preparationMs ?? 0;

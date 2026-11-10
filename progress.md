@@ -4,121 +4,87 @@ SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
 
-# Timing predictor progress
+# MageLens orchestrator and predictor plan
 
-Paused at the user's request on 2026-11-09. This branch preserves the product
-implementation and its prerequisites. It is an experimental development snapshot,
-not a qualified release. No trained model, private application, provider stub,
-credential, dataset or generated browser artifact is included.
+## Prototype status
 
-## Implemented
+The timing predictor is packaged as `ghcr.io/magelens/predictor.ai:0.0.1`.
+The orchestrator build consumes the immutable image digest
+`sha256:a7fb7f6fb35de3c8dd634cb729107c11eeb7668b547154a5afa6b2a193616bd8`
+and verifies the embedded model SHA-256
+`f5621bb710749ca616117ef979b0a039c12680dee08f79a1cce46cde3413a8c3`.
+Weights are distributed through the package registry. Training data, private
+source archives and credentials remain outside the product repository.
 
-- Project-independent timing features use a pinned Babel parser and a small
-  log-duration Ridge regression model. Inference needs Node and JSON, not Python
-  or a language-model service. It does not execute application JavaScript.
-- Native Cypress and Playwright collectors freeze forecasts before execution and
-  retain actual timings afterward. Hook and fixture attribution follow each
-  runner's timing boundary. Cypress records and excludes measured collector
-  preparation; the boundary is versioned to prevent mixing older observations.
-- Explicit training saves immutable datasets and model snapshots by SHA-256.
-  Failed, retried and changed-source observations are excluded. Related workloads
-  stay together in validation folds; reports include per-source and transfer error.
-- Predictions scale by current baseline / training baseline, with a manual
-  multiplier. Current forecasts remain fixed; later measurements may improve the
-  next run's baseline. Normal execution never repeats a suite to obtain predictions.
-- Numeric `extraFeatures` provide a project extension point without introducing
-  project-specific branches into the framework.
-- Strict predictor inference rejects unqualified models, incompatible timing
-  boundaries and out-of-range workloads with `ESTIMATION_FAILED`, status 500.
-  Observational profiling records missing forecasts explicitly.
-- Native and performance CI reporting now includes model identity, raw and scaled
-  errors, bias, interval coverage and missing forecasts. A selected CI model is
-  digest-checked; missing models are reported as incomplete, not zero error.
-- Product harness fixes cover duplicate login elements, cleanup of the dedicated
-  performance customer's active cart, and storefront message readiness in both
-  browser runners. The isolated E2E package includes the predictor's runner modules.
+Inference supports the packaged feature schema, including syntax counts from
+called helpers. Helper matching is a static name-based approximation; dynamic
+calls and ambiguous names need explicit evaluation on the target project.
+Native profiling freezes forecasts before execution and records actual test
+durations afterward. Existing model schemas remain supported.
 
-The existing production source assessor still controls checkpoint planning. This
-predictor does **not yet replace it or authorize checkpoints**. Ordinary execution
-without branching retains the native runner. Playwright remains optional.
+The model is evaluation-only: it has not passed independent qualification and
+does not control checkpoint decisions. Strict inference rejects an unqualified
+model. The existing source assessor continues to control planning. Packaging a
+model does not automatically select it for native-runner profiling.
 
-## Evidence and limitations
+## Next: test the prototype on a real project
 
-The latest exported candidate used 102 successful audited observations from three
-source families. Grouped validation reported approximately 18.8% median error and
-57.2% p90 error; individual-source errors were worse. It is unqualified.
+1. **Prepare an isolated project installation.** Identify the target project,
+   supported runner, representative user journeys and expected outcomes. Keep
+   project and provider identities in private configuration. Use a dedicated copy
+   with owned database, storage, ports and services; preserve the existing
+   installation, credentials, active workflows and recovery state. Record resource
+   limits and verify fixture cleanup before running tests.
+2. **Connect the packaged model to profiling.** Pull the pinned package and verify
+   the model digest and schema. Make the model available read-only to the native
+   runner and explicitly select it in the project's profiling configuration.
+   Verify this path using the actual packaged artifact; do not rely on a private
+   training-registry path. Keep model selection separate from calibration state.
+3. **Freeze the prospective test protocol.** Select journeys not used to fit or
+   tune this model. Record source fingerprints, workload groups, timing boundaries,
+   runner and browser versions, baseline provenance and manual multiplier before
+   execution. Keep setup, test, checkpoint and total elapsed time separate. Do not
+   retrain or adjust the candidate after seeing this evaluation's results.
+4. **Run the native journeys with prediction reporting.** Start with a small,
+   representative suite through the normal product command. Forecast once before
+   execution and observe the actual native duration. Record missing predictions,
+   unsupported inputs, failures, retries, changed sources and profiling overhead;
+   retain failures as evidence rather than treating them as passing samples.
+   Keep the predictor out of checkpoint decisions during this test.
+5. **Review the result before expanding scope.** Report median and P90 absolute
+   percentage error, signed bias, interval coverage and missing predictions per
+   workload group and timing boundary. Compare with the baseline estimate. Require
+   all intended journeys to pass, unchanged source fingerprints, verified cleanup,
+   complete forecasts and acceptable overhead. Model qualification requires an
+   independently measured P90 error at or below 15% in each supported workload
+   family; aggregate accuracy and training fit cannot substitute for this gate.
+   Keep the candidate evaluation-only if any criterion is unmet.
 
-A separate, unintegrated experiment using reachable helper-code features improved
-pooled median error to approximately 15.9% and p90 to 45.7%. Its per-source p90
-errors ranged from approximately 25.9% to 71.2%. This does not meet the working
-acceptance target of per-source p90 absolute percentage error at or below 15%.
-Neither pooled results nor training-set fit are sufficient for promotion.
+## After the real-project prediction test
 
-Collection is incomplete. The bundled Playwright suite passed 5 tests; completed
-native Matrix workloads and a partial private application corpus are retained
-locally. The active Matrix workload was interrupted on request and is not counted
-as a successful workload. Earlier observations have audit and timing-boundary
-exclusions. A newly corrected browser-service response also requires reviewing
-which retained observations are suitable for final qualification.
+- Measure exact checkpoint-prefix boundaries and validate restoration eligibility
+  separately. Whole-test durations are not prefix labels and cannot authorize
+  checkpoint placement.
+- Integrate only qualified predictions into pre-run assessment, preserving
+  fail-closed errors for unsupported boundaries, missing inputs and out-of-range
+  workloads. Calibration updates affect future runs, never the current forecast.
+- Run a controlled linear-versus-branching comparison on the isolated project
+  only when checkpoint eligibility and model qualification are established. Match
+  data, source inventory, configuration and browser; report setup, test time,
+  checkpoint overhead, total elapsed time and complete coverage equivalence.
+- Verify model selection and rollback using immutable package digests. Runner
+  startup must neither train nor promote models.
+- Complete the full required E2E matrix and release qualification on the final
+  candidate. Local checks and a successful package publication do not qualify a
+  product release or establish a speedup.
 
-No checkpoint-prefix model has been trained. Whole-test durations must never be
-used as exact shared-prefix labels. No qualified model, completed first-run
-calibration campaign, paired branching/linear result or speedup claim is available.
-Setup, tests including checkpoint overhead, and total time still need separate
-reporting in the eventual controlled comparison.
+## Validation scope
 
-Validation at this save point: all 412 Node integration tests passed, with zero
-failures or skips, using the pinned Rust planner and container PHP. Full static
-validation passed: license notices for 524 tracked files, ESLint for 243 JavaScript
-files, and syntax checks for 130 Bash, Python and PHP scripts. Changed JavaScript
-syntax checks and `git diff --check` also passed. Prior focused native runs verified
-the product harness fixes.
-The full GitHub Actions E2E/release qualification has not run for this candidate;
-release readiness remains unproven.
-
-## Model storage direction
-
-Keep weights and observations outside the source checkout and outside container
-images. The trainer already accepts an explicit registry directory, and profiles
-can select an external model file. Container/volume integration remains to be done. Existing local snapshots remain
-in ignored runtime storage for this pause; no storage migration has been performed.
-
-Recommended layout:
-
-- A persistent external registry, for example
-  `${XDG_DATA_HOME:-$HOME/.local/share}/magelens/predictor`, holds immutable
-  `models/<sha256>.json` snapshots, manifests and evaluation summaries.
-- Private datasets and source archives use separate restricted storage. They are
-  never bundled with the product or uploaded as ordinary public CI artifacts.
-- Browser runners mount the selected model read-only. Only explicit training jobs
-  receive a writable registry mount; runner startup cannot train or promote models.
-- Project/environment calibration and the selected model digest live in separate
-  persistent project state. Calibration updates do not mutate model weights.
-- For shared CI, publish immutable model artifacts to dedicated artifact/object
-  storage and pin the digest. Download before execution, validate schema and SHA-256,
-  then use the local read-only copy. Current compressed repository-variable transport
-  is a bootstrap mechanism, not the long-term model registry.
-- Preserve the last qualified snapshot and its evidence for rollback. Promotion is
-  explicit and requires independent prospective evaluation; do not automatically
-  replace weights with the newest training result. Back up qualified snapshots and
-  apply retention limits to experimental generations and bulky observations.
-
-## Remaining work
-
-1. Complete and audit the three-source training corpus; resolve remaining provider
-   contracts and review affected historical measurements.
-2. Select a lightweight generic feature/model recipe using grouped and unseen-source
-   evaluation, then validate a frozen candidate prospectively against the error target.
-3. Measure exact shared-prefix boundaries and restoration eligibility independently
-   from whole-test timing; train and qualify the appropriate model boundary.
-4. Wire qualified predictions into production assessment with fail-closed behavior
-   before suite execution. Retain explicit CLI calibration, manual scaling and
-   successful post-run calibration for future runs.
-5. Implement external registry/state mounts, snapshot selection, rollback and retention.
-6. Run an isolated branching/linear comparison only when runnable checkpoints qualify,
-   with matching data, inventory, PHP configuration and browser. Otherwise stop before
-   the ordinary suite. Complete the required GitHub Actions qualification afterward.
-
-Training and application environments were stopped for the pause. Resumable local
-state and compact evidence remain private; internal instructions are not part of
-this commit.
+The published package has passed an anonymous pull and exact model-digest check.
+The orchestrator image has passed its build and planning smoke checks. All 415 integration tests passed with zero failures or skips using the required
+runtime dependencies and an isolated orchestrator session. Static validation and
+changed-file checks passed. The preserved trainer reproduced the published
+model's grouped accuracy; runtime metadata and floating-point differences prevent
+byte-identical retraining, so distribution continues to use the immutable artifact.
+The real-project trial, paired execution comparison and final E2E release
+qualification are still pending.

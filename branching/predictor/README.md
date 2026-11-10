@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 This is an experimental, project-independent predictor and CI evaluation pipeline.
 It does **not** replace the production source assessor or authorize checkpoints.
-Unqualified models are usable only for shadow evaluation; strict inference throws
+Unqualified models are usable only for evaluation, without controlling checkpoint decisions; strict inference throws
 `ESTIMATION_FAILED` with status 500. Restoration eligibility remains a separate check.
 
 Inference uses syntax counts from the pinned Babel parser and a small JSON Ridge
@@ -125,10 +125,22 @@ Set repository variable `MAGELENS_PREDICTOR_MODEL_GZIP_BASE64` to the generated 
 contents and `MAGELENS_PREDICTOR_MODEL_SHA256` to the printed model digest. Compression
 preserves the exact model bytes while fitting the CI variable size limit. For small
 models, `MAGELENS_PREDICTOR_MODEL_JSON` can hold the original JSON instead; configure
-only one representation. There is no automatic model-weight promotion. Baseline updates use existing
+only one representation. For larger snapshots, use
+`node branching/predictor/cli.cjs pack-ci-chunks model.json variables.json` and set
+its numbered repository variables (`MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_1` through
+`_4`, as needed), plus the printed model digest. Clear unused chunks and the two
+single-variable representations. Chunks preserve the original bytes and are each
+bounded by the CI variable limit. There is no automatic model-weight promotion. Baseline updates use existing
 validated checkpoint measurements after the run, without replaying tests. Matrix campaigns accept
 `predictorModel`, `predictorBaselineMs` and `predictorMultiplier` in their configuration;
 CI uses its existing explicit CLI calibration for `predictorBaselineMs`.
 
 Keep original training data and model snapshots outside Git, alongside compact
 provenance. Clean obsolete browser output and disposable resources after collection.
+
+The selected evaluation snapshot is published in the package registry as
+`ghcr.io/magelens/predictor.ai:0.0.1`. Model bytes and training data stay outside Git.
+The orchestrator Dockerfile consumes the package by registry digest, copies the
+model to `/opt/magelens/predictor/model.json`, and verifies its SHA-256 during the
+build. Orchestrator builds do not need the publishing variables or retrain the model.
+Packaging does not qualify the model or enable checkpoint decisions.
