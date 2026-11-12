@@ -5,6 +5,7 @@
 const fs = require('node:fs'), path = require('node:path');
 const predictor = require('./index.cjs');
 const parser = require('@babel/parser');
+const {executionContext}=require('./execution-context.cjs');
 const MODEL_SHA256 = 'f5621bb710749ca616117ef979b0a039c12680dee08f79a1cce46cde3413a8c3';
 const boundary = 'checkpoint-prefix/v1';
 
@@ -45,10 +46,17 @@ function assess(manifest, options = {}) {
     const specs = new Set(manifest.tests.map(t=>t.file));
     const supporting = [...sources].filter(([file])=>!specs.has(file) && /\.[cm]?[jt]sx?$/.test(file))
         .map(([name,bytes])=>({name:`context/${name}`,source:bytes.toString('utf8'),role:'context'}));
+    const contexts=new Map(manifest.tests.map(test=>[test.id,executionContext(manifest,sources,test)]));
+    const supportHooks=new Map();
+    const globalHooks=test=>contexts.get(test.id).support.flatMap(file=>{
+        if(!supportHooks.has(file))supportHooks.set(file,hooks(source(file),0,source(file).length));
+        return supportHooks.get(file).map(hook=>({...hook,file}));
+    });
     const rows = {}, stages = {}, candidates = [], issues = manifest.diagnostics.map(message=>({phase:'collection',message}));
     function forecast(id, test, unit, work, timingBoundary) {
         const request = {runner:test.fixture.startsWith('cypress:')?'cypress':'playwright',unit,timingBoundary,
-            sources:[...work,{name:`spec/${test.file}`,source:source(test.file),role:'context'},...supporting.filter(s=>!test.contextFiles || test.contextFiles.includes(s.name.slice(8)))],
+            sources:[...work,{name:`spec/${test.file}`,source:source(test.file),role:'context'},...supporting.filter(s=>contexts.get(test.id).files.has(s.name.slice(8)))],
+            extraFeatures:unit==='test'?{'execution.first':Number(manifest.tests.find(t=>t.file===test.file)?.id===test.id),'execution.last':Number(manifest.tests.findLast(t=>t.file===test.file)?.id===test.id)}:{},
             baselineMs,manualMultiplier:options.multiplier ?? 1,sourceFamily:'branching',group:test.file,
             environment:{boundary:timingBoundary ?? 'playwright-test-result-duration/v1',collection:'source',platform:process.platform}};
         let snapshot;
@@ -56,8 +64,9 @@ function assess(manifest, options = {}) {
             snapshot = predictor.prepare(request,loaded,{transfer:true});
         } catch(error) {snapshot={prediction:null,predictionError:error.toJSON?.() ?? {message:error.message}};}
         const result = {id,runner:request.runner,unit,...(timingBoundary?{timingBoundary}:{}),
-            sourceDigest:snapshot.sourceDigest ?? null, prediction:snapshot.prediction, predictionError:snapshot.predictionError,
+            sourceDigest:snapshot.sourceDigest ?? null, input:{kind:'static-source',sources:request.sources.map(s=>({name:s.name,role:s.role,sha256:predictor.sha256(s.source)})),extraFeatures:request.extraFeatures}, prediction:snapshot.prediction, predictionError:snapshot.predictionError,
             warnings:snapshot.prediction ? [
+                ...contexts.get(test.id).warnings,
                 ...(!snapshot.prediction.qualified?['Model has not passed independent qualification']:[]),
                 ...(!snapshot.prediction.domainMatched?['Forecast transfers the model to an unvalidated timing boundary']:[]),
                 ...(snapshot.prediction.outOfRange?['Source features are outside the training range']:[])
@@ -74,8 +83,8 @@ function assess(manifest, options = {}) {
         const end=bytes.subarray(0,test.callbackEnd).toString('utf8').length;
         const peers=manifest.tests.filter(t=>t.file===test.file);
         const work=[{name:'callback.js',source:`const work = ${fragment(test.file,test.callbackStart,test.callbackEnd)};`,role:'work'}];
-        for (const [index,hook] of hooks(original,start,end).entries()) {
-            const scoped=peers.filter(t=>{const pos=bytes.subarray(0,t.callbackStart).toString('utf8').length;return pos>=hook.scope[0]&&pos<=hook.scope[1];});
+        for (const [index,hook] of [...globalHooks(test),...hooks(original,start,end)].entries()) {
+            const scoped=hook.file?peers:peers.filter(t=>{const pos=bytes.subarray(0,t.callbackStart).toString('utf8').length;return pos>=hook.scope[0]&&pos<=hook.scope[1];});
             const once=['before','beforeAll'].includes(hook.kind)?scoped[0]?.id===test.id:['after','afterAll'].includes(hook.kind)?scoped.at(-1)?.id===test.id:true;
             work.push({name:`hook-${index}.js`,source:hook.source,role:once?'work':'context'});
         }
@@ -96,6 +105,7 @@ function assess(manifest, options = {}) {
         const from=parent?.depth ?? 0;
         const work=cp.depth===0?fixtureWork(test):
             [{name:'prefix.js',source:`async function prefix(){\n${test.steps.slice(from,cp.depth).map(s=>fragment(test.file,s.start,s.end)).join('\n')}\n}`,role:'work'}];
+        if(from===0 && cp.depth>0)work.unshift(...globalHooks(test).filter(h=>h.kind==='beforeEach').map((h,i)=>({name:`global-beforeEach-${i}.js`,source:h.source,role:'work'})));
         const result=work.length?forecast(cp.id,test,'prefix',work,boundary):{id:cp.id,prediction:null,predictionError:{message:'Missing fixture setup source'}};
         // Fixture cost belongs to the fixture checkpoint, never both it and its root.
         if(cp.depth===0) stages[`root-${test.scope.slice(0,20)}`]={id:`root-${test.scope.slice(0,20)}`,empty:true,prediction:{ms:0,modelId:loaded.id,qualified:loaded.model.qualified}};

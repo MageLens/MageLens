@@ -675,6 +675,20 @@ impl Project {
         }
         reachable
     }
+    pub fn source_dependencies(&self) -> BTreeMap<String, Vec<String>> {
+        let mut result: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for ((source, _, _), target) in &self.dependencies {
+            result
+                .entry(source.clone())
+                .or_default()
+                .push(target.clone());
+        }
+        for targets in result.values_mut() {
+            targets.sort();
+            targets.dedup();
+        }
+        result
+    }
     pub fn context(&self, file: &str) -> Vec<(String, String)> {
         self.imports(file)
             .into_iter()

@@ -62,6 +62,16 @@ function analyze(source) {
             name = node.id.name;
             body = node.init;
             code = 'const ' + name + ' = ' + source.slice(body.start, body.end) + ';';
+            // An arrow declared in a class method inherits its super binding.
+            // Keep that syntax valid when extracting the callback in isolation.
+            if (body.type === 'ArrowFunctionExpression') {
+                let lexicalSuper=false;
+                walk(body,child=>{if(child.type==='Super')lexicalSuper=true;});
+                if(lexicalSuper) {
+                    try { parser.parse(code,{sourceType:'unambiguous',plugins:['typescript','jsx']}); }
+                    catch(error) { if(error.reasonCode==='UnexpectedSuper')code='class Helper extends Parent { constructor(){'+code+'} }'; }
+                }
+            }
         }
         if (!name) return;
         const nested = new Set();

@@ -90,6 +90,8 @@ pub struct Manifest {
     pub root: String,
     pub source_digest: String,
     pub sources: Vec<Source>,
+    #[serde(default)]
+    pub source_dependencies: BTreeMap<String, Vec<String>>,
     pub tests: Vec<Test>,
     pub checkpoints: Vec<Checkpoint>,
     pub schedule: Vec<String>,
@@ -991,6 +993,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
         implementation: "rust-prefix-v3".into(),
         root: root.to_string_lossy().into_owned(),
         source_digest,
+        source_dependencies: project.source_dependencies(),
         sources,
         tests,
         checkpoints,

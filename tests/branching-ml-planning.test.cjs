@@ -95,3 +95,31 @@ test('packaged ML planner preserves failures until successful replanning',t=>{
     assert.throws(()=>run('plan',source,output));
     assert.equal(fs.readFileSync(output,'utf8'),saved);
 });
+
+test('offline forecasts include configured support hooks, their dependencies and native execution flags',t=>{
+    const f=fixture(t);
+    function add(file,source){const target=path.join(f.manifest.root,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,source);f.manifest.sources.push({path:file,sha256:p.sha256(source)});}
+    add('cypress.config.cjs',"module.exports={e2e:{supportFile:'support/setup.js'}};");
+    add('support/setup.js',"import {reset} from './commands.js';beforeEach(()=>reset());afterEach(()=>reset());before(()=>reset());");
+    add('support/commands.js',"export function reset(){cy.request('/reset');}");
+    f.manifest.sourceDependencies={'support/setup.js':['support/commands.js']};
+    for(const test of f.manifest.tests)test.contextFiles=['flow.cy.js','helper.js'];
+    const result=assess(f.manifest,{loaded:f.load()});
+    for(const row of Object.values(result.assessment.tests)) {
+        assert.ok(row.input.sources.some(s=>s.name==='context/support/commands.js'));
+        assert.ok(row.input.sources.some(s=>s.role==='work' && s.sha256===p.sha256('const hook = ()=>reset();')));
+    }
+    assert.deepEqual(result.assessment.tests.first.input.extraFeatures,{'execution.first':1,'execution.last':0});
+    assert.deepEqual(result.assessment.tests.second.input.extraFeatures,{'execution.first':0,'execution.last':1});
+    assert.ok(result.assessment.stages['cp-cart'].input.sources.some(s=>s.name==='global-beforeEach-0.js' && s.role==='work'));
+    const config=f.manifest.sources.find(s=>s.path==='cypress.config.cjs');
+    const disabled='module.exports={e2e:{supportFile:false}};';fs.writeFileSync(path.join(f.manifest.root,config.path),disabled);config.sha256=p.sha256(disabled);
+    const without=assess(f.manifest,{loaded:f.load()});
+    assert.ok(!without.assessment.tests.first.input.sources.some(s=>s.name==='context/support/commands.js'));
+});
+
+test('reachable nested callbacks preserve their lexical super binding',()=>{
+    const sources=[{name:'work.js',source:'adapter.run();',role:'work'},
+        {name:'helper.js',source:'class Adapter extends Base {run(){const invoke=()=>super.run();return invoke();}}',role:'context'}];
+    assert.doesNotThrow(()=>p.features({runner:'cypress',unit:'test',sources,featureSchema:p.REACHABLE_SCHEMA}));
+});

@@ -49,3 +49,20 @@ capture, restore, reset, release and backend overheads. Checkpoint calibration
 updates those overheads; it does not train the timing model. See the
 [predictor guide](../branching/predictor/README.md) for model boundaries, validation
 and deliberate model updates.
+
+Each forecast records its input-source hashes and work/context roles. Cypress
+source planning includes the configured support file (or the default support
+entry), its imported dependencies, global hooks and per-spec first/last-test
+flags. A custom support file must be inside the source inventory. Dynamic
+configuration still requires verification against native collection.
+
+Source-only forecasts are not execution traces. The packaged syntax model does
+not observe server-side PHP, database work or provider latency behind a browser
+request; including test helpers does not establish those durations. Compare
+forecasts with native measurements before relying on checkpoint savings.
+
+The published reachable-syntax model approximates helper calls by method name.
+It can therefore select unrelated same-named methods from dependency libraries.
+Input completeness and model accuracy are separate: a larger source corpus can
+expose that approximation. Changing reachability semantics requires a new feature
+schema and model validation; it must not silently reinterpret the published model.
