@@ -56,7 +56,7 @@ function select(root, manifest, platform, runner) {
 async function resolve(root, env = process.env, request = fetch) {
     const {version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
     if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid release version');
-    const response = await request('https://github.com/MageLens/MageLens/releases/latest/download/images.json', {signal: AbortSignal.timeout(60000)});
+    const response = await request(`https://github.com/MageLens/MageLens/releases/download/v${version}/images.json`, {signal: AbortSignal.timeout(60000)});
     if (response.status === 404) return {};
     if (!response.ok) throw new Error(`Release image lookup failed (${response.status}); retry or use --build-from-source.`);
     return select(root, await response.json(), env.MAGELENS_IMAGE_PLATFORM, env.MAGELENS_RUNNER);

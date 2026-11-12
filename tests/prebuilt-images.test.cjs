@@ -180,10 +180,11 @@ test('missing compatible images build locally', t => {
 });
 
 
-test('only a missing latest-release manifest falls back; network, authorization and malformed data fail', async () => {
+test('only a missing release manifest falls back; network, authorization and malformed data fail', async () => {
     const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
+    const {version} = require('../package.json');
     const request = async url => {
-        assert.equal(url, 'https://github.com/MageLens/MageLens/releases/latest/download/images.json');
+        assert.equal(url, `https://github.com/MageLens/MageLens/releases/download/v${version}/images.json`);
         return {status: 404};
     };
     assert.deepEqual(await resolve(root, env, request), {});
@@ -191,6 +192,23 @@ test('only a missing latest-release manifest falls back; network, authorization 
     await assert.rejects(resolve(root, env, async () => ({status: 403, ok: false})), /403/);
     await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({})})), /manifest/);
     assert.deepEqual(await resolve(root, env, async () => ({status: 200, ok: true, json: async () => candidate()})), select(root, candidate(), 'linux/amd64', 'cypress'));
+});
+
+test('historical release checkout resolves its own version-specific manifest', async t => {
+    const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
+    const directory = temporary(t);
+    for (const file of ['dependencies.yaml', '.dockerignore', 'bin', 'docker']) fs.cpSync(path.join(root, file), path.join(directory, file), {recursive: true});
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({version: '1.9.0'}));
+    let requestedUrl;
+    const historicalCandidate = {schema: 1, platform: 'linux/amd64', version: '1.9.0', images: Object.fromEntries(kinds.map(kind =>
+        [kind, {inputs: inputs(directory, kind), digest: 'sha256:' + 'b'.repeat(64)}]))};
+    const request = async url => {
+        requestedUrl = url;
+        return {status: 200, ok: true, json: async () => historicalCandidate};
+    };
+    const result = await resolve(directory, env, request);
+    assert.equal(requestedUrl, 'https://github.com/MageLens/MageLens/releases/download/v1.9.0/images.json');
+    assert.equal(result.php.image, `ghcr.io/magelens/php@${historicalCandidate.images.php.digest}`);
 });
 
 test('multi-platform releases select native digests for both runners and retain provenance checks', () => {

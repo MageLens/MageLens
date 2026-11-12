@@ -26,11 +26,16 @@ function mockApi(overrides = {}) {
         calls.push(args);
         if (args.includes('DELETE')) return '';
         const endpoint = args.at(-1);
-        if (endpoint.endsWith('/releases/latest')) {
+        if (endpoint.endsWith('/releases/latest') || endpoint.includes('/releases?') || endpoint.endsWith('/releases')) {
             if (overrides.networkFailure) throw new Error('Network unavailable');
-            return JSON.stringify({tag_name: `v${published.version}`, assets: overrides.noManifest ? [] : [{id: 123, name: 'images.json'}]});
+            const release = {tag_name: `v${published.version}`, assets: overrides.noManifest ? [] : [{id: 123, name: 'images.json'}]};
+            const releases = overrides.noManifest ? [] : [release, ...(overrides.historicalReleases || [])];
+            return JSON.stringify([releases]);
         }
-        if (endpoint.includes('/releases/assets/')) return JSON.stringify(published);
+        if (endpoint.includes('/releases/assets/')) {
+            const assetId = Number(endpoint.split('/').at(-1));
+            return JSON.stringify(overrides.assets?.[assetId] || published);
+        }
         if (endpoint.includes('/versions?')) return JSON.stringify([[{id: 1, name: overrides.missingLatest ? digest('c') : digest('a')}], [{id: 2, name: digest('b')}, {id: 3, name: digest('0')}]]);
         return JSON.stringify({repository: {full_name: overrides.otherRepository ? 'Other/Project' : 'MageLens/MageLens'}});
     };
@@ -42,7 +47,7 @@ test('cleanup paginates all three allowlisted packages and deletes only obsolete
     const deletions = calls.filter(args => args.includes('DELETE'));
     assert.equal(deletions.length, 6);
     for (const args of deletions) assert.match(args.at(-1), /^orgs\/MageLens\/packages\/container\/(php|runner-cypress|runner-playwright)\/versions\/[23]$/);
-    assert.equal(calls.filter(args => args.includes('--paginate')).length, 3);
+    assert.equal(calls.filter(args => args.includes('--paginate')).length, 4);
 });
 for (const failure of ['networkFailure', 'otherRepository', 'missingLatest']) {
     test(`cleanup refuses all deletion after ${failure}`, () => {
@@ -57,6 +62,26 @@ test('first image publication retains only one candidate per package for public 
     const deletions = calls.filter(args => args.includes('DELETE'));
     assert.equal(deletions.length, 6);
     for (const args of deletions) assert.match(args.at(-1), /\/versions\/[12]$/);
+});
+test('cleanup retains historical release images across versions while deleting failed candidates', () => {
+    const historicalReleases = [{tag_name: 'v1.9.2', assets: [{id: 124, name: 'images.json'}]}];
+    const historicalManifest = {schema: 1, platform: 'linux/amd64', version: '1.9.2',
+        images: Object.fromEntries(kinds.map(kind => [kind, {inputs: inputs(root, kind), digest: digest('b')}]))};
+    const {calls, execute} = mockApi({historicalReleases, assets: {124: historicalManifest}});
+    prune(execute);
+    const deletions = calls.filter(args => args.includes('DELETE'));
+    assert.equal(deletions.length, 3);
+    for (const args of deletions) assert.match(args.at(-1), /^orgs\/MageLens\/packages\/container\/(php|runner-cypress|runner-playwright)\/versions\/3$/);
+});
+test('cleanup succeeds and retains available images even if older historical release images were previously purged', () => {
+    const historicalReleases = [{tag_name: 'v1.9.2', assets: [{id: 124, name: 'images.json'}]}];
+    const historicalManifest = {schema: 1, platform: 'linux/amd64', version: '1.9.2',
+        images: Object.fromEntries(kinds.map(kind => [kind, {inputs: inputs(root, kind), digest: digest('9')}]))};
+    const {calls, execute} = mockApi({historicalReleases, assets: {124: historicalManifest}});
+    prune(execute);
+    const deletions = calls.filter(args => args.includes('DELETE'));
+    assert.equal(deletions.length, 6);
+    for (const args of deletions) assert.match(args.at(-1), /\/versions\/[23]$/);
 });
 test('release manifest accepts only all six native images from the current commit, run and attempt', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-release-manifest-'));
