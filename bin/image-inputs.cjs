@@ -32,7 +32,8 @@ function platformImages(manifest) {
     return manifest.platforms || {[manifest.platform]: manifest.images};
 }
 function validateManifest(manifest) {
-    if (manifest.schema !== 1 || !/^\d+\.\d+\.\d+$/.test(manifest.version)) throw new Error('Invalid image manifest');
+    if (!manifest || manifest.schema !== 1 || !/^\d+\.\d+\.\d+$/.test(manifest.version)
+        || (manifest.expired !== undefined && typeof manifest.expired !== 'boolean')) throw new Error('Invalid image manifest');
     if (manifest.expired === true) return manifest;
     const entries = platformImages(manifest);
     const expected = manifest.platforms ? platforms : ['linux/amd64'];
@@ -47,8 +48,11 @@ function validateManifest(manifest) {
 }
 function select(root, manifest, platform, runner) {
     validateManifest(manifest);
-    if (manifest.expired === true) return Object.fromEntries(['php', `runner-${runner}`].map(kind => [kind, null]));
     const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).version;
+    if (manifest.expired === true) {
+        if (manifest.version !== version) throw new Error('Expired image manifest version mismatch');
+        return Object.fromEntries(['php', `runner-${runner}`].map(kind => [kind, null]));
+    }
     return Object.fromEntries(['php', `runner-${runner}`].map(kind => {
         const entry = platformImages(manifest)[platform]?.[kind];
         return [kind, manifest.version === version && entry?.inputs === inputs(root, kind)

@@ -199,10 +199,27 @@ test('intentional manifest expiration and missing manifests fall back safely; ne
     await assert.rejects(resolve(root, env, async () => {throw new Error('Network unavailable');}), /Network/);
     await assert.rejects(resolve(root, env, async () => ({status: 403, ok: false})), /403/);
     await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({})})), /manifest/);
+    for (const data of [null, {...expiredManifest, version: '0.0.0'}, {...expiredManifest, expired: 'true'}]) {
+        await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => data})), /manifest/);
+    }
     await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({schema: 1, platform: 'linux/amd64', version, images: {php: {inputs: '0'.repeat(64), digest: 'invalid'}}})})), /provenance/);
 
     // Valid unexpired manifest selects images
     assert.deepEqual(await resolve(root, env, async () => ({status: 200, ok: true, json: async () => candidate()})), select(root, candidate(), 'linux/amd64', 'cypress'));
+});
+
+test('intentional expiration selects source builds through the installer on both architectures and runners', async t => {
+    for (const platform of ['linux/amd64', 'linux/arm64']) for (const runner of ['cypress', 'playwright']) {
+        const selected = await resolve(root, {MAGELENS_IMAGE_PLATFORM: platform, MAGELENS_RUNNER: runner}, async () => ({
+            status: 200, ok: true, json: async () => ({schema: 1, version: require('../package.json').version, expired: true})
+        }));
+        const {run} = prepareFixture(t);
+        const result = run('0', {MAGELENS_RUNNER: runner, MOCK_ARCH: platform}, selected);
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.calls, /source-php/);
+        assert.match(result.calls, /"build","--pull","runner"/);
+        assert.doesNotMatch(result.calls, /"pull"|verifyInstalled/);
+    }
 });
 
 test('historical installer with latest-only lookup safely falls back to source build on non-latest releases', async t => {
