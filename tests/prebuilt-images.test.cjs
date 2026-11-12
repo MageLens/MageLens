@@ -180,35 +180,77 @@ test('missing compatible images build locally', t => {
 });
 
 
-test('only a missing release manifest falls back; network, authorization and malformed data fail', async () => {
+test('intentional manifest expiration and missing manifests fall back safely; network, 403 and provenance errors fail', async () => {
     const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
     const {version} = require('../package.json');
-    const request = async url => {
+
+    // 404 falls back safely to source build
+    assert.deepEqual(await resolve(root, env, async url => {
         assert.equal(url, `https://github.com/MageLens/MageLens/releases/download/v${version}/images.json`);
         return {status: 404};
-    };
-    assert.deepEqual(await resolve(root, env, request), {});
+    }), {});
+
+    // manifest.expired === true falls back safely to source build (null prebuilt selections)
+    const expiredManifest = {schema: 1, version, expired: true};
+    const expiredResult = await resolve(root, env, async () => ({status: 200, ok: true, json: async () => expiredManifest}));
+    assert.deepEqual(expiredResult, {php: null, 'runner-cypress': null});
+
+    // Network, authorization (403), malformed manifests and provenance failures reject without silent fallback
     await assert.rejects(resolve(root, env, async () => {throw new Error('Network unavailable');}), /Network/);
     await assert.rejects(resolve(root, env, async () => ({status: 403, ok: false})), /403/);
     await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({})})), /manifest/);
+    await assert.rejects(resolve(root, env, async () => ({status: 200, ok: true, json: async () => ({schema: 1, platform: 'linux/amd64', version, images: {php: {inputs: '0'.repeat(64), digest: 'invalid'}}})})), /provenance/);
+
+    // Valid unexpired manifest selects images
     assert.deepEqual(await resolve(root, env, async () => ({status: 200, ok: true, json: async () => candidate()})), select(root, candidate(), 'linux/amd64', 'cypress'));
 });
 
-test('historical release checkout resolves its own version-specific manifest', async t => {
+test('historical installer with latest-only lookup safely falls back to source build on non-latest releases', async t => {
+    const directory = temporary(t);
+    for (const file of ['dependencies.yaml', '.dockerignore', 'bin', 'docker']) fs.cpSync(path.join(root, file), path.join(directory, file), {recursive: true});
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({version: '1.9.2'}));
+
+    // Historical 1.9.0-1.9.3 installer resolver querying latest
+    const historicalResolver = async (dir, request) => {
+        const response = await request('https://github.com/MageLens/MageLens/releases/latest/download/images.json');
+        if (!response.ok) return {};
+        const manifest = validateManifest(await response.json());
+        const pkgVersion = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'))).version;
+        if (manifest.version !== pkgVersion) return {};
+        return select(dir, manifest, 'linux/amd64', 'cypress');
+    };
+
+    // When latest release is 1.9.4, historical 1.9.2 installer sees version mismatch and falls back safely
+    const latestManifest = {schema: 1, platform: 'linux/amd64', version: '1.9.4', images: candidate().images};
+    const result = await historicalResolver(directory, async url => {
+        assert.equal(url, 'https://github.com/MageLens/MageLens/releases/latest/download/images.json');
+        return {status: 200, ok: true, json: async () => latestManifest};
+    });
+    assert.deepEqual(result, {});
+});
+
+test('version-specific installer resolves exact release manifest and falls back on expired releases', async t => {
     const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
     const directory = temporary(t);
     for (const file of ['dependencies.yaml', '.dockerignore', 'bin', 'docker']) fs.cpSync(path.join(root, file), path.join(directory, file), {recursive: true});
-    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({version: '1.9.0'}));
-    let requestedUrl;
-    const historicalCandidate = {schema: 1, platform: 'linux/amd64', version: '1.9.0', images: Object.fromEntries(kinds.map(kind =>
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({version: '1.9.4'}));
+
+    // Active version-specific manifest resolves image digests
+    const activeManifest = {schema: 1, platform: 'linux/amd64', version: '1.9.4', images: Object.fromEntries(kinds.map(kind =>
         [kind, {inputs: inputs(directory, kind), digest: 'sha256:' + 'b'.repeat(64)}]))};
-    const request = async url => {
+    let requestedUrl;
+    const activeResult = await resolve(directory, env, async url => {
         requestedUrl = url;
-        return {status: 200, ok: true, json: async () => historicalCandidate};
-    };
-    const result = await resolve(directory, env, request);
-    assert.equal(requestedUrl, 'https://github.com/MageLens/MageLens/releases/download/v1.9.0/images.json');
-    assert.equal(result.php.image, `ghcr.io/magelens/php@${historicalCandidate.images.php.digest}`);
+        return {status: 200, ok: true, json: async () => activeManifest};
+    });
+    assert.equal(requestedUrl, 'https://github.com/MageLens/MageLens/releases/download/v1.9.4/images.json');
+    assert.equal(activeResult.php.image, `ghcr.io/magelens/php@${activeManifest.images.php.digest}`);
+
+    // Expired version-specific manifest falls back safely to source build
+    const expiredResult = await resolve(directory, env, async () => ({
+        status: 200, ok: true, json: async () => ({schema: 1, version: '1.9.4', expired: true})
+    }));
+    assert.deepEqual(expiredResult, {php: null, 'runner-cypress': null});
 });
 
 test('multi-platform releases select native digests for both runners and retain provenance checks', () => {

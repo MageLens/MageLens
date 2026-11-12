@@ -86,8 +86,14 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y skopeo
           printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+      - name: Check out trusted cleanup implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: .cleanup-tools
       - name: Remove leftovers from previous failed releases
-        run: node tests/release/prune-images.cjs
+        run: node .cleanup-tools/tests/release/prune-images.cjs && rm -rf .cleanup-tools
   images:
     needs: prepare
     permissions:
@@ -181,6 +187,13 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" .runtime/release-images/images.json --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Check out trusted cleanup implementation
+        if: always() && needs.images.result != 'skipped'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: .cleanup-tools
       - name: Retain images referenced by published releases
         if: always() && needs.images.result != 'skipped'
-        run: node tests/release/prune-images.cjs
+        run: node .cleanup-tools/tests/release/prune-images.cjs && rm -rf .cleanup-tools
