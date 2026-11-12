@@ -6,6 +6,15 @@
 source "$(dirname "$0")/common"
 bootstrap_image=$1
 build_from_source=$2
+missing_image_error_pattern='manifest unknown|manifest for .* not found|@sha256:[a-f0-9]{64}[^[:space:]]*: not found'
+authorization_error_pattern='unauthorized|denied|forbidden|authentication required|(^|[^[:alnum:]])(401|403)([^[:alnum:]]|$)'
+resolve_images() {
+    docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
+        --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
+        --env MAGELENS_RUNNER \
+        --env "MAGELENS_IMAGE_PLATFORM=$architecture" \
+        --entrypoint node "$bootstrap_image" bin/image-inputs.cjs "$1"
+}
 # Never let a previous installation's override redirect a new source build.
 rm -f .runtime/compose.images.yaml .runtime/prebuilt-images.json
 if [[ "$build_from_source" == 0 ]]; then
@@ -14,11 +23,7 @@ if [[ "$build_from_source" == 0 ]]; then
         linux/x86_64|linux/amd64) architecture=linux/amd64 ;;
         linux/aarch64|linux/arm64) architecture=linux/arm64 ;;
     esac
-    docker run --rm --pull never --user "$LOCAL_UID:$LOCAL_GID" \
-        --mount "type=bind,source=$ROOT,target=/workspace" --workdir /workspace \
-        --env MAGELENS_RUNNER \
-        --env "MAGELENS_IMAGE_PLATFORM=$architecture" \
-        --entrypoint node "$bootstrap_image" bin/image-inputs.cjs resolve
+    resolve_images resolve
 else
     printf '{}\n' > .runtime/prebuilt-images.json
 fi
@@ -29,11 +34,32 @@ selected() {
 }
 php_image=$(selected php image)
 runner_image=$(selected "runner-$MAGELENS_RUNNER" image)
+# Keep only the final pull attempt's diagnostic when classifying a failure.
+pull_image() { docker pull "$1" 2> "$pull_error_file"; }
 for kind in php "runner-$MAGELENS_RUNNER"; do
     image=$(selected "$kind" image)
     [[ -n "$image" ]] || continue
     say "Pulling qualified $kind image $image"
-    download_with_retry docker pull "$image"
+    pull_error_file=$(mktemp "$ROOT/.runtime/image-pull.XXXXXX")
+    if download_with_retry pull_image "$image"; then
+        cat "$pull_error_file" >&2
+        rm -f "$pull_error_file"
+    else
+        pull_status=$?
+        pull_error=$(cat "$pull_error_file")
+        rm -f "$pull_error_file"
+        printf '%s\n' "$pull_error" >&2
+        [[ "$pull_status" != 130 && "$pull_status" != 143 ]] || exit "$pull_status"
+        # A registry failure alone never permits a source fallback. Re-fetch the
+        # canonical manifest and require intentional expiration of this release.
+        pull_error_lower=$(printf '%s' "$pull_error" | tr '[:upper:]' '[:lower:]')
+        if [[ "$pull_error_lower" =~ $missing_image_error_pattern && ! "$pull_error_lower" =~ $authorization_error_pattern ]]; then
+            resolve_images confirm-expiration
+            php_image='' runner_image=''
+            break
+        fi
+        exit "$pull_status"
+    fi
     actual=$(docker image inspect --format '{{index .Config.Labels "org.magelens.inputs"}}' "$image")
     [[ "$actual" == "$(selected "$kind" inputs)" ]] || fail "The $kind image has incorrect build provenance."
 done

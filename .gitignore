@@ -3,6 +3,7 @@
 # License: see LICENSE in the repository root.
 
 /.runtime/
+/.cleanup-tools/
 # Track only application sources inside the otherwise generated Magento tree.
 /src/*
 !/src/app/

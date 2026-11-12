@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const {kinds, inputs, validateManifest, platforms} = require('../../bin/image-inputs.cjs');
+const {kinds, inputs, validateManifest, platforms, expirationProtocol} = require('../../bin/image-inputs.cjs');
 const read = file => JSON.parse(fs.readFileSync(file));
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
 function manifest(directory, root = process.cwd(), env = process.env) {
@@ -19,7 +19,7 @@ function manifest(directory, root = process.cwd(), env = process.env) {
         assert.equal(entry.inputs, inputs(root, kind), 'Stale image inputs');
         return [kind, {inputs: entry.inputs, digest: entry.digest}];
     }))]));
-    return validateManifest({schema: 1, platform: 'linux/amd64', images: entries['linux/amd64'], version: read(path.join(root, 'package.json')).version, platforms: entries});
+    return validateManifest({schema: 1, expirationProtocol, platform: 'linux/amd64', images: entries['linux/amd64'], version: read(path.join(root, 'package.json')).version, platforms: entries});
 }
 module.exports = {manifest};
 if (require.main === module) {

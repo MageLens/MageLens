@@ -1,0 +1,23 @@
+{
+  "1.9.0": {
+    "linux/amd64": {
+      "php": "sha256:84c12ea3ed8197492747f1e65c12458323a51b1da76a6c4af084ae328a1ddaef",
+      "runner-cypress": "sha256:83d4a5d55d2347a20eff28296ee8f1e420c571146c94f7643a0389b53140773d",
+      "runner-playwright": "sha256:157a0b6686870cecd1231898d62356745dede749ae00c2f5d32201f94f46c1d8"
+    }
+  },
+  "1.9.1": {
+    "linux/amd64": {
+      "php": "sha256:293b7bc608c21a86891b5318c171810930509e03f819bdcc6700d7eb2f2c0e05",
+      "runner-cypress": "sha256:8ef79b548a10b28ebd9a2cb832a88b1d5513c92815ab1693887336f93249ba35",
+      "runner-playwright": "sha256:426f731e6de2dfc967a81f786a2b165304f985ab9988abb9dde185e59400b3d7"
+    }
+  },
+  "1.9.2": {
+    "linux/amd64": {
+      "php": "sha256:96539a99e65a0f36c4c70bcdefa5a1eb23d469a648542619590ff001e7135283",
+      "runner-cypress": "sha256:d283517fe59870354c07bbbbb207e41eb427c2c2cc4bc79594b2691ad8ece8e1",
+      "runner-playwright": "sha256:f211cf5f8a2f72cf925ba9be4cb283338a63db035166b4e5fa9900ac3b63d801"
+    }
+  }
+}
