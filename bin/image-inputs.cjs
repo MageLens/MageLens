@@ -5,8 +5,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
+const repository = 'MageLens/MageLens';
+const repositoryUrl = `https://github.com/${repository}`;
+const imageRegistry = `ghcr.io/${repository.split('/')[0].toLowerCase()}`;
 const kinds = ['php', 'runner-cypress', 'runner-playwright'];
+const legacyPlatform = 'linux/amd64';
+const platforms = [legacyPlatform, 'linux/arm64'];
+const manifestFilename = 'images.json';
+const releaseVersionPattern = /^\d+\.\d+\.\d+$/;
+const releaseTagPattern = /^v\d+\.\d+\.\d+$/;
+const inputHashPattern = /^[a-f0-9]{64}$/;
 const digestPattern = /^sha256:[a-f0-9]{64}$/;
+const windowsLineEndingPattern = /\r\n/g;
+const normalizeLineEndings = source => source.replace(windowsLineEndingPattern, '\n');
 function inputs(root, kind) {
     if (!kinds.includes(kind)) throw new Error('Unknown image kind');
     const files = ['dependencies.yaml', '.dockerignore', 'bin/image-inputs.cjs'];
@@ -24,26 +35,35 @@ function inputs(root, kind) {
     }
     const hash = createHash('sha256').update(kind + '\0');
     // Git may check text out with CRLF on Windows; Docker recipes are text inputs.
-    for (const file of files.sort()) hash.update(file + '\0').update(fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')).update('\0');
+    for (const file of files.sort()) {
+        const source = normalizeLineEndings(fs.readFileSync(path.join(root, file), 'utf8'));
+        hash.update(file + '\0').update(source).update('\0');
+    }
     return hash.digest('hex');
 }
-const platforms = ['linux/amd64', 'linux/arm64'];
 function platformImages(manifest) {
     return manifest.platforms || {[manifest.platform]: manifest.images};
 }
 function validateManifest(manifest) {
-    if (!manifest || manifest.schema !== 1 || !/^\d+\.\d+\.\d+$/.test(manifest.version)
+    if (!manifest || manifest.schema !== 1 || !releaseVersionPattern.test(manifest.version)
         || (manifest.expired !== undefined && typeof manifest.expired !== 'boolean')) throw new Error('Invalid image manifest');
     if (manifest.expired === true) return manifest;
     const entries = platformImages(manifest);
-    const expected = manifest.platforms ? platforms : ['linux/amd64'];
-    if (manifest.platform !== 'linux/amd64') throw new Error('Invalid image manifest platform');
+    const expected = manifest.platforms ? platforms : [legacyPlatform];
+    if (manifest.platform !== legacyPlatform) throw new Error('Invalid image manifest platform');
     if (!entries || Object.keys(entries).sort().join() !== [...expected].sort().join()) throw new Error('Invalid image manifest platforms');
     for (const platform of expected) for (const kind of kinds) {
         const entry = entries[platform]?.[kind];
-        if (!entry || !/^[a-f0-9]{64}$/.test(entry.inputs) || !digestPattern.test(entry.digest)) throw new Error(`Invalid ${platform} ${kind} image provenance`);
+        if (!entry || !inputHashPattern.test(entry.inputs) || !digestPattern.test(entry.digest)) {
+            throw new Error(`Invalid ${platform} ${kind} image provenance`);
+        }
     }
-    if (manifest.platforms && kinds.some(kind => manifest.images?.[kind]?.inputs !== entries['linux/amd64'][kind].inputs || manifest.images?.[kind]?.digest !== entries['linux/amd64'][kind].digest)) throw new Error('Invalid legacy image provenance');
+    const legacyImagesMismatch = manifest.platforms && kinds.some(kind => {
+        const legacy = manifest.images?.[kind];
+        const native = entries[legacyPlatform][kind];
+        return legacy?.inputs !== native.inputs || legacy?.digest !== native.digest;
+    });
+    if (legacyImagesMismatch) throw new Error('Invalid legacy image provenance');
     return manifest;
 }
 function select(root, manifest, platform, runner) {
@@ -56,18 +76,22 @@ function select(root, manifest, platform, runner) {
     return Object.fromEntries(['php', `runner-${runner}`].map(kind => {
         const entry = platformImages(manifest)[platform]?.[kind];
         return [kind, manifest.version === version && entry?.inputs === inputs(root, kind)
-            ? {...entry, image: `ghcr.io/magelens/${kind}@${entry.digest}`} : null];
+            ? {...entry, image: `${imageRegistry}/${kind}@${entry.digest}`} : null];
     }));
 }
 async function resolve(root, env = process.env, request = fetch) {
     const {version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
-    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid release version');
-    const response = await request(`https://github.com/MageLens/MageLens/releases/download/v${version}/images.json`, {signal: AbortSignal.timeout(60000)});
+    if (!releaseVersionPattern.test(version)) throw new Error('Invalid release version');
+    const response = await request(`${repositoryUrl}/releases/download/v${version}/${manifestFilename}`, {signal: AbortSignal.timeout(60000)});
     if (response.status === 404) return {};
     if (!response.ok) throw new Error(`Release image lookup failed (${response.status}); retry or use --build-from-source.`);
     return select(root, await response.json(), env.MAGELENS_IMAGE_PLATFORM, env.MAGELENS_RUNNER);
 }
-module.exports = {inputs, validateManifest, select, resolve, kinds, digestPattern, platforms, platformImages};
+module.exports = {
+    inputs, validateManifest, select, resolve, kinds, platforms, legacyPlatform, platformImages,
+    repository, repositoryUrl, imageRegistry, manifestFilename, releaseVersionPattern, releaseTagPattern,
+    digestPattern, normalizeLineEndings
+};
 if (require.main === module) {
     if (process.argv[2] === 'inputs') console.log(inputs(process.cwd(), process.argv[3]));
     else if (process.argv[2] === 'resolve') resolve(process.cwd()).then(selected => {

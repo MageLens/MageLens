@@ -8,9 +8,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const {inputs, kinds, select, resolve, validateManifest} = require('../bin/image-inputs.cjs');
+const {inputs, kinds, select, resolve, validateManifest, repositoryUrl, imageRegistry, platforms, manifestFilename} = require('../bin/image-inputs.cjs');
 const {synchronize} = require('../docker/runner/sync-node-modules.cjs');
 const root = path.join(__dirname, '..');
+const immutableImagePattern = /^ghcr\.io\/magelens\/[a-z-]+@sha256:[a-f0-9]{64}$/;
+const sourcePhpBuildPattern = /source-php/;
+const sourceRunnerBuildPattern = /"build","--pull","runner"/;
+const prebuiltPullPattern = /"pull"|verifyInstalled/;
 function temporary(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-images-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
@@ -23,7 +27,7 @@ function candidate() {
 test('selects only immutable images with matching release, input hash and tested architecture', () => {
     for (const runner of ['cypress', 'playwright']) {
         const selected = select(root, candidate(), 'linux/amd64', runner);
-        for (const entry of Object.values(selected)) assert.match(entry.image, /^ghcr\.io\/magelens\/[a-z-]+@sha256:[a-f0-9]{64}$/);
+        for (const entry of Object.values(selected)) assert.match(entry.image, immutableImagePattern);
         assert.deepEqual(Object.values(select(root, candidate(), 'linux/arm64', runner)), [null, null]);
         const stale = candidate(); stale.version = '0.0.0';
         assert.deepEqual(Object.values(select(root, stale, 'linux/amd64', runner)), [null, null]);
@@ -157,8 +161,8 @@ test('explicit source build ignores release manifests and removes an earlier pre
     fs.writeFileSync(path.join(directory, '.runtime/compose.images.yaml'), 'stale');
     const result = run('1');
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.calls, /source-php/);
-    assert.match(result.calls, /"build","--pull","runner"/);
+    assert.match(result.calls, sourcePhpBuildPattern);
+    assert.match(result.calls, sourceRunnerBuildPattern);
     assert.doesNotMatch(result.calls, /"resolve"|"pull"|verifyInstalled/);
     assert.equal(fs.existsSync(path.join(directory, '.runtime/compose.images.yaml')), false);
 });
@@ -175,8 +179,8 @@ test('missing compatible images build locally', t => {
     const result = run('0', {MOCK_ARCH: 'linux/aarch64'}, {});
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.calls, /MAGELENS_IMAGE_PLATFORM=linux\/arm64/);
-    assert.match(result.calls, /source-php/);
-    assert.match(result.calls, /"build","--pull","runner"/);
+    assert.match(result.calls, sourcePhpBuildPattern);
+    assert.match(result.calls, sourceRunnerBuildPattern);
 });
 
 
@@ -186,7 +190,7 @@ test('intentional manifest expiration and missing manifests fall back safely; ne
 
     // 404 falls back safely to source build
     assert.deepEqual(await resolve(root, env, async url => {
-        assert.equal(url, `https://github.com/MageLens/MageLens/releases/download/v${version}/images.json`);
+        assert.equal(url, `${repositoryUrl}/releases/download/v${version}/${manifestFilename}`);
         return {status: 404};
     }), {});
 
@@ -209,16 +213,16 @@ test('intentional manifest expiration and missing manifests fall back safely; ne
 });
 
 test('intentional expiration selects source builds through the installer on both architectures and runners', async t => {
-    for (const platform of ['linux/amd64', 'linux/arm64']) for (const runner of ['cypress', 'playwright']) {
+    for (const platform of platforms) for (const runner of ['cypress', 'playwright']) {
         const selected = await resolve(root, {MAGELENS_IMAGE_PLATFORM: platform, MAGELENS_RUNNER: runner}, async () => ({
             status: 200, ok: true, json: async () => ({schema: 1, version: require('../package.json').version, expired: true})
         }));
         const {run} = prepareFixture(t);
         const result = run('0', {MAGELENS_RUNNER: runner, MOCK_ARCH: platform}, selected);
         assert.equal(result.status, 0, result.stderr);
-        assert.match(result.calls, /source-php/);
-        assert.match(result.calls, /"build","--pull","runner"/);
-        assert.doesNotMatch(result.calls, /"pull"|verifyInstalled/);
+        assert.match(result.calls, sourcePhpBuildPattern);
+        assert.match(result.calls, sourceRunnerBuildPattern);
+        assert.doesNotMatch(result.calls, prebuiltPullPattern);
     }
 });
 
@@ -229,7 +233,7 @@ test('historical installer with latest-only lookup safely falls back to source b
 
     // Historical 1.9.0-1.9.3 installer resolver querying latest
     const historicalResolver = async (dir, request) => {
-        const response = await request('https://github.com/MageLens/MageLens/releases/latest/download/images.json');
+        const response = await request(`${repositoryUrl}/releases/latest/download/${manifestFilename}`);
         if (!response.ok) return {};
         const manifest = validateManifest(await response.json());
         const pkgVersion = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'))).version;
@@ -240,7 +244,7 @@ test('historical installer with latest-only lookup safely falls back to source b
     // When latest release is 1.9.4, historical 1.9.2 installer sees version mismatch and falls back safely
     const latestManifest = {schema: 1, platform: 'linux/amd64', version: '1.9.4', images: candidate().images};
     const result = await historicalResolver(directory, async url => {
-        assert.equal(url, 'https://github.com/MageLens/MageLens/releases/latest/download/images.json');
+        assert.equal(url, `${repositoryUrl}/releases/latest/download/${manifestFilename}`);
         return {status: 200, ok: true, json: async () => latestManifest};
     });
     assert.deepEqual(result, {});
@@ -260,8 +264,8 @@ test('version-specific installer resolves exact release manifest and falls back 
         requestedUrl = url;
         return {status: 200, ok: true, json: async () => activeManifest};
     });
-    assert.equal(requestedUrl, 'https://github.com/MageLens/MageLens/releases/download/v1.9.4/images.json');
-    assert.equal(activeResult.php.image, `ghcr.io/magelens/php@${activeManifest.images.php.digest}`);
+    assert.equal(requestedUrl, `${repositoryUrl}/releases/download/v1.9.4/${manifestFilename}`);
+    assert.equal(activeResult.php.image, `${imageRegistry}/php@${activeManifest.images.php.digest}`);
 
     // Expired version-specific manifest falls back safely to source build
     const expiredResult = await resolve(directory, env, async () => ({
@@ -276,7 +280,7 @@ test('multi-platform releases select native digests for both runners and retain 
         'linux/amd64': legacy.images,
         'linux/arm64': Object.fromEntries(kinds.map(kind => [kind, {...legacy.images[kind], digest: 'sha256:' + 'c'.repeat(64)}]))
     }};
-    for (const platform of ['linux/amd64', 'linux/arm64']) for (const runner of ['cypress', 'playwright']) {
+    for (const platform of platforms) for (const runner of ['cypress', 'playwright']) {
         for (const entry of Object.values(select(root, manifest, platform, runner))) {
             assert.equal(entry.digest, manifest.platforms[platform].php.digest);
         }
