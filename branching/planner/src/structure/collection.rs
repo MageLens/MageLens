@@ -35,7 +35,6 @@ impl Project {
             node,
             &mut bindings.0,
             &mut Context {
-                collecting: true,
                 ..Context::default()
             },
         );
@@ -52,7 +51,6 @@ impl Project {
                 node,
                 &mut bindings.0.clone(),
                 &mut Context {
-                    collecting: true,
                     ..Context::default()
                 },
             )
@@ -71,7 +69,6 @@ impl Project {
         let source = &self.modules[file].source;
         let mut env = bindings.0.clone();
         let mut ctx = Context {
-            collecting: true,
             ..Context::default()
         };
         if node.kind() == "for_in_statement"
@@ -83,7 +80,7 @@ impl Project {
             let Value::Array(values) = values else {
                 return None;
             };
-            if values.len() > points::LOOP_LIMIT {
+            if values.len() > LOOP_LIMIT {
                 return None;
             }
             let left = field(node, "left")?;
@@ -116,7 +113,7 @@ impl Project {
         else {
             return None;
         };
-        if values.len() > points::LOOP_LIMIT {
+        if values.len() > LOOP_LIMIT {
             return None;
         }
         let callback = crate::callback(call)?;

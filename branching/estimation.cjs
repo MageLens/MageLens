@@ -18,30 +18,31 @@ class EstimationError extends Error {
     }
 }
 function assertAssessed(manifest) {
-    const issues = [], assessment = manifest?.assessment, analysis = assessment?.analysis;
-    if (manifest?.schemaVersion !== 1 || manifest?.implementation !== 'rust-prefix-v2' ||
-        assessment?.version !== 'js-ts-points-v4' || assessment?.boundsVersion !== 1)
-        throw new EstimationError([{phase: 'manifest', message: 'Outdated source cost model; replan before execution'}], 'Outdated source cost model; replan before execution');
-    if (!Array.isArray(manifest.diagnostics) || manifest.diagnostics.length)
-        issues.push({phase: 'collection', reasons: manifest.diagnostics ?? ['Missing collection diagnostics']});
-    if (!Array.isArray(manifest.tests) || !manifest.tests.length) issues.push({phase: 'collection', message: 'Missing assessed test inventory'});
-    let total = 0;
-    for (const test of Array.isArray(manifest.tests) ? manifest.tests : []) {
-        if (!test || typeof test !== 'object') { issues.push({phase: 'collection', message: 'Invalid assessed test'}); continue; }
-        const check = (phase, line, estimate) => {
-            if (estimate?.analysisComplete !== true || !Number.isSafeInteger(estimate.estimatedPoints) || estimate.estimatedPoints < 0 ||
-                !Array.isArray(estimate.issues) || estimate.issues.some(i => !['runtime-input', 'concurrency', 'mutation'].includes(i?.kind)))
-                issues.push({test: test.id, file: test.file, line, phase, reasons: estimate?.reasons ?? ['Missing or invalid estimate']});
-        };
-        for (const phase of ['fixture', 'worker', 'lifecycle', 'test']) check(phase, test.line, test[phase === 'test' ? 'estimate' : phase + 'Estimate']);
-        if (!Array.isArray(test.steps)) issues.push({test: test.id, phase: 'test', message: 'Missing statements'});
-        for (const step of Array.isArray(test.steps) ? test.steps : []) { total++; check(step?.kind ?? 'statement', step?.line ?? test.line, step?.estimate); }
+    const a=manifest?.assessment;
+    if (manifest?.schemaVersion!==1 || manifest?.implementation!=='rust-prefix-v3' || a?.version!=='ml-duration-v1')
+        throw new EstimationError([{phase:'manifest',message:'An ML assessment is required; replan'}], 'An ML assessment is required; replan');
+    const issues=[...(a.issues ?? [])];
+    if (manifest.diagnostics?.length || !manifest.tests?.length || a.analysis?.collectionComplete!==true)
+        issues.push({phase:'collection',message:'Incomplete source inventory'});
+    if (a.status!=='complete' || !/^[a-f0-9]{64}$/.test(a.modelId ?? ''))
+        issues.push({phase:'predictor',message:'A complete ML assessment is required'});
+    function check(id, row, emptyAllowed=false) {
+        const p=row?.prediction;
+        if (!p || p.modelId!==a.modelId || row.predictionError ||
+            !Number.isFinite(p.ms) || p.ms<0 || (p.ms===0 && !(emptyAllowed && row.empty)))
+            issues.push({phase:'predictor',id,message:'Missing or invalid ML prediction'});
     }
-    if (analysis?.status !== 'complete' || analysis?.collectionComplete !== true || analysis?.collectionDiagnostics !== 0 ||
-        analysis?.totalStatements !== total || analysis?.analyzedStatements !== total ||
-        ['fixturesWithGaps', 'workersWithGaps', 'lifecycleWithGaps'].some(key => analysis?.[key] !== 0))
-        issues.push({phase: 'summary', message: 'Incomplete or inconsistent assessment summary'});
-    if (issues.length) throw new EstimationError(issues);
+    for(const test of manifest.tests ?? []) {
+        check(test.id,a.tests?.[test.id]);
+        check(`root-${test.scope.slice(0,20)}`,a.stages?.[`root-${test.scope.slice(0,20)}`],true);
+    }
+    for(const cp of manifest.checkpoints ?? []) check(cp.id,a.stages?.[cp.id]);
+    if(issues.length) throw new EstimationError(issues);
+}
+function assertExecutable(manifest) {
+    assertAssessed(manifest);
+    if (manifest.assessment.executionEligible!==true)
+        throw new EstimationError([{phase:'qualification',message:'Forecasts are available, but checkpoint execution requires qualified predictions for their timing boundaries'}]);
 }
 function readManifest(file) {
     try {
@@ -88,4 +89,4 @@ function recordFailure(file, error) {
         catch (failure) { error.issues.push({phase: 'failure-report', message: `Could not remove temporary failure report: ${failure.message}`}); }
     }
 }
-module.exports = {EstimationError, assertAssessed, readManifest, readFailure, recordFailure, formatError};
+module.exports = {EstimationError, assertAssessed, assertExecutable, readManifest, readFailure, recordFailure, formatError};

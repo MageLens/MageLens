@@ -16,7 +16,7 @@ function fixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-suite-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const file = path.join(root, 'flow.spec.ts'); fs.writeFileSync(file, 'await page.goto("/");');
-    const tests = ['first', 'second'].map(id => ({id, file:'flow.spec.ts',line:1,title:id,scope:'same',disposition:'automatic',reasons:[],steps:[{start:0,end:21,kind:'statement',portable:true,actionUnits:1}]}));
+    const tests = ['first', 'second'].map(id => ({id, file:'flow.spec.ts',line:1,title:id,scope:'same',disposition:'automatic',reasons:[],steps:[{start:0,end:21,kind:'statement',portable:true,estimatedMs:1}]}));
     const manifest = {schemaVersion:1,implementation:'rust-prefix-v1',root,sourceDigest:'test',sources:[{path:'flow.spec.ts',sha256:fileDigest(file)}],tests,schedule:tests.map(t=>t.id),
         diagnostics:[],checkpoints:[{id:'shared',depth:1,representative:'first',consumers:['first','second'],automatic:true}]};
     const setup = {id:'setup',project:'setup',file,line:2,title:'seed',expectedStatus:'passed'};
@@ -80,8 +80,8 @@ test('AUTO leaves unrelated cheap candidates native while branching profitable s
         f.manifest.tests.push(item);f.manifest.schedule.push(id);
         f.inventory.tests.push({...item,id:'native-'+id,project:'browser',file:path.join(f.root,item.file),expectedStatus:'passed'});
     }
-    assessed(f.manifest);
     f.manifest.checkpoints.push({id:'cheap',depth:1,representative:'cheap-first',consumers:['cheap-first','cheap-second'],automatic:true});
+    assessed(f.manifest);
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});
     assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
     assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-first'));

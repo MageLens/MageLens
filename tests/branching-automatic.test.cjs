@@ -18,7 +18,7 @@ function fixture(t) {
     const source="// 🛒 UTF-8 offsets\nawait page.goto('/cart');\nawait page.goto('/one');\nawait page.goto('/two');";
     fs.writeFileSync(path.join(root,'flow.spec.ts'),source);
     const steps=["await page.goto('/cart');","await page.goto('/one');","await page.goto('/two');"].map(code=>{
-        const start=Buffer.byteLength(source.slice(0,source.indexOf(code)));return {start,end:start+Buffer.byteLength(code),kind:'statement',portable:true,actionUnits:1};
+        const start=Buffer.byteLength(source.slice(0,source.indexOf(code)));return {start,end:start+Buffer.byteLength(code),kind:'statement',portable:true,estimatedMs:1};
     });
     const tests=['test-one','test-two'].map((id,i)=>({id,file:'flow.spec.ts',title:id,line:2,scope:'same-scope',disposition:'automatic',reasons:[],steps:[steps[0],steps[i+1]]}));
     const checkpoint={id:'cp-cart',depth:1,parent:null,representative:tests[0].id,consumers:tests.map(t=>t.id),automatic:true};
@@ -46,7 +46,7 @@ test('Cypress fragments use their own queue with original UTF-8 source bytes', a
         item.fixture = 'cypress:it';
         item.steps = ["cy.visit('/cart');", `cy.visit('/${index ? 'two' : 'one'}');`].map(code => {
             const start = Buffer.byteLength(source.slice(0, source.indexOf(code)));
-            return {start, end: start + Buffer.byteLength(code), kind: 'statement', portable: true, actionUnits: 1};
+            return {start, end: start + Buffer.byteLength(code), kind: 'statement', portable: true, estimatedMs: 1};
         });
     }
     assessed(manifest);
@@ -129,32 +129,21 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 });
 
 
-test('Rust source estimates are authoritative and never call handwritten weight callbacks',t=>{
+test('ML predictions are the only workflow duration inputs',t=>{
     const {manifest,configuration}=fixture(t);
-    manifest.implementation='rust-prefix-v2';
-    assessed(manifest);
-    for(const entry of manifest.tests) {
-        entry.fixtureEstimate={...estimate(20),points:20,estimatedPoints:20,lowerBoundPoints:2,complete:false};
-        for(const step of entry.steps) step.estimate={...estimate(8),points:8,estimatedPoints:8,lowerBoundPoints:1,complete:false};
-    }
-    const adapter={identity:'execution-only',supports:()=>true,execute:async()=>{},prepare:async()=>{},
-        fixtureUnits:()=>{throw new Error('Handwritten fixture cost must not run');},
-        actionUnits:()=>{throw new Error('Handwritten step cost must not run');}};
-    for(const config of [configuration,{...configuration,adapter}]) {
-        const workflow=buildWorkflow(manifest,config).workflow;
-        assert.equal([...workflow.stages.values()].find(s=>s.checkpoint===false).actionUnits,20);
-        assert.equal(workflow.stages.get('cp-cart').actionUnits,8);
-    }
-    manifest.tests[0].steps[0].estimate.complete=false;
-    assert.equal(buildWorkflow(manifest,configuration).workflow.stages.get('cp-cart').actionUnits,8);
-    manifest.tests[0].steps[0].estimate={points:8,estimatedPoints:-1,lowerBoundPoints:1,complete:false};
-    assert.throws(()=>buildWorkflow(manifest,configuration),/Cost assessment failed/);
+    manifest.assessment.stages['root-same-scope']=estimate(20);
+    manifest.assessment.stages['cp-cart']=estimate(8);
+    const workflow=buildWorkflow(manifest,configuration).workflow;
+    assert.equal(workflow.stages.get('root-same-scope').estimatedMs,20);
+    assert.equal(workflow.stages.get('cp-cart').estimatedMs,8);
+    manifest.assessment.stages['cp-cart']=estimate(-1);
+    assert.throws(()=>buildWorkflow(manifest,configuration),error=>error.statusCode===500);
 });
 
-test('outdated source cost models require replanning before workflow construction',t=>{
+test('outdated duration models require replanning before workflow construction',t=>{
     const {manifest,configuration}=fixture(t);manifest.implementation='rust-prefix-v2';
-    for(const assessment of [{version:'js-ts-points-v1'}, {version:'js-ts-points-v2',boundsVersion:1}, {version:'js-ts-points-v3',boundsVersion:1}]) {
+    for(const assessment of [{version:'retired'}, {version:'ml-duration-v1',status:'incomplete'}]) {
         manifest.assessment=assessment;
-        assert.throws(()=>buildWorkflow(manifest,configuration),/cost model.*replan/i);
+        assert.throws(()=>buildWorkflow(manifest,configuration),/ML assessment.*replan/i);
     }
 });

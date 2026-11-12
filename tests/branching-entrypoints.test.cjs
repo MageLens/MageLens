@@ -235,7 +235,7 @@ test('image inputs separate Rust from browser dependencies and track their own s
     const directory = temporary(t);
     const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
     for (const file of new Set(files)) {
-        if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'bin/sync-dependencies.cjs', 'bin/sync-runner-dependencies', 'dependencies.yaml', '.dockerignore', 'package.json'].includes(file))) copy(directory, file);
+        if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'bin/sync-dependencies.cjs', 'bin/sync-runner-dependencies', 'dependencies.yaml', '.dockerignore', 'package.json', 'package-lock.json', 'branching-baseline.json'].includes(file))) copy(directory, file);
     }
     const before = {core: describe(directory, 'orchestrator').fingerprint, browser: describe(directory, 'playwright').fingerprint, cypress: describe(directory, 'cypress').fingerprint};
     fs.appendFileSync(path.join(directory, 'branching/runners/cypress/Dockerfile'), '\n');
@@ -259,6 +259,12 @@ function imageFixture(t, kind = 'orchestrator') {
     for (const file of ['bin/branching-image', 'bin/common', 'bin/dependencies', 'bin/sync-dependencies.cjs',
         'bin/sync-runner-dependencies', 'branching/build-runner.sh', 'docker/runner/Dockerfile',
         'dependencies.yaml', 'package.json', 'package-lock.json', '.dockerignore']) copy(directory, file);
+    if(kind === 'orchestrator') {
+        for(const file of ['branching/build-orchestrator.sh','branching-baseline.json','branching/estimation.cjs',
+            'branching/planner/Dockerfile','branching/planner/Cargo.toml','branching/planner/Cargo.lock']) copy(directory,file);
+        for(const folder of ['branching/planner/src','branching/planner/tests','branching/predictor'])
+            fs.cpSync(path.join(root,folder),path.join(directory,folder),{recursive:true});
+    }
     fs.mkdirSync(path.join(directory, 'commands'));
     command(directory, 'commands/docker', `#!${process.execPath}
 const fs = require('node:fs'), args = process.argv.slice(2), fingerprint = 'c'.repeat(64);
@@ -272,6 +278,7 @@ if (args[0] === 'image' && args[1] === 'inspect') {
     console.log('linux/amd64 ' + (process.env.TEST_BAD_LABEL === '1' ? 'bad' : fingerprint));
 }
 if (args[0] === 'pull' && process.env.TEST_PULL_FAIL === '1') process.exit(1);
+if (args[0] === 'build' && args.at(-1) === '-') fs.readFileSync(0);
 if (args[0] === 'build' && args.includes('--target') && process.env.TEST_BASE_BUILD_FAIL === '1') process.exit(29);
 `);
     const log = path.join(directory, 'calls');

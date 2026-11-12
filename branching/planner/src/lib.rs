@@ -10,15 +10,13 @@ use std::{
     path::{Path, PathBuf},
 };
 use tree_sitter::{Node, Parser};
-mod assessment;
 pub mod baseline;
 pub mod cost;
 mod cypress;
 pub mod estimation;
-mod models;
 mod normalize;
-pub mod points;
 mod project;
+mod structure;
 
 type Result<T> = std::result::Result<T, String>;
 pub fn hash(bytes: impl AsRef<[u8]>) -> String {
@@ -44,10 +42,6 @@ pub struct Step {
     pub portable: bool,
     pub asynchronous: bool,
     #[serde(default)]
-    pub action_units: Option<u64>,
-    #[serde(default)]
-    pub estimate: Option<points::Estimate>,
-    #[serde(default)]
     pub label: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -63,24 +57,16 @@ pub struct Test {
     pub steps: Vec<Step>,
     pub reasons: Vec<String>,
     pub disposition: String,
-    #[serde(default)]
-    pub fixture_estimate: Option<points::Estimate>,
-    #[serde(default)]
-    pub worker_estimate: Option<points::Estimate>,
-    #[serde(default)]
-    pub lifecycle_estimate: Option<points::Estimate>,
-    #[serde(default)]
-    pub estimate: Option<points::Estimate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restoration: Option<serde_json::Value>,
     #[serde(skip)]
     context_identity: String,
-    #[serde(skip)]
-    collection_bindings: assessment::Bindings,
-    #[serde(skip)]
-    callback_start: usize,
-    #[serde(skip)]
-    callback_end: usize,
+    #[serde(default)]
+    pub context_files: Vec<String>,
+    #[serde(default)]
+    pub fixture_setup: Vec<String>,
+    pub callback_start: usize,
+    pub callback_end: usize,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -227,8 +213,6 @@ fn step(n: Node, s: &str, kind: &str, portable: bool) -> Step {
         minified,
         portable,
         asynchronous: contains(n, &|n| n.kind() == "await_expression"),
-        action_units: None,
-        estimate: None,
         label: if kind == "beforeEach" {
             Some("beforeEach()".into())
         } else {
@@ -294,7 +278,7 @@ struct Scope {
     hooks: Vec<Step>,
     reasons: Vec<String>,
     identity: Vec<String>,
-    bindings: assessment::Bindings,
+    bindings: structure::Bindings,
 }
 
 #[cfg(test)]
@@ -326,6 +310,27 @@ fn parse_file_with_aliases(
     }
     let mut aliases = extra_aliases;
     let cypress = cypress::is_spec(file);
+    // Node unit tests can share the .test.js suffix with browser specs. An
+    // explicit node:test dependency identifies a different runner, not a
+    // browser declaration that failed static collection.
+    if !cypress
+        && contains(tree.root_node(), &|n| {
+            (n.kind() == "import_statement"
+                && field(n, "source")
+                    .and_then(|n| literal(n, source))
+                    .as_deref()
+                    == Some("node:test"))
+                || (n.kind() == "call_expression"
+                    && function_name(n, source) == "require"
+                    && field(n, "arguments")
+                        .and_then(|n| n.named_child(0))
+                        .and_then(|n| literal(n, source))
+                        .as_deref()
+                        == Some("node:test"))
+        })
+    {
+        return Ok((vec![], vec![]));
+    }
     if cypress {
         aliases.insert("it".into(), "cypress:it".into());
     }
@@ -697,10 +702,6 @@ fn walk_scope(
             }
             .into(),
             reasons,
-            fixture_estimate: None,
-            worker_estimate: None,
-            lifecycle_estimate: None,
-            estimate: None,
             restoration: None,
             context_identity: serde_json::to_string(&(
                 fixture,
@@ -709,7 +710,8 @@ fn walk_scope(
                 scope.bindings.identity(),
             ))
             .unwrap(),
-            collection_bindings: scope.bindings.clone(),
+            context_files: vec![],
+            fixture_setup: vec![],
             callback_start: cb.start_byte(),
             callback_end: cb.end_byte(),
         });
@@ -849,20 +851,13 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     if tests.is_empty() {
         return Err("No statically declared Playwright or Cypress tests found".into());
     }
-    // Module state can survive between tests. Propagate injected capabilities
-    // to a fixed point so estimates do not depend on discovery/execution order.
-    let mut tainted_libraries = BTreeSet::new();
-    loop {
-        let prior = tainted_libraries.len();
-        for test in &mut tests {
-            project.assess(test, &mut tainted_libraries);
-        }
-        if tainted_libraries.len() == prior {
-            break;
-        }
-    }
     // Each entry is a prefix-trie node identified by its complete ancestry.
     for test in &mut tests {
+        test.context_files = project.dependency_closure(&test.file).into_iter().collect();
+        test.fixture_setup = project.fixture_setup_sources(test);
+        test.scope = hash(
+            serde_json::to_vec(&(&test.context_identity, project.context(&test.file))).unwrap(),
+        );
         if !test.fixture.starts_with("cypress:")
             && let Ok(recipe) = project.restoration(test)
         {
@@ -956,11 +951,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     // bodies diverge immediately. Worker setup and teardown are excluded.
     let mut fixture_groups: BTreeMap<String, Vec<&Test>> = BTreeMap::new();
     for test in &tests {
-        if test
-            .fixture_estimate
-            .as_ref()
-            .is_some_and(|e| e.estimated_points > 0)
-        {
+        if !test.fixture_setup.is_empty() {
             fixture_groups
                 .entry(test.scope.clone())
                 .or_default()
@@ -997,7 +988,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     checkpoints.sort_by(|a, b| (a.depth, &a.id).cmp(&(b.depth, &b.id)));
     let mut manifest = Manifest {
         schema_version: 1,
-        implementation: "rust-prefix-v2".into(),
+        implementation: "rust-prefix-v3".into(),
         root: root.to_string_lossy().into_owned(),
         source_digest,
         sources,
@@ -1007,9 +998,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
         diagnostics,
         assessment: serde_json::Value::Null,
     };
-    manifest.assessment = assessment::summary(&manifest)?;
-    manifest.assessment["dependencyAnalysis"] =
-        serde_json::to_value(&project.dependency_effects).unwrap();
+    manifest.assessment = serde_json::json!({"version":"ml-duration-v1","analysis":{"status":if manifest.diagnostics.is_empty(){"complete"}else{"partial"},"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()},"status":"unestimated"});
     Ok(manifest)
 }
 
@@ -1144,33 +1133,6 @@ mod tests {
         )
         .unwrap();
         assert!(warnings[0].contains("native Playwright collection"));
-    }
-    #[test]
-    fn assigns_static_weights_and_preserves_unknown_helper_costs() {
-        let f = Fixture::new(&format!(
-            "{IMPORT} test('units',async ({{page}})=>{{await page.goto('/');await page.getByRole('button').click();await expect(page.locator('h1')).toBeVisible();await expect(page).toHaveURL('/');await helper(page);await page.waitForTimeout(500);await Promise.all([page.click('a'),page.click('b')]);}});"
-        ));
-        let p = f.plan();
-        assert_eq!(
-            p.tests[0]
-                .steps
-                .iter()
-                .map(|s| s.action_units)
-                .collect::<Vec<_>>(),
-            vec![
-                Some(8),
-                Some(1),
-                Some(1),
-                Some(1),
-                Some(0),
-                Some(10),
-                Some(1)
-            ]
-        );
-        let unknown = p.tests[0].steps[4].estimate.as_ref().unwrap();
-        assert!(!unknown.complete);
-        assert_eq!(unknown.upper_bound_points, None);
-        assert!(!unknown.reasons.is_empty());
     }
     #[test]
     fn detects_prefixes_and_only_captures_branch_points() {

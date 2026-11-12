@@ -14,8 +14,15 @@ output=${2:-"$root/.runtime/branching-dashboard-self-test/$(date -u +%Y%m%dT%H%M
 [[ ! -e "$output" ]] || { echo 'Dashboard output must be fresh.' >&2; exit 1; }
 output=$(realpath -m "$output")
 mkdir -p "$output/workspace"
-rust_image=$(docker build --quiet --file tests/branching-rust-coverage.Dockerfile .)
+orchestrator=$(./bin/branching-image orchestrator --build-from-source)
+rust_image=$(docker build --quiet --build-arg "ORCHESTRATOR_IMAGE=$orchestrator" --file tests/branching-rust-coverage.Dockerfile .)
+# Fixed forecasts isolate dashboard/engine behavior from model accuracy.
+docker run --rm --network none --env NODE_PATH=/opt/magelens/node_modules \
+    --mount "type=bind,source=$root,target=/driver,readonly" --entrypoint node "$orchestrator" \
+    -e 'process.stdout.write(JSON.stringify(require("/driver/tests/fixtures/branching/predictor.cjs").model(100)))' > "$output/model.json"
+model_digest=$(sha256sum "$output/model.json" | cut -d ' ' -f 1)
 controller=$(docker run --detach --rm --init --network none --memory 1g --memory-swap 1g --user "$(id -u):$(id -g)" \
+    --env MAGELENS_PREDICTOR_MODEL=/artifacts/model.json --env "MAGELENS_PREDICTOR_MODEL_SHA256=$model_digest" \
     --mount "type=bind,source=$root,target=/driver,readonly" \
     --mount "type=bind,source=$output,target=/artifacts" \
     --mount "type=bind,source=$output/workspace,target=/shared" \

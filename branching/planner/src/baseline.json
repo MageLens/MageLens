@@ -1,6 +1,5 @@
 {
   "version": "pw1.65-calibrated-checkpoint-2026-11-08-v6",
-  "unitMs": 55,
   "captureMs": 3000,
   "restoreMs": 8200,
   "releaseMs": 12,

@@ -46,7 +46,6 @@ function validate(value) {
         !value ||
         Object.keys(value).sort().join() !== Object.keys(defaults).sort().join() ||
         value.version !== defaults.version ||
-        value.unitMs !== defaults.unitMs ||
         value.overheadMultiplier !== defaults.overheadMultiplier ||
         value.overheadMargin !== defaults.overheadMargin ||
         value.minSavingMs !== defaults.minSavingMs ||

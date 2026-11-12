@@ -12,7 +12,8 @@ pub struct Stage {
     pub id: String,
     pub parent: Option<String>,
     pub checkpoint: bool,
-    pub units: Option<u64>,
+    #[serde(rename = "estimatedMs")]
+    pub estimated_ms: Option<u64>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -30,10 +31,10 @@ pub struct Decision {
     pub selected: bool,
     pub reason: String,
     pub consumers: usize,
-    pub combined_units: Option<u64>,
+    pub combined_estimated_ms: Option<u64>,
     pub estimated_prefix_ms: Option<f64>,
     pub break_even_prefix_ms: Option<f64>,
-    pub minimum_combined_units: Option<u64>,
+    pub minimum_combined_estimated_ms: Option<u64>,
     pub standalone_saving_ms: Option<f64>,
 }
 #[derive(Serialize)]
@@ -108,13 +109,13 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
         .iter()
         .map(|s| chain(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let units = all_chains
+    let estimated_ms = all_chains
         .iter()
         .map(|path| {
             let mut total = Some(0u64);
             for &i in path {
-                total = match (total, input.stages[i].units) {
-                    (Some(a), Some(b)) => Some(a.checked_add(b).ok_or("Action unit overflow")?),
+                total = match (total, input.stages[i].estimated_ms) {
+                    (Some(a), Some(b)) => Some(a.checked_add(b).ok_or("Duration overflow")?),
                     _ => None,
                 };
             }
@@ -131,7 +132,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
         .stages
         .iter()
         .enumerate()
-        .filter(|(i, s)| s.checkpoint && consumers[*i] > 1 && units[*i].is_some())
+        .filter(|(i, s)| s.checkpoint && consumers[*i] > 1 && estimated_ms[*i].is_some())
         .map(|(i, _)| i)
         .collect();
     let margin = baseline.overhead_multiplier * (1.0 + baseline.overhead_margin);
@@ -171,7 +172,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
                 first = false;
             }
             for &i in &path[last.map(|p| p + 1).unwrap_or(0)..] {
-                total += input.stages[i].units.unwrap_or(0) as f64 * baseline.unit_ms;
+                total += input.stages[i].estimated_ms.unwrap_or(0) as f64 * 1.0;
                 if chosen.contains(&i) && available.insert(i) {
                     total += (baseline.capture_ms + baseline.release_ms) * margin;
                 }
@@ -187,7 +188,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
     // although none is profitable alone. Evaluate a bounded combined seed too.
     let mut ranked = eligible.clone();
     ranked.sort_by(|a, b| {
-        let value = |i: &usize| units[*i].unwrap() as u128 * (consumers[*i] - 1) as u128;
+        let value = |i: &usize| estimated_ms[*i].unwrap() as u128 * (consumers[*i] - 1) as u128;
         value(b).cmp(&value(a)).then_with(|| a.cmp(b))
     });
     let mut combined = BTreeSet::new();
@@ -250,7 +251,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
         .filter(|(_, s)| s.checkpoint)
         .map(|(i, s)| {
             let count = consumers[i];
-            let known = units[i].is_some() && count > 1;
+            let known = estimated_ms[i].is_some() && count > 1;
             let threshold = known.then(|| {
                 baseline.restore_ms * margin
                     + ((baseline.backend_ms
@@ -269,9 +270,9 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
                 reason: if count < 2 {
                     "single-consumer"
                 } else if !known {
-                    "unknown-units"
+                    "unknown-estimated_ms"
                 } else if chosen {
-                    "static-estimated-saving"
+                    "ml-estimated-saving"
                 } else if saving.unwrap_or(0.0) <= baseline.min_saving_ms {
                     "below-break-even"
                 } else if !within_limit(&selected.iter().copied().chain([i]).collect()) {
@@ -281,33 +282,35 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
                 }
                 .into(),
                 consumers: count,
-                combined_units: units[i],
-                estimated_prefix_ms: units[i].map(|u| u as f64 * baseline.unit_ms),
+                combined_estimated_ms: estimated_ms[i],
+                estimated_prefix_ms: estimated_ms[i].map(|u| u as f64 * 1.0),
                 break_even_prefix_ms: threshold,
-                minimum_combined_units: threshold.map(|ms| {
+                minimum_combined_estimated_ms: threshold.map(|ms| {
                     if ms < 0.0 {
                         0
                     } else {
-                        (ms / baseline.unit_ms).floor() as u64 + 1
+                        (ms / 1.0).floor() as u64 + 1
                     }
                 }),
                 standalone_saving_ms: saving,
             }
         })
         .collect();
-    let complete = paths.iter().all(|p| units[*p.last().unwrap()].is_some());
+    let complete = paths
+        .iter()
+        .all(|p| estimated_ms[*p.last().unwrap()].is_some());
     Ok(Plan {
         schema_version: 1,
-        basis: "static-benchmark-estimate",
+        basis: "ml-duration-estimate",
         baseline,
         selected: selected
             .iter()
             .map(|i| input.stages[*i].id.clone())
             .collect(),
         reason: if !selected.is_empty() {
-            "static-estimated-saving"
+            "ml-estimated-saving"
         } else if !complete {
-            "unknown-units"
+            "unknown-estimated_ms"
         } else {
             "linear-estimated-cheaper"
         }
@@ -334,14 +337,14 @@ mod tests {
             + baseline.capture_ms
             + baseline.release_ms
             + baseline.restore_ms;
-        let expected = 5000.0 * baseline.unit_ms - overhead * 2.0 * 1.20;
+        let expected = 5000.0 * 125.0 - overhead * 2.0 * 1.20;
         assert_eq!(plan.selected, vec!["long"]);
         assert!((plan.estimated_saving_ms - expected).abs() < 0.001);
         let mut changed = input_with_default();
         changed.baseline.restore_ms = 1000000.0;
         assert!(super::select(changed).unwrap().selected.is_empty());
         let mut invalid = input_with_default();
-        invalid.baseline.unit_ms *= 2.0;
+        invalid.baseline.overhead_multiplier *= 2.0;
         assert!(super::select(invalid).err().unwrap().contains("baseline"));
     }
     fn input_with_default() -> Input {
@@ -352,7 +355,6 @@ mod tests {
             input,
             Baseline {
                 version: "independent-cost-model-reference".into(),
-                unit_ms: 125.0,
                 capture_ms: 4100.0,
                 restore_ms: 8500.0,
                 release_ms: 11.0,
@@ -366,12 +368,12 @@ mod tests {
         )
     }
 
-    fn stage(id: &str, parent: Option<&str>, units: u64, checkpoint: bool) -> Stage {
+    fn stage(id: &str, parent: Option<&str>, estimated_ms: u64, checkpoint: bool) -> Stage {
         Stage {
             id: id.into(),
             parent: parent.map(String::from),
             checkpoint,
-            units: Some(units),
+            estimated_ms: Some(estimated_ms * 125),
         }
     }
     fn input(stages: Vec<Stage>, parents: &[&str]) -> Input {
@@ -387,7 +389,7 @@ mod tests {
         let p = select(input(vec![stage("small", None, 4, true)], &["small"; 3])).unwrap();
         assert!(p.selected.is_empty());
         assert_eq!(p.decisions[0].reason, "below-break-even");
-        assert_eq!(p.basis, "static-benchmark-estimate");
+        assert_eq!(p.basis, "ml-duration-estimate");
     }
     #[test]
     fn small_fixture_and_later_steps_are_a_combined_unit() {
@@ -400,7 +402,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(p.selected, vec!["checkout"]);
-        assert_eq!(p.decisions[1].combined_units, Some(501));
+        assert_eq!(p.decisions[1].combined_estimated_ms, Some(501 * 125));
     }
     #[test]
     fn two_small_parts_can_cross_the_combined_threshold() {
@@ -413,8 +415,8 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(p.selected, vec!["step"]);
-        assert!(p.decisions[0].minimum_combined_units.unwrap() > 160);
-        assert!(p.decisions[0].minimum_combined_units.unwrap() < 320);
+        assert!(p.decisions[0].minimum_combined_estimated_ms.unwrap() > 160 * 125);
+        assert!(p.decisions[0].minimum_combined_estimated_ms.unwrap() < 320 * 125);
     }
     #[test]
     fn fanout_changes_break_even_and_boundary_is_strict() {
@@ -428,7 +430,8 @@ mod tests {
             let high = select(input(vec![stage("unit", None, minimum, true)], &parents)).unwrap();
             assert!(low.selected.is_empty());
             assert_eq!(high.selected, vec!["unit"]);
-            assert_eq!(high.decisions[0].minimum_combined_units, Some(minimum));
+            assert!(high.decisions[0].minimum_combined_estimated_ms.unwrap() > (minimum - 1) * 125);
+            assert!(high.decisions[0].minimum_combined_estimated_ms.unwrap() <= minimum * 125);
         }
     }
     #[test]
@@ -447,7 +450,7 @@ mod tests {
     #[test]
     fn unknown_fixture_is_not_treated_as_free_and_candidate_is_retained() {
         let mut root = stage("fixture", None, 1, false);
-        root.units = None;
+        root.estimated_ms = None;
         let p = select(input(
             vec![root, stage("child", Some("fixture"), 1000, true)],
             &["child"; 2],
@@ -455,13 +458,13 @@ mod tests {
         .unwrap();
         assert!(p.selected.is_empty());
         assert_eq!(p.decisions.len(), 1);
-        assert_eq!(p.decisions[0].reason, "unknown-units");
+        assert_eq!(p.decisions[0].reason, "unknown-estimated_ms");
         assert!(p.estimated_linear_setup_ms.is_none());
     }
     #[test]
     fn unknown_subtree_does_not_block_known_sibling_or_common_ancestor() {
         let mut unknown = stage("unknown", Some("root"), 1, true);
-        unknown.units = None;
+        unknown.estimated_ms = None;
         let p = select(input(
             vec![
                 stage("root", None, 500, true),
@@ -541,7 +544,12 @@ mod tests {
         assert!(
             select(input(
                 vec![
-                    stage("a", None, u64::MAX, true),
+                    Stage {
+                        id: "a".into(),
+                        parent: None,
+                        checkpoint: true,
+                        estimated_ms: Some(u64::MAX)
+                    },
                     stage("b", Some("a"), 1, true)
                 ],
                 &["b"]

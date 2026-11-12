@@ -7,7 +7,7 @@ const {execFileSync}=require('node:child_process');
 
 // Real planner transport for host integration tests, with only owned temporary
 // files writable and no application services, network or database mounted.
-function plannerFixture(t,prefix) {
+function plannerFixture(t,prefix,{model}={}) {
     const repository=path.resolve(__dirname,'../../..');
     const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
     const previous=process.env.MAGELENS_ORCHESTRATOR_CONTAINER;
@@ -22,7 +22,10 @@ function plannerFixture(t,prefix) {
     const image=execFileSync(path.join(repository,'bin/branching-image'),['orchestrator'],{
         cwd:repository,encoding:'utf8',stdio:['ignore','pipe','inherit']
     }).trim();
-    container=execFileSync('docker',['run','--detach','--rm','--init','--network','none',
+    const environment=[];
+    if(model){const file=path.join(root,'model.json'),bytes=JSON.stringify(model);fs.writeFileSync(file,bytes,{mode:0o600});
+        environment.push('--env',`MAGELENS_PREDICTOR_MODEL=${file}`,'--env',`MAGELENS_PREDICTOR_MODEL_SHA256=${require('node:crypto').createHash('sha256').update(bytes).digest('hex')}`);}
+    container=execFileSync('docker',['run',...environment,'--detach','--rm','--init','--network','none',
         '--memory','512m','--memory-swap','512m','--user',`${process.getuid()}:${process.getgid()}`,
         '--mount',`type=bind,source=${repository},target=${repository},readonly`,
         '--mount',`type=bind,source=${root},target=${root}`,

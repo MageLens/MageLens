@@ -51,7 +51,9 @@ function analyze(source) {
         } else if (node.type === 'ClassMethod' && node.key.type === 'Identifier') {
             name = node.key.name;
             body = node;
-            code = 'class Helper {' + source.slice(node.start, node.end) + '}';
+            let usesSuper = false;
+            walk(node, child => { if (child.type === 'CallExpression' && child.callee.type === 'Super') usesSuper = true; });
+            code = 'class Helper' + (usesSuper ? ' extends Parent' : '') + ' {' + source.slice(node.start, node.end) + '}';
         } else if (node.type === 'ObjectMethod' && node.key.type === 'Identifier') {
             name = node.key.name;
             body = node;

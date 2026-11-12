@@ -169,7 +169,7 @@ impl Builder<'_> {
         if self.functions.contains_key(&key) {
             return Some(key);
         }
-        if !self.active.insert(key.clone()) || self.active.len() > points::CALL_LIMIT {
+        if !self.active.insert(key.clone()) || self.active.len() > CALL_LIMIT {
             return None;
         }
         let n = self.project.node(r)?;
@@ -361,7 +361,7 @@ impl Project {
         if !seen.insert(file.into()) {
             return Some(());
         }
-        if seen.len() > points::CALL_LIMIT {
+        if seen.len() > CALL_LIMIT {
             return None;
         }
         let module = self.modules.get(file)?;
@@ -504,5 +504,94 @@ impl Project {
         Some(
             json!({"version":1,"fixtures":frames,"functions":builder.functions,"callback":callback}),
         )
+    }
+}
+
+impl Project {
+    // Discover setup boundaries independently of restoration safety. Unsupported
+    // closure state must not erase a repeated fixture from the source inventory.
+    pub fn fixture_setup_sources(&self, test: &Test) -> Vec<String> {
+        let Some((alias, _)) = self
+            .test_aliases(&test.file)
+            .into_iter()
+            .find(|(_, v)| v == &test.fixture)
+        else {
+            return vec![];
+        };
+        let Some(definitions) = self.provider(&test.file, &alias, &mut BTreeSet::new()) else {
+            return vec![];
+        };
+        let reference = Reference {
+            file: test.file.clone(),
+            start: test.callback_start,
+            end: test.callback_end,
+        };
+        let Some(callback) = self.node(&reference) else {
+            return vec![];
+        };
+        let mut targets: Vec<_> = definitions
+            .iter()
+            .filter(|(_, f)| f.auto && !f.worker)
+            .collect();
+        targets.sort_by_key(|(_, f)| f.order);
+        let targets: Vec<_> = targets
+            .into_iter()
+            .map(|(name, _)| name.clone())
+            .chain(
+                params(callback)
+                    .first()
+                    .into_iter()
+                    .flat_map(|n| names(*n, &self.modules[&test.file].source)),
+            )
+            .collect();
+        fn visit(
+            project: &Project,
+            name: &str,
+            definitions: &BTreeMap<String, Fixture>,
+            seen: &mut BTreeSet<String>,
+            out: &mut Vec<String>,
+        ) {
+            if !seen.insert(name.into()) {
+                return;
+            }
+            let Some(fixture) = definitions.get(name).filter(|f| !f.worker) else {
+                return;
+            };
+            let Some(node) = project.node(&fixture.reference) else {
+                return;
+            };
+            let source = &project.modules[&fixture.reference.file].source;
+            let parameters = params(node);
+            if parameters.len() != 2 {
+                return;
+            }
+            for dependency in names(parameters[0], source) {
+                visit(project, &dependency, definitions, seen, out);
+            }
+            let Some(body) = field(node, "body") else {
+                return;
+            };
+            let statements = children(body);
+            if let Some(boundary) = statements
+                .iter()
+                .position(|n| use_boundary(*n, source, text(parameters[1], source)).is_some())
+            {
+                if boundary > 0 {
+                    out.push(
+                        statements[..boundary]
+                            .iter()
+                            .map(|n| text(*n, source))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    );
+                }
+            }
+        }
+        let mut out = vec![];
+        let mut seen = BTreeSet::new();
+        for target in targets {
+            visit(self, &target, &definitions, &mut seen, &mut out);
+        }
+        out
     }
 }

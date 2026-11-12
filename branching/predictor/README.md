@@ -6,8 +6,8 @@ License: see LICENSE in the repository root.
 
 # Timing predictor development
 
-This is an experimental, project-independent predictor and CI evaluation pipeline.
-It does **not** replace the production source assessor or authorize checkpoints.
+This is the sole duration estimator for branching and the native-runner profiling pipeline.
+Deterministic source analysis still detects repetition and checks restoration eligibility.
 Unqualified models are usable only for evaluation, without controlling checkpoint decisions; strict inference throws
 `ESTIMATION_FAILED` with status 500. Restoration eligibility remains a separate check.
 
@@ -98,8 +98,8 @@ Cypress reports include `timing.nativeMs` and measured `timing.preparationMs`.
 Training uses their difference: the collector's preparation runs inside the first
 test's root hook and must not become predicted test work. This excludes measured
 collector work, while runner transport and reporting remain within the native
-boundary. The explicit `timingBoundary` version rejects older forecasts, even in shadow
-evaluation; training rejects mixed versions for the same runner; old observations retain their original measurements. Playwright keeps
+boundary. The explicit `timingBoundary` version marks forecasts from older boundaries as
+unvalidated transfer; training rejects mixed versions for the same runner; old observations retain their original measurements. Playwright keeps
 its native test-result duration. Neither boundary measures checkpoint prefixes.
 Set `profile.group` to keep related generated files in the same validation fold;
 otherwise each spec file is a group.
@@ -111,7 +111,7 @@ keep them outside Git and public CI artifacts. Ordinary profiling does not save 
 
 ## CI evaluation
 
-Both native runners retain forecasts made before execution. Native CI evaluates individual tests. A model for a different boundary produces a missing forecast, not a score.
+Both native runners retain forecasts made before execution. Native CI evaluates individual tests. A model for a different boundary still produces a forecast, marked as domain transfer rather than a qualified prediction.
 Reports show model ID, missing forecasts, raw and adjusted errors, signed
 bias, interval coverage and out-of-range inputs. Missing models are reported as
 incomplete, never as zero error.
@@ -145,3 +145,10 @@ and publish the model package manually, then verify the published bytes before u
 orchestrator's package version, registry digest and model checksum. Never overwrite
 an existing package version. Ordinary product releases leave these pins unchanged.
 Packaging does not qualify the model or enable checkpoint decisions.
+
+`./bin/plan-branching --evaluate SOURCE_ROOT` evaluates the packaged model without
+executing tests. Planning produces ML forecasts for all valid source fragments. Prefix segments
+use `unit: "prefix"` and `timingBoundary: "checkpoint-prefix/v1"`; the current
+whole-test package forecasts these source fragments with an explicit domain-transfer
+warning. Qualification for execution is separate from forecast availability.
+No heuristic fallback or whole-test-to-prefix conversion is used.

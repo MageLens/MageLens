@@ -35,7 +35,7 @@ function rustCoverage(output) {
             if (!profiles.length) throw new Error('No native Rust coverage profiles were produced');
             const profile = path.join(output, 'planner.profdata');
             command('llvm-profdata', ['merge', '-sparse', ...profiles, '-o', profile]);
-            const args = ['/usr/local/bin/magelens-plan', '-instr-profile=' + profile,
+            const args = ['/usr/local/bin/magelens-source', '-instr-profile=' + profile,
                 '-path-equivalence=/build,' + root, ...files.map(file => path.join(root, file))];
             const exported = JSON.parse(command('llvm-cov', ['export', ...args], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024}));
             fs.writeFileSync(path.join(output, 'coverage.json'), JSON.stringify(exported) + '\n');

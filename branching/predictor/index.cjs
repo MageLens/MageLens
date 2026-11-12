@@ -125,13 +125,16 @@ function loadModel(file, expectedDigest) {
             Array.isArray(d.ranges) && d.ranges.length === width(model.featureSchema) && d.ranges.every(r => Array.isArray(r) && r.length === 2 && r.every(Number.isFinite) && r[0] <= r[1])), 'Invalid model domain or baseline');
     return {id, model};
 }
-function predict(snapshot, loaded, {shadow = false} = {}) {
+function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
     const {model, id} = loaded;
     ensure(snapshot.featureSchema === model.featureSchema && snapshot.vector.length === width(model.featureSchema) && snapshot.vector.every(Number.isFinite), 'Invalid feature vector');
     ensure(shadow || model.qualified === true, 'Model has not passed held-out qualification');
     const domains = model.domains.filter(d => d.runner === snapshot.runner && d.unit === snapshot.unit &&
         (d.timingBoundary ?? null) === (snapshot.timingBoundary ?? null));
-    ensure(domains.length, 'No training evidence for this runner and timing boundary');
+    ensure(transfer || domains.length, 'No training evidence for this runner and timing boundary');
+    const domainMatched = domains.length > 0;
+    const referenceDomains = domainMatched ? domains : model.domains.filter(d => d.runner === snapshot.runner);
+    const ranges = referenceDomains.length ? referenceDomains : model.domains;
     const environmentKnown = domains.some(d => d.environmentDigest === snapshot.environmentDigest);
     const e = model.estimator;
     ensure(snapshot.vector.every(x => x >= 0), 'Negative syntax features');
@@ -139,20 +142,20 @@ function predict(snapshot, loaded, {shadow = false} = {}) {
         sum + ((e.inputTransform === 'log1p' ? Math.log1p(x) : x) - e.mean[i]) / e.scale[i] * e.coefficients[i], 0);
     const ms = Math.expm1(logMs);
     ensure(Number.isFinite(ms) && ms > 0, 'Invalid predicted duration');
-    const outOfRange = snapshot.vector.some((x, i) => x < Math.min(...domains.map(d => d.ranges[i][0])) || x > Math.max(...domains.map(d => d.ranges[i][1])));
+    const outOfRange = snapshot.vector.some((x, i) => x < Math.min(...ranges.map(d => d.ranges[i][0])) || x > Math.max(...ranges.map(d => d.ranges[i][1])));
     ensure(shadow || !outOfRange, 'Workload is outside the trained feature range');
     ensure(Number.isFinite(model.referenceBaselineMs) && model.referenceBaselineMs > 0 &&
         Number.isFinite(snapshot.baselineMs) && snapshot.baselineMs > 0 &&
         Number.isFinite(snapshot.manualMultiplier) && snapshot.manualMultiplier > 0, 'Missing or invalid pre-run baseline or multiplier');
     const factor = snapshot.baselineMs / model.referenceBaselineMs * snapshot.manualMultiplier;
     ensure(Number.isFinite(ms * factor) && ms * factor > 0 && Number.isFinite(Math.expm1(logMs + model.errorLogP90) * factor), 'Prediction scaling overflow');
-    return {modelId: id, rawMs: ms, ms: ms * factor, factor, environmentKnown,
+    return {modelId: id, rawMs: ms, ms: ms * factor, factor, environmentKnown, ...(transfer ? {domainMatched, executionEligible:model.qualified && domainMatched && !outOfRange} : {}),
         referenceBaselineMs: model.referenceBaselineMs, baselineMs: snapshot.baselineMs, manualMultiplier: snapshot.manualMultiplier,
         rawLowerMs: Math.max(0, Math.expm1(logMs - model.errorLogP90)), rawUpperMs: Math.expm1(logMs + model.errorLogP90),
         lowerMs: Math.max(0, Math.expm1(logMs - model.errorLogP90)) * factor,
         upperMs: Math.expm1(logMs + model.errorLogP90) * factor, outOfRange, qualified: model.qualified};
 }
-function prepare(request, loaded) {
+function prepare(request, loaded, {transfer = true} = {}) {
     ensure(request.timingBoundary === undefined || (typeof request.timingBoundary === 'string' && /^[a-z0-9][a-z0-9_./-]{0,99}$/.test(request.timingBoundary)), 'Invalid timing boundary version');
     ensure(request.environment && Object.keys(request.environment).length > 0, 'Environment identity is required');
     ensure(typeof request.group === 'string' && request.group && typeof request.sourceFamily === 'string' && request.sourceFamily, 'Training group and source family are required');
@@ -177,7 +180,7 @@ function prepare(request, loaded) {
     }
     try {
         ensure(loaded, 'No model configured');
-        snapshot.prediction = predict(snapshot, loaded, {shadow: true});
+        snapshot.prediction = predict(snapshot, loaded, {shadow: true, transfer});
     } catch (error) { snapshot.predictionError = error.toJSON?.() ?? {statusCode: 500, code: 'ESTIMATION_FAILED', message: error.message}; }
     return snapshot;
 }

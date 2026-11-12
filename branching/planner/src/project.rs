@@ -9,8 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use tree_sitter::{Node, Parser, Tree};
+mod bindings;
 mod dependencies;
-mod effects;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     pub file: String,
@@ -22,16 +22,12 @@ pub struct Module {
     pub tree: Tree,
 }
 pub struct Project {
-    pub models: crate::models::Models,
     pub modules: BTreeMap<String, Module>,
     pub data: BTreeMap<String, serde_json::Value>,
     import_cache: BTreeMap<String, BTreeMap<String, (String, String)>>,
     paths: Vec<(String, Vec<String>)>,
     base: PathBuf,
     dependencies: BTreeMap<(String, String, bool), String>,
-    pub data_modules: std::collections::BTreeSet<String>,
-    pub dependency_effects: Vec<serde_json::Value>,
-    data_methods: BTreeMap<(String, String), Vec<Reference>>,
     write_cache: std::cell::RefCell<BTreeMap<(String, usize), bool>>,
 }
 // JSONC is configuration, never executable JavaScript. Preserve strings while
@@ -168,16 +164,12 @@ impl Project {
             })
             .unwrap_or_default();
         let mut project = Self {
-            models: crate::models::load(root, &modules, sources)?,
             modules,
             data,
             import_cache: BTreeMap::new(),
             paths,
             base,
             dependencies: BTreeMap::new(),
-            data_modules: Default::default(),
-            dependency_effects: vec![],
-            data_methods: BTreeMap::new(),
             write_cache: Default::default(),
         };
         project.import_cache = project
@@ -186,7 +178,6 @@ impl Project {
             .map(|file| (file.clone(), project.scan_imports(file)))
             .collect();
         project.discover(root, sources)?;
-        project.summarize_effects();
         Ok(project)
     }
     fn insert(&mut self, path: &str, bytes: &[u8]) -> Result<()> {
@@ -581,7 +572,7 @@ impl Project {
         };
         fn names(n: Node, s: &str, name: &str) -> bool {
             let mut bindings = std::collections::BTreeSet::new();
-            effects::binding(n, s, &mut bindings);
+            bindings::binding(n, s, &mut bindings);
             bindings.contains(name)
         }
         fn function(n: Node) -> bool {
@@ -668,6 +659,21 @@ impl Project {
         let result = writes(self.modules[&r.file].tree.root_node(), source, name);
         self.write_cache.borrow_mut().insert(key, result);
         result
+    }
+    pub fn dependency_closure(&self, file: &str) -> std::collections::BTreeSet<String> {
+        let mut pending = vec![file.to_string()];
+        let mut reachable = std::collections::BTreeSet::new();
+        while let Some(file) = pending.pop() {
+            if !reachable.insert(file.clone()) {
+                continue;
+            }
+            for ((source, _, _), target) in &self.dependencies {
+                if source == &file {
+                    pending.push(target.clone());
+                }
+            }
+        }
+        reachable
     }
     pub fn context(&self, file: &str) -> Vec<(String, String)> {
         self.imports(file)

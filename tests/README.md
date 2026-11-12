@@ -137,35 +137,21 @@ array registrations using `for...of` or `forEach`, static template titles and
 unnamed suites are collected without executing JavaScript. Parameter values stay
 part of checkpoint identity. Runtime-generated inventories remain explicit native
 collection diagnostics; `assessment.analysis.collectionComplete` reports this.
-Rust follows local and installed dependency imports, re-exports, JSON data, recursive
-helpers, inherited page objects, fixture dependencies, hooks and bounded loops,
-then assigns versioned operation points from
-[`points.rs`](../branching/planner/src/points.rs). No per-test weight callbacks or
-runtime calibration are required. Fixture setup and shared test steps are assessed
-together; worker setup and fixture teardown are excluded from reusable work.
+Rust resolves local and installed dependencies, fingerprints source and finds
+shared prefixes without executing project code. Use a source root containing the
+tests, helpers and installed dependencies. Deterministic collection and restoration
+checks remain separate from duration prediction.
 
-Use a source root containing the tests, their helpers and installed `node_modules`
-for dependency analysis. Reached dependency files and package metadata participate
-in source validation; unrelated packages are not scanned. Missing dependencies
-are reported explicitly. The analyzer reads source without executing imported code.
+Duration estimates come only from the pinned ML model. Use
+`./bin/plan-branching --evaluate SOURCE_ROOT` to retain forecasts and model/domain
+warnings without authorizing execution. The model forecasts each test and prefix
+segment, including inputs outside its training domain. Qualification and domain
+matching are reported separately and remain prerequisites for checkpoint execution.
+There is no operation-point estimator or handwritten call-cost override. See
+[branching estimation](../docs/branching-estimation.md) for the timing boundaries.
 
-Manifests expose approximate and minimum/maximum statement estimates, structured issues and the
-source cost plan under `assessment`. `analysisComplete` means the analyzer could
-model the statement; `complete` means its modeled cost is exact. The CLI and
-`assessment.analysis` summarize statements, fixtures and worker setup separately.
-AUTO uses `estimatedPoints`, with estimated operation counts, confidence and
-explicit assumptions. Runtime-dependent branches retain their bounds but no longer
-lose all estimated benefit just because an exact count is unavailable. Defaults in
-[`estimation.json`](../branching/planner/src/estimation.json) assume equal-probability
-branches, three unknown loop iterations, and small/medium/large request-payload
-bands. Payload bands approximate request work; they do not count the database
-queries hidden behind an API. Unresolved calls receive no invented cost, and
-unmeasured overlapping work receives no sequential saving credit.
-Candidate diagnostics distinguish estimated savings from variable and shared
-checkpoint costs. These are
-static forecasts of framework operations, not measured test durations or arbitrary
-JavaScript CPU costs. A profitable source prefix still needs a supported execution boundary:
-cost analysis does not restore arbitrary JavaScript closures or process state.
+A profitable predicted prefix still needs a supported execution boundary:
+ML inference does not restore arbitrary JavaScript closures or process state.
 AUTO can restore test-scoped `test.extend` fixtures with a standalone `await use(value)`
 boundary (including a direct `try { await use(value); } finally { … }`). Rust follows helper imports and fixture dependencies and emits setup and
 teardown continuations. The Playwright runner saves fixture values and live teardown

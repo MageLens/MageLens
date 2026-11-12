@@ -74,7 +74,7 @@ test('Rust AUTO restores real fixture frames through checkpoint inventory and la
     const {buildWorkflow}=require('../branching/automatic.cjs');
     const {execute}=require('../branching/engine.cjs');
     const {FixtureProvider}=require('./fixtures/branching/provider.cjs');
-    const root=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-fixture-continuation-');
+    const root=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-fixture-continuation-',{model:require('./fixtures/branching/predictor.cjs').model()});
     const source=path.join(root,'source');fs.mkdirSync(source);
     fs.writeFileSync(path.join(source,'journey.spec.ts'),`import {test as base} from '@playwright/test';
         async function prepare(page){for(let i=0;i<500;i++)await page.goto('/prepare');}

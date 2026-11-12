@@ -21,13 +21,15 @@ function describe(root, kind) {
     if (!adapter) {
         files.push(...['Dockerfile', '.dockerignore', 'Cargo.toml', 'Cargo.lock'].map(file => `branching/planner/${file}`));
         visit('branching/planner/src'); visit('branching/planner/tests');
+        files.push('branching/build-orchestrator.sh','package.json','package-lock.json','branching-baseline.json','branching/estimation.cjs');
+        files.push(...fs.readdirSync(path.join(root,'branching/predictor')).filter(f=>f.endsWith('.cjs')).map(f=>'branching/predictor/'+f));
     } else files.push('branching/runners/index.cjs', 'branching/build-runner.sh', 'bin/sync-dependencies.cjs',
         'bin/sync-runner-dependencies', `${adapter.context}/Dockerfile`);
     const hash = createHash('sha256').update(kind + '\0');
     for (const file of files.sort()) hash.update(file + '\0').update(fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')).update('\0');
     const baseInputs = adapter ? releaseImages.inputs(root, adapter.baseImage) : null;
     if (adapter) hash.update(baseInputs).update(JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).version);
-    return {kind, fingerprint: hash.digest('hex'), image: adapter?.image ?? 'orchestrator', context: adapter?.context ?? 'branching/planner', baseInputs};
+    return {kind, fingerprint: hash.digest('hex'), image: adapter?.image ?? 'orchestrator', context: adapter?.context ?? '.', baseInputs};
 }
 async function base(root, runner) {
     const adapter = descriptor(runner);

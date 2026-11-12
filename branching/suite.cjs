@@ -56,6 +56,7 @@ function validateNative(report, expected) {
 }
 async function collectAssessed(manifest, project, directory, runner) {
     verifySources(manifest);
+    require('./estimation.cjs').assertExecutable(manifest);
     if (!project.native?.config) throw new EstimationError([{phase: 'native-collection', message: 'A native runner configuration is required to assess the complete inventory and lifecycle'}]);
     let inventory;
     try { inventory = await runner.collect(project.native.config, directory); }
@@ -102,7 +103,7 @@ async function runSuite(options) {
         validateNative(result, tests ?? inventory.tests); phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
     if (!checkpoint.length) {
-        report.selectionReason = decision ? 'Static cost model selected native execution for the complete suite.' : 'No qualified split; execute the complete native suite.';
+        report.selectionReason = decision ? 'ML duration model selected native execution for the complete suite.' : 'No qualified split; execute the complete native suite.';
         await native();
     } else {
         if (!groups.setup.length && !independent) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');

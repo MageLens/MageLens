@@ -46,13 +46,14 @@ if [[ "$mode" == 0 ]]; then
     fi
     exit 1
 fi
-build_args=()
-if [[ "$kind" != orchestrator ]]; then
+if [[ "$kind" == orchestrator ]]; then
+    bash branching/build-orchestrator.sh "$image" "$fingerprint" >&2
+else
     base="magelens-$package-base:inputs-$fingerprint-$architecture"
     bash branching/build-runner.sh "$kind" "$base" "$fingerprint" >&2
-    build_args=(--build-arg "RUNNER_IMAGE=$base")
+    docker build --quiet --tag "$image" --label "org.magelens.inputs=$fingerprint" \
+        --label 'org.opencontainers.image.source=https://github.com/MageLens/MageLens' \
+        --build-arg "RUNNER_IMAGE=$base" "$context" >/dev/null
 fi
-docker build --quiet --tag "$image" --label "org.magelens.inputs=$fingerprint" \
-    --label 'org.opencontainers.image.source=https://github.com/MageLens/MageLens' "${build_args[@]}" "$context" >/dev/null
 verify "$image"
 printf '%s\n' "$image"

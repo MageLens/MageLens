@@ -27,14 +27,14 @@ function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime
     const withinLimit = set => paths.every(path => path.filter(node => set.has(node.id)).length <= maxCheckpointsPerTest);
     let chosen = candidates;
     if (!withinLimit(chosen)) {
-        // Prefer marginal repeated work saved, not raw depth. Unknown manual
-        // stages use one structural unit; AUTO never treats unknowns as free.
+        // Prefer marginal repeated work saved, not raw depth. Manual graphs without durations use deterministic structural order;
+        // AUTO requires ML predictions before reaching execution.
         const work = set => {
             const available = new Set(); let total = 0;
             for (const path of paths) {
                 const last = path.findLastIndex(node => available.has(node.id));
                 for (const node of path.slice(last + 1)) {
-                    total += Number.isSafeInteger(node.actionUnits) && node.actionUnits >= 0 ? node.actionUnits : 1;
+                    total += Number.isSafeInteger(node.estimatedMs) && node.estimatedMs >= 0 ? node.estimatedMs : 0;
                     if (set.has(node.id)) available.add(node.id);
                 }
             }

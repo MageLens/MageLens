@@ -25,8 +25,6 @@ function compileFragment(parameters, code) {
 function verifySources(manifest) {
     require('./estimation.cjs').assertAssessed(manifest);
     try {
-        if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
-            throw new Error('Outdated source point scale; replan before execution');
         const root = fs.realpathSync(manifest.root);
         for (const source of manifest.sources) {
             const file = path.resolve(root, source.path);
@@ -40,6 +38,7 @@ function verifySources(manifest) {
 
 function buildWorkflow(manifest, configuration, selected) {
     verifySources(manifest);
+    require('./estimation.cjs').assertExecutable(manifest);
     if (!configuration.identity || typeof configuration.state !== 'function' || typeof configuration.assertCheckpoint !== 'function') {
         throw new Error('Automatic runs require identity, state(runtime) and assertCheckpoint(runtime, checkpoint) in the project configuration');
     }
@@ -86,23 +85,17 @@ function buildWorkflow(manifest, configuration, selected) {
     };
     const roots = new Map();
     const stages = [];
-    const units = value => {
-        if (value == null) return null;
-        if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid static action units');
-        return value;
-    };
-    const prefixUnits = (test, from, to) => {
-        const counts = test.steps.slice(from, to).map(s => manifest.implementation === 'rust-prefix-v2'
-            ? units(s.estimate?.estimatedPoints) : units(s.actionUnits));
-        return counts.some(n=>n === null) ? null : units(counts.reduce((a,b)=>a+b, 0));
+    const predictions = manifest.assessment.stages;
+    const duration = id => {
+        const value = predictions[id]?.prediction?.ms;
+        if (!Number.isFinite(value) || value < 0) throw new Error(`Missing ML stage prediction: ${id}`);
+        return Math.ceil(value);
     };
     const rootFor = test => {
         if (!roots.has(test.scope)) {
             const id = `root-${test.scope.slice(0, 20)}`; roots.set(test.scope, id);
             stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
-                actionUnits: manifest.implementation === 'rust-prefix-v2'
-                    ? units(test.fixtureEstimate?.estimatedPoints)
-                    : adapter?.prepare ? null : 0,
+                estimatedMs: duration(id),
                 run: async runtime => { if(test.restoration&&!adapter)await fixtureState.prepare(test,runtime);else await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
         }
         return roots.get(test.scope);
@@ -114,7 +107,7 @@ function buildWorkflow(manifest, configuration, selected) {
         const boundary = test.steps[checkpoint.depth - 1];
         stages.push({id: checkpoint.id, label: checkpoint.label ?? `Shared prefix · ${checkpoint.depth} steps`,
             source: {file: test.file, line: boundary?.line ?? test.line}, parent: parent?.id ?? rootFor(test),
-            actionUnits: prefixUnits(test, parent?.depth ?? 0, checkpoint.depth),
+            estimatedMs: duration(checkpoint.id),
             inputs: {checkpoint, source: manifest.sourceDigest},
             run: runtime => execute(test, parent?.depth ?? 0, checkpoint.depth, runtime),
             assert: runtime => configuration.assertCheckpoint(runtime, checkpoint)});

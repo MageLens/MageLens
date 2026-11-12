@@ -20,7 +20,7 @@ test('fresh projects use fixed defaults with double overhead and an added twenty
     const {store}=fixture(t),loaded=store.load();
     assert.equal(loaded.source,'default');assert.equal(loaded.baseline.overheadMultiplier,2);
     assert.equal(loaded.baseline.overheadMargin,.2);
-    assert.ok(loaded.baseline.unitMs>0);assert.equal(fs.existsSync(store.file),false);
+    assert.ok(loaded.baseline.captureMs>0);assert.equal(fs.existsSync(store.file),false);
 });
 test('successful runs learn weighted operation averages for subsequent runs without changing the current plan',t=>{
     const {store}=fixture(t),before=store.load();
@@ -112,7 +112,6 @@ test('the root decision baseline controls bootstrap costs and calibration report
     const target = root.checkpointDecisionBaselineMs * 2;
     const scaled = baseline.withDecisionBaseline(target);
     assert.ok(Math.abs(baseline.decisionBaselineMs(scaled) - target) < 0.001);
-    assert.equal(scaled.unitMs, baseline.defaults.unitMs);
     for (const value of [NaN, Infinity, -1, 0, '125000', baseline.defaults.minSavingMs])
         assert.throws(() => baseline.withDecisionBaseline(value), /decision baseline/);
     const {store} = fixture(t);

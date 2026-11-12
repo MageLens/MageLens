@@ -27,8 +27,10 @@ durations afterward. Existing model schemas remain supported.
 
 The model is evaluation-only: it has not passed independent qualification and
 does not control checkpoint decisions. Strict inference rejects an unqualified
-model. The existing source assessor continues to control planning. Packaging a
-model does not automatically select it for native-runner profiling.
+model. The planner uses this model for duration evaluation while deterministic source
+analysis detects repeated work. The old operation-point estimator has been removed.
+Checkpoint decisions require qualified prefix predictions; the packaged whole-test
+model forecasts those fragments with an explicit unvalidated-domain warning. Native-runner profiling still requires explicit selection.
 
 ## Next: test the prototype on a real project
 
@@ -68,9 +70,9 @@ model does not automatically select it for native-runner profiling.
 - Measure exact checkpoint-prefix boundaries and validate restoration eligibility
   separately. Whole-test durations are not prefix labels and cannot authorize
   checkpoint placement.
-- Integrate only qualified predictions into pre-run assessment, preserving
-  fail-closed errors for unsupported boundaries, missing inputs and out-of-range
-  workloads. Calibration updates affect future runs, never the current forecast.
+- Forecast every valid input during pre-run assessment and report domain transfer
+  and out-of-range features separately. Require qualification for checkpoint
+  execution; invalid model or source inputs still fail explicitly. Calibration updates affect future runs, never the current forecast.
 - Run a controlled linear-versus-branching comparison on the isolated project
   only when checkpoint eligibility and model qualification are established. Match
   data, source inventory, configuration and browser; report setup, test time,

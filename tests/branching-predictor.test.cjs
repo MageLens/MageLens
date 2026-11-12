@@ -330,14 +330,14 @@ test('Cypress preparation time is charged once per spec and kept separate from t
 });
 
 
-test('timing boundary revisions reject old models even for shadow forecasts', t => {
+test('timing boundary revisions retain forecasts and mark domain transfer', t => {
     const {loaded}=model(t), input=request();
     const snapshot=p.prepare({...input,timingBoundary:'native-work/v2'},loaded);
-    assert.equal(snapshot.prediction,null);assert.equal(snapshot.predictionError.code,'ESTIMATION_FAILED');
+    assert.ok(snapshot.prediction.ms>0);assert.equal(snapshot.prediction.domainMatched,false);assert.equal(snapshot.prediction.executionEligible,false);assert.equal(snapshot.predictionError,null);
     assert.throws(()=>p.predict(snapshot,loaded,{shadow:true}),e=>e.statusCode===500&&e.issues[0].message.includes('timing boundary'));
     loaded.model.domains[0].timingBoundary='native-work/v2';
     assert.ok(p.prepare({...input,timingBoundary:'native-work/v2'},loaded).prediction);
-    assert.equal(p.prepare(input,loaded).prediction,null);
+    assert.equal(p.prepare(input,loaded).prediction.domainMatched,false);
     assert.throws(()=>p.prepare({...input,timingBoundary:{}},loaded),e=>e.statusCode===500);
 });
 
