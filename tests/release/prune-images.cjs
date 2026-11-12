@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
+const {isDeepStrictEqual} = require('node:util');
 const {execFileSync} = require('node:child_process');
 const {
     kinds, digestPattern, releaseTagPattern, validateManifest, platformImages,
@@ -113,9 +114,19 @@ function pendingRetirement(api, release, asset, manifest, now) {
 function interruptedRetirement(api, release, now) {
     const staged = release.assets?.find(a => a.name === expirationAssetName);
     const backups = release.assets?.filter(a => a.name.startsWith('images-retired-')) || [];
-    if (!staged || backups.length !== 1) return null;
-    const asset = backups[0];
-    assert.equal(asset.name, retiredAssetName(asset.id), 'Invalid retired manifest backup name');
+    if (!staged || !backups.length) return null;
+    const expired = readReleaseManifest(api, release, staged);
+    // Audit backups survive republishing. Only a unique content match can
+    // establish which active manifest the staged retirement replaced.
+    const matches = backups.filter(asset => {
+        assert.equal(asset.name, retiredAssetName(asset.id), 'Invalid retired manifest backup name');
+        const manifest = readReleaseManifest(api, release, asset);
+        const expected = {...manifest, expired: true};
+        if (expired.expiredAt !== undefined) expected.expiredAt = expired.expiredAt;
+        return isDeepStrictEqual(expired, expected);
+    });
+    assert.equal(matches.length, 1, 'Staged expiration must match exactly one retired manifest backup');
+    const asset = matches[0];
     const manifest = readReleaseManifest(api, release, asset);
     const plan = pendingRetirement(api, release, asset, manifest, now);
     return {...plan, canonicalMissing: true};

@@ -508,7 +508,40 @@ test('an interrupted second rename resumes the original retirement and observes 
     assert.equal(api.calls.filter(args => args.includes('PATCH') && args.at(-1).endsWith('/assets/101')).length, 1);
 });
 
+test('retire, republish and interrupted retirement recover while preserving the older audit backup', () => {
+    const fixture = retentionFixture();
+    const first = mockApi(fixture);
+    prune(first.execute, {now});
+    // The publisher replaces the canonical asset while retaining audit backups.
+    fixture.releases[0] = first.release('v2.0.1');
+    fixture.releases[0].assets = fixture.releases[0].assets.filter(a => a.name !== manifestFilename);
+    fixture.releases[0].assets.push({id: 20001, name: manifestFilename});
+    fixture.assets[20001] = structuredClone(fixture.assets[101]);
+    fixture.assets[20001].platforms['linux/arm64'].php.inputs = '0'.repeat(64);
+    const api = mockApi({...fixture, failSecondRenameOnce: true});
+    const retiredAt = now + 1;
+    assert.throws(() => prune(api.execute, {now: retiredAt}), /HTTP 503/);
+    assertDeletions(api.calls, []);
+    assert.deepEqual(api.release('v2.0.1').assets.map(a => a.name).sort(), [
+        'images-expired.json', 'images-retired-101.json', 'images-retired-20001.json'
+    ]);
+    prune(api.execute, {now: retiredAt + 1});
+    const release = api.release('v2.0.1');
+    const canonical = release.assets.find(a => a.name === manifestFilename);
+    assert.deepEqual(api.asset(canonical.id), {...fixture.assets[20001], expired: true, expiredAt: new Date(retiredAt).toISOString()});
+    for (const id of [101, 20001]) {
+        assert.ok(release.assets.some(a => a.id === id && a.name === `images-retired-${id}.json`));
+        assert.deepEqual(api.asset(id), fixture.assets[id]);
+    }
+    assertDeletions(api.calls, [999]);
+    assert.equal(api.calls.filter(args => args.includes('POST')).length, 1);
+});
+
 const interruptedFailures = {
+    'ambiguous backups': fixture => {
+        fixture.releases[0].assets.push({id: 10201, name: 'images-retired-10201.json'});
+        fixture.assets[10201] = structuredClone(fixture.assets[101]);
+    },
     'missing backup': fixture => {fixture.releases[0].assets.shift();},
     'missing stage': fixture => {fixture.releases[0].assets.pop();},
     'wrong backup name': fixture => {fixture.releases[0].assets[0].name = 'images-retired-999.json';},
