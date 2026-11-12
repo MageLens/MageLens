@@ -8,8 +8,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const {inputs, kinds, select, resolve, validateManifest, repositoryUrl, imageRegistry, platforms, manifestFilename} = require('../bin/image-inputs.cjs');
+const {
+    inputs, kinds, select, resolve, validateManifest, confirmExpiration,
+    repositoryUrl, imageRegistry, platforms, manifestFilename, expirationProtocol
+} = require('../bin/image-inputs.cjs');
 const {synchronize} = require('../docker/runner/sync-node-modules.cjs');
+const {retentionFixture} = require('./release/image-fixtures.cjs');
 const root = path.join(__dirname, '..');
 const immutableImagePattern = /^ghcr\.io\/magelens\/[a-z-]+@sha256:[a-f0-9]{64}$/;
 const sourcePhpBuildPattern = /source-php/;
@@ -121,9 +125,33 @@ function prepareFixture(t) {
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify(args) + '\\n');
-const selected = JSON.parse(process.env.MOCK_SELECTION);
+async function main() {
+let selected = JSON.parse(process.env.MOCK_SELECTION);
 if (args[0] === 'info') console.log(process.env.MOCK_ARCH || 'linux/x86_64');
-if (args.includes('resolve')) fs.writeFileSync('.runtime/prebuilt-images.json', JSON.stringify(selected));
+if (args.includes('resolve') || args.includes('confirm-expiration')) {
+    if (process.env.MOCK_MANIFEST_FILE) {
+        const resolver = require(process.cwd() + '/bin/image-inputs.cjs');
+        const request = async (url, options) => {
+            fs.appendFileSync(process.env.MOCK_LOG, JSON.stringify({lookup: url, cache: options.cache}) + '\\n');
+            const response = JSON.parse(fs.readFileSync(process.env.MOCK_MANIFEST_FILE));
+            if (response.error) throw new Error(response.error);
+            return {status: response.status, ok: response.status === 200, json: async () => response.manifest};
+        };
+        const env = {...process.env, MAGELENS_IMAGE_PLATFORM: process.env.MOCK_ARCH || 'linux/amd64'};
+        const action = args.includes('resolve') ? resolver.resolve : resolver.confirmExpiration;
+        selected = await action(process.cwd(), env, request);
+    }
+    fs.writeFileSync('.runtime/prebuilt-images.json', JSON.stringify(selected));
+    if (args.includes('resolve') && process.env.MOCK_AFTER_RESOLVE) require(process.env.MOCK_AFTER_RESOLVE).retireDuringInstallation();
+}
+if (fs.existsSync('.runtime/prebuilt-images.json')) selected = JSON.parse(fs.readFileSync('.runtime/prebuilt-images.json'));
+if (args[0] === 'pull' && process.env.MOCK_REGISTRY_FILE) {
+    const images = JSON.parse(fs.readFileSync(process.env.MOCK_REGISTRY_FILE));
+    if (!images.includes(args[1])) {
+        console.error(process.env.MOCK_PULL_ERROR || 'Error response from daemon: manifest unknown');
+        process.exit(Number(process.env.MOCK_PULL_STATUS || 1));
+    }
+}
 if (args.includes('/images.json') || args.some(arg => arg.includes('require("/images.json")'))) {
     const data = JSON.parse(fs.readFileSync('.runtime/prebuilt-images.json'));
     console.log(data[args.at(-2)]?.[args.at(-1)] || '');
@@ -133,10 +161,15 @@ if (args[0] === 'image' && args[1] === 'inspect') {
     console.log(process.env.MOCK_BAD_LABEL === '1' ? 'stale' : entry.inputs);
 }
 if (args.some(arg => arg.includes('verifyInstalled')) && process.env.MOCK_BAD_CYPRESS === '1') process.exit(3);
+}
+main().catch(error => {console.error(error.message); process.exitCode = 1;});
 `, {mode: 0o755});
+    // Backoff timing is covered by the download tests; keep pull-failure fixtures deterministic.
+    fs.writeFileSync(path.join(directory, 'commands/sleep'), '#!/bin/sh\nexit 0\n', {mode: 0o755});
     const log = path.join(directory, 'calls');
     return {directory, run: (mode = '0', extra = {}, selected = select(root, candidate(), 'linux/amd64', 'cypress')) => {
         fs.writeFileSync(log, '');
+        fs.writeFileSync(path.join(directory, '.runtime/install-profile'), `luma ${extra.MAGELENS_RUNNER || 'cypress'} mageos\n`);
         const result = spawnSync('bash', ['bin/prepare-images', 'fixture:node', mode], {cwd: directory, encoding: 'utf8', env: {
             ...process.env, COMPOSE_PROJECT_NAME: 'image-test',
             PATH: `${directory}/commands:${process.env.PATH}`, MOCK_LOG: log, MOCK_SELECTION: JSON.stringify(selected), ...extra
@@ -223,6 +256,106 @@ test('intentional expiration selects source builds through the installer on both
         assert.match(result.calls, sourcePhpBuildPattern);
         assert.match(result.calls, sourceRunnerBuildPattern);
         assert.doesNotMatch(result.calls, prebuiltPullPattern);
+    }
+});
+
+function installationRetirementFixture(t) {
+    const {directory, run} = prepareFixture(t);
+    for (const file of ['.dockerignore', 'docker', 'bin/image-inputs.cjs']) {
+        fs.cpSync(path.join(root, file), path.join(directory, file), {recursive: true});
+    }
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({version: '2.0.1'}));
+    const fixture = retentionFixture();
+    const active = fixture.assets[101];
+    for (const platform of platforms) for (const kind of kinds) active.platforms[platform][kind].inputs = inputs(directory, kind);
+    const files = Object.fromEntries(['manifest', 'registry', 'fixture', 'result'].map(name => [name, path.join(directory, `${name}.json`)]));
+    fs.writeFileSync(files.manifest, JSON.stringify({status: 200, manifest: active}));
+    fs.writeFileSync(files.registry, JSON.stringify(kinds.flatMap(kind => fixture.inventories[kind].map(image => `${imageRegistry}/${kind}@${image.name}`))));
+    fs.writeFileSync(files.fixture, JSON.stringify(fixture));
+    return {
+        directory, active,
+        run: (extra = {}) => run('0', {
+            MOCK_MANIFEST_FILE: files.manifest, MOCK_REGISTRY_FILE: files.registry,
+            MOCK_RETIREMENT_FIXTURE: files.fixture, MOCK_RETIREMENT_RESULT: files.result,
+            MOCK_AFTER_RESOLVE: require.resolve('./release/image-fixtures.cjs'), ...extra
+        }),
+        retirement: () => JSON.parse(fs.readFileSync(files.result))
+    };
+}
+
+test('installation paused after resolution recovers after real retirement and image deletion', t => {
+    for (const platform of platforms) for (const runner of ['cypress', 'playwright']) {
+        const fixture = installationRetirementFixture(t);
+        const digest = fixture.active.platforms[platform].php.digest;
+        const missingImageError = platform === 'linux/arm64'
+            ? `failed to resolve reference "${imageRegistry}/php@${digest}": not found`
+            : 'Error response from daemon: manifest unknown';
+        const result = fixture.run({MOCK_ARCH: platform, MAGELENS_RUNNER: runner, MOCK_PULL_ERROR: missingImageError});
+        assert.equal(result.status, 0, result.stderr);
+        const retirement = fixture.retirement();
+        for (const kind of ['php', `runner-${runner}`]) {
+            assert.equal(retirement.selectedBeforeRetirement[kind].digest, fixture.active.platforms[platform][kind].digest);
+        }
+        assert.equal(retirement.gracePreserved, true);
+        assert.equal(retirement.removed, true);
+        assert.equal(retirement.retired.expired, true);
+        assert.match(result.calls, /"confirm-expiration"/);
+        assert.match(result.calls, sourcePhpBuildPattern);
+        assert.match(result.calls, sourceRunnerBuildPattern);
+        assert.doesNotMatch(result.calls, /verifyInstalled|"image","inspect"/);
+        assert.equal(fs.existsSync(path.join(fixture.directory, '.runtime/compose.images.yaml')), false);
+        const lookups = result.calls.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        assert.equal(lookups.length, 2, 'Initial resolution and expiration confirmation must both fetch the canonical manifest');
+        for (const lookup of lookups) {
+            assert.equal(lookup.lookup, `${repositoryUrl}/releases/download/v2.0.1/${manifestFilename}`);
+            assert.equal(lookup.cache, 'no-store');
+        }
+        assert.ok(result.calls.indexOf('retirement-completed') < result.calls.indexOf('["pull"'));
+    }
+});
+
+test('a missing selected image requires validated intentional expiration before source fallback', t => {
+    for (const confirmation of ['active', 'wrong version', 'malformed', 'provenance', '403', '404', '503', 'network']) {
+        const fixture = installationRetirementFixture(t);
+        const result = fixture.run({MOCK_CONFIRMATION: confirmation});
+        assert.notEqual(result.status, 0, confirmation);
+        assert.equal(fixture.retirement().removed, true);
+        assert.match(result.calls, /"confirm-expiration"/);
+        assert.doesNotMatch(result.calls, /source-php|"build"/);
+    }
+});
+
+test('registry authorization and network failures remain errors even after intentional retirement', t => {
+    for (const error of [
+        'unauthorized: authentication required', 'denied', 'forbidden', 'HTTP 403', 'HTTP 401',
+        'manifest unknown: unauthorized', 'manifest unknown: HTTP 403',
+        'dial tcp: network unavailable', 'TLS handshake timeout'
+    ]) {
+        const fixture = installationRetirementFixture(t);
+        const result = fixture.run({MOCK_PULL_ERROR: error});
+        assert.notEqual(result.status, 0, error);
+        assert.doesNotMatch(result.calls, /"confirm-expiration"|source-php|"build"/);
+    }
+});
+
+test('interrupted pulls do not re-fetch manifests or begin source builds', t => {
+    for (const status of [130, 143]) {
+        const fixture = installationRetirementFixture(t);
+        const result = fixture.run({MOCK_PULL_STATUS: String(status)});
+        assert.equal(result.status, status);
+        assert.doesNotMatch(result.calls, /"confirm-expiration"|source-php|"build"/);
+        assert.equal(result.calls.split('\n').filter(line => line.startsWith('["pull"')).length, 1);
+    }
+});
+
+test('expiration confirmation rejects invalid retirement metadata', async () => {
+    const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
+    const {version} = require('../package.json');
+    for (const expiredAt of [undefined, 'not a timestamp', '2026-02-30T00:00:00Z']) {
+        await assert.rejects(confirmExpiration(root, env, async () => ({
+            status: 200, ok: true,
+            json: async () => ({schema: 1, version, expired: true, expirationProtocol, expiredAt})
+        })), /retirement time/);
     }
 });
 

@@ -8,30 +8,23 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const {kinds, inputs, platforms, resolve, repository, repositoryUrl, manifestFilename} = require('../bin/image-inputs.cjs');
+const {kinds, inputs, platforms, resolve, repository, repositoryUrl, manifestFilename, expirationProtocol} = require('../bin/image-inputs.cjs');
 const {manifest} = require('./release/images.cjs');
-const {obsoleteVersions, prune} = require('./release/prune-images.cjs');
-const digest = letter => 'sha256:' + letter.repeat(64);
-const root = path.join(__dirname, '..');
-const now = Date.parse('2026-06-01T00:00:00Z');
-const oldImage = (id, name) => ({id, name, created_at: '2025-01-01T00:00:00Z'});
-const dayMs = 24 * 60 * 60 * 1000;
-const releasesEndpoint = `repos/${repository}/releases`;
-const packagesEndpoint = `orgs/${repository.split('/')[0]}/packages/container`;
+const {obsoleteVersions, prune, RETIREMENT_GRACE_PERIOD_MS} = require('./release/prune-images.cjs');
+const {
+    digest, root, now, oldImage, dayMs, releasesEndpoint, packagesEndpoint,
+    packageKind, published, retentionFixture, mockApi
+} = require('./release/image-fixtures.cjs');
 const expirationApiErrorPattern = /failed \(HTTP (403|503)\)/;
 const expirationVerificationErrorPattern = /Expiration|Expired/;
 const deleteRequests = calls => calls.filter(args => args.includes('DELETE'));
 const mutations = calls => calls.filter(args => args.some(arg => ['DELETE', 'POST', 'PATCH'].includes(arg)));
-const packageKind = endpoint => endpoint.slice(`${packagesEndpoint}/`.length).split('/')[0];
 
 function assertDeletions(calls, ids, packages = kinds) {
     const actual = deleteRequests(calls).map(args => args.at(-1)).sort();
     const expected = packages.flatMap(kind => ids.map(id => `${packagesEndpoint}/${kind}/versions/${id}`)).sort();
     assert.deepEqual(actual, expected);
 }
-const published = {schema: 1, platform: 'linux/amd64', version: require('../package.json').version,
-    images: Object.fromEntries(kinds.map(kind => [kind, {inputs: inputs(root, kind), digest: digest('a')}]))};
-
 test('retention keeps the published digest even when a newer failed candidate exists', () => {
     assert.deepEqual(obsoleteVersions([oldImage(1, digest('0')), oldImage(2, digest('a')), oldImage(3, digest('b'))], digest('a'), digest('a'), {now}), [1, 3]);
     assert.throws(() => obsoleteVersions([{id: 1, name: digest('b')}], digest('a')), /Published image missing/);
@@ -70,85 +63,6 @@ test('image builder keeps publication restricted to the configured repository an
         assert.equal(fs.existsSync(log), allowed, 'Rejected publication must stop before Docker');
     }
 });
-function retentionFixture({count = 6, ageDays = i => (count + 1 - i) * 30} = {}) {
-    const releases = [], assets = {}, inventories = Object.fromEntries(kinds.map(kind => [kind, []]));
-    for (let i = 1; i <= count; i++) {
-        const version = `2.0.${i}`;
-        const published_at = new Date(now - ageDays(i) * dayMs).toISOString();
-        releases.push({id: i, tag_name: `v${version}`, published_at, assets: [{id: 100 + i, name: manifestFilename}]});
-        const entries = Object.fromEntries(platforms.map((platform, p) => [platform, Object.fromEntries(kinds.map(kind => {
-            const entry = {inputs: published.images[kind].inputs, digest: digest((i * 2 + p).toString(16))};
-            inventories[kind].push(oldImage(i * 10 + p, entry.digest));
-            return [kind, entry];
-        }))]));
-        assets[100 + i] = {schema: 1, version, platform: 'linux/amd64', images: entries['linux/amd64'], platforms: entries};
-    }
-    for (const kind of kinds) inventories[kind].push(oldImage(999, digest('0')));
-    return {releases, assets, inventories, expirationCapable: true,
-        packageVersions: endpoint => [inventories[packageKind(endpoint)]]};
-}
-
-function mockApi(overrides = {}) {
-    const calls = [];
-    const release = {id: 1, tag_name: `v${published.version}`, published_at: overrides.published_at || '2026-06-01T00:00:00Z', assets: [{id: 123, name: manifestFilename}]};
-    const releases = structuredClone(overrides.releases || (overrides.noManifest ? [] : [release, ...(overrides.historicalReleases || [])]));
-    const assets = structuredClone(overrides.assets || {});
-    const execute = (args, input) => {
-        calls.push(args);
-        if (args.includes('DELETE')) return '';
-        const endpoint = args.at(-1);
-        if (args.includes('POST')) {
-            if (overrides.uploadFailure) throw new Error('Expiration upload failed (HTTP 403)');
-            const releaseId = Number(new URL(endpoint).pathname.split('/').at(-2));
-            const target = releases.find(r => r.id === releaseId);
-            assert.ok(target, 'Expiration must target the correct release ID');
-            const asset = {id: 10000 + releaseId, name: 'images-expired.json'};
-            assets[asset.id] = JSON.parse(input);
-            target.assets.push(asset);
-            return JSON.stringify(asset);
-        }
-        if (args.includes('PATCH')) {
-            if (overrides.renameFailure) throw new Error('Expiration rename failed (HTTP 403)');
-            const assetId = Number(endpoint.split('/').at(-1));
-            const asset = releases.flatMap(r => r.assets).find(a => a.id === assetId);
-            asset.name = args.find(arg => arg.startsWith('name=')).slice(5);
-            return JSON.stringify(asset);
-        }
-        if (endpoint.includes('/contents/')) {
-            if (overrides.sourceFailure) throw new Error('Installer lookup failed (HTTP 503)');
-            const file = endpoint.split('/contents/')[1].split('?')[0];
-            return overrides.expirationCapable ? fs.readFileSync(path.join(root, file), 'utf8') : 'historical installer without expiration support';
-        }
-        if (endpoint.includes('/releases/tags/')) {
-            if (overrides.readbackFailure) throw new Error('Expiration readback failed (HTTP 503)');
-            return JSON.stringify(releases.find(r => r.tag_name === endpoint.split('/').at(-1)));
-        }
-        if (endpoint.endsWith('/releases/latest')) {
-            return JSON.stringify({tag_name: overrides.latestTag || [...releases].sort((a, b) => Date.parse(b.published_at || 0) - Date.parse(a.published_at || 0) || b.tag_name.localeCompare(a.tag_name, undefined, {numeric: true}))[0]?.tag_name});
-        }
-        if (endpoint.includes('/releases?')) {
-            if (overrides.networkFailure) throw new Error('Network unavailable');
-            return JSON.stringify([releases]);
-        }
-        if (endpoint.includes('/releases/assets/')) {
-            if (overrides.assetFailure) throw new Error('Asset download failed');
-            const assetId = Number(endpoint.split('/').at(-1));
-            if (overrides.failedAsset === assetId) throw new Error('Asset download failed (HTTP 503)');
-            const data = assets[assetId] || published;
-            return typeof data === 'string' ? data : JSON.stringify(data);
-        }
-        if (endpoint.includes('/versions?')) {
-            if (overrides.packageVersions) return JSON.stringify(overrides.packageVersions(endpoint));
-            return JSON.stringify([[oldImage(1, overrides.missingLatest ? digest('c') : digest('a'))], [oldImage(2, digest('b')), oldImage(3, digest('0'))]]);
-        }
-        return JSON.stringify({repository: {full_name: overrides.otherRepository ? 'Other/Project' : repository}});
-    };
-    return {
-        calls, execute,
-        release: tag => JSON.parse(execute([`${releasesEndpoint}/tags/${tag}`])),
-        asset: id => JSON.parse(execute([`${releasesEndpoint}/assets/${id}`]))
-    };
-}
 test('cleanup paginates all three allowlisted packages and deletes only obsolete versions', () => {
     const {calls, execute} = mockApi();
     prune(execute, {now});
@@ -199,7 +113,7 @@ test('release manifest accepts only all six native images from the current commi
         fs.mkdirSync(path.join(directory, platform.split('/')[1]));
         for (const kind of kinds) fs.writeFileSync(path.join(directory, platform.split('/')[1], `${kind}.json`), JSON.stringify({kind, platform, ...published.images[kind], sha: 'candidate', run: '123', attempt: '2'}));
     }
-    assert.deepEqual(manifest(directory, root, env), {schema: 1, platform: 'linux/amd64', images: published.images, version: published.version,
+    assert.deepEqual(manifest(directory, root, env), {schema: 1, expirationProtocol, platform: 'linux/amd64', images: published.images, version: published.version,
         platforms: Object.fromEntries(platforms.map(platform => [platform, published.images]))});
     const arm = path.join(directory, 'arm64/php.json');
     const original = fs.readFileSync(arm);
@@ -317,6 +231,8 @@ test('retention policy preserves all recent releases when more than five release
 test('retention boundaries prune releases beyond top 5 and older than 90 days when safe', () => {
     const api = mockApi(retentionFixture({count: 7}));
     prune(api.execute, {now});
+    assertDeletions(api.calls, [999]);
+    prune(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS});
     // Two expired releases, each with six native images, plus three orphans.
     assertDeletions(api.calls, [10, 11, 20, 21, 999]);
     assert.equal(api.calls.filter(args => args.includes('POST')).length, 2);
@@ -325,6 +241,8 @@ test('retention boundaries prune releases beyond top 5 and older than 90 days wh
 test('explicitly pinned release is retained regardless of age or rank', () => {
     const api = mockApi(retentionFixture({count: 7}));
     prune(api.execute, {now, pinned: ['v2.0.2']});
+    assertDeletions(api.calls, [999]);
+    prune(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS, pinned: ['v2.0.2']});
     assertDeletions(api.calls, [10, 11, 999]);
     assert.equal(api.calls.filter(args => args.includes('POST')).length, 1);
 });
@@ -348,6 +266,7 @@ test('unreferenced candidate images respect the 14-day grace period', () => {
 test('shared digest is never deleted while any protected release references it', () => {
     const fixture = retentionFixture();
     fixture.assets[101].expired = true;
+    fixture.assets[101].expiredAt = new Date(now - RETIREMENT_GRACE_PERIOD_MS).toISOString();
     for (const kind of ['php', 'runner-playwright']) {
         for (const platform of platforms) {
             fixture.assets[106].platforms[platform][kind].digest = fixture.assets[101].platforms[platform][kind].digest;
@@ -361,7 +280,7 @@ test('shared digest is never deleted while any protected release references it',
 });
 
 test('unexpired manifest on an older release preserves its images because safe expiration cannot be established', () => {
-    const api = mockApi({...retentionFixture(), expirationCapable: false});
+    const api = mockApi(retentionFixture({protocol: null}));
     prune(api.execute, {now});
     assertDeletions(api.calls, [999]);
     assert.ok(!api.calls.some(args => args.includes('POST') || args.includes('PATCH')));
@@ -406,6 +325,8 @@ test('real expiration retires an ordinary active manifest, selects source builds
         const selected = await resolve(directory, {MAGELENS_IMAGE_PLATFORM: platform, MAGELENS_RUNNER: runner}, request);
         assert.ok(Object.values(selected).every(entry => entry?.image), 'Ordinary active manifest must select prebuilt images before expiration');
     }
+    prune(api.execute, {now});
+    assertDeletions(api.calls, [999]);
     const retiredAtDeletion = [];
     prune((args, input) => {
         if (args.includes('DELETE')) {
@@ -415,9 +336,9 @@ test('real expiration retires an ordinary active manifest, selects source builds
             retiredAtDeletion.push(api.asset(asset.id));
         }
         return api.execute(args, input);
-    }, {now});
+    }, {now: now + RETIREMENT_GRACE_PERIOD_MS});
     assert.ok(retiredAtDeletion.length > 0);
-    for (const retired of retiredAtDeletion) assert.deepEqual(retired, {...fixture.assets[101], expired: true});
+    for (const retired of retiredAtDeletion) assert.deepEqual(retired, {...fixture.assets[101], expired: true, expiredAt: new Date(now).toISOString()});
     for (const platform of platforms) for (const runner of ['cypress', 'playwright']) {
         assert.deepEqual(await resolve(directory, {MAGELENS_IMAGE_PLATFORM: platform, MAGELENS_RUNNER: runner}, request), {php: null, [`runner-${runner}`]: null});
     }
@@ -429,16 +350,15 @@ test('real expiration retires an ordinary active manifest, selects source builds
     assert.deepEqual(api.asset(backup.id), fixture.assets[101]);
     assert.ok(!api.calls.some(args => args.some(arg => arg.includes('/git/refs'))), 'Historical tags must never change');
     const uploadsBefore = api.calls.filter(args => args.includes('POST')).length;
-    prune(api.execute, {now});
+    prune(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS});
     assert.equal(api.calls.filter(args => args.includes('POST')).length, uploadsBefore, 'Already expired manifests need no replacement');
 });
 
-for (const failure of ['sourceFailure', 'uploadFailure', 'renameFailure', 'readbackFailure']) {
+for (const failure of ['uploadFailure', 'renameFailure', 'readbackFailure']) {
     test(`expiration ${failure} fails distinctly and makes zero DELETE requests`, () => {
         const api = mockApi({...retentionFixture(), [failure]: true});
         assert.throws(() => prune(api.execute, {now}), expirationApiErrorPattern);
         assert.deepEqual(deleteRequests(api.calls), []);
-        if (failure === 'sourceFailure') assert.deepEqual(mutations(api.calls), []);
     });
 }
 
@@ -498,10 +418,10 @@ test('90-day retention boundary preserves an otherwise eligible release until th
     assert.equal(expired.calls.filter(args => args.includes('POST')).length, 1);
 });
 
-for (const file of ['bin/image-inputs.cjs', 'bin/prepare-images']) {
-    test(`unrecognized tagged ${file} preserves historical images without rewriting the manifest`, () => {
-        const api = mockApi(retentionFixture());
-        prune((args, input) => args.at(-1).includes(`/contents/${file}?`) ? 'unrecognized historical implementation' : api.execute(args, input), {now});
+for (const protocol of [null, 2]) {
+    test(`unsupported expiration contract (${protocol}) preserves historical images without rewriting the manifest`, () => {
+        const api = mockApi(retentionFixture({protocol}));
+        prune(api.execute, {now});
         assertDeletions(api.calls, [999]);
         assert.ok(!api.calls.some(args => args.includes('POST') || args.includes('PATCH')));
     });
@@ -540,4 +460,93 @@ test('all exact legacy exceptions retain available digests and never apply to th
         assert.throws(() => prune(latest.execute, {now}), /Published image missing/);
         assert.deepEqual(mutations(latest.calls), []);
     }
+});
+
+test('retirement stays valid after installer revisions and missing images remain mandatory for actual pins', t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-retirement-revision-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    const files = ['bin/image-inputs.cjs', 'bin/prepare-images', 'tests/release/prune-images.cjs', 'tests/release/legacy-missing-images.json'];
+    for (const file of files) {
+        const target = path.join(directory, file);
+        fs.mkdirSync(path.dirname(target), {recursive: true});
+        fs.copyFileSync(path.join(root, file), target);
+    }
+    const cleanupPath = path.join(directory, 'tests/release/prune-images.cjs');
+    const api = mockApi(retentionFixture());
+    const first = require(cleanupPath).prune;
+    first(api.execute, {now});
+    first(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS});
+    assert.ok(!api.versions('php').some(image => image.id === 10), 'The retired digest was actually removed');
+    fs.appendFileSync(path.join(directory, 'bin/prepare-images'), '\n# A later installer revision.\n');
+    fs.appendFileSync(path.join(directory, 'bin/image-inputs.cjs'), '\n// The expiration contract is unchanged.\n');
+    delete require.cache[cleanupPath];
+    delete require.cache[path.join(directory, 'bin/image-inputs.cjs')];
+    api.calls.length = 0;
+    require(cleanupPath).prune(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS + 1});
+    assert.deepEqual(mutations(api.calls), []);
+    assert.throws(() => require(cleanupPath).prune(api.execute, {
+        now: now + RETIREMENT_GRACE_PERIOD_MS + 1, pinned: ['v2.0.1']
+    }), /Published image missing/);
+    assert.deepEqual(mutations(api.calls), []);
+});
+
+test('an interrupted second rename resumes the original retirement and observes the exact retirement grace boundary', () => {
+    const api = mockApi({...retentionFixture(), failSecondRenameOnce: true});
+    assert.throws(() => prune(api.execute, {now}), /HTTP 503/);
+    assertDeletions(api.calls, []);
+    assert.deepEqual(api.release('v2.0.1').assets.map(asset => asset.name).sort(), ['images-expired.json', 'images-retired-101.json']);
+    assert.ok(api.versions('php').some(image => image.id === 10));
+    prune(api.execute, {now: now + 1});
+    assertDeletions(api.calls, [999]);
+    const canonical = api.release('v2.0.1').assets.find(asset => asset.name === manifestFilename);
+    assert.equal(api.asset(canonical.id).expiredAt, new Date(now).toISOString(), 'Recovery must preserve the original retirement time');
+    prune(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS - 1});
+    assertDeletions(api.calls, [999]);
+    prune(api.execute, {now: now + RETIREMENT_GRACE_PERIOD_MS});
+    assertDeletions(api.calls, [10, 11, 999]);
+    assert.equal(api.calls.filter(args => args.includes('POST')).length, 1);
+    assert.equal(api.calls.filter(args => args.includes('PATCH') && args.at(-1).endsWith('/assets/101')).length, 1);
+});
+
+const interruptedFailures = {
+    'missing backup': fixture => {fixture.releases[0].assets.shift();},
+    'missing stage': fixture => {fixture.releases[0].assets.pop();},
+    'wrong backup name': fixture => {fixture.releases[0].assets[0].name = 'images-retired-999.json';},
+    'wrong version': fixture => {fixture.assets[10001].version = '2.0.99';},
+    'unexpired stage': fixture => {fixture.assets[10001].expired = false;},
+    'different provenance': fixture => {fixture.assets[10001].platforms['linux/arm64'].php.inputs = '0'.repeat(64);},
+    'invalid timestamp': fixture => {fixture.assets[10001].expiredAt = 'invalid';},
+    'future timestamp': fixture => {fixture.assets[10001].expiredAt = new Date(now + 1).toISOString();},
+    'missing timestamp': fixture => {delete fixture.assets[10001].expiredAt;}
+};
+for (const [failure, applyFailure] of Object.entries(interruptedFailures)) {
+    test(`unexplained or invalid interrupted retirement (${failure}) fails before any mutation`, () => {
+        const fixture = retentionFixture();
+        fixture.releases[0].assets = [{id: 101, name: 'images-retired-101.json'}, {id: 10001, name: 'images-expired.json'}];
+        fixture.assets[10001] = {...structuredClone(fixture.assets[101]), expired: true, expiredAt: new Date(now).toISOString()};
+        applyFailure(fixture);
+        const api = mockApi(fixture);
+        assert.throws(() => prune(api.execute, {now}));
+        assert.deepEqual(mutations(api.calls), []);
+    });
+}
+
+test('interrupted retirement still validates every protected digest before repairing assets', () => {
+    const fixture = retentionFixture();
+    const api = mockApi({...fixture, failSecondRenameOnce: true});
+    assert.throws(() => prune(api.execute, {now}), /HTTP 503/);
+    api.execute(['--method', 'DELETE', `${packagesEndpoint}/runner-playwright/versions/51`]);
+    api.calls.length = 0;
+    assert.throws(() => prune(api.execute, {now: now + 1}), /Published image missing/);
+    assert.deepEqual(mutations(api.calls), []);
+});
+
+test('previously retired manifests without the new contract do not reactivate after their images were removed', () => {
+    const fixture = retentionFixture({protocol: null});
+    fixture.assets[101].expired = true;
+    for (const kind of kinds) fixture.inventories[kind] = fixture.inventories[kind].filter(image => ![10, 11].includes(image.id));
+    const api = mockApi(fixture);
+    prune(api.execute, {now});
+    assertDeletions(api.calls, [999]);
+    assert.ok(!api.calls.some(args => args.includes('POST') || args.includes('PATCH')));
 });

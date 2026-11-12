@@ -12,10 +12,14 @@ const kinds = ['php', 'runner-cypress', 'runner-playwright'];
 const legacyPlatform = 'linux/amd64';
 const platforms = [legacyPlatform, 'linux/arm64'];
 const manifestFilename = 'images.json';
+// Protocol 1 promises version-specific lookup, intentional-expiration fallback,
+// and revalidation after a selected image disappears during installation.
+const expirationProtocol = 1;
 const releaseVersionPattern = /^\d+\.\d+\.\d+$/;
 const releaseTagPattern = /^v\d+\.\d+\.\d+$/;
 const inputHashPattern = /^[a-f0-9]{64}$/;
 const digestPattern = /^sha256:[a-f0-9]{64}$/;
+const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const windowsLineEndingPattern = /\r\n/g;
 const normalizeLineEndings = source => source.replace(windowsLineEndingPattern, '\n');
 function inputs(root, kind) {
@@ -44,9 +48,21 @@ function inputs(root, kind) {
 function platformImages(manifest) {
     return manifest.platforms || {[manifest.platform]: manifest.images};
 }
+function timestampMillis(timestamp, message = 'Invalid manifest retirement time') {
+    // Round-tripping rejects calendar dates that Date.parse normalizes.
+    const parsed = typeof timestamp === 'string' && utcTimestampPattern.test(timestamp) ? Date.parse(timestamp) : NaN;
+    const valid = Number.isFinite(parsed)
+        && new Date(parsed).toISOString().replace('.000Z', 'Z') === timestamp.replace('.000Z', 'Z');
+    if (!valid) throw new Error(message);
+    return parsed;
+}
 function validateManifest(manifest) {
     if (!manifest || manifest.schema !== 1 || !releaseVersionPattern.test(manifest.version)
-        || (manifest.expired !== undefined && typeof manifest.expired !== 'boolean')) throw new Error('Invalid image manifest');
+        || (manifest.expired !== undefined && typeof manifest.expired !== 'boolean')
+        || (manifest.expirationProtocol !== undefined && (!Number.isSafeInteger(manifest.expirationProtocol) || manifest.expirationProtocol < 1))) throw new Error('Invalid image manifest');
+    if (manifest.expiredAt !== undefined || (manifest.expired === true && manifest.expirationProtocol === expirationProtocol)) {
+        timestampMillis(manifest.expiredAt);
+    }
     if (manifest.expired === true) return manifest;
     const entries = platformImages(manifest);
     const expected = manifest.platforms ? platforms : [legacyPlatform];
@@ -79,23 +95,38 @@ function select(root, manifest, platform, runner) {
             ? {...entry, image: `${imageRegistry}/${kind}@${entry.digest}`} : null];
     }));
 }
-async function resolve(root, env = process.env, request = fetch) {
+async function lookupManifest(root, request, allowMissing) {
     const {version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
     if (!releaseVersionPattern.test(version)) throw new Error('Invalid release version');
-    const response = await request(`${repositoryUrl}/releases/download/v${version}/${manifestFilename}`, {signal: AbortSignal.timeout(60000)});
-    if (response.status === 404) return {};
+    const response = await request(`${repositoryUrl}/releases/download/v${version}/${manifestFilename}`, {
+        signal: AbortSignal.timeout(60000), cache: 'no-store', headers: {'Cache-Control': 'no-cache'}
+    });
+    if (response.status === 404 && allowMissing) return null;
     if (!response.ok) throw new Error(`Release image lookup failed (${response.status}); retry or use --build-from-source.`);
-    return select(root, await response.json(), env.MAGELENS_IMAGE_PLATFORM, env.MAGELENS_RUNNER);
+    return {version, manifest: validateManifest(await response.json())};
+}
+async function resolve(root, env = process.env, request = fetch) {
+    const result = await lookupManifest(root, request, true);
+    return result ? select(root, result.manifest, env.MAGELENS_IMAGE_PLATFORM, env.MAGELENS_RUNNER) : {};
+}
+async function confirmExpiration(root, env = process.env, request = fetch) {
+    const {version, manifest} = await lookupManifest(root, request, false);
+    if (manifest.version !== version || manifest.expired !== true) {
+        throw new Error('Missing release image without confirmed intentional expiration');
+    }
+    return select(root, manifest, env.MAGELENS_IMAGE_PLATFORM, env.MAGELENS_RUNNER);
 }
 module.exports = {
-    inputs, validateManifest, select, resolve, kinds, platforms, legacyPlatform, platformImages,
+    inputs, validateManifest, select, resolve, confirmExpiration, kinds, platforms, legacyPlatform, platformImages,
     repository, repositoryUrl, imageRegistry, manifestFilename, releaseVersionPattern, releaseTagPattern,
-    digestPattern, normalizeLineEndings
+    digestPattern, normalizeLineEndings, expirationProtocol, timestampMillis
 };
 if (require.main === module) {
     if (process.argv[2] === 'inputs') console.log(inputs(process.cwd(), process.argv[3]));
-    else if (process.argv[2] === 'resolve') resolve(process.cwd()).then(selected => {
-        fs.writeFileSync('.runtime/prebuilt-images.json', JSON.stringify(selected, null, 2) + '\n');
-    }).catch(error => {console.error(error.message); process.exitCode = 1;});
-    else throw new Error('Usage: node bin/image-inputs.cjs inputs KIND | resolve');
+    else if (['resolve', 'confirm-expiration'].includes(process.argv[2])) {
+        const action = process.argv[2] === 'resolve' ? resolve : confirmExpiration;
+        action(process.cwd()).then(selected => {
+            fs.writeFileSync('.runtime/prebuilt-images.json', JSON.stringify(selected, null, 2) + '\n');
+        }).catch(error => {console.error(error.message); process.exitCode = 1;});
+    } else throw new Error('Usage: node bin/image-inputs.cjs inputs KIND | resolve | confirm-expiration');
 }

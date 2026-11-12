@@ -3,12 +3,10 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {
     kinds, digestPattern, releaseTagPattern, validateManifest, platformImages,
-    repository, manifestFilename, normalizeLineEndings
+    repository, manifestFilename, expirationProtocol, timestampMillis
 } = require('../../bin/image-inputs.cjs');
 const executeApi = (args, input) => execFileSync('gh', ['api', ...args], {encoding: 'utf8', input});
 const repositoryEndpoint = `repos/${repository}`;
@@ -16,12 +14,9 @@ const releasesEndpoint = `${repositoryEndpoint}/releases`;
 const packagesEndpoint = `orgs/${repository.split('/')[0]}/packages/container`;
 const githubUploadsUrl = 'https://uploads.github.com';
 const assetAcceptHeader = 'Accept: application/octet-stream';
-const sourceAcceptHeader = 'Accept: application/vnd.github.raw+json';
 const jsonContentTypeHeader = 'Content-Type: application/json';
 const expirationAssetName = 'images-expired.json';
 const retiredAssetName = id => `images-retired-${id}.json`;
-const expirationInstallerFiles = ['bin/image-inputs.cjs', 'bin/prepare-images'];
-const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const pinnedReleaseSeparator = /[\s,]+/;
 const versionFromTag = tag => tag.startsWith('v') ? tag.slice(1) : tag;
 
@@ -30,6 +25,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WINDOW_MS = 90 * DAY_MS;
 const MINIMUM_RELEASES_RETAINED = 5;
 const GRACE_PERIOD_MS = 14 * DAY_MS;
+const RETIREMENT_GRACE_PERIOD_MS = 14 * DAY_MS;
 // These exact AMD64 images were purged by the latest-only policy before PR #45.
 // Confirmed absent from public GHCR on 2026-11-12. This is not a version exemption:
 // changed digests and every other release/platform still require inventory checks.
@@ -42,9 +38,6 @@ function githubApi(execute) {
         get: endpoint => json([endpoint]),
         list: endpoint => json(['--paginate', '--slurp', `${endpoint}?per_page=100`]).flat(),
         downloadAsset: id => json(['-H', assetAcceptHeader, assetEndpoint(id)]),
-        source: (file, tag) => execute([
-            '-H', sourceAcceptHeader, `${repositoryEndpoint}/contents/${file}?ref=${tag}`
-        ]),
         uploadAsset: (releaseId, name, data) => json([
             '--method', 'POST', '-H', jsonContentTypeHeader, '--input', '-',
             `${githubUploadsUrl}/${releasesEndpoint}/${releaseId}/assets?name=${name}`
@@ -59,15 +52,13 @@ function cleanupClock(now = Date.now()) {
     return timestamp;
 }
 
-function imageCreationTime(version) {
-    // GitHub timestamps use UTC, optionally with milliseconds. Round-tripping
-    // rejects calendar dates that Date.parse would silently normalize.
-    const timestamp = version.created_at;
-    const created = typeof timestamp === 'string' && utcTimestampPattern.test(timestamp) ? Date.parse(timestamp) : NaN;
-    const validTimestamp = Number.isFinite(created)
-        && new Date(created).toISOString().replace('.000Z', 'Z') === timestamp.replace('.000Z', 'Z');
-    assert.ok(validTimestamp, `Unknown image creation time for ${version.name}; refusing cleanup`);
-    return created;
+function retirementTime(manifest, now) {
+    // Older, already-retired records remain retired even without a timestamp.
+    // Only the new protocol requires one; it cannot bypass the retirement grace.
+    if (manifest.expiredAt === undefined && manifest.expirationProtocol === undefined) return -Infinity;
+    const retired = timestampMillis(manifest.expiredAt, 'Invalid manifest retirement time; refusing cleanup');
+    assert.ok(retired <= now, 'Manifest retirement time is in the future; refusing cleanup');
+    return retired;
 }
 
 function obsoleteVersions(versions, requiredDigests, protectedDigests = requiredDigests, options = {}) {
@@ -81,7 +72,7 @@ function obsoleteVersions(versions, requiredDigests, protectedDigests = required
     }
     return versions.filter(version => {
         if (protectedSet.has(version.name)) return false;
-        return now - imageCreationTime(version) >= GRACE_PERIOD_MS;
+        return now - timestampMillis(version.created_at, `Unknown image creation time for ${version.name}; refusing cleanup`) >= GRACE_PERIOD_MS;
     }).map(version => version.id);
 }
 
@@ -94,28 +85,51 @@ const semverCompare = (a, b) => {
     return 0;
 };
 
-function supportsExpiration(api, release) {
-    // Compare the tagged resolver and source-build consumer with the trusted,
-    // regression-tested implementation. Never execute downloaded installer code
-    // or infer support from a version number. Unrecognized implementations retain
-    // their images; lookup/authentication failures abort the whole plan.
-    return expirationInstallerFiles.map(file => {
-        const tagged = api.source(file, release.tag_name);
-        const trusted = fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
-        return normalizeLineEndings(tagged) === normalizeLineEndings(trusted);
-    }).every(Boolean);
+function readReleaseManifest(api, release, asset) {
+    assert.ok(Number.isSafeInteger(asset.id) && asset.id > 0, 'Invalid manifest asset ID');
+    const manifest = validateManifest(api.downloadAsset(asset.id));
+    assert.equal(release.tag_name, `v${manifest.version}`, `Release manifest ${release.tag_name} has version mismatch`);
+    return manifest;
 }
 
-function retireManifest(api, {release, asset, manifest}) {
-    const expired = {...manifest, expired: true};
-    // Upload first and keep the original asset for audit/recovery. Renaming assets
-    // avoids deleting the active manifest before its replacement is available.
-    // A supported installer also builds from source during the brief 404 gap.
-    const staged = release.assets.find(a => a.name === expirationAssetName)
-        || api.uploadAsset(release.id, expirationAssetName, expired);
+function validateRetirement(manifest, expired, now) {
+    validateManifest({...manifest, expired: false});
+    assert.equal(manifest.expired === true, false, 'Retired backup must be an active manifest');
+    assert.equal(expired.expired, true, 'Staged manifest is not expired');
+    retirementTime(expired, now);
+    const expected = {...manifest, expired: true};
+    if (expired.expiredAt !== undefined) expected.expiredAt = expired.expiredAt;
+    assert.deepEqual(expired, expected, 'Staged expiration does not match the original manifest');
+}
+
+function pendingRetirement(api, release, asset, manifest, now) {
+    const staged = release.assets.find(a => a.name === expirationAssetName);
+    const expired = staged ? readReleaseManifest(api, release, staged)
+        : {...manifest, expired: true, expiredAt: new Date(now).toISOString()};
+    validateRetirement(manifest, expired, now);
+    return {release, asset, staged, expired};
+}
+
+function interruptedRetirement(api, release, now) {
+    const staged = release.assets?.find(a => a.name === expirationAssetName);
+    const backups = release.assets?.filter(a => a.name.startsWith('images-retired-')) || [];
+    if (!staged || backups.length !== 1) return null;
+    const asset = backups[0];
+    assert.equal(asset.name, retiredAssetName(asset.id), 'Invalid retired manifest backup name');
+    const manifest = readReleaseManifest(api, release, asset);
+    const plan = pendingRetirement(api, release, asset, manifest, now);
+    return {...plan, canonicalMissing: true};
+}
+
+function retireManifest(api, {release, asset, staged, expired, canonicalMissing}) {
+    // A verified staged manifest is a durable retirement record, including its
+    // original time. A retry resumes the transition instead of restarting it.
+    staged ||= api.uploadAsset(release.id, expirationAssetName, expired);
     assert.ok(Number.isSafeInteger(staged.id) && staged.id > 0 && staged.id !== asset.id, 'Invalid staged expiration asset');
     assert.deepEqual(api.downloadAsset(staged.id), expired, 'Expiration upload verification failed');
-    for (const [id, name] of [[asset.id, retiredAssetName(asset.id)], [staged.id, manifestFilename]]) {
+    const renames = canonicalMissing ? [] : [[asset.id, retiredAssetName(asset.id)]];
+    renames.push([staged.id, manifestFilename]);
+    for (const [id, name] of renames) {
         const renamed = api.renameAsset(id, name);
         assert.equal(renamed.id, id, 'Expiration asset ID changed');
         assert.equal(renamed.name, name, 'Expiration asset rename failed');
@@ -185,20 +199,25 @@ function prune(execute = executeApi, options = {}) {
         }
 
         const asset = release.assets?.find(a => a.name === manifestFilename);
-        if (!asset) {
-            throw new Error(`${isProtected ? 'Protected release' : 'Release'} ${release.tag_name} is missing images.json manifest; refusing cleanup`);
+        const interrupted = !asset && interruptedRetirement(api, release, now);
+        if (!asset && !interrupted) {
+            throw new Error(`${isProtected ? 'Protected release' : 'Release'} ${release.tag_name} is missing ${manifestFilename} manifest; refusing cleanup`);
         }
-        assert.ok(Number.isSafeInteger(asset.id) && asset.id > 0, 'Invalid manifest asset ID');
-        const manifest = validateManifest(api.downloadAsset(asset.id));
-        assert.equal(release.tag_name, `v${manifest.version}`, `Release manifest ${release.tag_name} has version mismatch`);
-        if (isProtected || !supportsExpiration(api, release)) {
-            // Even a pinned, previously expired manifest must supply its complete
-            // inventory. An expired flag cannot exempt a protected release.
-            protectedManifests.push(validateManifest({...manifest, expired: false}));
-        } else if (manifest.expired !== true) {
-            assert.ok(Number.isSafeInteger(release.id) && release.id > 0, 'Invalid release ID for expiration');
-            assert.ok(!release.assets.some(a => a.name === retiredAssetName(asset.id)), 'Retired manifest asset already exists');
-            expirations.push({release, asset, manifest});
+        const manifest = interrupted ? interrupted.expired : readReleaseManifest(api, release, asset);
+        if (interrupted) expirations.push(interrupted);
+
+        if (manifest.expired === true) {
+            const withinGrace = now - retirementTime(manifest, now) < RETIREMENT_GRACE_PERIOD_MS;
+            // Expiration is durable. Today's installer revision never reactivates
+            // a retired release, but policy protection always requires inventory.
+            if (isProtected || withinGrace) protectedManifests.push(validateManifest({...manifest, expired: false}));
+        } else {
+            protectedManifests.push(manifest);
+            if (!isProtected && manifest.expirationProtocol === expirationProtocol) {
+                assert.ok(Number.isSafeInteger(release.id) && release.id > 0, 'Invalid release ID for expiration');
+                assert.ok(!release.assets.some(a => a.name === retiredAssetName(asset.id)), 'Retired manifest asset already exists');
+                expirations.push(pendingRetirement(api, release, asset, manifest, now));
+            }
         }
     }
 
@@ -243,7 +262,8 @@ module.exports = {
     FIRST_PREBUILT_VERSION,
     RETENTION_WINDOW_MS,
     MINIMUM_RELEASES_RETAINED,
-    GRACE_PERIOD_MS
+    GRACE_PERIOD_MS,
+    RETIREMENT_GRACE_PERIOD_MS
 };
 
 if (require.main === module) {
