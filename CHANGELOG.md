@@ -6,6 +6,10 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.4 - 2026-11-14
+
+- Update browser runner runtimes to Node.js 24.22.3 with the November security fixes; install Cypress’s required system libraries on the official multiarch Node base.
+
 ## 1.9.3 - 2026-11-09
 
 - Publish native PHP/PCOV, Cypress and Playwright images for Linux amd64 and arm64, including Apple Silicon installations.
