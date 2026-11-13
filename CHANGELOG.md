@@ -6,6 +6,10 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.4 - 2026-11-14
+
+- Update the shared Chrome for Testing browser to 157.0.8103.78 with verified x64 and ARM64 archives and the latest security fixes.
+
 ## 1.9.3 - 2026-11-09
 
 - Publish native PHP/PCOV, Cypress and Playwright images for Linux amd64 and arm64, including Apple Silicon installations.
