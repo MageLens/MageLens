@@ -6,6 +6,10 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.9.4 - 2026-11-14
+
+- Update PHP code coverage to 14.5.2 to correct nested match executable lines and merged match coverage.
+
 ## 1.9.3 - 2026-11-09
 
 - Publish native PHP/PCOV, Cypress and Playwright images for Linux amd64 and arm64, including Apple Silicon installations.
