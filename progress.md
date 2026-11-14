@@ -965,3 +965,13 @@ preprocessing configuration. Discovery produced no timing labels. The v5
 resolver also now retains literal task names in unresolved edges so task
 registrations can be reconciled without guessing dynamic arguments. All 33
 focused reachability tests passed.
+
+Composing the tag transform's source map with the TypeScript transform's
+map recovered all 156 runnable callbacks and all 325 hook snapshots in
+third-party discovery. The 41-spec run matched the prior inventory by
+relative file, title path, occurrence count, and skip status. Source
+archive hashes and detached ranges verified against the original text.
+The patch was applied to a disposable copy of the pinned dependencies.
+The specs and support files retained their original bytes. The run
+produced no timing labels, and 85 focused Cypress and predictor tests
+passed. Planner/native parity and real execution traces remain open.
