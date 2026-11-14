@@ -29,6 +29,11 @@ against 44.986 s break-even. The Rust cost replay rejected both. This
 candidate does not yet contain a demonstrated profitable prefix. Its
 first native run passed four tests and failed the probe's robots response
 assertion, taking 12.426 s. That failed run is excluded from the benchmark.
+The probe now checks the robots response status and content type. All five
+original tests passed in 4.919 s of runner wall time on pinned Chrome.
+Rust rediscovered both restorable prefixes after replanning the changed
+source. The passing linear run is a fixture check; it has no paired
+branching result or complete coverage measurement.
 
 The execution gate rejects the current model for this scope. It lacks
 independent qualification and a validated checkpoint timing domain, and
