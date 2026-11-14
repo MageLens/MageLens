@@ -1354,3 +1354,17 @@ forecasts 3.541 s for the shared catalog work and remains unqualified.
 A separate source-verified prefix timing run is in progress. Its
 measurements will inform whether a third genuinely distinct consumer
 can make this candidate economical.
+
+The source-verified 160-statement catalog prefix took 36.228 s,
+35.679 s and 35.938 s in fresh pinned-browser contexts. This clears the
+28.307 s break-even for three consumers on the calibrated profile. An
+eight-test candidate adds a third distinct price assertion while
+preserving the two existing endings and all five controls. Rust
+discovered three automatically restorable prefixes, with three
+consumers for the catalog prefix. In a diagnostic cost replay using
+the rounded-down minimum catalog measurement and rounded-up maximum
+control timings, Rust selected only the catalog checkpoint and
+estimated 14.794 s of setup savings. This replay supplies measured
+times to the cost solver. The actual model still requires independent
+qualification. The eight-test native run and paired coverage checks
+remain pending.
