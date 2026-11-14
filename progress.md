@@ -1163,3 +1163,9 @@ that assessed inventory for list-only discovery. Native and
 checkpoint test execution still require qualified forecasts. The
 regression also verifies that stale source blocks calibration. All
 21 focused suite and calibration tests passed.
+
+The current working tree passed all 508 Node integration tests with
+Node 24.22.1 and a two-worker limit. The repository static check also
+passed for tracked files. These checks ran while the separate Mage-OS
+installation downloaded its Composer dependencies. They do not cover
+the pending Magento calibration or the GitHub Actions matrix.
