@@ -42,8 +42,7 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
                 results.push({id, ...testResult(test)});
             }
         }
-        const errors = inventories.flatMap(item => item.errors.map(message => ({message})));
-        if (result.failures) errors.push({message: result.message ?? 'Cypress failed before test completion'});
+        const errors = reportErrors(result, inventories);
         const status = exitCode === 0 && !errors.length && results.length === selected.length && results.every(test => ['passed', 'skipped'].includes(test.status)) ? 'passed' : 'failed';
         const report = {schemaVersion: 1, config: JSON.parse(fs.readFileSync(files.metadata)), tests: tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory,
             results: list ? [] : results, status, errors, exitCode, wallMs: performance.now() - started, reportFile: resultFile,
@@ -52,6 +51,15 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
         return report;
     } finally { fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }
 }
+function reportErrors(result, inventories) {
+    const errors = inventories.flatMap(item => item.errors.map(message => ({message})));
+    if (result.failures) errors.push({message: result.message ?? 'Cypress failed before test completion'});
+    for (const run of result.runs ?? []) {
+        if (run.error) errors.push({file: run.spec?.absolute,
+            message: typeof run.error === 'string' ? run.error : run.error.message ?? 'Cypress spec preparation failed'});
+    }
+    return errors;
+}
 function testResult(test) {
     const errors = test.attempts.flatMap(attempt => attempt.error ? [attempt.error] : []);
     if (test.displayError && !errors.length) errors.push({message: test.displayError});
@@ -59,4 +67,4 @@ function testResult(test) {
         durationMs: test.duration ?? test.attempts.reduce((sum, attempt) => sum + (attempt.wallClockDuration ?? attempt.duration ?? 0), 0),
         attempts: test.attempts.length, errors};
 }
-module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke, testResult};
+module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke, testResult, reportErrors};

@@ -170,3 +170,17 @@ test('Cypress discovery preserves base URL reads before support files and test d
         } else assert.equal(baseUrl, null, 'Normal execution must retain its native configuration');
     }
 });
+
+
+test('native Cypress retains compilation failures even when a spec registered no tests', () => {
+    const {reportErrors} = require('../branching/runners/cypress/native.cjs');
+    const errors = reportErrors({totalFailed:1,runs:[
+        {spec:{absolute:'/suite/imports.cy.js'},tests:[],error:'Webpack Compilation Error: missing imported module'},
+        {spec:{absolute:'/suite/valid.cy.js'},tests:[{}],error:null}
+    ]},[{errors:['Focused Cypress tests are forbidden']}]);
+    assert.deepEqual(errors,[{message:'Focused Cypress tests are forbidden'},
+        {file:'/suite/imports.cy.js',message:'Webpack Compilation Error: missing imported module'}]);
+    assert.deepEqual(reportErrors({failures:1,message:'Config load failed'},[]),[{message:'Config load failed'}]);
+    assert.deepEqual(reportErrors({runs:[{spec:{absolute:'/suite/config.cy.js'},error:{message:'Preprocessor failed'}}]},[]),
+        [{file:'/suite/config.cy.js',message:'Preprocessor failed'}]);
+});

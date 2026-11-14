@@ -79,7 +79,7 @@
     "source": "Cypress adaptation of the recovered Playwright generator",
     "sourceFile": "cypress.cjs",
     "preserves": "Parameterized journeys and assertions; native window/selector references represent Playwright page/locator fixture references",
-    "qualification": "unqualified; native discovery and real application execution pending",
+    "qualification": "unqualified; 128 native registrations verified, real application execution and restoration pending",
     "generatedSuites": [
       {
         "id": "short-5",

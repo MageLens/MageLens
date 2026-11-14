@@ -781,3 +781,31 @@ are retained; real application execution/restoration is still unverified. Native
 Cypress registration of the generated families is queued after the serialized
 private inventory. This checkbox records generator recovery only; it does not
 complete package 1, establish fresh labels or qualify accuracy and speedup.
+
+### 2026-11-14 — complete generated native inventory and discovery errors
+
+Pinned Cypress native discovery registered all **128 tests in 13 generated
+families**, matching the existing Playwright inventory. Every generated Cypress
+source hash still matches the versioned provenance. Discovery used the shared
+Chrome/Cypress runner with networking disabled and executed no application bodies.
+Real execution, restoration and current economics remain unverified.
+
+The full 355-spec private discovery attempt registered 721 tests but failed to
+compile one spec: its two application imports were outside the copied Cypress
+directory. The failure and complete raw Cypress report are retained. Mounting
+the original application source read-only at the matching relative location let
+the affected spec register its 32 tests successfully. A fresh complete inventory
+is still required; this focused result does not turn the failed attempt into a
+passing complete run. The original 731 files and six symlinks and their disposable
+copies were verified unchanged. Dependency hashes are retained privately.
+
+The common native report now retains per-spec compilation errors, including specs
+that registered no tests. Previously the exit status correctly failed but the
+report's error list could be empty. Eleven focused Cypress checks pass, and replay
+of the actual retained compiler failure confirms its diagnostic is preserved.
+Full working-tree integration checks passed **456 tests, zero failures/skips**,
+and static checks passed. Existing predictor work remains uncommitted and separate;
+these results do not qualify a final Git candidate. Evidence remains under
+`campaign-20261114`, including `generated-cypress-01-*`,
+`private-dependency-discovery-01-*`, `native-compilation-error-replay.json` and
+`integration-discovery-errors.log`.
