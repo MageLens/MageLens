@@ -17,6 +17,7 @@ function observeExecutedSegment(snapshot, segment, audit) {
         snapshot.segment?.toDepth !== timing.toDepth) {
         throw new Error('Segment has no matching frozen prefix forecast');
     }
+    const workPassed = segment.status === 'passed' && timing.workCompleted === true;
     const observation = recordPrefixObservation(snapshot, {
         timingBoundary:timing.timingBoundary,
         prefixWorkMs:timing.workMs,
@@ -25,10 +26,14 @@ function observeExecutedSegment(snapshot, segment, audit) {
         kind:timing.kind,
         fromDepth:timing.fromDepth,
         toDepth:timing.toDepth,
-        passed:segment.status === 'passed' && timing.workCompleted === true && audit?.passed === true,
+        passed:workPassed,
         attempts:audit?.attempts ?? 0,
         sourceDigest:audit?.sourceDigest ?? ''
     });
+    if (audit?.passed !== true) {
+        if (workPassed) observation.exclusion = 'Provider or suite audit failed';
+        observation.eligible = false;
+    }
     return {...observation,observationId:digest([timing.forecast.digest,segment.id]),executionSegmentId:segment.id};
 }
 

@@ -87,6 +87,7 @@ test('suite records a frozen segment observation only with passing provider audi
         assert.equal(evidence.sourceVerified,true);
         assert.equal(evidence.providerAuditPassed,grantsRestored);
         assert.equal(evidence.observation.eligible,grantsRestored);
+        assert.equal(evidence.observation.exclusion,grantsRestored ? null : 'Provider or suite audit failed');
         assert.equal(evidence.observation.actualMs,10);
     }
 });
