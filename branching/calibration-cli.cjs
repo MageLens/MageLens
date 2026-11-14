@@ -45,7 +45,7 @@ async function run(args = process.argv.slice(2)) {
     require('./costs.cjs').assertAutomatic(project);
     const workflowLease = leases.acquire(process.cwd());
     try {
-        const store = openProject(process.cwd(), {...project.baseline, sourceDigest:manifest.sourceDigest});
+        const store = openProject(process.cwd(), {...project.baseline, sourceDigest:manifest.sourceDigest,checkpointContext:{coverage:project.native?.coverage === true,runnerOptions:project.runnerOptions ?? {}}});
         const report = await measureProject({manifest, project, storage, workflowLease, store});
         console.log(`${report.status}: checkpoint calibration (${report.costs.captures.length} captures, ${report.costs.restores.length} restores)`);
         return report;

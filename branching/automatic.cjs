@@ -191,7 +191,7 @@ function buildWorkflow(manifest, configuration, selected) {
                 ? fixtureState.prepare(test, runtime) : execute(test, fromDepth, checkpoint.depth, runtime),
             assert: runtime => configuration.assertCheckpoint(runtime, checkpoint)});
     }
-    const specs = manifest.schedule.filter(id => selection.has(id)).map(id => {
+    const specs = (selected ?? manifest.schedule).filter(id => selection.has(id)).map(id => {
         const test = byId.get(id), parent = parentFor(test, Infinity);
         return {id, label: test.title, source: {file: test.file, line: test.line}, parent: parent?.id ?? rootFor(test), inputs: {test: id, source: manifest.sourceDigest},
             run: runtime => execute(test, parent?.depth ?? 0, test.steps.length, runtime, true), assert: async () => {}};

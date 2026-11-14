@@ -112,7 +112,7 @@ test('mixed suite runs native setup once, checkpoints, then every remaining nati
 test('checkpoint routing never crosses native tests when collection order differs',async t=>{
     const f=fixture(t);f.inventory.tests.reverse();
     const report=await runSuite({...f,directory:f.root});
-    assert.equal(report.status,'passed');assert.equal(f.calls.length,3);assert.equal(f.calls[1].tests.length,100);assert.deepEqual(f.calls[2].checkpoint,['first','second']);
+    assert.equal(report.status,'passed');assert.equal(f.calls.length,3);assert.equal(f.calls[1].tests.length,100);assert.deepEqual(f.calls[2].checkpoint,['second','first']);
 });
 test('unprofitable AUTO retains one complete original native invocation',async t=>{
     const f=fixture(t);f.manifest.checkpoints=[];

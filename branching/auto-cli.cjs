@@ -45,7 +45,7 @@ async function execute(args) {
             const adapter = require('./automatic.cjs').playwrightCoverageAdapter(manifest);
             if (manifest.tests.some(adapter.supports)) project.adapter = adapter;
         }
-        const store = require('./baseline.cjs').openProject(process.cwd(), {...project.baseline, sourceDigest:manifest.sourceDigest});
+        const store = require('./baseline.cjs').openProject(process.cwd(), {...project.baseline, sourceDigest:manifest.sourceDigest,checkpointContext:{coverage:project.native?.coverage === true,runnerOptions:project.runnerOptions ?? {}}});
         let used = store.load();
         let calibration;
         if (used.source !== 'measured' || require('./configs/baseline.json').metrics.some(metric => !used.samples[metric])) {

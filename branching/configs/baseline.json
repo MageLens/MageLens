@@ -7,7 +7,8 @@
       "src/composer.lock",
       "src/app/etc/env.php",
       ".runtime/install-profile",
-      "dependencies.yaml"
+      "dependencies.yaml",
+      "coverage.config.json"
     ],
     "decision": "branching-baseline.json",
     "operationDefaults": "branching/planner/src/baseline.json"

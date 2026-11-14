@@ -170,7 +170,7 @@ async function runSuite(options) {
             for (const block of blocks) {
                 if (block.kind === 'native') { await native(block.tests, {setup:false}); continue; }
                 verifySources(manifest);
-                const selected = checkpoint.filter(test => block.tests.some(entry => entry.id === test.id));
+                const selected = block.tests.map(entry => checkpoint.find(test => test.id === entry.id));
                 const configuration = {...project, costBaseline:baseline,
                     ...(independentCypress ? {runnerOptions:{...project.runnerOptions, nativeConfig:project.native.config}} : {})};
                 const built = buildWorkflow(manifest, configuration, selected.map(test => test.staticId));

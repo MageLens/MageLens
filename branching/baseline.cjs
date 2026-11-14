@@ -78,7 +78,7 @@ function samples(report) {
             phase.counts?.fallbacks !== 0 ||
             phase.counts?.failures ||
             phase.counts?.blockedSpecs ||
-            !phase.checkpoints?.length ||
+            !Array.isArray(phase.checkpoints) ||
             phase.checkpoints.length !== phase.releases?.length ||
             !phase.providerDiagnostics?.retainedServices?.schemasRemoved ||
             !phase.providerDiagnostics?.retainedServices?.grantsRestored
@@ -325,8 +325,12 @@ function openProject(workspace, configuration = {}) {
     const identity = {
         version: defaults.version,
         provider: require('./identity.cjs').implementationDigest(['provider.cjs', 'retained-provider.cjs',
-            'checkpoint-store.cjs', 'browser.cjs', 'runtime-state.cjs'].map(file => path.join(__dirname, file))),
+            'checkpoint-store.cjs', 'browser.cjs', 'browser-context.cjs', 'code-cache.cjs', 'runtime-state.cjs',
+            'retained-magento.cjs', 'retained-workspace.cjs', 'retained-database.cjs', 'magento.cjs',
+            'configs/retained-env.php', 'configs/retained-validate.php', 'configs/retained-probe.php',
+            'configs/retained-queues.php', 'configs/fastcgi.php'].map(file => path.join(__dirname, file))),
         sourceDigest: configuration.sourceDigest ?? null,
+        checkpointContext: configuration.checkpointContext ?? null,
         architecture: process.arch,
         cpu: os.cpus()[0]?.model,
         // Reuse averages only within a database-size cohort. Small fixtures share

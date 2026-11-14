@@ -123,3 +123,18 @@ test('the root decision baseline controls bootstrap costs and calibration report
     assert.notEqual(after.decisionBaselineMs, before.decisionBaselineMs);
     assert.equal(require('../branching-baseline.json').checkpointDecisionBaselineMs, root.checkpointDecisionBaselineMs);
 });
+
+test('successful measured groups persist costs even when a preceding group stayed linear', t => {
+    const {store} = fixture(t), input = report();
+    const linear = structuredClone(input.phases[0]);
+    linear.report.checkpoints = [];
+    linear.report.releases = [];
+    linear.report.costs.captures = [];
+    linear.report.costs.restores = [];
+    linear.report.costs.releases = [];
+    input.phases.unshift(linear);
+    assert.equal(store.update(input).updated, true);
+    assert.equal(store.load().samples.restoreMs, input.phases[1].report.costs.restores.length);
+    linear.report.status = 'failed';
+    assert.equal(store.update(input).updated, false);
+});
