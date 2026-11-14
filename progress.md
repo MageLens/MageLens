@@ -1561,3 +1561,41 @@ updated and rechecked; all operations and assertions remain equivalent. A new
 frozen collection of that same development family is running. The failed attempt
 is excluded, rather than retried with unchanged source or weakened assertions.
 No model fit or prospective qualification has occurred during this resumed work.
+
+#### 2026-11-14 controlled development collection at both catalog sizes
+
+Search collection `d63729ec` passed both restores and both original native tests.
+Its 120-product prefixes took 23.361 s and 23.320 s against the frozen 1.138 s
+forecast. Source re-extraction retained both prefix and whole-test rows. Complete
+coverage JSON and hashes are retained with the collection report.
+
+The dedicated installation currently contains 240 products. Before expansion,
+all 120 original products were checked against the seed fields and a private
+0600 database backup was saved at
+`.runtime/ml-estimation/campaign-20261114/catalog-fixture-240/original-120.sql`.
+The original-product fingerprint remained unchanged after creating 121–240;
+all indexers completed. Preserve this backup until the original state has been
+restored and the search index rebuilt. The 240-product fixture fingerprint is
+`e1f4de09b6cb6e14b09c497fbdb1a2083c2e6721e5b6f2bede90d3a840b8ab33`.
+
+Collections `99a48129` (ordered catalog) and `ef8b497c` (search-to-product)
+passed two captures/restores each, all nine and two native tests respectively,
+coverage finalization and cleanup. Catalog prefixes took 41.736 s and 41.995 s;
+search prefixes took 23.484 s and 23.257 s. Source re-extraction retained two
+prefix rows per family and eight/two whole-test rows; the readiness lifecycle
+row remains excluded from individual-test labels. Every archived coverage JSON
+hash verified. Audits and normalized coverage inventories are retained in each
+source root's `.results/controlled-240/` directory. These are related development
+observations, never independent validation groups. The small duration change
+between 120 and 240 products does not explain the severe old-model error.
+
+No fit or held-out qualification has occurred. Before fitting, resolve the
+whole-test input discrepancy: native profiling includes four lifecycle fixture
+fragments and their reachable helpers, whereas the production static planner
+omits them. A bounded list-only discovery experiment will test whether verified
+native lifecycle inputs can be reconciled with the exact static callback and
+current dependency bytes. It executes no browser work and consumes no additional
+measurement repetitions. Also retain the short incremental domains as an open
+representation/label requirement; a long-only fit cannot authorize every prefix
+in the original suite. Meaningful restored JS/template execution and a complete
+paired total-time comparison remain outstanding.
