@@ -41,6 +41,7 @@ class BranchingProvider {
                     './browser-context.cjs',
                     './code-cache.cjs',
                     '../playwright/coverage-cookie.cjs',
+                    '../bin/browser-navigation.cjs',
                     ...(javascriptCoverageDirectory ? ['../playwright/javascript-coverage.cjs'] : []),
                     './configs/runtime.cjs'
                 ].map((file) => require.resolve(file))
@@ -126,7 +127,9 @@ class BranchingProvider {
     async beginSegment() {
         if (this.browserState.active) { this.browserState.check(); await this.browserState.resumeCoverage?.(); }
     }
-    async endSegment() {
+    async endSegment(_id, {terminal = false} = {}) {
+        if (terminal && (this.browserState.javascriptCoverageDirectory || this.browserState.templateCoverageDirectory))
+            await require('../bin/browser-navigation.cjs').waitForPageCompletion(this.context);
         this.browserState.check();
     }
     async cleanup() {

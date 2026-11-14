@@ -328,7 +328,7 @@ function openProject(workspace, configuration = {}) {
             'checkpoint-store.cjs', 'coverage-gate.cjs', 'browser.cjs', 'browser-context.cjs', 'code-cache.cjs', 'runtime-state.cjs',
             'retained-magento.cjs', 'retained-workspace.cjs', 'retained-database.cjs', 'redis-state.cjs', 'magento.cjs',
             'configs/retained-env.php', 'configs/retained-validate.php', 'configs/retained-probe.php',
-            'configs/retained-queues.php', 'configs/fastcgi.php'].map(file => path.join(__dirname, file))),
+            'configs/retained-queues.php', 'configs/fastcgi.php', '../bin/browser-navigation.cjs'].map(file => path.join(__dirname, file))),
         sourceDigest: configuration.sourceDigest ?? null,
         checkpointContext: configuration.checkpointContext ?? null,
         architecture: process.arch,

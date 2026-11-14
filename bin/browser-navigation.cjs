@@ -9,4 +9,12 @@ function disablePageTransitions(win = window) {
     win.document.adoptedStyleSheets = [...win.document.adoptedStyleSheets, sheet];
 }
 
-module.exports = {disablePageTransitions};
+async function waitForPageCompletion(context) {
+    // Keep original-page requests inside collection before fixtures or provider
+    // checks close the page. This barrier is shared by native and replay suites.
+    for (const page of context.pages()) {
+        if (!page.isClosed()) await page.waitForLoadState('networkidle', {timeout: 30000});
+    }
+}
+
+module.exports = {disablePageTransitions, waitForPageCompletion};

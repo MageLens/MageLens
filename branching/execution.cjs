@@ -83,7 +83,7 @@ function createExecution({
                 if (entry.prefixTiming) entry.prefixTiming.workMs = performance.now()-workStarted;
             }
             if (!(adaptive && graph.nativePageLifecycle && kind === 'Stage')) {
-                entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
+                entry.coverage = (await provider.endSegment?.(entry.id, {terminal:kind === 'Spec'})) ?? null;
                 await node.assert(provider, node.inputs);
             }
             entry.status = protocol.status.passed;

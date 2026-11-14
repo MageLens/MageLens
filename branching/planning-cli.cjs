@@ -21,7 +21,7 @@ function run(args=process.argv.slice(2)) {
             throw Error(`${key} was removed: checkpoint reuse now measures first use; remove the ML configuration`);
     if(extra.length || discoveryFile && !['plan'].includes(command) || !['plan','verify'].includes(command) ||
         !input || (command==='verify'?output:!output))
-        throw Error('Usage: magelens-plan plan SOURCE_ROOT MANIFEST [DISCOVERY_JSON] | evaluate SOURCE_ROOT MANIFEST [DISCOVERY_JSON] | verify MANIFEST | cost-plan');
+        throw Error('Usage: magelens-plan plan SOURCE_ROOT MANIFEST [DISCOVERY_JSON] | verify MANIFEST');
     const saved=command==='verify'?readManifest(input):null;
     const root=fs.realpathSync(saved?.root ?? input), destination=path.resolve(output ?? input);
     const parent=path.dirname(destination);fs.mkdirSync(parent,{recursive:true});

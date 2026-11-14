@@ -22,7 +22,7 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
     const selection = path.join(directory, `${token}.tests.txt`);
     if (tests?.some(test => /[\r\n]/.test(test.selector))) throw new Error('Multiline test titles need a native selector encoding');
     if (tests && !tests.length) throw new Error('Native execution needs a nonempty selection');
-    fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nconst reporters = process.env.MAGELENS_NATIVE_LIST === '1' ? [] : typeof c.reporter === 'string' ? [[c.reporter]] : c.reporter ?? [];\nmodule.exports = {...c, reporter: [...reporters, [${JSON.stringify(path.join(__dirname, 'native-reporter.cjs'))}]], ${setup ? '' : 'globalSetup: undefined,'} ${teardown ? '' : 'globalTeardown: undefined,'}};\n`, {mode: 0o600, flag: 'wx'});
+    fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nconst reporters = process.env.MAGELENS_NATIVE_LIST === '1' ? [] : typeof c.reporter === 'string' ? [[c.reporter]] : c.reporter ?? [];\nmodule.exports = {...c, reporter: [...reporters, [${JSON.stringify(path.join(__dirname, 'native-reporter.cjs'))}, {projects: (c.projects ?? [{}]).map(p => ({name: p.name ?? '', fullyParallel: (p.fullyParallel ?? c.fullyParallel) === true}))}]], ${setup ? '' : 'globalSetup: undefined,'} ${teardown ? '' : 'globalTeardown: undefined,'}};\n`, {mode: 0o600, flag: 'wx'});
     const args = [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'test',
         '--config', wrapper, '--workers', '1', '--retries', '0', '--forbid-only'];
     const started = performance.now();

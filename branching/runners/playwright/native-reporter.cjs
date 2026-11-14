@@ -14,10 +14,11 @@ function browserProfile(use = {}) {
         portable: Object.keys(use).every(key => supported.has(key)) && browserName === 'chromium' && channel === 'chrome' && headless};
 }
 class NativeReporter {
-    constructor() { this.results = new Map(); this.errors = []; }
+    constructor({projects = []} = {}) { this.projects = projects; this.results = new Map(); this.errors = []; }
     onBegin(config, suite) {
         this.config = {rootDir: config.rootDir, globalSetup: !!config.globalSetup, globalTeardown: !!config.globalTeardown, webServer: !!config.webServer,
-            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown, fullyParallel: p.fullyParallel === true,
+            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown,
+                fullyParallel: this.projects.find(project=>project.name===p.name)?.fullyParallel === true,
                 browserProfile: browserProfile(p.use)}))};
         this.tests = suite.allTests().map(test => {
             const project = test.parent.project();

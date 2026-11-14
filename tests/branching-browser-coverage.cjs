@@ -18,13 +18,19 @@ if (localStorage.getItem('initialized')) restoreOnly();
 localStorage.setItem('initialized','yes');`;
     const instrumenter = createInstrumenter();
     const script = instrumenter.instrumentSync(source,filename);
-    const server = http.createServer((_request,response)=>{response.setHeader('Content-Type','text/html');response.end(`<!doctype html><title>Coverage fixture</title><!--mtc:${id}--><script>${script}</script>`);});
+    const server = http.createServer((request,response)=>{
+        if (request.url==='/pending') { setTimeout(()=>response.end('ready'),150); return; }
+        response.setHeader('Content-Type','text/html');response.end(`<!doctype html><title>Coverage fixture</title><!--mtc:${id}--><script>${script}</script>`);
+    });
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     const state = new PlaywrightState(browser,{baseURL:`http://127.0.0.1:${server.address().port}`,
         javascriptCoverageDirectory:path.join(directory,'js'),templateCoverageDirectory:path.join(directory,'templates'),coverageRunId:'b'.repeat(32)});
     try {
         await state.open(); await state.resumeCoverage();
         await state.page.goto('/'); await state.page.evaluate(()=>window.original());
+        await state.page.evaluate(()=>{ window.pendingRequest=fetch('/pending').then(()=>window.pendingOriginal()); });
+        await require('../bin/browser-navigation.cjs').waitForPageCompletion(state.context);
+        assert.equal(await state.page.evaluate(()=>window.pendingOriginalRan),true,'Original requests must finish before collection ends');
         await state.page.evaluate(()=>setTimeout(()=>window.pendingOriginal(),25));
         await state.freeze(); const saved = await state.save(); await state.pauseCoverage();
         assert.equal(await state.context.cookies().then(cookies=>cookies.some(cookie=>cookie.name==='application_coverage')),false);

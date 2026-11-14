@@ -8,7 +8,7 @@ const {coverageCookie} = require('./coverage-cookie.cjs');
 const {collectJavaScriptCoverage} = require('./javascript-coverage.cjs');
 const {withTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
-const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
+const {disablePageTransitions, waitForPageCompletion} = require('../bin/browser-navigation.cjs');
 function withCoverage(base = playwright.test) {
     const root = process.env.MAGELENS_PLAYWRIGHT_COVERAGE_ROOT ?? '.';
     return withTemplateCoverage(base, {outputDir: path.join(root, 'coverage/raw/templates')}).extend({
@@ -26,9 +26,12 @@ function withCoverage(base = playwright.test) {
             for (const page of context.pages()) track(page);
             try { await use(); }
             finally {
-                context.off('page', track);
-                for (const page of context.pages()) page.off('pageerror', record);
-                playwright.expect(errors, 'Uncaught application errors').toEqual([]);
+                try { await waitForPageCompletion(context); }
+                finally {
+                    context.off('page', track);
+                    for (const page of context.pages()) page.off('pageerror', record);
+                    playwright.expect(errors, 'Uncaught application errors').toEqual([]);
+                }
             }
         }, {auto: true}],
         context: async ({context, baseURL}, use) => {
