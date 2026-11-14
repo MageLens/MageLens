@@ -863,3 +863,13 @@ A separate pinned browser fixture passed and reported the custom command as
 browser work and the registered task as runner work. The source attribution
 and real-workload reconciliation checklist items remain open. The audit and
 replay evidence are retained privately under `campaign-20261114`.
+
+### 2026-11-14 — mapped Cypress test registration audit
+
+The pinned Cypress discovery audit reproduced all 753 private E2E test IDs.
+All 751 runnable test callbacks retained original-source ranges through mapped
+registration metadata. These snapshots are discovery-only. Generated import
+name inference was removed, so earlier inferred counts are superseded by this
+audit. The separate support-hook fixture passed its discovery run but failed
+the archive-origin assertion. Hook provenance and real workload reconciliation
+remain open.
