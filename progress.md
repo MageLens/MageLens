@@ -2736,3 +2736,20 @@ change autonomously. Further static fitting on these repetitions would not
 resolve their incompatible ranges. The useful independent next action is to
 inspect the original short-test timing boundaries and lifecycle evidence while
 preparing a concrete, reversible host-policy diagnostic for a user decision.
+
+**Prepared host-policy diagnostic; not authorized or executed.** Hypothesis:
+frequency scaling contributes to the remaining short-test variation after quota
+throttling is removed. Change only CPU12/13 governors from `powersave` to
+`performance` for the same three complete catalog runs, preserving affinity,
+quota, memory, sources, resets and all assertions. Verify the policy before and
+after each native execution. Keep all repetitions in the same development group;
+reserved qualification groups remain untouched. Limit execution to ten minutes,
+with per-run 180-second bounds, no fitting/retries and the same stability screen
+as the preceding comparison. Restore both original governors on exit; a separate
+660-second watchdog also restores them after parent termination. Stop this policy
+approach after the one comparison, regardless of outcome. The host-policy guard
+was syntax-checked and dry-run only. Unprivileged `sudo -n true` failed, so a user
+must launch the prepared command with sudo; do not circumvent that boundary via
+Docker. Command: `sudo python3 .runtime/ml-estimation/campaign-20261114/catalog-frequency-guard.py --run`.
+This is a concrete external privilege/host-policy decision, not a request to
+relax accuracy or an assertion that the policy will qualify predictions.
