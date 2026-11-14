@@ -848,3 +848,18 @@ bounds cyclic re-exports, preserves module-specific cache bindings and requires
 explicit diagnostic markers. **459 working-tree integration tests passed, zero
 failures/skips**, and static checks passed. This is intermediate validation, not
 final-candidate CI or completion of the corrected-input package.
+
+### 2026-11-14 — private callback attribution audit
+
+Pinned Cypress discovery reproduced all 753 E2E test IDs across 355 specs,
+including two declarations marked skipped. The audit ran with test bodies and
+project hooks suppressed and produced zero timing sample files. Replaying all
+751 runnable callback snapshots against the current extractor succeeded for
+all rows. It attributed 485 callbacks to original source and selected at
+least one helper implementation for 459. The remaining callbacks and
+unresolved dispatch edges require further investigation before schema freeze.
+
+A separate pinned browser fixture passed and reported the custom command as
+browser work and the registered task as runner work. The source attribution
+and real-workload reconciliation checklist items remain open. The audit and
+replay evidence are retained privately under `campaign-20261114`.
