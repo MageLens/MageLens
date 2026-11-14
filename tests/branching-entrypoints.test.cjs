@@ -149,6 +149,8 @@ test('explicit calibration uses the same isolated launcher without executing tes
     assert.equal(result.status,37,result.stderr);
     const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
     const worker=calls.find(args=>args.includes('node'));
+    assert.equal(worker[worker.indexOf('--cpus')+1], '2');
+    assert.ok(worker.includes('org.magelens.role=branching-driver'));
     assert.deepEqual(worker.slice(-4),['branching/calibration-cli.cjs',path.join(directory,'manifest.json'),path.join(directory,'workflow file.cjs'),path.join(directory,'cow storage')]);
     assert.ok(calls.some(args=>args[0]==='rm'&&args[1]==='--force'));
 });
@@ -158,6 +160,8 @@ test('branching opt-in preserves literal arguments, worker status and controller
     assert.equal(result.status, 37, result.stderr);
     const calls = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse);
     const worker = calls.find(args => args.includes('node'));
+    assert.equal(worker[worker.indexOf('--cpus')+1], '2');
+    assert.ok(worker.includes('org.magelens.workspace=' + directory));
     assert.deepEqual(worker.slice(-4), ['branching/auto-cli.cjs', path.join(directory, 'manifest.json'), path.join(directory, 'workflow file.cjs'), path.join(directory, 'cow storage')]);
     assert.ok(worker.includes('MAGELENS_ORCHESTRATOR_CONTAINER=' + 'a'.repeat(64)));
     assert.ok(worker.includes('type=volume,source=modules,target=/workspace/node_modules,readonly'));

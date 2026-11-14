@@ -49,7 +49,7 @@ image=$("$ROOT/bin/branching-image" "$MAGELENS_RUNNER")
 planner_image=$("$ROOT/bin/branching-image" orchestrator)
 modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/node_modules"}}type={{.Type}},source={{if eq .Type "volume"}}{{.Name}}{{else}}{{.Source}}{{end}},target=/workspace/node_modules,readonly{{end}}{{end}}' "$runner")
 [[ -n "$modules" ]] || fail 'The installed runner has no dependency mount.'
-controller=$(docker run --detach --rm --init --network none --memory 512m --memory-swap 512m \
+controller=$(docker run --detach --rm --init --network none --cpus 2 --memory 512m --memory-swap 512m \
     --user "$LOCAL_UID:$LOCAL_GID" --mount "type=bind,source=$ROOT,target=$ROOT,readonly" --workdir "$ROOT" \
     --mount "$modules" \
     --env MAGELENS_PREDICTOR_MODEL --env MAGELENS_PREDICTOR_MODEL_SHA256 \
@@ -78,7 +78,8 @@ else
 fi
 # Driver needs Docker control for the application barrier. No ports are exposed.
 # The original browser runner and normal coverage entry point remain unchanged.
-docker run --rm --init --memory 2g --memory-swap 2g --shm-size 512m \
+docker run --rm --init --cpus 2 --memory 2g --memory-swap 2g --shm-size 512m \
+    --label org.magelens.role=branching-driver --label "org.magelens.workspace=$ROOT" \
     --network "$network" --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
     --mount "$modules" \
     --mount "type=bind,source=$ROOT,target=$ROOT" --mount "type=bind,source=$storage,target=$storage" \

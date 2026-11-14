@@ -7,15 +7,30 @@ const {digest} = require('../identity.cjs');
 const {observeExecutedSegment, SEGMENT_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
 
 function catalogRuntimeContext(backend) {
-    return Object.fromEntries(['app', 'phpfpm', 'db', 'redis', 'opensearch', 'runner'].map(service => {
+    const inspect = id => JSON.parse(require('../command.cjs').command('docker', ['inspect', id]))[0];
+    const resources = container => {
+        const {Memory, MemorySwap, NanoCpus, CpuPeriod, CpuQuota, CpusetCpus, ShmSize} = container.HostConfig;
+        return {image:container.Image, memoryBytes:Memory, memorySwapBytes:MemorySwap, nanoCpus:NanoCpus,
+            cpuPeriod:CpuPeriod, cpuQuota:CpuQuota, cpusetCpus:CpusetCpus, shmBytes:ShmSize};
+    };
+    // Native browsers and checkpoint execution run in this driver, not in the
+    // installed Compose runner. Record the actual process container separately.
+    const hostname = require('node:os').hostname();
+    assert.match(hostname, /^[a-f0-9]{12,64}$/, 'Expected a container execution hostname');
+    const driver = inspect(hostname);
+    assert.ok(driver.Id.startsWith(hostname), 'Execution container identity mismatch');
+    assert.equal(driver.Config.Labels?.['org.magelens.role'], 'branching-driver');
+    assert.equal(driver.Config.Labels?.['org.magelens.workspace'], backend.workspace);
+    assert.equal(driver.Config.WorkingDir, backend.workspace);
+    assert.ok(driver.HostConfig.Memory > 0 && driver.HostConfig.NanoCpus > 0,
+        'Catalog execution requires bounded driver memory and CPU');
+    return {execution:resources(driver), ...Object.fromEntries(['app', 'phpfpm', 'db', 'redis', 'opensearch', 'runner'].map(service => {
         // The retained override is removed by cleanup. Query the owned Compose
         // project through its original files in all phases, including cleanup.
         const id = backend.dc(['ps', '-a', '-q', service], true);
         assert.match(id, /^[a-f0-9]{12,64}$/);
-        const container = JSON.parse(require('../command.cjs').command('docker', ['inspect', id]))[0];
-        const {Memory, MemorySwap, NanoCpus} = container.HostConfig;
-        return [service, {image:container.Image, memoryBytes:Memory, memorySwapBytes:MemorySwap, nanoCpus:NanoCpus}];
-    }));
+        return [service, resources(inspect(id))];
+    }))};
 }
 
 // Admit only complete collection attempts. Historical probes without cleanup and
@@ -30,6 +45,9 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     assert.deepEqual(report.errors, []);
     assert.equal(report.cleanupVerified, true, 'Missing successful cleanup audit');
     assert.ok(report.runtimeContext?.before && report.runtimeContext?.after, 'Missing runtime context audit');
+    const execution = report.runtimeContext.before.execution;
+    assert.ok(execution?.image && execution.memoryBytes > 0 && execution.nanoCpus > 0,
+        'Missing bounded execution-container audit');
     assert.deepEqual(report.runtimeContext.after, report.runtimeContext.before, 'Runtime context changed during collection');
     assert.equal(report.sourceIntegrity?.verified, true);
     assert.equal(report.sourceIntegrity.digest, manifest.sourceDigest);

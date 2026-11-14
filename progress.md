@@ -2442,3 +2442,50 @@ The optional positive-cost training recipe is validated by its real bounded fit,
 Python/exported-JavaScript parity and static checks. Its model is rejected, and
 no execution or qualification gate was relaxed. The last full integration result
 remains 534/534 from the preceding versioned-context change.
+
+**Bounded native step attribution.** Hypothesis: the unexplained long-consumer
+premium is concentrated in initial navigation/setup rather than spread evenly
+across repeated actions. Run the original verified six-test source once with an
+additional Node reporter consuming existing Playwright step events. Keep browser
+fixtures and all actions/assertions byte-identical; do not add network observers.
+Retain per-step categories, parent relationships and durations, writing once at
+suite end. Use the owned 120-product installation and Chrome pin, cap the attempt
+at three minutes and debit it from the remaining 1,551-second browser budget.
+This is diagnostic only: no training labels or qualification outcomes. Success
+is a concrete attribution of the consumer difference to setup, navigation,
+action/assertion or teardown; stop after the complete report or first failure.
+
+The native step diagnostic passed all six tests and finalized coverage. Long
+consumers took 31.275/30.690 s. Their 0.585 s difference is mostly initial setup
+(0.447/0.103 s) and first navigation (0.979/0.706 s); repeated click totals are
+14.813/14.864 s. No repeated-action cold-cache premium was demonstrated.
+
+**Execution environment defect found.** `bin/run-branching` launches browsers
+inside a separate 2 GiB driver without a CPU cap. The old runtime audit recorded
+the Compose runner's two-CPU limit instead. Diagnostic drivers used two CPUs.
+Their timing differences cannot establish cache behavior or prediction accuracy
+under an equivalent execution environment. Retain the prior 20/64 observations
+and models as development diagnostics with incomplete execution-resource
+identity; do not transfer them into the newly bounded environment or admit them
+as qualified evidence. Reserved timing groups are still untouched.
+
+Fix the common launcher to bound its driver and planner to two CPUs. Identify
+and inspect the actual execution container, verify its role/workspace, and retain
+its image, CPU, memory, swap, shared-memory and CPU-affinity settings separately
+from Compose services. Require this audit before admitting catalog observations.
+Validate both normal/calibration entry points, rejection of missing/mismatched
+execution evidence, and a read-only real-container audit before further browser
+collection. Pre-execution forecast binding to this full context remains required.
+
+The execution audit fix passed 20 focused checks, the complete 535/535 integration
+suite and all static checks. A read-only real driver-container probe verified its
+own image and two-CPU/2 GiB/512 MiB shared-memory settings, separately from the
+six Compose services. An initial probe mistakenly used the plain runner image,
+which lacks Docker tooling; it failed before any application action and was
+corrected to the retained branching driver image. No browser collection occurred.
+The browser ledger is now 3,926/5,400 seconds (1,474 seconds remain).
+
+Next bind the audited context into forecasts before execution, keeping whole-test
+and prefix environments independent. Missing or changed context must reject
+catalog label admission rather than silently borrowing the Compose runner's
+identity. Existing incomplete-context models remain diagnostic only.
