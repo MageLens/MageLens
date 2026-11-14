@@ -888,3 +888,11 @@ when a context module has one matching declaration. The v4 extractor retains
 its original behavior. All 483 working-tree integration tests and static checks
 passed. Full-corpus hook discovery and original execution reconciliation remain
 open.
+
+The historical dataset audit verified the archived source digests for 628
+observations. It retained 618 Cypress observations under the existing v2 test
+boundary and quarantined ten Playwright observations with missing boundary
+metadata. Re-extracted features keep the original forecast and its source and
+schema identities as historical provenance. The original dataset was preserved.
+The 39 focused predictor tests passed. This audit supplies no fresh timing
+labels or prospective accuracy evidence.
