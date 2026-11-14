@@ -7,8 +7,15 @@
 import argparse
 import hashlib
 import json
+import os
 import platform
+import time
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 from accuracy import metrics as accuracy_metrics
 
@@ -17,7 +24,12 @@ import sklearn
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
-SCHEMAS = {'syntax-hash-v2-babel-7.29.9': 72, 'syntax-roles-v3-babel-7.29.9': 144, 'syntax-reachable-v4-babel-7.29.9': 1024}
+SCHEMAS = {
+    'syntax-hash-v2-babel-7.29.9': 72,
+    'syntax-roles-v3-babel-7.29.9': 144,
+    'syntax-reachable-v4-babel-7.29.9': 1024,
+    'syntax-reachable-v5-babel-7.29.9': 1024
+}
 
 
 def digest(value):
@@ -115,8 +127,9 @@ def percentile(values, quantile):
     return float(np.quantile(values, quantile, method='inverted_cdf'))
 
 
-def train(rows, dataset_digest):
-    assert rows and all(row['eligible'] is True for row in rows), 'Quarantine unsuccessful samples before training'
+def train(rows, dataset_digest, target_transform='log1p'):
+    if not rows or any(row.get('eligible') is not True for row in rows):
+        raise ValueError('Quarantine unsuccessful samples before training')
     schema = rows[0]['featureSchema']
     assert schema in SCHEMAS and all(row['featureSchema'] == schema and len(row['vector']) == SCHEMAS[schema] for row in rows), 'Mixed or invalid feature schemas'
     assert all(row['unit'] in ['suite-tests', 'test', 'prefix'] and row['runner'] in ['playwright', 'cypress'] for row in rows)
@@ -133,7 +146,8 @@ def train(rows, dataset_digest):
     baseline = np.array([row['baselineMs'] for row in rows], dtype=float)
     assert np.isfinite(baseline).all() and (baseline > 0).all(), 'Every label needs its pre-run baseline'
     reference_baseline = float(np.median(baseline))
-    y = np.log1p(actual * reference_baseline / baseline)
+    transform, inverse = (np.log, np.exp) if target_transform == 'log' else (np.log1p, np.expm1)
+    y = transform(actual * reference_baseline / baseline)
     families = sorted({row['sourceFamily'] for row in rows})
     groups = sorted({row['group'] for row in rows}, key=lambda group: digest(group.encode()))
     assert len(groups) >= 2, 'At least two independent workload groups required'
@@ -155,9 +169,9 @@ def train(rows, dataset_digest):
                                         for i, row in enumerate(rows)])
             naive_predictions[index] = np.median(y[training_domain]) if training_domain.any() else np.nan
     residuals = np.abs(predictions - y)
-    predicted_ms = np.expm1(predictions) * baseline / reference_baseline
+    predicted_ms = inverse(predictions) * baseline / reference_baseline
     percent = np.abs(predicted_ms - actual) / actual * 100
-    naive_ms = np.expm1(naive_predictions) * baseline / reference_baseline
+    naive_ms = inverse(naive_predictions) * baseline / reference_baseline
     by_source = []
     error_p90 = percentile(residuals, .9)
     for runner, family in sorted({(r['runner'], r['sourceFamily']) for r in rows}):
@@ -178,7 +192,7 @@ def train(rows, dataset_digest):
         for family in families:
             test = np.array([row['sourceFamily'] == family for row in rows])
             scale, model = fit(x[~test], y[~test])
-            errors = np.abs(np.expm1(model.predict(scale.transform(np.log1p(x[test])))) * baseline[test] / reference_baseline - actual[test]) / actual[test] * 100
+            errors = np.abs(inverse(model.predict(scale.transform(np.log1p(x[test])))) * baseline[test] / reference_baseline - actual[test]) / actual[test] * 100
             transfer.append({'sourceFamily': family, 'samples': int(test.sum()), 'p90AbsolutePercentError': percentile(errors, .9)})
     strict = accuracy_metrics(actual, predicted_ms)
     strata = {}
@@ -198,11 +212,13 @@ def train(rows, dataset_digest):
     # cross-validation is not a substitute for that prospective release decision.
     return {'schemaVersion': 1, 'featureSchema': schema, 'qualified': False, 'referenceBaselineMs': reference_baseline,
             'qualification': 'candidate-awaiting-independent-campaign',
-            'estimator': {'inputTransform': 'log1p', 'intercept': float(model.intercept_), 'coefficients': model.coef_.tolist(),
+            'estimator': {'inputTransform': 'log1p', **({'targetTransform': 'log'} if target_transform == 'log' else {}),
+                          'intercept': float(model.intercept_), 'coefficients': model.coef_.tolist(),
                           'mean': scale.mean_.tolist(), 'scale': scale.scale_.tolist()},
             'errorLogP90': error_p90, 'domains': domains,
             'training': {'datasetDigest': dataset_digest, 'samples': len(rows), 'groups': len(groups),
-                         'sourceFamilies': families, 'folds': folds, 'recipe': 'log1p-features/standard-scaler-floor-sparse1-core005/log1p-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
+                         'fitCount': len(set(folds.values())) + (len(families) if len(families) > 1 else 0) + 1,
+                         'sourceFamilies': families, 'folds': folds, 'recipe': f'log1p-features/standard-scaler-floor-sparse1-core005/{target_transform}-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
                          'python': platform.python_version(), 'sklearn': sklearn.__version__, 'numpy': np.__version__},
             'validation': {'method': 'grouped-cross-validation', 'percentileMethod': 'nearest-rank',
                            'maeMs': float(np.mean(np.abs(predicted_ms - actual))),
@@ -221,30 +237,127 @@ def train(rows, dataset_digest):
                            'meetsErrorTarget': strict['meetsErrorTarget'] and all(
                                item['meetsErrorTarget'] for groups in strata.values() for item in groups.values()),
                            'sufficientCoverage': len(families) >= 3 and all(item['groups'] >= 5 for item in by_source),
-                           'predictionsMs': predicted_ms.tolist()}}
+                           'predictionsMs': predicted_ms.tolist(),
+                           'medianPredictionsMs': [float(value) if np.isfinite(value) else None for value in naive_ms]}}
+
+
+def error_ledger(rows, model):
+    validation = model['validation']
+    for row, forecast, median in zip(rows, validation['predictionsMs'], validation['medianPredictionsMs'], strict=True):
+        actual = row['actualMs']
+        error = forecast - actual
+        yield {**{key: row.get(key) for key in [
+            'observationId', 'runner', 'unit', 'timingBoundary', 'group', 'sourceFamily', 'sourceDigest',
+            'environmentDigest', 'featureSchema', 'selectedImplementations', 'unresolvedEdges', 'backendState',
+            'segment', 'timings']},
+            'fold': model['training']['folds'][row['group']], 'actualMs': actual,
+            'predictedMs': forecast, 'medianPredictedMs': median, 'signedErrorMs': error,
+            'signedErrorPercent': error / actual * 100,
+            'withinTarget': abs(error / actual * 100) <= validation['targetPercent']}
+
+
+def verify_campaign_training_split(rows, split_path, expected_digest):
+    raw = split_path.read_bytes()
+    if digest(raw) != expected_digest:
+        raise ValueError('Frozen split digest mismatch')
+    split = json.loads(raw)
+    groups = split['groups']
+    if split['schemaVersion'] != 1 or not isinstance(groups, dict) or set(groups.values()) != {'train', 'validation', 'audit'}:
+        raise ValueError('Frozen split must assign groups to train, validation and audit')
+    if any(row['group'] not in groups for row in rows):
+        raise ValueError('Dataset contains a group absent from the frozen split')
+    # The training registry archives the dataset verbatim. Reject held-out rows
+    # before fitting or copying it so audit labels stay in their own artifact.
+    if any(groups[row['group']] != 'train' for row in rows):
+        raise ValueError('Training dataset contains held-out observations')
+    if any(row.get('eligible') is not True for row in rows):
+        raise ValueError('Training dataset contains quarantined observations')
+
+
+def verify_campaign_timing(rows):
+    test_boundaries = {
+        'cypress': 'cypress-test-duration-minus-preparation/v2',
+        'playwright': 'playwright-test-result-duration/v1',
+    }
+    prefix_boundaries = {'checkpoint-prefix/v1', 'checkpoint-segment-run-duration/v1'}
+    for row in rows:
+        unit, runner, boundary = row['unit'], row['runner'], row.get('timingBoundary')
+        if unit == 'test' and runner in test_boundaries and boundary == test_boundaries[runner]:
+            continue
+        if unit == 'prefix' and runner in test_boundaries and boundary in prefix_boundaries:
+            continue
+        if unit == 'suite-tests' and runner in test_boundaries and isinstance(boundary, str) and boundary:
+            if boundary not in test_boundaries.values() and boundary not in prefix_boundaries:
+                continue
+        raise ValueError('Campaign observation has missing or incompatible timing provenance')
+    if len({row.get('timingBoundary') for row in rows if row['unit'] == 'prefix'}) > 1:
+        raise ValueError('Campaign dataset mixes cumulative prefix and incremental segment boundaries')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('dataset', type=Path)
     parser.add_argument('registry', type=Path)
+    parser.add_argument('--split', type=Path)
+    parser.add_argument('--split-digest')
+    parser.add_argument('--error-ledger', type=Path)
+    parser.add_argument('--compact', action='store_true', help='Store fold diagnostics separately from the inference artifact')
+    parser.add_argument('--target-transform', choices=['log1p','log'], default='log1p')
     args = parser.parse_args()
+    if bool(args.split) != bool(args.split_digest):
+        parser.error('--split and --split-digest must be supplied together')
     raw = args.dataset.read_bytes()
-    rows = json.loads(raw)
-    model = train(rows, digest(raw))
+    dataset = json.loads(raw)
+    rows = dataset['rows'] if isinstance(dataset, dict) else dataset
+    if isinstance(dataset, dict):
+        audit = dataset['provenance']
+        assert audit['schemaVersion'] == 1 and audit['retainedCount'] == len(rows), 'Invalid dataset audit'
+        assert all(row['featureSchema'] == audit['targetSchema'] for row in rows), 'Dataset audit schema mismatch'
+    if args.split:
+        verify_campaign_training_split(rows, args.split, args.split_digest)
+        verify_campaign_timing(rows)
+    began = time.monotonic()
+    model = train(rows, digest(raw), args.target_transform)
+    if args.split:
+        model['training']['splitDigest'] = args.split_digest
+    training_seconds = time.monotonic() - began
     registry = args.registry
     for name in ['datasets', 'models']:
         (registry / name).mkdir(parents=True, exist_ok=True)
-    blob = encode(model)
-    for file, data in [(registry / 'datasets' / (digest(raw) + '.json'), raw),
-                       (registry / 'models' / (digest(blob) + '.json'), blob)]:
+    inference_model = model
+    if args.compact:
+        inference_model = {key: value for key, value in model.items() if key != 'validation'}
+        inference_model['training'] = {key: value for key, value in model['training'].items() if key != 'folds'}
+    blob = (json.dumps(inference_model, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n').encode() if args.compact else encode(model)
+    if args.error_ledger:
+        ledger = {'schemaVersion': 1, 'modelId': digest(blob), 'datasetId': digest(raw),
+                  'method': model['validation']['method'], 'cases': list(error_ledger(rows, model))}
+        fd = os.open(args.error_ledger, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(encode(ledger))
+    artifacts = [(registry / 'datasets' / (digest(raw) + '.json'), raw),
+                 (registry / 'models' / (digest(blob) + '.json'), blob)]
+    if args.compact:
+        reports = registry / 'validation'
+        reports.mkdir(exist_ok=True)
+        artifacts.append((reports / (digest(blob) + '.json'), encode({
+            'modelId': digest(blob), 'datasetId': digest(raw), 'folds': model['training']['folds'],
+            'validation': model['validation']})))
+    for file, data in artifacts:
         try:
-            with file.open('xb') as stream:
+            fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
                 stream.write(data)
-            file.chmod(0o600)
         except FileExistsError:
             assert file.read_bytes() == data, 'Immutable artifact changed'
+    peak_rss_bytes = None
+    if resource is not None:
+        peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        peak_rss_bytes = peak_rss if platform.system() == 'Darwin' else peak_rss * 1024
     print(json.dumps({'modelId': digest(blob), 'datasetId': digest(raw), 'samples': len(rows),
+                      'fitCount': model['training']['fitCount'], 'trainingSeconds': training_seconds,
+                      'peakRssBytes': peak_rss_bytes,
+                      'modelBytes': len(blob), 'datasetBytes': len(raw),
                       'qualified': model['qualified'], 'validation': model['validation']}))
 
 
