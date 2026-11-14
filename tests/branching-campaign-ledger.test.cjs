@@ -129,30 +129,35 @@ test('Playwright campaign records the frozen forecast before execution and binds
     const forecasts = path.join(root, 'predictions.json');
     const observations = path.join(root, 'observations.json');
     fs.writeFileSync(model, '{}');
-    fs.writeFileSync(forecasts, '[]');
     manifest.candidateDigest = fileDigest(model);
+    const snapshot = {observationId:'sample-1',modelId:manifest.candidateDigest,
+        featureSchema:manifest.featureSchema,timingBoundary:boundary};
+    fs.writeFileSync(forecasts, JSON.stringify([{id:'native-test',snapshot}]));
     Object.assign(manifest.inventory[0], {runner:'playwright', timingBoundary:boundary});
     ledger.create(root, manifest, lease);
-    const run = (peakMemoryBytes, malformed = false) => collect({workspace:root,cycle:manifest.cycleId,lease,caseId:'train',profile:{model},
+    const run = (peakMemoryBytes, defect) => collect({workspace:root,cycle:manifest.cycleId,lease,caseId:'train',profile:{model},
         resources:()=>({peakMemoryBytes,diskBytes:1000}),
         runner:{async run(_config,_directory,{onPrepared}) {
             onPrepared({forecastDigest:fileDigest(forecasts)});
             assert.equal(ledger.read(root, manifest.cycleId).records[0].event.attempt.status, 'started');
-            fs.writeFileSync(observations, malformed ? '[' : JSON.stringify([{eligible:true,modelId:manifest.candidateDigest,
-                featureSchema:manifest.featureSchema,timingBoundary:boundary}]));
-            return {exitCode:0,status:'passed',errors:[],tests:[{}],profileArtifacts:{forecasts,observations}};
+            fs.writeFileSync(observations, defect === 'malformed' ? '[' : JSON.stringify([{...snapshot,
+                observationId:defect === 'mismatch' ? 'different-sample' : snapshot.observationId,eligible:true,actualMs:10}]));
+            return {exitCode:0,status:'passed',errors:[],tests:[{id:'native-test'}],profileArtifacts:{forecasts,observations}};
         }}
     });
     assert.equal((await run(512)).collectionStatus,'passed');
     const acceptedDigest = fileDigest(observations);
     assert.equal((await run(1025)).collectionStatus,'quarantined');
-    assert.equal((await run(512,true)).collectionStatus,'quarantined');
+    assert.equal((await run(512,'malformed')).collectionStatus,'quarantined');
+    assert.equal((await run(512,'mismatch')).collectionStatus,'quarantined');
     const records = ledger.read(root, manifest.cycleId).records;
-    assert.deepEqual(records.map(record=>record.event.attempt.status), ['started','passed','started','quarantined','started','quarantined']);
+    assert.deepEqual(records.map(record=>record.event.attempt.status),
+        ['started','passed','started','quarantined','started','quarantined','started','quarantined']);
     assert.equal(records[1].event.attempt.observationDigest,acceptedDigest);
     assert.equal(records[3].event.attempt.observationDigest,undefined);
     assert.match(records[3].event.attempt.reason,/budget/);
     assert.match(records[5].event.attempt.reason,/malformed/);
+    assert.match(records[7].event.attempt.reason,/frozen profile/);
 });
 
 test('recovery records unfinished attempts once and preserves completed observations', t => {

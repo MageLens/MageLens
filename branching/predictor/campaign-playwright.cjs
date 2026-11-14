@@ -4,9 +4,26 @@
 
 const fs = require('node:fs');
 const {createHash, randomUUID} = require('node:crypto');
-const {fileDigest} = require('../identity.cjs');
+const {digest, fileDigest} = require('../identity.cjs');
 const ledger = require('./campaign-ledger.cjs');
 const {PLAYWRIGHT_TEST_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
+
+function observationsMatch(forecasts, samples, tests, manifest, boundary) {
+    if (!Array.isArray(forecasts) || !Array.isArray(samples) || !tests.length ||
+        forecasts.length !== tests.length || samples.length !== tests.length) return false;
+    const ids = new Set(tests.map(test=>test.id));
+    const seen = new Set();
+    return forecasts.every(({id,snapshot}, index) => {
+        const sample = samples[index];
+        if (!ids.delete(id) || typeof snapshot?.observationId !== 'string' || seen.has(snapshot.observationId) ||
+            sample?.eligible !== true || !Number.isFinite(sample.actualMs) || sample.actualMs <= 0 ||
+            sample.modelId !== manifest.candidateDigest || sample.featureSchema !== manifest.featureSchema ||
+            sample.timingBoundary !== boundary) return false;
+        seen.add(snapshot.observationId);
+        const observedInputs = Object.fromEntries(Object.keys(snapshot).map(key=>[key,sample[key]]));
+        return digest(snapshot) === digest(observedInputs);
+    });
+}
 
 async function collect({workspace, cycle, lease, caseId, configuration, directory, profile, resources,
     runner = require('../runners/playwright/native.cjs')}) {
@@ -58,14 +75,14 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
     } else {
         let reason, observationDigest;
         try {
-            if (!artifacts?.observations || !artifacts.forecasts || fileDigest(artifacts.forecasts) !== snapshotDigest)
+            const forecastBytes = artifacts?.forecasts && fs.readFileSync(artifacts.forecasts);
+            if (!artifacts?.observations || !forecastBytes ||
+                createHash('sha256').update(forecastBytes).digest('hex') !== snapshotDigest)
                 reason = 'Missing observation or changed frozen forecast';
             else {
                 const bytes = fs.readFileSync(artifacts.observations);
                 const samples = JSON.parse(bytes);
-                if (!Array.isArray(samples) || !samples.length || samples.length !== report.tests.length ||
-                    samples.some(sample => !sample?.eligible || sample.modelId !== manifest.candidateDigest ||
-                        sample.featureSchema !== manifest.featureSchema || sample.timingBoundary !== entry.timingBoundary))
+                if (!observationsMatch(JSON.parse(forecastBytes), samples, report.tests, manifest, entry.timingBoundary))
                     reason = 'Native observation did not pass the frozen profile checks';
                 else observationDigest = createHash('sha256').update(bytes).digest('hex');
             }
