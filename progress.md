@@ -1010,3 +1010,10 @@ hooks came from a support module imported conditionally through
 Four other pairs also had missing native hooks and helper implementations.
 The assessment took 6.64 seconds and peaked at about 1.75 GiB RSS.
 Runtime support dependency selection and prefix forecast failures remain open.
+
+After the generated-suite hook fix, all 751 private planner snapshots
+included the hooks and helper implementations observed in native discovery.
+This recovered three missing hook occurrences and 13 missing helper
+implementations in each of the four affected cases. The planner still
+includes two additional conditional support hooks per case, so exact
+parity remains open.
