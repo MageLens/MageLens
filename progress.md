@@ -942,3 +942,17 @@ common helper bodies appeared in every processed spec. This is a conservative
 exact-helper grouping. Use the private corpus as one group for source-family
 holdout analysis and investigate separately which shared code belongs to the
 runner baseline before declaring any finer workload groups independent.
+
+### 2026-11-14 — full private callback and hook discovery
+
+Pinned Cypress discovery completed across all 355 private E2E specs and
+reproduced all 753 registered IDs, including two skips. The 751 runnable
+callbacks and all 2,880 hook snapshots retained original-source ranges.
+Every runnable callback snapshot selected helper implementations. Across
+the snapshots, 81,641 unresolved edge occurrences remain for analysis,
+including repeated occurrences of shared calls. The 353 specs with
+runnable callbacks form one exact-helper component. The run took 18m12s,
+used an isolated network-disabled runner, and produced no timing labels.
+The implementation and worktree passed 486 integration tests and static
+checks. Real execution, runner-to-planner parity, and timing qualification
+remain open.
