@@ -1104,3 +1104,13 @@ tests passed. The real storage probe rejected the checkout's ext4 volume
 because reflinks were unavailable. There was no mounted XFS or Btrfs
 filesystem on this host. These results validate reporting and the
 storage guard. A dedicated Magento run is still needed for calibration.
+
+A task-owned XFS image mounted within an isolated container passed the
+working reflink probe. Using that storage, the Playwright adapter ran a
+two-consumer checkpoint workflow on Chrome for Testing 157.0.8103.38.
+It captured once, restored for the second consumer, issued the delayed
+request once and removed its run directory. The real engine recorded
+338.2 ms of completed segment work and 338.4 ms of segment wall time.
+The probe invoked the Rust cost solver directly and used an isolated
+HTTP/filesystem fixture. Magento operation calibration and a matching
+Cypress checkpoint-segment run remain open.
