@@ -873,3 +873,18 @@ name inference was removed, so earlier inferred counts are superseded by this
 audit. The separate support-hook fixture passed its discovery run but failed
 the archive-origin assertion. Hook provenance and real workload reconciliation
 remain open.
+
+### 2026-11-14 — recursive callback and support-hook attribution
+
+The pinned Cypress support-hook fixture mapped a transformed TypeScript hook to
+its original registration and resolved its imported helper. The private
+32-test discovery subset retained source origins for all 64 hook snapshots.
+Source-map collection runs only during discovery to preserve the existing
+Cypress timing boundary. Discovery snapshots supply no execution labels.
+
+The v5 resolver now requires lexical bindings, module exports, or framework
+registrations for recursive attribution. Unbound names remain unresolved even
+when a context module has one matching declaration. The v4 extractor retains
+its original behavior. All 483 working-tree integration tests and static checks
+passed. Full-corpus hook discovery and original execution reconciliation remain
+open.
