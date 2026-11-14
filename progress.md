@@ -2130,3 +2130,144 @@ Validation of the versioned locator representation passed 531/531 integration
 checks, with no skips or failures. Static validation passed for all 536 tracked
 files (265 JavaScript, 131 Bash/Python/PHP scripts). No E2E matrix or release
 qualification was run. The model accuracy and paired benchmark gates remain open.
+
+**Next bounded attribution experiment.** Hypothesis: action costs are confounded
+by equal fill/press/click counts, and initial versus parent-restored increments
+have different preparation state. Preserve the two original long search
+consumers byte-for-byte in a separate development variant, adding consumers that
+branch after fill, submit and click with real outcome assertions. Use Rust's
+resulting incremental boundaries to measure submit and click separately; retain
+all original long-prefix/test observations. These related variants remain in the
+existing search development group. Advanced filtering and comparison remain
+independent, untouched timing groups. No new model family or fit is authorized
+by this diagnostic. First check source-derived action rank and exact original
+consumer preservation, then collect two samples of each selected increment at
+120 products using the existing complete collection harness. Cap additional
+browser execution at 10 minutes, serially, with existing resource limits; stop
+on incomplete source/coverage/cleanup evidence or unresolved action separation.
+Only if attribution is resolved should a separately recorded fitting decision
+follow. Existing log creation-to-final-write intervals total about 44 minutes
+for the twelve resumed collection attempts, including failures; retain the
+90-minute cumulative cap and reserve the remainder for qualification rather
+than silently resetting it.
+
+The first action collection (`27ed57b6`) is invalid: both retained restores and
+the original long consumers passed, but only four of five native tests passed.
+The added exact search-value assertion received
+`calibrationCalibration product 101` after `fill('Calibration product 101')`,
+rather than the requested value. Full coverage admission correctly rejected the
+attempt; cleanup passed and no labels were exported. The frozen submit forecast
+was 0.241 s; its two diagnostic timings are not training evidence. This ends the
+bounded action collection attempt under its incomplete-suite stopping condition.
+Do not start the prepared click collection or repeat this failure away. Inspect
+the input initialization/event sequence in a focused functional reproduction;
+keep the exact-value assertion and both original consumers unchanged. The failed
+native report and source archives remain retained for diagnosis.
+
+Focused input-event probes identify the cause. With the search widget initialized,
+all four fills append text: its `setActiveState` focus handler clears/restores the
+value, leaving the selection collapsed before Playwright inserts text. All four
+initialized probes with an explicit focus before fill preserve the exact requested
+value. Event/selection traces and setter stacks are retained in
+`catalog-search-fill-*-events.json`; these are functional diagnostics, not timing
+labels. Eight earlier probes without the initialization condition did not
+reproduce it and are not evidence of a fix.
+
+Revise only the new diagnostic consumers to focus before filling. Keep both
+original long consumers byte-for-byte. Add a second post-click consumer with an
+exact URL assertion so Rust can still discover a duplicated click boundary.
+Retain the failed variant and regenerate source identities and frozen forecasts.
+The same search group, fixture state, two repetitions and cumulative ten-minute
+action-collection limit remain; do not reset that budget. This repairs the
+observed interaction sequence instead of weakening the exact-value assertion.
+
+The focused variant's collection `e88053c7` was interrupted by the 200-second
+outer limit. Both segment samples restored successfully, but native execution
+produced no complete report; cleanup passed. No labels are admitted. Request logs
+show only the initial search page during native execution, not a merely slow
+completed suite: the unchanged long consumer can press Enter before quickSearch
+initialization, when the form's submit button is disabled. The initial suspicion
+that only the deadline was too short is not supported by those requests.
+
+Four functional probes now wait for the widget's observable disabled-button
+initialization state, explicitly focus, fill, and press Enter. Every probe passed
+exact value, query URL and product-link checks on pinned Chrome, with no page
+errors. This fixes both demonstrated readiness/selection conditions without
+setting application state or suppressing errors. Preserve all existing sources;
+a new same-group variant may add these two steps before each fill while retaining
+every original navigation, action and assertion in order. Freeze new forecasts.
+The prior ten-minute action protocol is closed with no accepted new observations.
+A revised collection is bounded to two attempts, five minutes each, within the
+unchanged cumulative 90-minute budget (about 50 minutes used so far). There is
+no further attempt under this approach if either complete suite fails. No model
+fit or held-out timing collection is part of this repair experiment.
+
+Collection `aa5cb590` also supplied no valid observations. Its two restored
+segments passed, but all six native tests failed in fixture setup with an invalid
+base URL. This was an experiment-script error: serializing the loaded config
+while adding a line reporter erased `process.env.PLAYWRIGHT_BASE_URL`. It is not
+a storefront failure or evidence against the readiness correction. Preserve that
+failed config and report; restore the dynamic expression in a new source copy
+and validate its resolved URL before the remaining attempt. No assertion or
+coverage gate changes are needed. If that remaining complete collection fails,
+stop this collection protocol and reassess rather than extending its limit.
+
+Collection `2871c864` passed both restores, all six native tests, coverage
+finalization and cleanup. Source and all archived coverage hashes verified;
+two prefix rows and six whole-test rows were admitted. Submit work measured
+0.478 s and 0.463 s against the frozen development forecast. All variants remain
+in the same search development group; no held-out timing was collected. The
+readiness/configuration repair protocol is complete with this passing evidence.
+
+The remaining attribution condition is a separately measured click increment.
+Use the same verified source/configuration and frozen plan for exactly one
+additional collection (two samples, at most five minutes, same 120-product state
+and cumulative 90-minute budget). Stop this collection on any complete-suite,
+source, coverage, resource or cleanup failure. No refit is authorized until the
+source-derived fill/press/click columns are independently identifiable.
+
+A separate forecast gate correction now rejects executable forecasts for an
+unknown environment, even when model qualification and feature ranges match.
+Shadow forecasts remain available for diagnostics. Forty-three focused
+predictor/planning checks passed; broader validation is pending after browser
+collection. The running isolated installation is unchanged by this root-tree edit.
+
+The final click collection (`84f7e9d4`) passed both restores, all six native tests,
+coverage finalization, cleanup, and source/archive audits. Click work measured
+0.529 s and 0.558 s. The assembled development data now contains 20 prefix and
+64 whole-test observations, still only two groups. Exact legacy-vector checks
+passed before v6 re-extraction. The fill/press/click design now has rank three,
+confirmed from the actual archived one-action segments; the original rank-one
+attribution blocker is resolved. Data and provenance are retained in
+`catalog-action-data-mAcvOt`. This is development evidence, not qualification.
+
+**Bounded attribution-fit check.** Test whether those independently measured
+actions improve the existing recipe without simultaneously changing its feature
+schema, transforms or regularization. Use all 20/64 audited development rows,
+the same two development groups and independently reserved validation/audit
+groups. Run exactly one candidate fit per timing unit, two CPUs and 1 GiB,
+90 seconds per fit; collect no further browser labels. Compare the prior 16/52
+rows directly as well as the complete new inventory. Require at least 95% within
+5% on development rescoring before considering held-out execution; this necessary
+fit check does not replace independent qualification. If the recipe still
+underfits, stop using additional observations to repeat it and inspect the
+objective/representation residuals. Do not tune against reserved observations.
+
+The attribution-fit check failed its development prerequisite. Prefix model
+`578bef45` reached 0/20 within 5% in grouped cross-validation and only 4/20 on
+training rows (still 4/16 on the previous common rows). Whole-test model
+`0074538c` reached 8/64 in cross-validation and 22/64 on training rows; the prior
+common subset fell from 24/52 to 21/52. The expensive prefix now forecasts about
+39.8 s, but home, submit and click errors remain large even in training. Both fits
+used under 0.5 seconds and 177 MB. Models and direct row-by-row comparisons are
+retained with the action dataset. Stop this recipe for this scoped experiment;
+more repetitions do not address the demonstrated underfit. Reserved timing groups
+remain untouched. Investigate additive work versus the current log-count/log-time
+objective and the missing initial/parent prefix-state feature before selecting
+another candidate. No qualification or speedup claim is supported.
+
+The environment-gate change passed 532/532 integration checks and all static
+checks. Two synthetic orchestration fixtures initially failed because they used
+placeholder environment digests; they now explicitly declare their actual
+host/container planning environments. The guard itself remains strict. This
+validation does not replace the required GitHub Actions E2E/release gate.

@@ -180,6 +180,7 @@ function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
     const referenceDomains = domainMatched ? domains : model.domains.filter(d => d.runner === snapshot.runner);
     const ranges = referenceDomains.length ? referenceDomains : model.domains;
     const environmentKnown = domains.some(d => d.environmentDigest === snapshot.environmentDigest);
+    ensure(shadow || environmentKnown, 'Environment has not passed model qualification');
     const e = model.estimator;
     ensure(snapshot.vector.every(x => x >= 0), 'Negative syntax features');
     const logMs = e.intercept + snapshot.vector.reduce((sum, x, i) =>
@@ -200,7 +201,7 @@ function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
     const factor = snapshot.baselineMs / model.referenceBaselineMs * snapshot.manualMultiplier;
     const lower = Math.max(0,inverse(logMs - model.errorLogP90)), upper = inverse(logMs + model.errorLogP90);
     ensure(Number.isFinite(ms * factor) && ms * factor > 0 && Number.isFinite(upper * factor), 'Prediction scaling overflow');
-    return {modelId: id, rawMs: ms, ms: ms * factor, factor, environmentKnown, ...(transfer ? {domainMatched, executionEligible:model.qualified && domainMatched && !outOfRange} : {}),
+    return {modelId: id, rawMs: ms, ms: ms * factor, factor, environmentKnown, ...(transfer ? {domainMatched, executionEligible:model.qualified && domainMatched && environmentKnown && !outOfRange} : {}),
         referenceBaselineMs: model.referenceBaselineMs, baselineMs: snapshot.baselineMs, manualMultiplier: snapshot.manualMultiplier,
         rawLowerMs: lower, rawUpperMs: upper,
         lowerMs: lower * factor, upperMs: upper * factor, outOfRange, qualified: model.qualified};

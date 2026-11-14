@@ -23,7 +23,9 @@ function fixture(t, firstStep = "cy.visit('/cart');") {
     const width=p.REACHABLE_WIDTH;
     const model={schemaVersion:1,featureSchema:p.REACHABLE_SCHEMA,qualified:true,referenceBaselineMs:106638.8,errorLogP90:0.2,
         estimator:{intercept:Math.log1p(1234),inputTransform:'log1p',mean:Array(width).fill(0),scale:Array(width).fill(1),coefficients:Array(width).fill(0)},
-        domains:[{runner:'cypress',unit:'test',timingBoundary:'cypress-test-duration-minus-preparation/v2'}, {runner:'cypress',unit:'prefix',timingBoundary:boundary}].map(d=>({...d,environmentDigest:'fixture',ranges:Array(width).fill([0,1e9])}))};
+        domains:[{runner:'cypress',unit:'test',timingBoundary:'cypress-test-duration-minus-preparation/v2'}, {runner:'cypress',unit:'prefix',timingBoundary:boundary}].map(d=>({...d,
+            environmentDigest:p.sha256(JSON.stringify(Object.entries({boundary:d.timingBoundary,collection:'source',platform:process.platform}).sort())),
+            ranges:Array(width).fill([0,1e9])}))};
     const file=path.join(root,'model.json');fs.writeFileSync(file,JSON.stringify(model));
     return {manifest,model,load(){fs.writeFileSync(file,JSON.stringify(model));return p.loadModel(file);}};
 }

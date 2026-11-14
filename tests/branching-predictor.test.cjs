@@ -354,6 +354,20 @@ test('timing boundary revisions retain forecasts and mark domain transfer', t =>
     assert.throws(()=>p.prepare({...input,timingBoundary:{}},loaded),e=>e.statusCode===500);
 });
 
+test('environment transfer remains diagnostic until the matching domain is qualified', t => {
+    const {loaded}=model(t);
+    loaded.model.qualified=true;
+    const snapshot=p.prepare(request(),loaded);
+    assert.equal(snapshot.prediction.domainMatched,true);
+    assert.equal(snapshot.prediction.outOfRange,false);
+    assert.equal(snapshot.prediction.environmentKnown,false);
+    assert.equal(snapshot.prediction.executionEligible,false);
+    assert.throws(()=>p.predict(snapshot,loaded),e=>/Environment/.test(e.issues[0].message));
+    loaded.model.domains[0].environmentDigest=snapshot.environmentDigest;
+    assert.equal(p.predict(snapshot,loaded,{transfer:true}).executionEligible,true);
+    assert.equal(p.prepare({...request(),environment:{browser:'different',workers:1}},loaded).prediction.executionEligible,false);
+});
+
 test('v5 bounds require a complete matching domain instead of mixing feature ranges', () => {
     const width=p.REACHABLE_WIDTH;
     const vector=Array(width).fill(0);
