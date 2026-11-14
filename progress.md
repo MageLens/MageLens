@@ -1095,3 +1095,12 @@ requests. With a valid profile the same probe passed and recorded a
 tests passed. The ordinary coverage reporter still uses its existing
 in-process profiling path. This evidence concerns the native whole-test
 adapter; checkpoint segment timing remains open.
+
+Calibration reports now identify the provider profile and retain each
+sample's phase timings, snapshot bytes, artifact count and completion
+status. Failed samples keep the phases they reached and omit lifecycle
+cleanup from their individual timings. Eleven calibration and baseline
+tests passed. The real storage probe rejected the checkout's ext4 volume
+because reflinks were unavailable. There was no mounted XFS or Btrfs
+filesystem on this host. These results validate reporting and the
+storage guard. A dedicated Magento run is still needed for calibration.

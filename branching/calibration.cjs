@@ -19,35 +19,48 @@ async function measure({provider,root,samples=3,warmup}) {
     write(path.join(directory,config.files.owner),{schemaVersion:1,kind:config.checkpoint.ownerKind,run});
     const report={schemaVersion:1,kind:'baseline-calibration',run,directory,status:'failed',errors:[],phases:{},
         counts:{fallbacks:0,failures:0,blockedSpecs:0},checkpoints:[],releases:[],
-        costs:{captures:[],restores:[],releases:[],resets:[]}};
+        costs:{captures:[],restores:[],releases:[],resets:[]},
+        calibration:{schemaVersion:1,profileDigest:digest(provider.identity),requestedSamples:samples,samples:[]}};
     const start=performance.now();
+    let sample;
     async function measured(name,action) {
         const start=performance.now();try{return await action();}
-        finally {report.phases[name]=(report.phases[name]??0)+performance.now()-start;}
+        finally {
+            const elapsed=performance.now()-start;
+            report.phases[name]=(report.phases[name]??0)+elapsed;
+            if(sample) sample.phases[name]=(sample.phases[name]??0)+elapsed;
+        }
     }
-    const store=new CheckpointStore(directory,run,digest(provider.identity));
+    const store=new CheckpointStore(directory,run,report.calibration.profileDigest);
     let cleaned=false;
     try {
         await measured('prepare',()=>provider.prepare({run,directory,approach:'branching'}));
         for(let index=0;index<samples;index++) {
+            const stage='calibration-'+index,key=digest({stage,profile:provider.identity});
+            sample={stage,phases:{},status:'incomplete'};
+            report.calibration.samples.push(sample);
             let time=performance.now();await measured('reset',()=>provider.reset());report.costs.resets.push(performance.now()-time);
             await measured('warmup',()=>warmup(provider));
             const expected=digest(await provider.normalizedState());
-            const stage='calibration-'+index,key=digest({stage,profile:provider.identity});
             time=performance.now();
             const ref=await store.capture({key,stage,parent:null,lineage:[],ttlMs:config.checkpoint.ttlMs,provider,measured,
                 assert:async p=>assert.equal(digest(await p.normalizedState()),expected,'Calibration state changed')});
             const manifest=store.verify(ref,key);report.costs.captures.push({stage,ms:performance.now()-time});report.checkpoints.push(manifest);
+            sample.snapshotBytes=manifest.artifacts.reduce((total,artifact)=>total+artifact.bytes,0);
+            sample.artifactCount=manifest.artifacts.length;
             time=performance.now();
             store.verify(ref,key);
             await measured('restore',()=>provider.restore(path.join(ref.directory,config.files.payload)));
             assert.equal(digest(await provider.normalizedState()),expected,'Calibration restoration changed application state');
             report.costs.restores.push({stage,ms:performance.now()-time});
-            time=performance.now();const checkpoint=store.release(stage);
+            time=performance.now();const checkpoint=await measured('release',()=>store.release(stage));
             report.costs.releases.push({stage,ms:performance.now()-time});report.releases.push({stage,checkpoint});
+            sample.status='passed';
+            sample=null;
         }
     } catch(error) {report.errors.push({phase:'calibration',message:error.message});}
     finally {
+        sample=null;
         try {await measured('cleanup',()=>provider.cleanup());cleaned=true;}
         catch(error){report.errors.push({phase:'cleanup',message:error.message});}
         report.providerDiagnostics=provider.diagnostics;
