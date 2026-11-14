@@ -133,8 +133,8 @@ test('Playwright campaign records the frozen forecast before execution and binds
     manifest.candidateDigest = fileDigest(model);
     Object.assign(manifest.inventory[0], {runner:'playwright', timingBoundary:boundary});
     ledger.create(root, manifest, lease);
-    await collect({workspace:root,cycle:manifest.cycleId,lease,caseId:'train',profile:{model},
-        resources:()=>({peakMemoryBytes:512,diskBytes:1000}),
+    const run = peakMemoryBytes => collect({workspace:root,cycle:manifest.cycleId,lease,caseId:'train',profile:{model},
+        resources:()=>({peakMemoryBytes,diskBytes:1000}),
         runner:{async run(_config,_directory,{onPrepared}) {
             onPrepared({forecastDigest:fileDigest(forecasts)});
             assert.equal(ledger.read(root, manifest.cycleId).records[0].event.attempt.status, 'started');
@@ -143,9 +143,13 @@ test('Playwright campaign records the frozen forecast before execution and binds
             return {exitCode:0,status:'passed',errors:[],tests:[{}],profileArtifacts:{forecasts,observations}};
         }}
     });
+    assert.equal((await run(512)).collectionStatus,'passed');
+    assert.equal((await run(1025)).collectionStatus,'quarantined');
     const records = ledger.read(root, manifest.cycleId).records;
-    assert.deepEqual(records.map(record=>record.event.attempt.status), ['started','passed']);
+    assert.deepEqual(records.map(record=>record.event.attempt.status), ['started','passed','started','quarantined']);
     assert.equal(records[1].event.attempt.observationDigest,fileDigest(observations));
+    assert.equal(records[3].event.attempt.observationDigest,undefined);
+    assert.match(records[3].event.attempt.reason,/budget/);
 });
 
 test('recovery records unfinished attempts once and preserves completed observations', t => {

@@ -21,11 +21,11 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
     const startedAt = new Date().toISOString();
     const started = performance.now();
     let snapshotDigest;
-    function append(status, details, nextAction) {
+    function append(status, details, nextAction, measuredResources = resources()) {
         ledger.append(workspace, cycle, {
             id: `${id}-${status}`, state:'collecting', startedAt,
             finishedAt:new Date().toISOString(), elapsedMs:performance.now()-started,
-            resources:resources(), nextAction,
+            resources:measuredResources, nextAction,
             attempt:{id, caseId, status, snapshotDigest, ...details}
         }, lease);
     }
@@ -46,20 +46,31 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
     }
     const artifacts = report.profileArtifacts;
     if (!snapshotDigest) throw new Error('Native Playwright run did not record a frozen forecast');
+    const measuredResources = resources();
+    let collectionStatus;
     if (report.exitCode !== 0 || report.status !== 'passed' || report.errors.length) {
-        append('failed', {reason:'Native Playwright result failed'}, 'Inspect the native result');
+        append('failed', {reason:'Native Playwright result failed'}, 'Inspect the native result', measuredResources);
+        collectionStatus = 'failed';
+    } else if (measuredResources.peakMemoryBytes > manifest.budget.maxMemoryBytes ||
+        measuredResources.diskBytes > manifest.budget.maxDiskBytes) {
+        append('quarantined', {reason:'Run exceeded the frozen memory or disk budget'}, 'Inspect resource measurements', measuredResources);
+        collectionStatus = 'quarantined';
     } else if (!artifacts?.observations || !fs.existsSync(artifacts.observations) ||
         !fs.existsSync(artifacts.forecasts) || fileDigest(artifacts.forecasts) !== snapshotDigest) {
-        append('quarantined', {reason:'Missing observation or changed frozen forecast'}, 'Audit the native timing artifacts');
+        append('quarantined', {reason:'Missing observation or changed frozen forecast'}, 'Audit the native timing artifacts', measuredResources);
+        collectionStatus = 'quarantined';
     } else {
         const samples = JSON.parse(fs.readFileSync(artifacts.observations, 'utf8'));
         if (!samples.length || samples.length !== report.tests.length ||
             samples.some(sample => !sample.eligible || sample.modelId !== manifest.candidateDigest ||
                 sample.featureSchema !== manifest.featureSchema || sample.timingBoundary !== entry.timingBoundary))
-            append('quarantined', {reason:'Native observation did not pass the frozen profile checks'}, 'Audit the rejected observation');
-        else append('passed', {observationDigest:fileDigest(artifacts.observations)}, 'Continue the frozen run order');
+            collectionStatus = 'quarantined';
+        else collectionStatus = 'passed';
+        if (collectionStatus === 'quarantined')
+            append('quarantined', {reason:'Native observation did not pass the frozen profile checks'}, 'Audit the rejected observation', measuredResources);
+        else append('passed', {observationDigest:fileDigest(artifacts.observations)}, 'Continue the frozen run order', measuredResources);
     }
-    return report;
+    return {...report, collectionStatus};
 }
 
 module.exports = {collect};
