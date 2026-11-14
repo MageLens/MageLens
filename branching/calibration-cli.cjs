@@ -33,6 +33,14 @@ async function execute(args) {
         if(typeof runtime.calibrate!=='function')throw new Error('This runner does not support checkpoint calibration');
         const backend=new RetainedMagentoBackend({workspace,helperImage:process.env.MAGELENS_BRANCHING_IMAGE,disposable:true,workflowLease});
         report=await runtime.calibrate({backend,root:storage,samples:3});
+        try {
+            require('./automatic.cjs').verifySources(manifest);
+            report.sourceIntegrity={verified:true,digest:manifest.sourceDigest};
+        } catch (error) {
+            report.sourceIntegrity={verified:false,digest:manifest.sourceDigest};
+            report.status='failed';
+            report.errors.push({phase:'source',message:error.message});
+        }
         report.baseline={used,update:store.update(report,{explicit:true,replace:true})};
         const directory=path.join(workspace,'.runtime/branching-results');fs.mkdirSync(directory,{recursive:true});
         const file=path.join(directory,'calibration-'+report.run+'.json');fs.writeFileSync(file,JSON.stringify(report,null,2)+'\n',{mode:0o600});
