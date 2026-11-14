@@ -631,8 +631,9 @@ Recovered the retained Playwright workload generator into
 per-family generated-source hashes in `provenance.json`. All 13 families retain
 their original generated journeys and assertions. Historical decision fields are
 explicitly named `historicalExpected` / `historicalExpectedCost`; they must not be
-used as acceptance assertions under the current economics. The original ignored
-copy has no verifiable Git revision, which is recorded rather than invented.
+used as acceptance assertions under the current economics. A full-history search subsequently matched the original ignored copy byte for
+byte to Git revision `7e5cc6375b93e2bf518201033327b123b964e625`. The 13 families
+expand to 128 Playwright test declarations.
 
 Two focused inventory regressions pass, including parsing and byte-hash equality
 for every generated suite and preservation of fixture-state assertions. Generator
@@ -642,3 +643,25 @@ ownership still need reconciliation. The initial host npm 9.2.0 locked install
 failed on override resolution. `npx --yes npm@11.6.2 ci --ignore-scripts
 --no-audit --no-fund` succeeded without changing dependency pins or the lockfile;
 both focused regressions passed again against the clean installation.
+
+The private inventory draft is stored at
+`.runtime/ml-estimation/campaign-20261114/manifest.json`. It includes source hashes,
+explicit pending native IDs and split assignments, all five corpus categories,
+retained ownership/isolation evidence references and a serialized resource budget.
+It is deliberately not frozen or qualification-ready: native discovery, helper
+families, prior model exposure and live isolation checks remain outstanding. No
+new measurement labels have been collected.
+
+The recovered Playwright families were also collected through the normal native
+adapter in a dedicated 1 GiB / 1 CPU container with networking disabled and the
+repository mounted read-only: **128 native test IDs**, successful discovery, no
+test bodies executed. IDs and source-matched generated files remain private.
+
+Validation: **436 integration tests passed, zero failed/skipped**, using retained
+Node 24.22.1 and the isolated PHP CLI wrapper. The first host attempt recorded
+426 passes, four failures and six skips because host Node lacked TypeScript and
+PHP was absent; that complete failed attempt remains in the campaign evidence.
+Repository static checks passed (510 tracked files checked for notices, 242
+JavaScript files linted, 128 scripts syntax-checked). This does not establish
+final-candidate CI, model accuracy or speedup. Compact evidence is in
+`.runtime/ml-estimation/campaign-20261114/validation.json`.
