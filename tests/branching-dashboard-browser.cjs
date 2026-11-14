@@ -10,8 +10,7 @@ const {chromium, expect} = require('@playwright/test');
 const {selfCoverage} = require('./branching-self-coverage.cjs');
 const {rustCoverage} = require('./branching-rust-coverage.cjs');
 const {assets} = require('../branching/configs/dashboard-assets.cjs');
-const pins = fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8');
-const pinned = name => { const match = pins.match(new RegExp(`^${name}: "([^"]+)"`, 'm')); assert.ok(match, `Missing ${name} pin`); return match[1]; };
+const pinned = require('./dependency-pins.cjs');
 
 async function main() {
     const output = path.resolve(process.argv[2] ?? '.runtime/branching-dashboard-self-test'); fs.mkdirSync(output, {recursive: true});

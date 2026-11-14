@@ -233,3 +233,55 @@ test('independent single-project Playwright suite uses measured candidates witho
     assert.deepEqual(f.calls, [{checkpoint:['first','second']}]);
     assert.equal(report.results.length,2);
 });
+
+test('declared parallel page tests group consumers without crossing setup or rerunning hooks', async t => {
+    const f=fixture(t);
+    f.inventory.tests=f.inventory.tests.slice(0,3);
+    const source={...f.manifest.tests[0],id:'middle',title:'middle',fixtureSetup:[]};
+    f.manifest.tests.push(source);
+    f.inventory.tests.splice(2,0,{...f.inventory.tests[1],id:'native-middle',title:'middle'});
+    f.inventory.config.projects[1].fullyParallel=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.deepEqual(report.ordering.scheduled,['setup','native-middle','native-first','native-second']);
+    assert.equal(report.ordering.changed,true);
+    assert.deepEqual(f.calls.map(call=>call.checkpoint??call.tests.map(test=>test.id)),[['setup'],['native-middle'],['first','second']]);
+    assert.deepEqual(report.results.map(result=>result.id),report.ordering.scheduled);
+});
+test('parallel configuration cannot reorder fixture setup or native-only lifecycle work', async t => {
+    const f=fixture(t); f.inventory.config.projects[1].fullyParallel=true;
+    f.inventory.tests.splice(2,0,f.inventory.tests.pop());
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.ordering.changed,false);
+    assert.deepEqual(report.results.map(result=>result.id),f.inventory.tests.map(test=>test.id));
+});
+
+test('declared parallel fixture consumers retain source order', async t => {
+    const f=fixture(t);
+    f.inventory.tests=f.inventory.tests.slice(0,3);
+    const source={...f.manifest.tests[0],id:'middle',title:'middle',fixtureSetup:[]};
+    f.manifest.tests.push(source);
+    f.manifest.tests[0].fixtureSetup=[{name:'shared-resource'}];
+    f.inventory.tests.splice(2,0,{...f.inventory.tests[1],id:'native-middle',title:'middle'});
+    f.inventory.config.projects[1].fullyParallel=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.equal(report.ordering.changed,false);
+    assert.deepEqual(report.results.map(result=>result.id),f.inventory.tests.map(test=>test.id));
+});
+
+test('verified independent native locals can move as a whole test without becoming checkpoint consumers', async t => {
+    const f=fixture(t);
+    f.inventory.tests=f.inventory.tests.slice(0,3);
+    const source={...f.manifest.tests[0],id:'middle',title:'middle',disposition:'adapter-required',fixtureSetup:[]};
+    f.manifest.tests.push(source);
+    f.inventory.tests.splice(2,0,{...f.inventory.tests[1],id:'native-middle',title:'middle'});
+    f.inventory.config.projects[1].fullyParallel=true;
+    f.project.adapter={identity:'verified-page-lifecycle',supports:test=>test.id!=='middle',supportsOrdering:()=>true,
+        supportsCheckpoint:()=>true,execute:()=>{}};
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.equal(report.ordering.changed,true);
+    assert.deepEqual(report.routing.native,['setup','native-middle']);
+    assert.deepEqual(report.results.map(result=>result.id),['setup','native-middle','native-first','native-second']);
+});

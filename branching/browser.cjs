@@ -6,6 +6,7 @@ const {setTimeout: delay} = require('node:timers/promises');
 const {restoreContext, storageState} = require('./browser-context.cjs');
 const {coverageCookie, withoutCoverageCookie} = require('../playwright/coverage-cookie.cjs');
 const {CodeCache} = require('./code-cache.cjs');
+const {CoverageGate, javascript, templates} = require('./coverage-gate.cjs');
 const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
 
 class PlaywrightState {
@@ -16,6 +17,8 @@ class PlaywrightState {
         this.templateCoverageDirectory = templateCoverageDirectory;
         this.coverageCookie = coverageRunId === undefined ? null : coverageCookie(baseURL, coverageRunId);
         this.cache = new CodeCache();
+        this.javascriptGate = new CoverageGate(javascript, 'id');
+        this.templateGate = new CoverageGate(templates, 'document');
         this.requests = new Map(); this.errors = []; this.sessions = new Map(); this.sockets = new Set();
     }
     check() {
@@ -52,7 +55,7 @@ class PlaywrightState {
         if (restored.created && this.javascriptCoverageDirectory) {
             const {collectJavaScriptCoverage} = require('../playwright/javascript-coverage.cjs');
             this.javascriptCoverage = await collectJavaScriptCoverage(this.context, {
-                directory:this.javascriptCoverageDirectory, flushOnPageClose:false
+                directory:this.javascriptCoverageDirectory, flushOnPageClose:false, transform:snapshot=>this.javascriptGate.receive(snapshot)
             });
         }
         if (restored.created && this.templateCoverageDirectory) {
@@ -61,14 +64,17 @@ class PlaywrightState {
             // Checkpoint fencing flushes explicitly before freezing. Page-close
             // hooks must never evaluate scripts on a frozen document.
             this.templateCoverage = await registerTemplateCoverage({
-                exposeBinding:context.exposeBinding.bind(context),
+                exposeBinding:(name, callback) => context.exposeBinding(name, (source, snapshot) => {
+                    const measured = this.templateGate.receive(snapshot);
+                    if (measured) return callback(source, measured);
+                }),
                 addInitScript:context.addInitScript.bind(context),
                 pages:() => this.frozen ? [] : context.pages(),
                 on() {},
                 off() {}
             }, {outputDir:this.templateCoverageDirectory});
         }
-        if (this.coverageCookie) await this.context.addCookies([this.coverageCookie]);
+        // Collection resumes only at an original test segment, after reconstruction.
         this.page = await this.context.newPage();
         this.page.setDefaultTimeout(this.timeout); this.page.setDefaultNavigationTimeout(this.timeout);
         await this.track(this.page);
@@ -81,6 +87,21 @@ class PlaywrightState {
             await this.settle(500);
         }
         this.check();
+    }
+    async pauseCoverage() {
+        if (!this.frozen) {
+            await this.javascriptCoverage?.flushPages();
+            await this.templateCoverage?.flush();
+        }
+        this.javascriptGate.pause(); this.templateGate.pause();
+        if (this.coverageCookie && this.context) await this.context.clearCookies({name:this.coverageCookie.name});
+    }
+    async resumeCoverage() {
+        if (!this.javascriptGate.paused && !this.templateGate.paused) return;
+        await this.javascriptCoverage?.flushPages();
+        await this.templateCoverage?.flush();
+        this.javascriptGate.resume(); this.templateGate.resume();
+        if (this.coverageCookie) await this.context.addCookies([this.coverageCookie]);
     }
     async settle(quietMs = 100) {
         this.check();

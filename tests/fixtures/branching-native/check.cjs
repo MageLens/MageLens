@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const pinned = require('../../dependency-pins.cjs');
 const runner = require('../../../branching/runners/playwright/native.cjs');
 const {validateNative} = require('../../../branching/suite.cjs');
 (async () => {
@@ -21,7 +22,7 @@ const {validateNative} = require('../../../branching/suite.cjs');
 const test=base.extend({token:async({},use)=>{require('./hooks.cjs')('fixture before');await use('fixture value');require('./hooks.cjs')('fixture after');}});
 test.beforeEach(()=>require('./hooks.cjs')('before each'));
 test.afterEach(()=>require('./hooks.cjs')('after each'));
-for(let i=0;i<12;i++)test('generated '+i,async({page,token,browser})=>{expect(browser.version()).toBe('156.0.8078.80');await page.setContent('<button>'+token+'</button>');await expect(page.getByRole('button')).toHaveText('fixture value');require('./hooks.cjs')('body '+i);});
+for(let i=0;i<12;i++)test('generated '+i,async({page,token,browser})=>{expect(browser.version()).toBe(${JSON.stringify(pinned('CHROME_VERSION'))});await page.setContent('<button>'+token+'</button>');await expect(page.getByRole('button')).toHaveText('fixture value');require('./hooks.cjs')('body '+i);});
 test.fixme('upstream pending',async()=>{});`);
         const config = path.join(directory, 'playwright.config.cjs');
         write('playwright.config.cjs', "module.exports={testDir:'.',globalSetup:'./setup.cjs',globalTeardown:'./teardown.cjs',timeout:15000,workers:1,use:{channel:'chrome'},projects:[{name:'setup',testMatch:'seed.spec.ts'},{name:'browser',testMatch:'flow.spec.ts',dependencies:['setup']}]};");

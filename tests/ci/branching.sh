@@ -32,6 +32,7 @@ trap collect_reports EXIT
 # Real Chrome, MariaDB, file/session snapshots and browser storage restoration.
 # The fixture owns and removes its database container; no application is reused.
 docker pull mariadb:11.4
+docker pull valkey/valkey:8.1-alpine
 docker run --rm --init --network none --memory 2g --memory-swap 2g --shm-size 512m \
     --env NODE_PATH=/workspace/node_modules \
     --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \

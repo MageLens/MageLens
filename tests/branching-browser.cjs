@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
+const pinned = require('./dependency-pins.cjs');
 const {execFileSync} = require('node:child_process');
 const {setTimeout: delay} = require('node:timers/promises');
 const {randomUUID} = require('node:crypto');
@@ -75,8 +76,10 @@ async function main() {
     const root = process.argv[2]; if (!root) throw new Error('Supply a dedicated CoW storage directory'); probe(root);
     const browser = await chromium.launch({channel: 'chrome', headless: true});
     try {
-        assert.equal(browser.version(), '156.0.8078.80');
-        assert.equal(require('@playwright/test/package.json').version, '1.65.0');
+        assert.equal(browser.version(), pinned('CHROME_VERSION'));
+        assert.equal(require('@playwright/test/package.json').version, pinned('PLAYWRIGHT_VERSION'));
+        const redis = await require('./branching-redis.cjs').checkRedisState();
+        const coverage = await require('./branching-browser-coverage.cjs').checkCoverage(browser);
         await require('./branching-browser-ready.cjs').checkReadiness(browser);
         await require('./branching-browser-cache.cjs').checkCacheIsolation(browser);
         const backend = new Backend();
@@ -86,7 +89,7 @@ async function main() {
             session: fs.readFileSync(path.join(backend.paths.session, 'state'), 'utf8')
         })});
         let firstPage, context; const ids = [];
-        const workflow = {identity: {source: 'real-browser-check-v1', fixture: 'mariadb-files-storage', configuration: 'three-siblings', dependencies: 'pw1.65-chrome156', implementation: 'branching'}, stages: [
+        const workflow = {identity: {source: 'real-browser-check-v1', fixture: 'mariadb-files-storage', configuration: 'three-siblings', dependencies: {playwright:pinned('PLAYWRIGHT_VERSION'),chrome:pinned('CHROME_VERSION')}, implementation: 'branching'}, stages: [
             {id: 'customer-ready', run: async p => {
                 // The fixture receives an ephemeral port only after reset.
                 await p.page.goto(`http://127.0.0.1:${backend.port}`);
@@ -129,7 +132,7 @@ async function main() {
         assert.equal(backend.staticRequests, 3, 'Each restored branch fetches its own assets');
         assert.equal(provider.browserState.cache.stats.clears, 3);
         const summary = {status: result.status, browser: {name: 'Chrome for Testing', version: browser.version()},
-            playwright: require('@playwright/test/package.json').version, tests: result.results.length,
+            playwright: require('@playwright/test/package.json').version, tests: result.results.length, redis, coverage,
             counts: result.counts, cache: provider.browserState.cache.stats, wallMs: result.metrics.wallMs};
         if (process.argv[3]) fs.writeFileSync(process.argv[3], JSON.stringify(summary, null, 2) + '\n');
         console.log(JSON.stringify(summary, null, 2));

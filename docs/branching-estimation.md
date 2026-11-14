@@ -40,7 +40,12 @@ the workflow lock. Platform, browser, provider, source, service resources and
 database-size identity changes invalidate incompatible measurements.
 
 Grouping preserves project dependencies, serial groups, fixture scope and browser
-isolation. Unsupported lifecycles remain native. Source discovery cannot authorize
+isolation. Within a Playwright project declared `fullyParallel`, assessed page-only
+tests may be grouped into one checkpoint phase. Independent tests with local
+variables can move as whole native tests without becoming checkpoint consumers.
+Serial groups, custom fixture setup and native-only lifecycle work retain their
+native order. Reports record the actual schedule and any ordering change.
+Unsupported lifecycles remain native. Source discovery cannot authorize
 restoring unsupported JavaScript closures or plugin state. Reports retain every
 test, actual decisions, prefix timings, operation timings and recalibration
 observations. Actual savings require complete paired executions and full coverage

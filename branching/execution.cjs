@@ -82,8 +82,10 @@ function createExecution({
             } finally {
                 if (entry.prefixTiming) entry.prefixTiming.workMs = performance.now()-workStarted;
             }
-            await node.assert(provider, node.inputs);
-            entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
+            if (!(adaptive && graph.nativePageLifecycle && kind === 'Stage')) {
+                entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
+                await node.assert(provider, node.inputs);
+            }
             entry.status = protocol.status.passed;
         } catch (error) {
             entry.status = protocol.status.failed;
@@ -97,7 +99,7 @@ function createExecution({
         } finally {
             entry.wallMs = performance.now() - time;
             if (kind === 'Stage' && entry.status === protocol.status.passed && !prefixDurations.has(node.id))
-                prefixDurations.set(node.id, entry.wallMs);
+                prefixDurations.set(node.id, entry.prefixTiming?.workMs ?? entry.wallMs);
             emit(protocol.event.nodeEnd, {
                 node: node.id,
                 operation: protocol.operation.execute,
@@ -184,7 +186,15 @@ function createExecution({
         }
         const prior = node.parent
             ? await resolve(node.parent, next)
-            : await measured('reset', async () => {
+            : graph.nativePageLifecycle && provider.nextLinear && report.costs.resets.length &&
+                !report.checkpoints.length && !report.counts.fallbacks
+              ? await measured('linearStart', async () => {
+                  const time = performance.now();
+                  await provider.nextLinear();
+                  (report.costs.linearStarts ??= []).push(performance.now()-time);
+                  return {parent:null,lineage:[]};
+              })
+              : await measured('reset', async () => {
                   const time = performance.now();
                   await provider.reset();
                   const resetMs = performance.now() - time;
@@ -204,6 +214,10 @@ function createExecution({
             try {
                 const time = performance.now();
                 emit(protocol.event.nodeStart, {node: id, operation: protocol.operation.capture});
+                if (adaptive && graph.nativePageLifecycle) {
+                    const entry = report.segments.at(-1);
+                    entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
+                }
                 const ref = await store.capture({
                     key: graph.key(id),
                     stage: id,

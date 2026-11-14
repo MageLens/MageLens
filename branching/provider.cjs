@@ -37,6 +37,7 @@ class BranchingProvider {
                     './snapshot-state.cjs',
                     './storage.cjs',
                     './browser.cjs',
+                    './coverage-gate.cjs',
                     './browser-context.cjs',
                     './code-cache.cjs',
                     '../playwright/coverage-cookie.cjs',
@@ -85,6 +86,13 @@ class BranchingProvider {
     async reset() {
         await this.restore(this.base);
     }
+    async nextLinear() {
+        // Native page-only fixtures isolate browser storage, while application
+        // and cache state continue normally until a checkpoint is introduced.
+        await this.browserState.pauseCoverage();
+        await this.browserState.closePages();
+        await this.browserState.open();
+    }
     async captureBarrier() {
         await this.browserState.freeze();
         await this.backend.drain();
@@ -106,6 +114,7 @@ class BranchingProvider {
     }
     async restore(directory) {
         if (this.browserState.active) await this.browserState.freeze();
+        await this.browserState.pauseCoverage();
         await this.backend.drain();
         await this.browserState.closePages();
         await this.backend.stop();
@@ -115,7 +124,7 @@ class BranchingProvider {
         await this.browserState.open(browser);
     }
     async beginSegment() {
-        if (this.browserState.active) this.browserState.check();
+        if (this.browserState.active) { this.browserState.check(); await this.browserState.resumeCoverage?.(); }
     }
     async endSegment() {
         this.browserState.check();

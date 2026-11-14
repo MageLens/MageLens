@@ -17,7 +17,7 @@ class NativeReporter {
     constructor() { this.results = new Map(); this.errors = []; }
     onBegin(config, suite) {
         this.config = {rootDir: config.rootDir, globalSetup: !!config.globalSetup, globalTeardown: !!config.globalTeardown, webServer: !!config.webServer,
-            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown,
+            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown, fullyParallel: p.fullyParallel === true,
                 browserProfile: browserProfile(p.use)}))};
         this.tests = suite.allTests().map(test => {
             const project = test.parent.project();

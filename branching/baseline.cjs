@@ -293,7 +293,7 @@ function openProject(workspace, configuration = {}) {
         .trim()
         .split(/\s+/)
         .filter(Boolean);
-    if (ids.length !== 3) throw new Error(config.messages.missingServices);
+    if (ids.length !== 4) throw new Error(config.messages.missingServices);
     const containers = JSON.parse(
         execFileSync('docker', [...config.commands.inspect, ...ids], {
             encoding: 'utf8',
@@ -325,13 +325,18 @@ function openProject(workspace, configuration = {}) {
     const identity = {
         version: defaults.version,
         provider: require('./identity.cjs').implementationDigest(['provider.cjs', 'retained-provider.cjs',
-            'checkpoint-store.cjs', 'browser.cjs', 'browser-context.cjs', 'code-cache.cjs', 'runtime-state.cjs',
-            'retained-magento.cjs', 'retained-workspace.cjs', 'retained-database.cjs', 'magento.cjs',
+            'checkpoint-store.cjs', 'coverage-gate.cjs', 'browser.cjs', 'browser-context.cjs', 'code-cache.cjs', 'runtime-state.cjs',
+            'retained-magento.cjs', 'retained-workspace.cjs', 'retained-database.cjs', 'redis-state.cjs', 'magento.cjs',
             'configs/retained-env.php', 'configs/retained-validate.php', 'configs/retained-probe.php',
             'configs/retained-queues.php', 'configs/fastcgi.php'].map(file => path.join(__dirname, file))),
         sourceDigest: configuration.sourceDigest ?? null,
         checkpointContext: configuration.checkpointContext ?? null,
         architecture: process.arch,
+        runtimeResources: Object.fromEntries(['cpu.max','memory.max','memory.swap.max','cpuset.cpus.effective'].map(file=>{
+            const target = path.join('/sys/fs/cgroup',file);
+            return [file,fs.existsSync(target) ? fs.readFileSync(target,'utf8').trim() : null];
+        })),
+        storage: configuration.storage ? ((stat)=>({type:stat.type,blockSize:stat.bsize}))(fs.statfsSync(configuration.storage)) : null,
         cpu: os.cpus()[0]?.model,
         // Reuse averages only within a database-size cohort. Small fixtures share
         // a 16 MiB floor; doubling a larger database starts from defaults again.

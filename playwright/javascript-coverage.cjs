@@ -7,10 +7,13 @@ const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 
-async function collectJavaScriptCoverage(context, {directory = '.nyc_output', flushOnPageClose = true} = {}) {
+async function collectJavaScriptCoverage(context, {directory = '.nyc_output', flushOnPageClose = true, transform = snapshot => snapshot} = {}) {
     const snapshots = new Map();
     const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
-    await context.exposeBinding(binding, (_source, snapshot) => snapshots.set(snapshot.id, snapshot.coverage));
+    await context.exposeBinding(binding, (_source, snapshot) => {
+        const measured = transform(snapshot);
+        if (measured) snapshots.set(measured.id, measured.coverage);
+    });
     await context.addInitScript(({binding}) => {
         const id = crypto.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2);
         const publish = () => window[binding]({id, coverage: window.__coverage__ || {}});

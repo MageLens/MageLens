@@ -64,7 +64,8 @@
       "-q",
       "db",
       "phpfpm",
-      "runner"
+      "runner",
+      "redis"
     ],
     "inspect": [
       "inspect"
@@ -79,7 +80,7 @@
     "linkedDirectory": "Baseline directory must not be a symbolic link",
     "invalidHistory": "Baseline history must be a regular file",
     "databaseSize": "Cannot determine database size for the checkpoint baseline",
-    "missingServices": "Database and PHP services are required for baseline calibration",
+    "missingServices": "Database, PHP, runner and cache services are required for baseline calibration",
     "invalidDecision": "Checkpoint decision baseline must be a finite number greater than the minimum saving"
   }
 }

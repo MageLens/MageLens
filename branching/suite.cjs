@@ -99,13 +99,11 @@ async function collectAssessed(manifest, project, directory, runner) {
     assertInventoryAssessed(manifest, inventory);
     return inventory;
 }
-async function runSuite(options) {
+async function prepareSuite(options) {
     costs.assertAutomatic(options);
-    const {manifest, project, directory, runner, runCheckpoint, coverageRoot} = options;
+    const {manifest, project, directory, runner, coverageRoot} = options;
     costs.assertAutomatic(project);
     require('./checkpoint-limit.cjs').validateLimit(project.maxCheckpointsPerTest);
-    const mode = 'AUTO';
-    const started = performance.now(), phases = [];
     const inventory = await collectAssessed(manifest, project, directory, runner);
     const groups = partition(manifest, inventory, project);
     let decision, built, checkpoint = groups.checkpoint;
@@ -142,9 +140,42 @@ async function runSuite(options) {
             .some(stage => chosen.has(stage.id))).map(test => byStaticId.get(test.id));
     }
 
+    const main = inventory.tests.filter(test => !groups.setup.some(setup => setup.id === test.id));
+    const sourceTests = new Map(manifest.tests.map(test=>[test.id,test]));
+    // fullyParallel is the runner's existing declaration that ordering within a
+    // project is not required. Also require assessed, isolated page lifecycles;
+    // custom/worker fixtures, serial groups and native-only hooks stay ordered.
+    const mainProjects = new Set(main.map(test=>test.project));
+    const orderingEligible = test => {
+        const source=manifest.tests.find(source=>testKey({...source,file:path.join(manifest.root,source.file)})===testKey(test));
+        return source && test.expectedStatus==='passed' && !test.serial &&
+            !test.annotations?.some(a=>['skip','fixme','fail'].includes(a.type)) &&
+            !source.restoration && !source.fixtureSetup?.length &&
+            (project.adapter?.supportsOrdering ? project.adapter.supportsOrdering(source) === true : groups.checkpoint.some(candidate=>candidate.id===test.id));
+    };
+    const canGroup = checkpoint.length && mainProjects.size === 1 && main.every(orderingEligible) &&
+        inventory.config.projects.find(project=>mainProjects.has(project.name))?.fullyParallel === true &&
+        groups.checkpoint.every(test=>{const source=sourceTests.get(test.staticId); return !source.restoration && !source.fixtureSetup?.length;});
+    const checkpointIds = new Set(checkpoint.map(test=>test.id));
+    const ordered = canGroup ? [...main.filter(test=>!checkpointIds.has(test.id)),...main.filter(test=>checkpointIds.has(test.id))] : main;
+    const blocks = [];
+    for (const test of ordered) {
+        const kind = checkpointIds.has(test.id) ? 'checkpoint' : 'native';
+        if (blocks.at(-1)?.kind !== kind) blocks.push({kind,tests:[]});
+        blocks.at(-1).tests.push(test);
+    }
+    const scheduled = [...groups.setup,...ordered].map(test=>test.id);
+    const ordering = {basis:canGroup ? 'independent-page-project' : 'native-order', scheduled,
+        changed:JSON.stringify(scheduled)!==JSON.stringify(inventory.tests.map(test=>test.id))};
+    return {inventory,groups,checkpoint,decision,browserIneligible,independent,independentCypress,blocks,ordering};
+}
+async function runSuite(options) {
+    const {manifest, project, directory, runner, runCheckpoint, coverageRoot} = options;
+    const mode = 'AUTO', started = performance.now(), phases = [];
+    const {inventory,groups,checkpoint,decision,browserIneligible,independent,independentCypress,blocks,ordering} = await prepareSuite(options);
     const report = {schemaVersion: 1, kind: 'full-native-suite', mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
         setupDiagnostics: {nativeCollectionMs: inventory.wallMs},
-        diagnostics: manifest.diagnostics, assessment: manifest.assessment, decision, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
+        diagnostics: manifest.diagnostics, assessment: manifest.assessment, decision, ordering, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
         routing: {checkpoint: checkpoint.map(t => t.id), native: inventory.tests.filter(t => !checkpoint.some(c => c.id === t.id)).map(t => t.id),
             ...(browserIneligible.length ? {browserIneligible} : {})}};
     async function native(tests, options = {}) {
@@ -159,13 +190,6 @@ async function runSuite(options) {
         if (!groups.setup.length && !independent) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');
         const setup = groups.setup.length ? await native(groups.setup, {teardown: false}) : {exitCode: 0, status: 'passed', results: []};
         if (setup.exitCode === 0 && setup.status === 'passed' && setup.results.every(r => r.status === 'passed')) {
-            const checkpointIds = new Set(checkpoint.map(test => test.id));
-            const blocks = [];
-            for (const test of inventory.tests.filter(test => !groups.setup.some(setup => setup.id === test.id))) {
-                const kind = checkpointIds.has(test.id) ? 'checkpoint' : 'native';
-                if (blocks.at(-1)?.kind !== kind) blocks.push({kind, tests:[]});
-                blocks.at(-1).tests.push(test);
-            }
             let baseline = project.costBaseline;
             for (const block of blocks) {
                 if (block.kind === 'native') { await native(block.tests, {setup:false}); continue; }
@@ -173,7 +197,12 @@ async function runSuite(options) {
                 const selected = block.tests.map(entry => checkpoint.find(test => test.id === entry.id));
                 const configuration = {...project, costBaseline:baseline,
                     ...(independentCypress ? {runnerOptions:{...project.runnerOptions, nativeConfig:project.native.config}} : {})};
-                const built = buildWorkflow(manifest, configuration, selected.map(test => test.staticId));
+                const ids = selected.map(test=>test.staticId);
+                const discovery = buildWorkflow(manifest,configuration,ids);
+                const candidates = costs.planWorkflow(discovery.workflow).decision.selected;
+                // Execute contiguous source fragments through selected boundaries;
+                // unselected ancestors must not introduce readiness/collection work.
+                const built = buildWorkflow(manifest,configuration,ids,candidates);
                 const {plan, decision} = costs.planWorkflow(built.workflow);
                 const byId = new Map(selected.map(test => [test.staticId,test]));
                 const result = await runCheckpoint({...built, specs:built.workflow.select().map(test => test.id), plan}, decision);
@@ -200,4 +229,4 @@ async function runSuite(options) {
     report.wallMs = performance.now() - started;
     return report;
 }
-module.exports = {partition, validateNative, collectAssessed, runSuite, playwrightCoverageResult};
+module.exports = {partition, validateNative, collectAssessed, prepareSuite, runSuite, playwrightCoverageResult};

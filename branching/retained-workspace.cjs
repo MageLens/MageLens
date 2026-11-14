@@ -55,8 +55,9 @@ async function prepareRetained(backend, {run, directory}) {
         '--volumes-from', b.original.app.Id + ':ro', '--mount', 'type=bind,source=' + nginxFile + ',target=' + settings.nginx + ',readonly',
         '--entrypoint', 'nginx', b.original.app.Image, '-t']);
     const active = path.join(directory, 'active'); fs.mkdirSync(active);
-    b.paths = {database: path.join(active, 'database'), media: path.join(active, 'media'), session: path.join(active, 'session')};
+    b.paths = {database: path.join(active, 'database'), media: path.join(active, 'media'), session: path.join(active, 'session'), redis: path.join(active, 'redis')};
     fs.mkdirSync(b.paths.database);
+    fs.mkdirSync(b.paths.redis);
     const mount = (source, target, readOnly = false) => ({type: 'bind', source, target, read_only: readOnly, bind: {create_host_path: false}});
     const code = settings.codeDirectories.map(relative => mount(path.join(b.workspace, 'src', relative), settings.application + '/' + relative, true));
     const networks = Object.entries(b.original.app.NetworkSettings.Networks); assert.equal(networks.length, 1);
@@ -76,6 +77,8 @@ async function prepareRetained(backend, {run, directory}) {
     b.recovery = recovery; b.changed = true;
     // Suite-boundary remount only. The original DB stays online and untouched.
     await b.drain();
+    b.redisState.save(path.join(b.paths.redis, 'snapshot.json'));
+    fs.copyFileSync(path.join(b.paths.redis, 'snapshot.json'), path.join(b.control, 'original-redis.json'));
     for (const [relative, name] of settings.mutableDirectories) {
         const source = path.join(b.workspace, settings.source, relative); regularTree(source);
         command('cp', ['-a', '--reflink=auto', '--', source, b.paths[name]]);

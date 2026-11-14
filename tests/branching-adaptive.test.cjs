@@ -88,3 +88,48 @@ test('failed restore preserves failure even when linear recovery succeeds', asyn
     assert.equal(report.results.length, 4);
     assert.ok(!report.adaptive.observations.some(o => o.component === 'restoreMs'));
 });
+
+test('automatic prefix measurement ends after awaited test work, before provider verification', async t => {
+    const options=setup(t,true);
+    const stage=options.workflow.stages[1];
+    stage.inputs={fromDepth:0,checkpoint:{depth:1}};
+    const verify=stage.assert;
+    stage.assert=async (...args)=>{await delay(100);await verify(...args);};
+    const report=await execute(options);
+    assert.equal(report.status,'passed');
+    const first=report.segments.find(segment=>segment.node===stage.id);
+    assert.ok(first.prefixTiming.workCompleted);
+    const measured=report.segments.filter(segment=>segment.kind==='Stage').slice(0,3)
+        .reduce((sum,segment)=>sum+(segment.prefixTiming?.workMs??segment.wallMs),0);
+    assert.equal(report.adaptive.decisions[0].prefixMs,measured);
+    assert.ok(first.wallMs>first.prefixTiming.workMs);
+});
+
+test('uneconomic native page consumers preserve application/cache continuity and isolate browser state', async t => {
+    const options=setup(t,false);
+    let verifications=0, starts=0;
+    options.workflow={identity:options.workflow.identity,nativePageLifecycle:true,costBaseline:baseline,
+        stages:[{id:'shared',inputs:{fromDepth:0,checkpoint:{depth:1}},run:async p=>{p.state.db.visits=(p.state.db.visits??0)+1;},assert:async()=>{verifications++;}}],
+        specs:[0,1,2].map(index=>({id:'consumer-'+index,parent:'shared',run:async p=>{
+            assert.deepEqual(p.state.browser.cookies,[]);
+            assert.equal(p.state.db.visits,index+1);
+            p.state.browser.cookies.push('isolated');
+        },assert:async()=>{}}))};
+    options.provider.nextLinear=async()=>{starts++;options.provider.state.browser.cookies=[];};
+    const report=await execute(options);
+    assert.equal(report.status,'passed'); assert.equal(report.checkpoints.length,0);
+    assert.equal(report.costs.resets.length,1); assert.equal(report.costs.linearStarts.length,2);
+    assert.equal(starts,2); assert.equal(verifications,0,'Rejected boundaries cannot pause tests for unnecessary restoration checks');
+});
+test('native page continuity never replaces the verified reset after abandoning a checkpoint', async t => {
+    const options=setup(t,true);
+    options.workflow.nativePageLifecycle=true;
+    options.provider.nextLinear=async()=>assert.fail('Abandonment must restore the verified baseline');
+    const restore=options.provider.restore.bind(options.provider);
+    options.provider.resumeCapture=async()=>{};
+    options.provider.restore=async directory=>{await delay(200);await restore(directory);};
+    const report=await execute(options);
+    assert.equal(report.status,'passed'); assert.equal(report.checkpoints.length,1);
+    assert.equal(report.counts.reuseHits,1); assert.ok(report.costs.resets.length>=2);
+    assert.ok(report.adaptive.decisions.some(decision=>decision.captured&&!decision.reuse));
+});

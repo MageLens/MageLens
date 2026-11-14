@@ -63,8 +63,14 @@ test('coverage replay requires verified support and resolves all bindings before
     const routes = [];
     await adapter.execute(entry, 0, 1, {page: {goto: async url => routes.push(url)}});
     assert.deepEqual(routes, ['/cart']);
+    setBody("const response = await page.goto('/robots.txt'); expect(response.status()).toBe(200);");
+    entry.steps[0].portable = false;
+    const wholeTest = playwrightCoverageAdapter(manifest);
+    assert.equal(wholeTest.supports(entry), false);
+    assert.equal(wholeTest.supportsOrdering(entry), true);
     setBody('await page.goto(moduleRoute);');
     assert.equal(playwrightCoverageAdapter(manifest).supports(entry), false);
+    assert.equal(playwrightCoverageAdapter(manifest).supportsOrdering(entry), false);
     setBody("await page.goto('/cart');");
     manifest.sources.find(source => source.path === dependencies[0]).sha256 = '0'.repeat(64);
     assert.equal(playwrightCoverageAdapter(manifest).supports(entry), false);

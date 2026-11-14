@@ -18,6 +18,7 @@ class RetainedProvider extends BranchingProvider {
     }
     async restore(directory, {prefetch = null} = {}) {
         if (this.browserState.active) await this.browserState.freeze();
+        await this.browserState.pauseCoverage();
         await this.backend.drain();
         await this.browserState.closePages();
         await this.backend.stop();

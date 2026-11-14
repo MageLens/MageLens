@@ -18,7 +18,7 @@ function assertAutomatic(options = {}) {
     }
 }
 function costInput(workflow, specs) {
-    return {baseline: workflow.costBaseline, maxCheckpointsPerTest: workflow.maxCheckpointsPerTest, parents: workflow.select(specs).map(s => s.parent), stages: [...workflow.stages.values()].map(s => ({
+    return {nativePageLifecycle:workflow.nativePageLifecycle, baseline: workflow.costBaseline, maxCheckpointsPerTest: workflow.maxCheckpointsPerTest, parents: workflow.select(specs).map(s => s.parent), stages: [...workflow.stages.values()].map(s => ({
         id: s.id, parent: s.parent ?? null, checkpoint: s.checkpoint !== false, estimatedMs: s.estimatedMs ?? null
     }))};
 }

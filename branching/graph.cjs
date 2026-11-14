@@ -8,8 +8,10 @@ const config = require('./configs/runtime.cjs');
 
 const {canonical, digest} = require('./identity.cjs');
 class Graph {
-    constructor({stages, specs, identity, runtimeState, costBaseline = require('./baseline.cjs').defaults, maxCheckpointsPerTest = require('./planner/src/limits.json').maxCheckpointsPerTest}) {
+    constructor({stages, specs, identity, runtimeState, nativePageLifecycle = false, costBaseline = require('./baseline.cjs').defaults, maxCheckpointsPerTest = require('./planner/src/limits.json').maxCheckpointsPerTest}) {
         this.runtimeState = runtimeState;
+        if (typeof nativePageLifecycle !== 'boolean' || nativePageLifecycle && runtimeState) throw new Error('Invalid native page lifecycle');
+        this.nativePageLifecycle = nativePageLifecycle;
         if(runtimeState && ['capture','restore','cleanup'].some(method=>typeof runtimeState[method]!=='function'))
             throw new Error('Runtime state requires capture, restore and cleanup functions');
         this.maxCheckpointsPerTest = require('./checkpoint-limit.cjs').validateLimit(maxCheckpointsPerTest);
@@ -56,6 +58,7 @@ class Graph {
         const node = this.stages.get(id);
         const key = digest({
             identity: this.identity,
+            nativePageLifecycle: this.nativePageLifecycle,
             id,
             inputs: node.inputs,
             parent: node.parent ? this.key(node.parent, visiting) : null,

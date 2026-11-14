@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {setTimeout: delay} = require('node:timers/promises');
 const {MagentoBackend} = require('./magento.cjs');
 const {SchemaDatabase, foreignTransactions} = require('./retained-database.cjs');
+const {RedisState} = require('./redis-state.cjs');
 const {prepareRetained} = require('./retained-workspace.cjs');
 const {implementationDigest} = require('./identity.cjs');
 const {settings} = require('./configs/magento.cjs');
@@ -18,10 +19,11 @@ class RetainedMagentoBackend extends MagentoBackend {
         super(options);
         this.retainsServices = true;
         this.identity = {kind: 'magento-retained-two-schema-v1', base: this.identity, implementation: implementationDigest([
-            __filename, ...['retained-workspace.cjs', 'retained-database.cjs', 'configs/retained-env.php',
+            __filename, ...['retained-workspace.cjs', 'retained-database.cjs', 'redis-state.cjs', 'configs/retained-env.php',
                 'configs/retained-validate.php', 'configs/retained-probe.php', 'configs/retained-queues.php', 'configs/fastcgi.php'].map(file => require.resolve('./' + file))
         ])};
         this.database = new SchemaDatabase(this);
+        this.redisState = new RedisState(this);
         this.ownedSchemas = []; this.activeSchema = 'magento';
         this.warmReady = false; this.ingressPaused = false;
         this.containers = new Map();
@@ -125,7 +127,11 @@ class RetainedMagentoBackend extends MagentoBackend {
         // transactions and connections before allowing a snapshot or switch.
         await this.databaseIdle();
     }
-    async pause() { this.database.dump(path.join(this.paths.database, 'snapshot.sql')); }
+    async pause() {
+        this.database.dump(path.join(this.paths.database, 'snapshot.sql'));
+        this.redisState.save(path.join(this.paths.redis, 'snapshot.json'));
+    }
+    async resetCaches() { this.redisState.restore(path.join(this.paths.redis, 'snapshot.json')); }
     async unpause() {} // MariaDB is never frozen in this backend.
     async stop() { this.needsImport = true; }
     prefetch(file) { return this.database.prepare(file); }
@@ -164,8 +170,8 @@ class RetainedMagentoBackend extends MagentoBackend {
             for (const service of settings.recoveryServices) {
                 assert.ok(!this.inspect(service).Mounts.some(m => m.Source.startsWith(this.directory + path.sep)), 'Private mount remained after cleanup');
             }
-            // Redis may contain entries generated against the discarded schema.
-            await this.resetCaches();
+            // Restore the original cache contents, including expiration deadlines.
+            this.redisState.restore(path.join(this.control, 'original-redis.json'));
             this.diagnostics.schemasRemoved = true; this.diagnostics.grantsRestored = true;
         }
         if (this.recovery) fs.rmSync(this.recovery);

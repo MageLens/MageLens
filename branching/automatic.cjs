@@ -83,18 +83,23 @@ function playwrightCoverageAdapter(manifest, expect) {
         }
         return checkedBodies.get(test.id);
     }
-    const supports = test => test.fixture === './playwright/support.cjs:test' &&
+    const independentPage = test => test.fixture === './playwright/support.cjs:test' &&
         test.parameters === '( { page } )' && !test.restoration &&
         files.every(file => verified.has(file) && test.contextFiles.includes(file)) &&
         test.contextFiles.every(file => file === test.file || verified.has(file)) &&
         test.reasons.length === fixtureReasons.size && test.reasons.every(reason => fixtureReasons.has(reason)) &&
-        test.steps.every(step => step.kind === 'statement' && step.portable) &&
+        test.steps.every(step => step.kind === 'statement') &&
         supportedImports(test.file) && supportedBindings(test);
+    const supports = test => independentPage(test) && test.steps.every(step => step.portable);
     const tests = new Map(manifest.tests.map(test => [test.id, test]));
     const compiled = new Map();
     return {
         identity: digest([...expected]),
+        nativePageLifecycle: true,
         supports,
+        // Whole-test locals can prevent checkpoint splitting without changing
+        // the isolated page lifecycle of an explicitly parallel native test.
+        supportsOrdering: independentPage,
         supportsCheckpoint: checkpoint => checkpoint.depth > 0 &&
             checkpoint.consumers.every(id => tests.has(id) && supports(tests.get(id))),
         execute(test, from, to, runtime) {
@@ -109,7 +114,7 @@ function playwrightCoverageAdapter(manifest, expect) {
     };
 }
 
-function buildWorkflow(manifest, configuration, selected) {
+function buildWorkflow(manifest, configuration, selected, boundaries) {
     verifySources(manifest);
     if (!configuration.identity || typeof configuration.state !== 'function' || typeof configuration.assertCheckpoint !== 'function') {
         throw new Error('Automatic runs require identity, state(runtime) and assertCheckpoint(runtime, checkpoint) in the project configuration');
@@ -127,8 +132,13 @@ function buildWorkflow(manifest, configuration, selected) {
             throw new Error(`${t.file}:${t.line} ${t.title}: ${t.reasons.join('; ')}. No test was launched.`);
         }
     }
-    const usable = manifest.checkpoints.filter(c => c.consumers.filter(id => selection.has(id)).length >= 2 &&
+    let usable = manifest.checkpoints.filter(c => c.consumers.filter(id => selection.has(id)).length >= 2 &&
         (c.automatic || (adapter?.supportsCheckpoint?.(c, byId.get(c.representative)) === true)));
+    if (boundaries) {
+        const known = new Set(usable.map(checkpoint=>checkpoint.id));
+        if (boundaries.some(id=>!known.has(id))) throw new Error('Unknown measured checkpoint boundary');
+        usable = usable.filter(checkpoint=>boundaries.includes(checkpoint.id));
+    }
     const fixtureState = !adapter && [...selection].some(id=>byId.get(id).restoration)
         ? new (require('./runners/playwright/fixture-state.cjs').FixtureState)(manifest, configuration) : undefined;
     const source = new Map(), compiled = new Map();
@@ -207,7 +217,7 @@ function buildWorkflow(manifest, configuration, selected) {
         }
     }
     return {
-        workflow: new Graph({runtimeState:fixtureState, costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
+        workflow: new Graph({nativePageLifecycle:adapter?.nativePageLifecycle === true, runtimeState:fixtureState, costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
             configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
                 runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,

@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
+const pinned = require('./dependency-pins.cjs');
 const http = require('node:http');
 const {PlaywrightState} = require('../branching/browser.cjs');
 
@@ -53,8 +54,8 @@ if (require.main === module) {
         const {chromium} = require('@playwright/test');
         const browser = await chromium.launch({channel: 'chrome', headless: true});
         try {
-            assert.equal(browser.version(), '156.0.8078.80');
-            assert.equal(require('@playwright/test/package.json').version, '1.65.0');
+            assert.equal(browser.version(), pinned('CHROME_VERSION'));
+            assert.equal(require('@playwright/test/package.json').version, pinned('PLAYWRIGHT_VERSION'));
             console.log(JSON.stringify(await checkReadiness(browser)));
         } finally { await browser.close(); }
     })().catch(error => {console.error(error); process.exitCode = 1;});
