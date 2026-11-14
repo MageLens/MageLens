@@ -1069,3 +1069,18 @@ contained Chrome 156. The engine regression also verifies that assertion
 and checkpoint work begin after asynchronous segment execution resolves.
 Real Playwright adapter timing and dedicated checkpoint calibration remain
 open.
+
+The native Playwright CLI adapter and profiling reporter ran one isolated
+loopback browser test on Playwright 1.65.0 and Chrome for Testing
+157.0.8103.38. The reporter emitted an eligible
+`playwright-test-result-duration/v1` observation of 659 ms with zero
+in-test preparation subtraction. The adapter measured 2,564 ms wall
+time. The browser awaited a successful response after the fixture's
+230 ms delay. This exercises the whole-test timing boundary. Checkpoint
+segment timing still needs its own runner evidence.
+
+An initial probe with an incomplete profiling request exposed a failure
+path. Playwright caught the reporter's preparation error and still ran
+the test. The adapter returned a failure and emitted no usable sample.
+Collection needs to prevent browser tests from starting when pre-run
+profile preparation fails.
