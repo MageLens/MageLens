@@ -32,5 +32,5 @@ ISTANBUL_REPORTS_VERSION: "3.2.0"
 NYC_VERSION: "18.0.0"
 
 # Node and browser system dependencies for the Cypress runner.
-RUNNER_IMAGE: "cypress/base:24.22.1"
-PLAYWRIGHT_RUNNER_IMAGE: "node:24.22.1-bookworm-slim"
+RUNNER_IMAGE: "node:24.22.3-bookworm-slim"
+PLAYWRIGHT_RUNNER_IMAGE: "node:24.22.3-bookworm-slim"

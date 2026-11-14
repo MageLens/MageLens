@@ -18,9 +18,9 @@ service docker start
 mkdir -p /tmp/magelens-ci
 chown magelens:magelens /tmp/magelens-ci
 # Host Node runs orchestration only; application Node remains pinned by dependencies.yaml.
-curl -fsSL https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz -o /tmp/magelens-node.tar.xz
-curl -fsSL https://nodejs.org/dist/v24.22.1/SHASUMS256.txt -o /tmp/magelens-node-shas
-(cd /tmp; mv magelens-node.tar.xz node-v24.22.1-linux-x64.tar.xz; grep ' node-v24.22.1-linux-x64.tar.xz$' magelens-node-shas | sha256sum -c -; tar -xJf node-v24.22.1-linux-x64.tar.xz --strip-components=1 -C /usr/local; rm node-v24.22.1-linux-x64.tar.xz magelens-node-shas)
+curl -fsSL https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz -o /tmp/magelens-node.tar.xz
+curl -fsSL https://nodejs.org/dist/v24.22.3/SHASUMS256.txt -o /tmp/magelens-node-shas
+(cd /tmp; mv magelens-node.tar.xz node-v24.22.3-linux-x64.tar.xz; grep ' node-v24.22.3-linux-x64.tar.xz$' magelens-node-shas | sha256sum -c -; tar -xJf node-v24.22.3-linux-x64.tar.xz --strip-components=1 -C /usr/local; rm node-v24.22.3-linux-x64.tar.xz magelens-node-shas)
 git init /home/magelens/project
 git -C /home/magelens/project remote add origin "https://github.com/$repository.git"
 git -C /home/magelens/project fetch --depth=1 origin "$sha"
