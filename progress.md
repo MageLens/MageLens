@@ -917,3 +917,13 @@ Among the 93 observations between 100 ms and one second, 91 were overpredicted
 by more than 5% and none met the target. These counts identify a duration range
 to investigate. Repeated, source-matched measurements are still needed to
 distinguish model bias from runtime variance and missing inputs.
+
+Grouping the 618 retained historical Cypress rows by identical recorded
+predictor inputs yielded 143 groups with 376 distinct observations. Even
+choosing the best fixed forecast after seeing every duration gave 305 of
+376 observations within 5%. Among the 12 repeated groups whose measured
+durations all stayed at or below one second, that upper bound was 46 of 79.
+The grouping includes source, environment, boundary, vector and available
+backend fields. Historical rows can lack state or execution conditions that
+would distinguish them, so the bound applies to the recorded inputs only.
+Independent reset-and-repeat measurements are still required.
