@@ -1240,3 +1240,12 @@ a new attempt ID and exactly one observation digest. The probe removed
 its containers and temporary workspace. Production recovery still
 needs to establish the stopped-runner evidence before invoking the
 ledger reconciliation API.
+
+A live version 2 Playwright campaign probe froze the inventory from
+native discovery. Renaming the test caused the adapter to reject the
+preflight before a ledger start or an HTTP request. Restoring the test
+title allowed collection. An injected runner stop then exercised the
+same journal's recovery, yielding one successful observation after
+the retry with pinned Chrome 157.0.8103.38. This is loopback evidence
+for frozen inventory and recovery. The representative campaign
+inventory and prospective qualification remain open.
