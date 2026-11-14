@@ -1386,3 +1386,12 @@ reconciliation matched all nine registrations to Rust and partitioned
 one setup test and eight automatically portable test candidates. The
 dependency graph satisfies mixed-suite routing. No application test
 executed during this check, and the forecast remains unqualified.
+
+All eight original tests of the three-consumer catalog candidate
+passed on Chrome for Testing 157.0.8103.38. The three full catalog
+tests took 36.6 s, 36.2 s and 35.6 s. The linear runner container
+took 113.36 s including browser startup and container removal,
+with the application stack already healthy. The routed copy has a
+separate, source-assessed readiness test and must be timed as its
+own complete suite. The 113.36 s run has no paired branching or
+coverage result. The disposable calibration stack was stopped.
