@@ -694,3 +694,36 @@ pinned Python packages in an isolated container. Existing uncommitted reachabili
 prefix and economics work remains separate from this commit. Packages 1, 4–6 and
 8 remain incomplete; reporting the strict metric does not satisfy their execution,
 feedback, accuracy, speedup or final-CI gates.
+
+### 2026-11-14 — campaign history and durable journal
+
+A fresh private exposure audit read the retained registries in a read-only
+container, including root-owned artifacts that the host could not open. It found
+45 readable distinct model artifacts and 38 hash-verified dataset files; three
+models reference datasets not located by this inventory, and eleven models have
+missing source archives in their referenced dataset. Exact source/group matches
+establish historical exposure for 200 inventoried files. Unmatched files are not
+claimed unseen. The private evidence is `campaign-20261114/model-exposure.json`;
+final audit splits remain unassigned pending complete reconciliation.
+
+`branching/predictor/campaign-ledger.cjs` now stores a frozen manifest and
+checksummed, hash-chained event records under the existing workspace workflow
+lease. Records retain stage timestamps, elapsed time, resource peaks, next actions,
+fit/dataset/artifact identities and every started/finished/interrupted/quarantined
+attempt. Reopening is idempotent; changed events, cross-split correlated groups,
+changed forecast identity, duplicate observation reuse and missing scheduled cases
+are rejected. Unpublished partial record files do not become observations. The
+journal cannot promote a model: qualification transitions await the independent
+accuracy, restoration/speedup and CI validators. Native collection/training are not
+yet wired to this journal, so package 4 remains open.
+
+Four journal regressions and **446 integration tests passed with zero failures or
+skips**. Changed-file syntax, lint, notice and diff checks passed. The source-matched
+orchestrator was rebuilt through the shared Dockerfile before integration checks.
+
+The Cypress source build was explicitly stopped near the predeclared 8 GiB free
+disk floor, and its temporary workspace was released. No application resources
+were removed. The normal image resolver supplied an exact-input, digest-pinned
+runner base; building the existing branching adapter against it is in progress.
+The interrupted source build, resource stop and replacement build have separate
+private records. No new duration labels or qualification claims result from them.
