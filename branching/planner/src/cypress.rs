@@ -6,11 +6,18 @@ use crate::{children, field, text};
 use tree_sitter::Node;
 
 pub fn is_spec(file: &str) -> bool {
-    [
+    let modern = [
         ".cy.js", ".cy.ts", ".cy.jsx", ".cy.tsx", ".cy.cjs", ".cy.mjs",
     ]
     .iter()
-    .any(|suffix| file.ends_with(suffix))
+    .any(|suffix| file.ends_with(suffix));
+    let legacy_integration = file.split('/').collect::<Vec<_>>()
+        .windows(2)
+        .any(|parts| parts == ["cypress", "integration"]);
+    modern || (legacy_integration
+        && [".spec.js", ".spec.ts", ".spec.jsx", ".spec.tsx"]
+            .iter()
+            .any(|suffix| file.ends_with(suffix)))
 }
 
 pub fn collection_name(name: &str) -> String {

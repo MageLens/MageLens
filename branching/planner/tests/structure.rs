@@ -259,6 +259,39 @@ fn static_registration_tables_survive_without_any_duration_interpreter() {
 }
 
 #[test]
+fn tagged_legacy_cypress_specs_keep_original_titles_and_native_selection() {
+    let p = Fixture::new(&[(
+        "cypress/integration/cart.spec.js",
+        "describe(['cart'], 'Cart', () => { it('smoke', 'adds an item', () => { cy.visit('/'); }); });",
+    )]).plan();
+    let tests = p["tests"].as_array().unwrap();
+    assert_eq!(tests.len(), 1);
+    assert!(tests[0]["title"].as_str().unwrap().ends_with("adds an item"));
+    assert_eq!(tests[0]["fixture"], "cypress:it");
+    assert!(tests[0]["reasons"].as_array().unwrap().iter().any(|r| {
+        r.as_str().unwrap().contains("requires native selection")
+    }));
+}
+
+#[test]
+fn conditional_cypress_registrations_assess_both_paths_without_evaluating_guard() {
+    let p = Fixture::new(&[(
+        "cypress/integration/cart.spec.js",
+        "if (runtimeCondition()) { it('desktop', () => { cy.visit('/cart'); }); }
+         else { it('mobile', () => { cy.visit('/mobile'); }); }",
+    )])
+    .plan();
+    assert_eq!(p["diagnostics"], json!([]));
+    let tests = p["tests"].as_array().unwrap();
+    assert_eq!(tests.len(), 2);
+    for case in tests {
+        assert!(case["reasons"].as_array().unwrap().iter().any(|reason| {
+            reason == "Conditional Cypress registration requires native selection"
+        }));
+    }
+}
+
+#[test]
 fn node_unit_tests_are_not_browser_collection_failures() {
     let f = Fixture::new(&[
         ("flow.cy.js", "it('browser',()=>{cy.visit('/');});"),

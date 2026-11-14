@@ -517,6 +517,23 @@ fn walk_scope(
                     && aliases.keys().any(|a| collection_name(n, s, cypress) == *a)
             })
         {
+            if cypress && node.kind() == "if_statement" {
+                // Native discovery owns predicate evaluation and test selection.
+                // Assess both branches so their callback sources are available.
+                let mut child = scope.clone();
+                child.reasons.push("Conditional Cypress registration requires native selection".into());
+                if let Some(body) = field(node, "consequence").filter(|body| body.kind() == "statement_block") {
+                    walk_scope(body, context, child.clone(), tests, diagnostics);
+                    if let Some(alternative) = field(node, "alternative") {
+                        if let Some(body) = children(alternative).into_iter().find(|body| body.kind() == "statement_block") {
+                            walk_scope(body, context, child, tests, diagnostics);
+                        } else {
+                            diagnostics.push(format!("{file}:{}: conditional alternative requires native collection", node.start_position().row + 1));
+                        }
+                    }
+                    continue;
+                }
+            }
             if let Some(expanded) =
                 project.and_then(|p| p.collection_expand(file, node, &scope.bindings))
             {
@@ -556,8 +573,11 @@ fn walk_scope(
             continue;
         };
         let args = children(field(c, "arguments").unwrap());
+        let tagged = cypress && args.len() >= 3 && args.first().is_some_and(|arg| {
+            arg.kind() == "array" || (literal(*arg, s).is_some() && literal(args[1], s).is_some())
+        });
         let title = args
-            .first()
+            .get(usize::from(tagged))
             .and_then(|n| {
                 literal(*n, s)
                     .or_else(|| project.and_then(|p| p.collection_title(file, *n, &scope.bindings)))
@@ -574,6 +594,9 @@ fn walk_scope(
         };
         if method.starts_with("describe") {
             let mut child = scope.clone();
+            if tagged {
+                child.reasons.push("Tagged Cypress registration requires native selection".into());
+            }
             if !title.is_empty() {
                 child.names.push(title);
             }
@@ -589,6 +612,9 @@ fn walk_scope(
             continue;
         }
         let mut reasons = scope.reasons.clone();
+        if tagged {
+            reasons.push("Tagged Cypress registration requires native selection".into());
+        }
         let parameters = params(cb, s);
         if !cypress && parameters != "( { page } )" {
             reasons.push("Fixture parameters beyond { page } require an execution adapter".into());

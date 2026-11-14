@@ -975,3 +975,11 @@ The patch was applied to a disposable copy of the pinned dependencies.
 The specs and support files retained their original bytes. The run
 produced no timing labels, and 85 focused Cypress and predictor tests
 passed. Planner/native parity and real execution traces remain open.
+
+The Rust planner now recognizes legacy Cypress integration spec paths and
+tagged declarations while preserving native selection. Against the mapped
+third-party corpus, 150 static declarations matched native registrations
+by relative file and title. The other six native registrations come from
+four conditional blocks guarded by runtime checkout or viewport settings.
+Static planning reports those blocks explicitly. The full inventory still
+requires native evidence for the conditional cases.
