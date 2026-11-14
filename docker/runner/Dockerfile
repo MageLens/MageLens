@@ -4,7 +4,7 @@
 
 ARG RUNNER_IMAGE
 ARG PLAYWRIGHT_RUNNER_IMAGE
-FROM node:24.15.0-bookworm AS cypress-source
+FROM node:24.22.3-bookworm AS cypress-source
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git python3 make g++ libgtk-3-0 libgbm1 libasound2 libnss3 libatk-bridge2.0-0 \
     libxss1 libxtst6 xvfb xauth zip unzip \

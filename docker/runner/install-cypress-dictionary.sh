@@ -4,15 +4,15 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
-# Cypress 16.2.1 bundles Electron 41.7.0. Electron initializes Hunspell even
+# Cypress 16.3.0 bundles Electron 43.8.4. Electron initializes Hunspell even
 # with webPreferences.spellcheck=false (electron/electron#22995). Package the
 # Cypress controller's English dictionary before any test traffic. The
 # application under test runs in Chrome; Cypress itself still uses Electron.
 archive=$(mktemp)
 trap 'rm -f "$archive"' EXIT
 curl --fail --location --max-time 120 \
-    https://github.com/electron/electron/releases/download/v41.7.0/hunspell_dictionaries.zip \
+    https://github.com/electron/electron/releases/download/v43.8.4/hunspell_dictionaries.zip \
     -o "$archive"
-echo "e457ba2db5f18d7405baa8cc2caf065377932d406ac9415ff8817f956bc6fea3  $archive" | sha256sum --check
+echo "de20757ddf84cb2b419ebc88957ae195b0a8afdc415b081bbf1ebf9660220d6b  $archive" | sha256sum --check
 mkdir -p /opt/magelens/dictionaries
 unzip -q "$archive" 'en-US-10-1.bdic' 'COPYING*' LICENSE -d /opt/magelens/dictionaries

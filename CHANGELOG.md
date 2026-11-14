@@ -9,6 +9,9 @@ License: see LICENSE in the repository root.
 ## 1.9.4 - 2026-11-14
 
 - Update browser runner runtimes to Node.js 24.22.3 with the November security fixes; install Cypress’s required system libraries on the official multiarch Node base.
+- Update the shared Chrome for Testing browser to 157.0.8103.78 with verified x64 and ARM64 archives and the latest security fixes.
+- Update PHP code coverage to 14.5.2 to correct nested match executable lines and merged match coverage.
+- Update Cypress to 16.3.0 for cookie interception fixes and faster runner startup, retaining source fixes and all eleven runner regressions.
 
 ## 1.9.3 - 2026-11-09
 
