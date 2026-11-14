@@ -35,3 +35,16 @@ test('v6 preserves repeated work and isolates runner-dependent feature caches',(
     assert.equal(current.sourceDigest,old.sourceDigest);
     assert.notDeepEqual(current.vector,old.vector);
 });
+test('v7 distinguishes initial, parent and unknown prefix context without changing legacy vectors',()=>{
+    const input={unit:'prefix',runner:'playwright',sources:[{name:'work.js',role:'work',source:"async function work(){await page.goto('/');}"}]};
+    const extract=(featureSchema,segment)=>p.features({...input,featureSchema,segment});
+    const initial=extract(p.REACHABLE_SCHEMA_V7,{fromDepth:0,toDepth:1});
+    const parent=extract(p.REACHABLE_SCHEMA_V7,{fromDepth:1,toDepth:2});
+    const unknown=extract(p.REACHABLE_SCHEMA_V7);
+    assert.notDeepEqual(initial.vector,parent.vector);
+    assert.notDeepEqual(parent.vector,unknown.vector);
+    assert.equal(initial.sourceDigest,parent.sourceDigest);
+    for(const schema of [p.REACHABLE_SCHEMA_V4,p.REACHABLE_SCHEMA_V5,p.REACHABLE_SCHEMA_V6])
+        assert.deepEqual(extract(schema,{fromDepth:0,toDepth:1}),extract(schema,{fromDepth:1,toDepth:2}));
+    assert.throws(()=>extract(p.REACHABLE_SCHEMA_V7,{fromDepth:-1,toDepth:2}),/Cost assessment failed/);
+});

@@ -2271,3 +2271,45 @@ checks. Two synthetic orchestration fixtures initially failed because they used
 placeholder environment digests; they now explicitly declare their actual
 host/container planning environments. The guard itself remains strict. This
 validation does not replace the required GitHub Actions E2E/release gate.
+
+**Bounded additive/context experiment.** Hypothesis: the current regularized
+log-count/log-duration fit shrinks short operations and does not express additive
+sequential work; it also lacks the already recorded initial-versus-parent prefix
+context (home about 0.87 s versus incremental search about 0.55 s). Add a new
+schema carrying known/unknown and initial-context indicators derived only from
+pre-execution segment metadata. Preserve v4/v5/v6 vectors exactly. Test one
+standard Ridge candidate per timing unit using raw count inputs, an identity
+millisecond target and relative squared-error weights; fix alpha at 1e-6 before
+fitting, with no parameter search. This remains the linear Ridge family.
+
+Use the same audited 20/64 rows and the same two development groups. Reserved
+advanced/comparison groups remain independent with no timing labels. Cap source
+and compute work at 20 minutes, fits at 90 seconds each with two CPUs/1 GiB.
+Require Python/exported-JavaScript prediction parity, legacy preservation,
+complete pre-run input identities, and at least 95%-within-5% development
+rescoring before held-out execution is considered. Grouped cross-validation
+remains reported separately; neither development result qualifies the candidate.
+Stop this candidate on parity/input failure, nonpositive forecasts or persistent
+underfit; do not extend it with another collection or parameter sweep.
+
+The additive/context candidate passed the necessary development fit check:
+`4fbd08c9` scored 19/20 prefix rows within 5%, and `d9af1747` scored 61/64
+whole-test rows. Python's fitted-model predictions and exported JavaScript agree
+within 1.1e-10 ms. No fitted training forecast is nonpositive. Exact v5 and v6
+archive vectors were preserved before re-extraction, and both reserved prefixes
+remain inside the new feature ranges. Artifacts, implementation pins and errors
+are retained in `catalog-additive-X4qOq0`.
+
+This is not independent qualification. Grouped cross-validation reached only
+3/20 and 0/64; the prefix uncertainty interval remains broad. Source-only reserved
+prefix forecasts are about 24.192 s (advanced filtering) and 18.188 s (comparison),
+not measured durations. Their lower bounds are only 7.637 s and 5.742 s, so these
+candidates do not yet establish economical reuse. Inspect complete native
+whole-test input eligibility before spending held-out timing observations.
+The original readiness dependency's forecast scope also remains unresolved.
+
+The versioned context/additive implementation passed 534/534 integration checks,
+all static checks, and the source-built planner gate. No E2E/release qualification
+was run. Models remain explicitly unqualified. The collection ledger currently
+accounts for 3,586 seconds of the 5,400-second browser budget, including failed
+attempts; functional probes are additionally retained and bounded separately.

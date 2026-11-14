@@ -90,13 +90,14 @@ function assess(manifest, options = {}) {
     const rows = {}, stages = {}, candidates = [], issues = manifest.diagnostics.map(message=>({phase:'collection',message}));
     const runnableByFile = new Map();
     for (const test of manifest.tests) {
-        if ([predictor.REACHABLE_SCHEMA_V5,predictor.REACHABLE_SCHEMA_V6].includes(loaded.model.featureSchema) && test.staticallySkipped) continue;
+        if ([predictor.REACHABLE_SCHEMA_V5,predictor.REACHABLE_SCHEMA_V6,predictor.REACHABLE_SCHEMA_V7].includes(loaded.model.featureSchema) && test.staticallySkipped) continue;
         if (!runnableByFile.has(test.file)) runnableByFile.set(test.file,[]);
         runnableByFile.get(test.file).push(test);
     }
-    function forecast(id, test, unit, work, timingBoundary, discoveredFixtures = false) {
+    function forecast(id, test, unit, work, timingBoundary, discoveredFixtures = false, segment) {
         const model = unit === 'prefix' ? prefixModel : loaded;
         const request = {backendState:options.backendState,runner:test.fixture.startsWith('cypress:')?'cypress':'playwright',unit,timingBoundary,
+            ...(segment ? {segment} : {}),
             sources:[...work,{name:`spec/${test.file}`,source:source(test.file),role:'context'},...(unit === 'test' ? testContext(test) : supporting.filter(s=>contexts.get(test.id).files.has(s.name.slice(8))))],
             extraFeatures:unit==='test'?{'execution.first':Number(runnableByFile.get(test.file)?.[0]?.id===test.id),'execution.last':Number(runnableByFile.get(test.file)?.at(-1)?.id===test.id)}:{},
             baselineMs:options.baselineMs ?? model.model.referenceBaselineMs,manualMultiplier:options.multiplier ?? 1,sourceFamily:'branching',group:test.file,
@@ -214,10 +215,11 @@ function assess(manifest, options = {}) {
             name:`global-beforeEach-${i}.js`,source:h.source,role:'work',
             origin:{file:`context/${h.file}`,start:h.start,end:h.end}
         })));
-        const result=work.length?forecast(cp.id,test,'prefix',work,prefixBoundary):{id:cp.id,prediction:null,predictionError:{message:'Missing fixture setup source'}};
+        const segment={representative:test.id,fromDepth:from,toDepth:cp.depth};
+        const result=work.length?forecast(cp.id,test,'prefix',work,prefixBoundary,false,segment):{id:cp.id,prediction:null,predictionError:{message:'Missing fixture setup source'}};
         // Fixture cost belongs to the fixture checkpoint, never both it and its root.
         if(cp.depth===0) stages[`root-${test.scope.slice(0,20)}`]={id:`root-${test.scope.slice(0,20)}`,empty:true,prediction:{ms:0,modelId:prefixModel.id,qualified:prefixModel.model.qualified},workload:representWorkload([],{timingBoundary:prefixBoundary,runner:'cypress'})};
-        result.segment = {representative:test.id,fromDepth:from,toDepth:cp.depth};
+        result.segment = segment;
         if (result.trainingSnapshot) result.trainingSnapshot.segment = result.segment;
         stages[cp.id]=result;
         candidates.push({id:cp.id,consumers:cp.consumers.length,automatic:cp.automatic,fromDepth:from,toDepth:cp.depth,

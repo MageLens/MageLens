@@ -13,10 +13,12 @@ const FEATURE_SCHEMA = 'syntax-roles-v3-babel-7.29.9';
 const REACHABLE_SCHEMA_V4 = 'syntax-reachable-v4-babel-7.29.9';
 const REACHABLE_SCHEMA_V5 = 'syntax-reachable-v5-babel-7.29.9';
 const REACHABLE_SCHEMA_V6 = 'syntax-reachable-v6-babel-7.29.9';
-const REACHABLE_SCHEMA = REACHABLE_SCHEMA_V6;
-const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA_V6];
+const REACHABLE_SCHEMA_V7 = 'syntax-reachable-v7-babel-7.29.9';
+const REACHABLE_SCHEMA = REACHABLE_SCHEMA_V7;
+const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA_V6, REACHABLE_SCHEMA_V7];
 const COUNTS_WIDTH = 72, WIDTH = COUNTS_WIDTH * 2, REACHABLE_WIDTH = 1024, HALF_REACHABLE = 512;
-const isModernReachableSchema = schema => schema === REACHABLE_SCHEMA_V5 || schema === REACHABLE_SCHEMA_V6;
+const canonicalCalls = schema => schema === REACHABLE_SCHEMA_V6 || schema === REACHABLE_SCHEMA_V7;
+const isModernReachableSchema = schema => schema === REACHABLE_SCHEMA_V5 || canonicalCalls(schema);
 const isReachableSchema = schema => schema === REACHABLE_SCHEMA_V4 || isModernReachableSchema(schema);
 const width = schema => isReachableSchema(schema) ? REACHABLE_WIDTH : schema === FEATURE_SCHEMA ? WIDTH : COUNTS_WIDTH;
 // Bounded syntax-vector cache: helpers shared by many tests are parsed once.
@@ -43,7 +45,7 @@ function counts(request) {
     ensure(require('@babel/parser/package.json').version === '7.29.9', 'Feature parser version changed; retrain');
     for (const {name, source} of [...request.sources].sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
         ensure(typeof name === 'string' && typeof source === 'string', 'Invalid source corpus');
-        const sourceHash=sha256(source),cacheKey=schema+':'+(schema === REACHABLE_SCHEMA_V6 ? request.runner+':' : '')+sourceHash;
+        const sourceHash=sha256(source),cacheKey=schema+':'+(canonicalCalls(schema) ? request.runner+':' : '')+sourceHash;
         fingerprints.push([name, sourceHash]);
         vector[3] += Buffer.byteLength(source); vector[4]++;
         const cached=syntaxCache.get(cacheKey);
@@ -66,7 +68,7 @@ function counts(request) {
             if (schema === COUNTS_SCHEMA && ['CallExpression', 'OptionalCallExpression'].includes(node.type))
                 add(counts,'call:' + (node.callee.property?.name ?? node.callee.name ?? node.callee.type));
             if (isReachableSchema(schema) && ['CallExpression', 'OptionalCallExpression', 'NewExpression'].includes(node.type)) {
-                const canonical = schema === REACHABLE_SCHEMA_V6 && request.runner === 'playwright'
+                const canonical = canonicalCalls(schema) && request.runner === 'playwright'
                     ? require('./playwright-call-features.cjs').playwrightCallFeature(node) : undefined;
                 if (canonical !== null) add(counts, 'call:' + (canonical ?? qualified(node.callee)));
             }
@@ -116,6 +118,15 @@ function backendFeatures(state) {
 
 function features(request) {
     const schema=request.featureSchema ?? FEATURE_SCHEMA;
+    if (schema === REACHABLE_SCHEMA_V7 && request.unit === 'prefix') {
+        const segment=request.segment;
+        if (segment !== undefined) ensure(segment && Number.isSafeInteger(segment.fromDepth) && segment.fromDepth >= 0 &&
+            Number.isSafeInteger(segment.toDepth) && (segment.toDepth > segment.fromDepth || segment.fromDepth === 0 && segment.toDepth === 0),
+        'Invalid pre-run prefix context');
+        request={...request,extraFeatures:{...request.extraFeatures,
+            'execution.prefix-context.known':Number(segment !== undefined),
+            'execution.prefix-context.initial':Number(segment?.fromDepth === 0)}};
+    }
     if (isReachableSchema(schema)) {
         ensure(Array.isArray(request.sources) && request.sources.length>0, 'Source corpus is required');
         ensure(request.sources.every(s=>['work','context'].includes(s.role ?? 'work')), 'Unknown source role');
@@ -160,7 +171,7 @@ function loadModel(file, expectedDigest) {
     ensure(model.schemaVersion === 1 && SCHEMAS.includes(model.featureSchema), 'Incompatible model schema');
     const e = model.estimator;
     ensure(e && ['identity', 'log1p'].includes(e.inputTransform ?? 'identity'), 'Unknown model input transform');
-    ensure(['log1p','log'].includes(e.targetTransform ?? 'log1p'), 'Unknown model target transform');
+    ensure(['identity','log1p','log'].includes(e.targetTransform ?? 'log1p'), 'Unknown model target transform');
     ensure(e && Number.isFinite(e.intercept) && ['mean', 'scale', 'coefficients'].every(key =>
         Array.isArray(e[key]) && e[key].length === width(model.featureSchema) && e[key].every(Number.isFinite)) && e.scale.every(x => x > 0), 'Invalid model coefficients');
     ensure(Number.isFinite(model.errorLogP90) && model.errorLogP90 >= 0 && Array.isArray(model.domains) && model.domains.length > 0, 'Missing model validation');
@@ -185,7 +196,7 @@ function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
     ensure(snapshot.vector.every(x => x >= 0), 'Negative syntax features');
     const logMs = e.intercept + snapshot.vector.reduce((sum, x, i) =>
         sum + ((e.inputTransform === 'log1p' ? Math.log1p(x) : x) - e.mean[i]) / e.scale[i] * e.coefficients[i], 0);
-    const inverse = e.targetTransform === 'log' ? Math.exp : Math.expm1;
+    const inverse = e.targetTransform === 'identity' ? value => value : e.targetTransform === 'log' ? Math.exp : Math.expm1;
     const ms = inverse(logMs);
     ensure(Number.isFinite(ms), 'Model predicted a nonfinite duration');
     ensure(ms > 0, 'Model predicted a nonpositive duration');
@@ -199,7 +210,8 @@ function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
         Number.isFinite(snapshot.baselineMs) && snapshot.baselineMs > 0 &&
         Number.isFinite(snapshot.manualMultiplier) && snapshot.manualMultiplier > 0, 'Missing or invalid pre-run baseline or multiplier');
     const factor = snapshot.baselineMs / model.referenceBaselineMs * snapshot.manualMultiplier;
-    const lower = Math.max(0,inverse(logMs - model.errorLogP90)), upper = inverse(logMs + model.errorLogP90);
+    const lower = e.targetTransform === 'identity' ? ms * Math.exp(-model.errorLogP90) : Math.max(0,inverse(logMs - model.errorLogP90));
+    const upper = e.targetTransform === 'identity' ? ms * Math.exp(model.errorLogP90) : inverse(logMs + model.errorLogP90);
     ensure(Number.isFinite(ms * factor) && ms * factor > 0 && Number.isFinite(upper * factor), 'Prediction scaling overflow');
     return {modelId: id, rawMs: ms, ms: ms * factor, factor, environmentKnown, ...(transfer ? {domainMatched, executionEligible:model.qualified && domainMatched && environmentKnown && !outOfRange} : {}),
         referenceBaselineMs: model.referenceBaselineMs, baselineMs: snapshot.baselineMs, manualMultiplier: snapshot.manualMultiplier,
@@ -214,6 +226,7 @@ function prepare(request, loaded, {transfer = true} = {}) {
     const feat = features({...request, featureSchema: loaded?.model.featureSchema ?? request.featureSchema});
     const snapshot = {schemaVersion: 1, observationId: randomUUID(), ...feat, runner: request.runner, unit: request.unit,
         ...(request.timingBoundary ? {timingBoundary:request.timingBoundary} : {}),
+        ...(request.segment ? {segment:{...request.segment}} : {}),
         modelId: loaded?.id ?? null,
         selectedImplementations: feat.selectedImplementations ?? [],
         unresolvedEdges: feat.unresolvedEdges ?? [],
@@ -285,4 +298,4 @@ const {reconcileWorkloadInputs} = require('./execution-context.cjs');
 const {representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION} = require('./workload-representation.cjs');
 const {auditAndReextractDataset} = require('./audit.cjs');
 const {PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions} = require('./prefix-measurement.cjs');
-module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA_V6, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate, reconcileWorkloadInputs, representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION, auditAndReextractDataset, PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions};
+module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA_V6, REACHABLE_SCHEMA_V7, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate, reconcileWorkloadInputs, representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION, auditAndReextractDataset, PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions};

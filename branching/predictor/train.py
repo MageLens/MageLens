@@ -29,7 +29,8 @@ SCHEMAS = {
     'syntax-roles-v3-babel-7.29.9': 144,
     'syntax-reachable-v4-babel-7.29.9': 1024,
     'syntax-reachable-v5-babel-7.29.9': 1024,
-    'syntax-reachable-v6-babel-7.29.9': 1024
+    'syntax-reachable-v6-babel-7.29.9': 1024,
+    'syntax-reachable-v7-babel-7.29.9': 1024
 }
 
 
@@ -128,7 +129,21 @@ def percentile(values, quantile):
     return float(np.quantile(values, quantile, method='inverted_cdf'))
 
 
-def train(rows, dataset_digest, target_transform='log1p'):
+def fit_additive(x, y):
+    # Sequential work is additive in milliseconds. Relative-error weighting
+    # keeps long journeys from overwhelming short increments in the objective.
+    scale = StandardScaler().fit(x)
+    model = Ridge(alpha=1e-6, solver='svd')
+    model.fit(scale.transform(x), y, sample_weight=(np.median(y) / y) ** 2)
+    return scale, model
+
+
+def train(rows, dataset_digest, target_transform='log1p', recipe='log-ridge'):
+    additive = recipe == 'additive-relative-ridge'
+    if recipe not in ('log-ridge', 'additive-relative-ridge'):
+        raise ValueError('Unknown fitting recipe')
+    if additive and target_transform != 'log1p':
+        raise ValueError('The additive recipe fixes its identity target transform')
     if not rows or any(row.get('eligible') is not True for row in rows):
         raise ValueError('Quarantine unsuccessful samples before training')
     if any(row.get('measurementKind') == 'source-fragment-diagnostic' for row in rows):
@@ -149,7 +164,10 @@ def train(rows, dataset_digest, target_transform='log1p'):
     baseline = np.array([row['baselineMs'] for row in rows], dtype=float)
     assert np.isfinite(baseline).all() and (baseline > 0).all(), 'Every label needs its pre-run baseline'
     reference_baseline = float(np.median(baseline))
-    transform, inverse = (np.log, np.exp) if target_transform == 'log' else (np.log1p, np.expm1)
+    transform, inverse = ((lambda values: values), (lambda values: values)) if additive else (
+        (np.log, np.exp) if target_transform == 'log' else (np.log1p, np.expm1))
+    input_transform = (lambda values: values) if additive else np.log1p
+    fitting = fit_additive if additive else fit
     y = transform(actual * reference_baseline / baseline)
     families = sorted({row['sourceFamily'] for row in rows})
     groups = sorted({row['group'] for row in rows}, key=lambda group: digest(group.encode()))
@@ -167,15 +185,15 @@ def train(rows, dataset_digest, target_transform='log1p'):
     naive_predictions = np.empty(len(rows))
     for fold in sorted(set(folds.values())):
         test = np.array([folds[row['group']] == fold for row in rows])
-        scale, model = fit(x[~test], y[~test])
-        predictions[test] = model.predict(scale.transform(np.log1p(x[test])))
+        scale, model = fitting(x[~test], y[~test])
+        predictions[test] = model.predict(scale.transform(input_transform(x[test])))
         for index in np.flatnonzero(test):
             domain = rows[index]
             training_domain = np.array([not test[i] and all(row.get(key) == domain.get(key)
                                         for key in ['runner', 'unit', 'timingBoundary'])
                                         for i, row in enumerate(rows)])
             naive_predictions[index] = np.median(y[training_domain]) if training_domain.any() else np.nan
-    residuals = np.abs(predictions - y)
+    residuals = np.abs(np.log(np.maximum(predictions, 1e-6) / y)) if additive else np.abs(predictions - y)
     predicted_ms = inverse(predictions) * baseline / reference_baseline
     percent = np.abs(predicted_ms - actual) / actual * 100
     naive_ms = inverse(naive_predictions) * baseline / reference_baseline
@@ -198,8 +216,8 @@ def train(rows, dataset_digest, target_transform='log1p'):
     if len(families) > 1:
         for family in families:
             test = np.array([row['sourceFamily'] == family for row in rows])
-            scale, model = fit(x[~test], y[~test])
-            errors = np.abs(inverse(model.predict(scale.transform(np.log1p(x[test])))) * baseline[test] / reference_baseline - actual[test]) / actual[test] * 100
+            scale, model = fitting(x[~test], y[~test])
+            errors = np.abs(inverse(model.predict(scale.transform(input_transform(x[test])))) * baseline[test] / reference_baseline - actual[test]) / actual[test] * 100
             transfer.append({'sourceFamily': family, 'samples': int(test.sum()), 'p90AbsolutePercentError': percentile(errors, .9)})
     strict = accuracy_metrics(actual, predicted_ms)
     strata = {}
@@ -208,7 +226,7 @@ def train(rows, dataset_digest, target_transform='log1p'):
         for value in sorted({row.get(dimension) or '<unspecified>' for row in rows}):
             selected = np.array([(row.get(dimension) or '<unspecified>') == value for row in rows])
             strata[dimension][value] = accuracy_metrics(actual[selected], predicted_ms[selected])
-    scale, model = fit(x, y)
+    scale, model = fitting(x, y)
     domains = []
     for runner, unit, environment, boundary in sorted({(r['runner'], r['unit'], r['environmentDigest'], r.get('timingBoundary', '')) for r in rows}):
         subset = x[[r['runner'] == runner and r['unit'] == unit and r['environmentDigest'] == environment for r in rows]]
@@ -219,13 +237,14 @@ def train(rows, dataset_digest, target_transform='log1p'):
     # cross-validation is not a substitute for that prospective release decision.
     return {'schemaVersion': 1, 'featureSchema': schema, 'qualified': False, 'referenceBaselineMs': reference_baseline,
             'qualification': 'candidate-awaiting-independent-campaign',
-            'estimator': {'inputTransform': 'log1p', **({'targetTransform': 'log'} if target_transform == 'log' else {}),
+            'estimator': {'inputTransform': 'identity' if additive else 'log1p',
+                          **({'targetTransform': 'identity'} if additive else {'targetTransform': 'log'} if target_transform == 'log' else {}),
                           'intercept': float(model.intercept_), 'coefficients': model.coef_.tolist(),
                           'mean': scale.mean_.tolist(), 'scale': scale.scale_.tolist()},
             'errorLogP90': error_p90, 'domains': domains,
             'training': {'datasetDigest': dataset_digest, 'samples': len(rows), 'groups': len(groups),
                          'fitCount': len(set(folds.values())) + (len(families) if len(families) > 1 else 0) + 1,
-                         'sourceFamilies': families, 'folds': folds, 'recipe': f'log1p-features/standard-scaler-floor-sparse1-core005/{target_transform}-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
+                         'sourceFamilies': families, 'folds': folds, 'recipe': 'raw-counts/standard-scaler/identity-ms/relative-weighted-ridge-alpha1e-6/v1' if additive else f'log1p-features/standard-scaler-floor-sparse1-core005/{target_transform}-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
                          'python': platform.python_version(), 'sklearn': sklearn.__version__, 'numpy': np.__version__},
             'validation': {'method': 'grouped-cross-validation', 'percentileMethod': 'nearest-rank',
                            'maeMs': float(np.mean(np.abs(predicted_ms - actual))),
@@ -244,6 +263,7 @@ def train(rows, dataset_digest, target_transform='log1p'):
                            'meetsErrorTarget': strict['meetsErrorTarget'] and all(
                                item['meetsErrorTarget'] for groups in strata.values() for item in groups.values()),
                            'sufficientCoverage': len(families) >= 3 and all(item['groups'] >= 5 for item in by_source),
+                           **({'trainingPredictionsMs': (model.predict(scale.transform(input_transform(x))) * baseline / reference_baseline).tolist()} if additive else {}),
                            'predictionsMs': predicted_ms.tolist(),
                            'medianPredictionsMs': [float(value) if np.isfinite(value) else None for value in naive_ms]}}
 
@@ -310,6 +330,7 @@ def main():
     parser.add_argument('--error-ledger', type=Path)
     parser.add_argument('--compact', action='store_true', help='Store fold diagnostics separately from the inference artifact')
     parser.add_argument('--target-transform', choices=['log1p','log'], default='log1p')
+    parser.add_argument('--recipe', choices=['log-ridge','additive-relative-ridge'], default='log-ridge')
     args = parser.parse_args()
     if bool(args.split) != bool(args.split_digest):
         parser.error('--split and --split-digest must be supplied together')
@@ -324,7 +345,7 @@ def main():
         verify_campaign_training_split(rows, args.split, args.split_digest)
         verify_campaign_timing(rows)
     began = time.monotonic()
-    model = train(rows, digest(raw), args.target_transform)
+    model = train(rows, digest(raw), args.target_transform, args.recipe)
     if args.split:
         model['training']['splitDigest'] = args.split_digest
     training_seconds = time.monotonic() - began

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-const REACHABLE_SCHEMA = 'syntax-reachable-v6-babel-7.29.9';
+const REACHABLE_SCHEMA = 'syntax-reachable-v7-babel-7.29.9';
 const {PLAYWRIGHT_TEST_TIMING_BOUNDARY,TEST_TIMING_BOUNDARY,PREFIX_TIMING_BOUNDARY,SEGMENT_TIMING_BOUNDARY} =
     require('./prefix-measurement.cjs');
 const testBoundaries = new Map([['cypress',TEST_TIMING_BOUNDARY],['playwright',PLAYWRIGHT_TEST_TIMING_BOUNDARY]]);
@@ -87,7 +87,8 @@ function auditAndReextractDataset(datasetPath, sourceStorePath, options = {}) {
             unit: row.unit,
             sources,
             extraFeatures: row.extraFeatures ?? {},
-            backendState: row.backendState
+            backendState: row.backendState,
+            segment: row.segment
         };
         let reextracted;
         try {

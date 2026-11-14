@@ -51,6 +51,19 @@ test('frozen model input transforms agree with log-count training and preserve l
     fs.writeFileSync(file,JSON.stringify(loaded.model));
     assert.throws(()=>p.loadModel(file),e=>e.statusCode===500);
 });
+test('additive duration artifacts retain millisecond targets and multiplicative uncertainty', t => {
+    const {loaded,file}=model(t), snapshot=p.prepare(request(),loaded);
+    loaded.model.estimator={...loaded.model.estimator,inputTransform:'identity',targetTransform:'identity',intercept:100};
+    loaded.model.errorLogP90=Math.log(2);
+    fs.writeFileSync(file,JSON.stringify(loaded.model));
+    const additive=p.loadModel(file), result=p.predict(snapshot,additive,{shadow:true});
+    assert.equal(result.rawMs,100);
+    assert.equal(result.ms,200);
+    assert.equal(result.lowerMs,100);
+    assert.equal(result.upperMs,400);
+    additive.model.estimator.intercept=-1;
+    assert.throws(()=>p.predict(snapshot,additive,{shadow:true}),e=>/nonpositive/.test(e.issues[0].message));
+});
 test('failed, retried or changed-source runs are quarantined instead of training labels', t => {
     const {loaded}=model(t),snapshot=p.prepare(request(),loaded),valid={passed:true,sourceDigest:snapshot.sourceDigest};
     const sample=p.observe(snapshot,200,valid);assert.equal(sample.eligible,true);
