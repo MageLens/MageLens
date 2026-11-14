@@ -21,7 +21,8 @@ function describe(root, kind) {
     if (!adapter) {
         files.push(...['Dockerfile', '.dockerignore', 'Cargo.toml', 'Cargo.lock'].map(file => `branching/planner/${file}`));
         visit('branching/planner/src'); visit('branching/planner/tests');
-        files.push('branching/build-orchestrator.sh','package.json','package-lock.json','branching-baseline.json','branching/estimation.cjs');
+        files.push('branching/build-orchestrator.sh','package.json','package-lock.json','branching-baseline.json',
+            'branching/estimation.cjs','branching/identity.cjs','branching/configs/messages.cjs');
         files.push(...fs.readdirSync(path.join(root,'branching/predictor')).filter(f=>f.endsWith('.cjs')).map(f=>'branching/predictor/'+f));
     } else files.push('branching/runners/index.cjs', 'branching/build-runner.sh', 'bin/sync-dependencies.cjs',
         'bin/sync-runner-dependencies', `${adapter.context}/Dockerfile`);

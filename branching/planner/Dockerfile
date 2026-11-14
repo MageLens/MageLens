@@ -21,7 +21,8 @@ COPY --from=predictor /opt/magelens/predictor/model.json /opt/magelens/predictor
 RUN echo "f5621bb710749ca616117ef979b0a039c12680dee08f79a1cce46cde3413a8c3  /opt/magelens/predictor/model.json" | sha256sum -c -
 COPY --from=dependencies /build/node_modules/@babel/parser /opt/magelens/node_modules/@babel/parser
 COPY branching/predictor/*.cjs /opt/magelens/branching/predictor/
-COPY branching/estimation.cjs /opt/magelens/branching/estimation.cjs
+COPY branching/estimation.cjs branching/identity.cjs /opt/magelens/branching/
+COPY branching/configs/messages.cjs /opt/magelens/branching/configs/messages.cjs
 COPY branching-baseline.json /opt/magelens/branching-baseline.json
 RUN chmod 755 /opt/magelens/branching/predictor/planner.cjs && ln -s /opt/magelens/branching/predictor/planner.cjs /usr/local/bin/magelens-plan
 ENTRYPOINT ["magelens-plan"]
