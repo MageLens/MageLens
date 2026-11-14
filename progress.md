@@ -1438,3 +1438,12 @@ not an executed request count. Use the source-slice work roles for
 boundary attribution. Qualification needs independently grouped
 development and prospective repetitions within the declared catalog
 scope, with starting state recorded and full coverage still gated.
+
+The checkpoint browser now uses the shared Playwright JavaScript
+collector when an output directory is supplied. A pinned Chrome
+157.0.8103.38 loopback probe confirmed that hits from the original
+page survived freeze and page replacement and were merged with hits
+from the restored page. The probe used fixture counters in a
+network-disabled container. Magento instrumentation, PHP and
+template/DOM collection, and paired coverage equivalence remain
+unverified.
