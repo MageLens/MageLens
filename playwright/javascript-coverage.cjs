@@ -3,10 +3,11 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
+const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 
-async function collectJavaScriptCoverage(context) {
+async function collectJavaScriptCoverage(context, {directory = '.nyc_output', flushOnPageClose = true} = {}) {
     const snapshots = new Map();
     const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
     await context.exposeBinding(binding, (_source, snapshot) => snapshots.set(snapshot.id, snapshot.coverage));
@@ -29,17 +30,23 @@ async function collectJavaScriptCoverage(context) {
         closeMethods.set(page, close);
         page.close = async function (...args) { await flush(page); return close.apply(this, args); };
     };
-    context.on('page', track);
-    for (const page of context.pages()) track(page);
-    return async function finish() {
+    if (flushOnPageClose) {
+        context.on('page', track);
+        for (const page of context.pages()) track(page);
+    }
+    async function flushPages() {
         for (const page of context.pages()) await flush(page);
+    }
+    async function finish({flush = true} = {}) {
+        if (flush) await flushPages();
         context.off('page', track);
         for (const [page, close] of closeMethods) page.close = close;
         const coverage = createCoverageMap({});
         for (const snapshot of snapshots.values()) coverage.merge(snapshot);
-        fs.mkdirSync('.nyc_output', {recursive: true});
-        fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
-    };
+        fs.mkdirSync(directory, {recursive: true});
+        fs.writeFileSync(path.join(directory, `playwright-${randomUUID()}.json`), JSON.stringify(coverage));
+    }
+    return {finish, flushPages};
 }
 
 module.exports = {collectJavaScriptCoverage};

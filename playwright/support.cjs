@@ -33,7 +33,7 @@ function withCoverage(base = playwright.test) {
             await context.addInitScript(disablePageTransitions);
             await context.addCookies([{name: 'application_coverage', value: run.id,
                 domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
-            const finish = await collectJavaScriptCoverage(context);
+            const {finish} = await collectJavaScriptCoverage(context);
             try { await use(context); }
             finally { await finish(); }
         }

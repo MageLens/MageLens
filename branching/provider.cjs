@@ -18,14 +18,14 @@ const {implementationDigest} = require('./identity.cjs');
 // browser and backend are fenced together; a filesystem clone alone is not a
 // valid application checkpoint.
 class BranchingProvider {
-    constructor({browser, backend, baseURL, state, contextOptions, browserState}) {
+    constructor({browser, backend, baseURL, state, contextOptions, browserState, javascriptCoverageDirectory}) {
         if (typeof state !== 'function') throw new Error(messages.missingStateReader);
         for (const name of config.provider.lifecycle) {
             if (typeof backend[name] !== 'function') throw new Error(messages.missingBackendLifecycle(name));
         }
         this.backend = backend;
         this.readState = state;
-        this.browserState = browserState ?? new PlaywrightState(browser, {baseURL, contextOptions});
+        this.browserState = browserState ?? new PlaywrightState(browser, {baseURL, contextOptions, javascriptCoverageDirectory});
         this.approaches = config.executionApproaches;
         this.workload = config.provider.workload;
         this.capability = config.provider.capability;

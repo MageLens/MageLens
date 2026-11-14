@@ -8,9 +8,10 @@ const {CodeCache} = require('./code-cache.cjs');
 const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
 
 class PlaywrightState {
-    constructor(browser, {baseURL, timeout = 30000, contextOptions = {}}) {
+    constructor(browser, {baseURL, timeout = 30000, contextOptions = {}, javascriptCoverageDirectory}) {
         this.browser = browser; this.baseURL = baseURL; this.timeout = timeout;
         this.options = {...contextOptions, baseURL, serviceWorkers: 'block'};
+        this.javascriptCoverageDirectory = javascriptCoverageDirectory;
         this.cache = new CodeCache();
         this.requests = new Map(); this.errors = []; this.sessions = new Map(); this.sockets = new Set();
     }
@@ -44,6 +45,12 @@ class PlaywrightState {
         if (this.context) await this.context.unrouteAll({behavior: 'wait'});
         const restored = await restoreContext(this.browser, this.context, saved.storage, this.options);
         this.context = restored.context; this.requests.clear(); this.sessions.clear(); this.sockets.clear(); this.frozen = false;
+        if (restored.created && this.javascriptCoverageDirectory) {
+            const {collectJavaScriptCoverage} = require('../playwright/javascript-coverage.cjs');
+            this.javascriptCoverage = await collectJavaScriptCoverage(this.context, {
+                directory:this.javascriptCoverageDirectory, flushOnPageClose:false
+            });
+        }
         this.page = await this.context.newPage();
         this.page.setDefaultTimeout(this.timeout); this.page.setDefaultNavigationTimeout(this.timeout);
         await this.track(this.page);
@@ -78,6 +85,7 @@ class PlaywrightState {
         // and draining HTTP; only collect final response cookies after the drain.
         this.saved = {url: this.page.url(), storage: await storageState(this.context)};
         this.check();
+        await this.javascriptCoverage?.flushPages();
         this.frozen = true;
         await this.sessions.get(this.page).send('Page.setWebLifecycleState', {state: 'frozen'});
     }
@@ -91,6 +99,13 @@ class PlaywrightState {
         await this.sessions.get(this.page).send('Page.setWebLifecycleState', {state: 'active'});
         this.frozen = false; this.check();
     }
-    async close() { if (this.context) await this.context.close(); this.context = null; }
+    async close() {
+        try { await this.javascriptCoverage?.finish({flush:!this.frozen}); }
+        finally {
+            if (this.context) await this.context.close();
+            this.context = null;
+            this.javascriptCoverage = null;
+        }
+    }
 }
 module.exports = {PlaywrightState};
