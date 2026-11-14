@@ -3,7 +3,10 @@
 // License: see LICENSE in the repository root.
 
 const identity = (file, title, occurrence) => `cypress:${file}:${JSON.stringify(title)}:${occurrence}`;
-function install({list, selected, profile = false, inventory = true}) {
+function install({list, selected, profile = false, inventory = true, discoveryBaseUrl}) {
+    // Skip the server availability probe while retaining the original value for
+    // declaration-time configuration reads in support files and test modules.
+    if (list && discoveryBaseUrl !== undefined) Cypress.config('baseUrl', discoveryBaseUrl);
     const root = globalThis, tests = [], titles = [], skips = [], errors = [], occurrences = new Map();
     const after = root.after;
     const original = Object.fromEntries(['describe', 'context', 'it', 'specify', 'before', 'after', 'beforeEach', 'afterEach'].map(name => [name, root[name]]));

@@ -744,3 +744,21 @@ the interrupted source build. Application images, databases, volumes and unrelat
 cache entries were preserved. The retained runner and compact regression/native
 inventory reports support the next discovery stage; no package completion or
 full-matrix qualification is claimed.
+
+### 2026-11-14 — Cypress declaration configuration
+
+Private native discovery exposed a shared adapter defect: clearing `baseUrl` to
+skip the availability probe also removed configuration used by test declarations.
+The adapter now restores the original value inside the browser before loading
+support files and specs, while retaining the disabled server probe. The incomplete
+355-spec attempt was stopped and its partial inventory and failure retained.
+A fresh complete discovery attempt is running; neither attempt supplies duration
+labels or evidence that application assertions pass.
+
+Ten focused Cypress regressions pass. A real pinned-browser reproduction with
+networking disabled successfully registered a URL-dependent test without executing
+its deliberately failing body. Full integration checks passed **450 tests, zero
+failures/skips**, and repository static checks passed. This includes three new
+generator checks whose implementation remains separate from this adapter fix.
+Private evidence is under `campaign-20261114` (`baseurl-regression-01-*`,
+`integration-baseurl.log`, `static-baseurl.log`).

@@ -99,6 +99,9 @@ test('Cypress native plugin composes hooks and suppresses execution hooks during
             on('task', {read: () => 'fixture'});
         }, options);
         assert.equal(configured.baseUrl, list ? null : 'https://store.test');
+        const support = fs.readFileSync(options.support, 'utf8');
+        if (list) assert.match(support, /"discoveryBaseUrl":"https:\/\/store\.test"/);
+        else assert.doesNotMatch(support, /discoveryBaseUrl/);
         const metadata = JSON.parse(fs.readFileSync(options.metadata));
         assert.equal(metadata.checkpointLifecycle, 'native-cypress');
         assert.deepEqual(metadata.unassessedLifecycle, ['Cypress setupNodeEvents and plugin lifecycle']);
@@ -141,4 +144,29 @@ for (const selectedOnly of [false,true]) test(`Cypress profiling preserves nativ
         assert.equal(tasks[1].name,'magelens:inventory');
         assert.equal(tasks[1].value.tests[0].timingSource,undefined);
     });
+});
+
+
+test('Cypress discovery preserves base URL reads before support files and test declarations', () => {
+    const vm = require('node:vm');
+    for (const list of [false, true]) {
+        let baseUrl = null;
+        const registrations = [];
+        const context = {module: {exports: {}}, URL, Cypress: {spec: {absolute: '/suite/urls.cy.js'},
+            config(key, value) {assert.equal(key, 'baseUrl'); if (arguments.length === 2) baseUrl = value; return baseUrl;}}};
+        for (const name of ['describe', 'context']) context[name] = (_, callback) => callback();
+        for (const name of ['it', 'specify']) {
+            context[name] = (...args) => registrations.push(args);
+            context[name].skip = context[name];
+        }
+        for (const name of ['before', 'after', 'beforeEach', 'afterEach']) context[name] = () => {};
+        vm.runInNewContext(fs.readFileSync(require.resolve('../branching/runners/cypress/native-support.cjs'), 'utf8'), context);
+        context.module.exports.install({list, discoveryBaseUrl: 'https://store.test/catalog/'});
+        if (list) {
+            vm.runInNewContext("describe('URL registration', () => {const target = new URL('/recommendations', Cypress.config('baseUrl')); it(target.pathname, () => {throw new Error('Discovery must not execute the body');});});", context);
+            assert.equal(baseUrl, 'https://store.test/catalog/');
+            assert.equal(registrations[0][0], '/recommendations');
+            assert.doesNotThrow(() => registrations[0][1]());
+        } else assert.equal(baseUrl, null, 'Normal execution must retain its native configuration');
+    }
 });
