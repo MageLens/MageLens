@@ -16,11 +16,13 @@ function evidence() {
         candidateId:'catalog',
         manifest:{sourceDigest:'suite-source', tests:[{},{}], assessment:{stages:{catalog:{trainingSnapshot:snapshot}}}},
         report:{kind:'catalog-qualification-measurement', run:'collection', status:'passed', errors:[],
+            runtimeContext:{before:{phpfpm:{memoryBytes:2147483648}},after:{phpfpm:{memoryBytes:2147483648}}},
             cleanupVerified:true, sourceIntegrity:{verified:true,digest:'suite-source'},
             providerDiagnostics:{retainedServices:{schemasRemoved:true,grantsRestored:true}},
             counts:{fallbacks:0,failures:0,blockedSpecs:0}, wallMs:120000,
             native:{coverageFinalized:true,coverageRunId:'coverage',totalTests:2,totalPassed:2},
             calibration:{requestedSamples:2,samples:[0,1].map(i => ({stage:'sample-'+i,status:'passed',
+                runtimeContext:{phpfpm:{memoryBytes:2147483648}},
                 segment:{forecastDigest:digest(snapshot),workMs:41000+i}}))}},
         coverageResult:{run:'coverage',runner:'playwright',status:'passed',maxAttempts:1,
             totalTests:2,totalPassed:2,totalFailed:0,totalPending:0,totalSkipped:0,
@@ -42,6 +44,9 @@ test('catalog collection retains the frozen forecast, group and incremental timi
 test('incomplete, retried, mismatched or failed catalog collection cannot supply labels', () => {
     for (const mutate of [
         x => delete x.report.cleanupVerified,
+        x => delete x.report.runtimeContext,
+        x => x.report.runtimeContext.after.phpfpm.memoryBytes = 0,
+        x => x.report.calibration.samples[0].runtimeContext.phpfpm.memoryBytes = 0,
         x => delete x.report.native.coverageFinalized,
         x => x.report.providerDiagnostics.retainedServices.schemasRemoved = false,
         x => x.report.providerDiagnostics.retainedServices.grantsRestored = false,

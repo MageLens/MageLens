@@ -6,6 +6,14 @@ const assert = require('node:assert/strict');
 const {digest} = require('../identity.cjs');
 const {observeExecutedSegment, SEGMENT_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
 
+function catalogRuntimeContext(backend) {
+    return Object.fromEntries(['app', 'phpfpm', 'db', 'redis', 'opensearch', 'runner'].map(service => {
+        const container = backend.inspect(service);
+        const {Memory, MemorySwap, NanoCpus} = container.HostConfig;
+        return [service, {image:container.Image, memoryBytes:Memory, memorySwapBytes:MemorySwap, nanoCpus:NanoCpus}];
+    }));
+}
+
 // Admit only complete collection attempts. Historical probes without cleanup and
 // finalization evidence remain diagnostics, even when their timings look useful.
 function catalogObservations({manifest, candidateId, report, coverageResult, coverageSummary}) {
@@ -17,6 +25,8 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     assert.equal(report.status, 'passed');
     assert.deepEqual(report.errors, []);
     assert.equal(report.cleanupVerified, true, 'Missing successful cleanup audit');
+    assert.ok(report.runtimeContext?.before && report.runtimeContext?.after, 'Missing runtime context audit');
+    assert.deepEqual(report.runtimeContext.after, report.runtimeContext.before, 'Runtime context changed during collection');
     assert.equal(report.sourceIntegrity?.verified, true);
     assert.equal(report.sourceIntegrity.digest, manifest.sourceDigest);
     const retained = report.providerDiagnostics?.retainedServices;
@@ -47,6 +57,7 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     assert.equal(new Set(samples.map(sample => sample.stage)).size, samples.length);
     return samples.map(sample => {
         assert.equal(sample.status, 'passed');
+        assert.deepEqual(sample.runtimeContext, report.runtimeContext.before, 'Runtime context changed during prefix work');
         assert.equal(sample.segment?.forecastDigest, digest(snapshot));
         const observation = observeExecutedSegment(snapshot, {
             id: report.run + '/' + sample.stage, status: 'passed', wallMs: report.wallMs,
@@ -64,4 +75,4 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     });
 }
 
-module.exports = {catalogObservations};
+module.exports = {catalogObservations, catalogRuntimeContext};

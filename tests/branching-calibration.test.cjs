@@ -45,6 +45,7 @@ test('qualification measurement times the frozen increment and requires a passin
         const report = await measure({provider: new FixtureProvider(), root, samples: 1, warmup: async () => {},
             qualificationSegment: {
                 snapshot,
+                runtimeContext: () => ({phpfpm:{memoryBytes:2147483648}}),
                 prepare: async provider => { provider.state.db.customer = 'prepared'; },
                 execute: async provider => {
                     assert.equal(provider.state.db.customer, 'prepared');
@@ -58,6 +59,7 @@ test('qualification measurement times the frozen increment and requires a passin
         assert.equal(report.kind, 'catalog-qualification-measurement');
         assert.equal(report.status, valid ? 'passed' : 'failed');
         assert.equal(report.calibration.samples[0].segment.forecastDigest, digest(snapshot));
+        assert.deepEqual(report.calibration.samples[0].runtimeContext, {phpfpm:{memoryBytes:2147483648}});
         assert.ok(report.calibration.samples[0].segment.workMs > 0);
         assert.equal(samples(report), null);
         assert.deepEqual(fs.readdirSync(root), []);

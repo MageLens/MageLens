@@ -1485,3 +1485,29 @@ incremental work durations, rejects stale coverage runs, retries, partial
 inventories and restoration failures, and fingerprints the collection evidence.
 No new accuracy or speedup claim follows. Next: collect the first long
 development family through the audited route; keep held-out groups untouched.
+
+The first new collection (`d9da36d4`) passed two retained restores, all nine
+native tests, source integrity, coverage finalization and cleanup. Its measured
+increments were 40.994 s and 41.481 s against a pre-execution 1.353 s forecast
+from the existing short-journey development model. This is diagnostic only:
+the retained backend recreated PHP/web containers and discarded limits applied
+with `docker update`. A quarantine record is retained beside the raw report;
+none of these rows may enter training or qualification. No fit was performed.
+
+Resource limits now belong in the dedicated Compose override so they survive
+recreation. Admission additionally requires matching image/resource context
+before collection, at each measured prefix, and after retained cleanup. Focused
+calibration/admission checks passed five tests; the broader predictor-focused
+run passed 47 tests. These checks do not qualify prediction accuracy. Native
+profiling can accompany the next complete collection to freeze and archive
+consumer-test forecasts separately from incremental-prefix forecasts.
+
+The previous search-to-product failure was traced to its locator: the installed
+Luma search template explicitly declares `role="combobox"`, while the diagnostic
+used `getByRole('textbox')`. The private development source now uses `combobox`
+for fill and Enter, preserving the loop and assertions; its failed source is
+retained separately. This is the same development group, not fresh qualification
+evidence. The stopped approach is resource-unstable collection; the next attempt
+uses persistent Compose limits and verifies them during restoration. The bounded
+experiment's collection clock includes the approximately five-minute diagnostic
+attempt; its model-fit and held-out budgets are unchanged.

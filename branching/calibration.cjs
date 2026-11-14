@@ -50,6 +50,7 @@ async function measure({provider,root,samples=3,warmup,qualificationSegment}) {
             if (qualificationSegment) {
                 const {snapshot, prepare, execute} = qualificationSegment;
                 await prepare(provider);
+                if (qualificationSegment.runtimeContext) sample.runtimeContext = qualificationSegment.runtimeContext();
                 await provider.beginSegment?.(stage);
                 const workStarted = performance.now();
                 await execute(provider);
