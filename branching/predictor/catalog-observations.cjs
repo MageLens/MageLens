@@ -1,0 +1,67 @@
+// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
+const assert = require('node:assert/strict');
+const {digest} = require('../identity.cjs');
+const {observeExecutedSegment, SEGMENT_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
+
+// Admit only complete collection attempts. Historical probes without cleanup and
+// finalization evidence remain diagnostics, even when their timings look useful.
+function catalogObservations({manifest, candidateId, report, coverageResult, coverageSummary}) {
+    const snapshot = manifest.assessment?.stages?.[candidateId]?.trainingSnapshot;
+    assert.equal(snapshot?.timingBoundary, SEGMENT_TIMING_BOUNDARY);
+    assert.equal(snapshot.unit, 'prefix');
+    assert.ok(snapshot.modelId && snapshot.sourceDigest && snapshot.environmentDigest);
+    assert.equal(report.kind, 'catalog-qualification-measurement');
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(report.errors, []);
+    assert.equal(report.cleanupVerified, true, 'Missing successful cleanup audit');
+    assert.equal(report.sourceIntegrity?.verified, true);
+    assert.equal(report.sourceIntegrity.digest, manifest.sourceDigest);
+    const retained = report.providerDiagnostics?.retainedServices;
+    assert.equal(retained?.schemasRemoved, true);
+    assert.equal(retained.grantsRestored, true);
+    for (const count of ['fallbacks', 'failures', 'blockedSpecs']) assert.equal(report.counts?.[count], 0);
+    assert.equal(report.native?.coverageFinalized, true, 'Missing coverage finalization audit');
+    assert.ok(report.native.coverageRunId);
+    assert.equal(coverageResult.run, report.native.coverageRunId);
+    assert.equal(coverageSummary.run, report.native.coverageRunId);
+    assert.equal(coverageResult.status, 'passed');
+    assert.equal(coverageResult.runner, 'playwright');
+    assert.equal(coverageResult.maxAttempts, 1);
+    for (const count of ['totalFailed', 'totalPending', 'totalSkipped']) assert.equal(coverageResult[count], 0);
+    const total = manifest.tests.length;
+    assert.ok(total > 0);
+    for (const result of [report.native, coverageResult]) {
+        assert.equal(result.totalTests, total);
+        assert.equal(result.totalPassed, total);
+    }
+    assert.equal(coverageResult.tests.length, total);
+    assert.ok(coverageResult.tests.every(test => test.status === 'passed'));
+    assert.equal(coverageResult.browser?.name, 'chrome');
+    assert.ok(coverageResult.browser.version);
+    const samples = report.calibration.samples;
+    assert.equal(samples.length, report.calibration.requestedSamples);
+    assert.ok(samples.length > 0);
+    assert.equal(new Set(samples.map(sample => sample.stage)).size, samples.length);
+    return samples.map(sample => {
+        assert.equal(sample.status, 'passed');
+        assert.equal(sample.segment?.forecastDigest, digest(snapshot));
+        const observation = observeExecutedSegment(snapshot, {
+            id: report.run + '/' + sample.stage, status: 'passed', wallMs: report.wallMs,
+            prefixTiming: {timingBoundary: snapshot.timingBoundary, forecast: {digest: sample.segment.forecastDigest},
+                fromDepth: snapshot.segment.fromDepth, toDepth: snapshot.segment.toDepth,
+                kind: 'steps', workCompleted: true, workMs: sample.segment.workMs}
+        }, {passed: true, attempts: 1, sourceDigest: snapshot.sourceDigest});
+        assert.equal(observation.eligible, true, observation.exclusion);
+        return {...observation, measurementKind:'retained-provider-segment',
+            forecastDigest:sample.segment.forecastDigest,
+            collectionRun: report.run, coverageRunId: coverageResult.run,
+            collectionEvidenceDigest: digest({report, coverageResult, coverageSummary}),
+            sourceVerified: true, suitePassed: true, coverageVerified: true, providerAuditPassed: true,
+            attempts: 1};
+    });
+}
+
+module.exports = {catalogObservations};

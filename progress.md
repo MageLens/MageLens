@@ -1447,3 +1447,41 @@ from the restored page. The probe used fixture counters in a
 network-disabled container. Magento instrumentation, PHP and
 template/DOM collection, and paired coverage equivalence remain
 unverified.
+
+### 2026-11-14 — resumed catalog qualification collection
+
+The task branch and upstream both point to `87af3dd`; the pre-existing
+uncommitted implementation is preserved. No local browser, calibration or
+training workflow is active. The dedicated Compose project remains
+`magelens-ml-calibration-20261114`, with an internal network and bind mounts
+inside `magento-calibration-IXmPLk`; its saved profile is Mage-OS/Luma/Playwright.
+All its services are stopped, no workflow/recovery lock is present, and the
+host has 771 GiB available. The newer retained measurement report records two
+coverage-enabled long-prefix observations and a passing nine-test native run;
+these supersede the older source-fragment timing as collection-path evidence.
+
+Continue the bounded long-prefix experiment above, without restarting its
+completed attribution or restoration probes. The hypothesis remains missing
+long-sequence labels in the correct coverage-enabled timing domain, rather
+than missing executed navigation sites. Before spending the remaining browser
+budget, add and test a strict conversion from retained calibration measurements
+to incremental-prefix observations. Inputs are the frozen source/model snapshot,
+complete suite inventory, provider and cleanup audits, and finalized coverage
+identity. Reject missing or mismatched evidence. This is an admission-path check,
+not an accuracy fit or prospective audit. Limit this prerequisite to focused
+host tests and replay of retained development evidence; do not launch new browser
+collection until it passes. Keep the existing two long development families,
+one independent validation family and one prospective audit family, two fixture
+sizes and two repetitions, separate timing-unit fits, 90-minute browser budget,
+and 95%-within-5% stopping criterion unchanged.
+
+The admission-path regression checks passed (five focused calibration and
+observation tests). The retained `43e35b77` probe is correctly rejected because
+its report predates the explicit `cleanupVerified` field; do not reconstruct
+that field retrospectively from successful timings or logs. New collection
+reports must record both successful cleanup and coverage finalization before
+export. The converter preserves frozen forecasts, source/group identities and
+incremental work durations, rejects stale coverage runs, retries, partial
+inventories and restoration failures, and fingerprints the collection evidence.
+No new accuracy or speedup claim follows. Next: collect the first long
+development family through the audited route; keep held-out groups untouched.
