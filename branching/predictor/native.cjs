@@ -131,7 +131,7 @@ function localDependencies(file, source, root, packageRoots = []) {
 
 function collector(profile, directory, root, {onPrepared} = {}) {
     const model = profile.model ? p.loadModel(profile.model,profile.modelDigest) : null;
-    const v5 = (model?.model.featureSchema ?? profile.featureSchema) === p.REACHABLE_SCHEMA_V5;
+    const v5 = [p.REACHABLE_SCHEMA_V5,p.REACHABLE_SCHEMA_V6].includes(model?.model.featureSchema ?? profile.featureSchema);
     const file = path.join(directory,'predictions.json');
     return batch => {
         const preparationStarted = performance.now();

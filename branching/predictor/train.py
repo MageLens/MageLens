@@ -28,7 +28,8 @@ SCHEMAS = {
     'syntax-hash-v2-babel-7.29.9': 72,
     'syntax-roles-v3-babel-7.29.9': 144,
     'syntax-reachable-v4-babel-7.29.9': 1024,
-    'syntax-reachable-v5-babel-7.29.9': 1024
+    'syntax-reachable-v5-babel-7.29.9': 1024,
+    'syntax-reachable-v6-babel-7.29.9': 1024
 }
 
 

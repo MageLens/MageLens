@@ -2049,3 +2049,84 @@ forecast qualification, meaningful restored collector exercise and paired
 elapsed-time acceptance remain open. The next measurements are the same two
 short increments at the restored 120-product state; no model fit has yet used
 these development observations.
+
+### 2026-11-14 — development input coverage before fitting
+
+The restored 120-product home collection `d1943c9f` passed at 0.872 s and
+0.841 s; search increment `6b1cb4fa` passed at 0.543 s and 0.577 s. Each passed
+two restores, all nine native tests, coverage finalization and cleanup. Their
+source/coverage archives passed admission. The combined development inventory
+contains 16 incremental-prefix observations and 52 eligible whole-test
+observations, all within the same two development groups. All repetitions with
+identical recorded inputs have overlapping five-percent prediction intervals;
+this is a repeatability feasibility check, not prediction accuracy.
+
+Two independently authored workloads are reserved before fitting: advanced SKU
+filtering (`catalog-advanced-filter-gBjY8U`, validation) and comparison-list
+browsing (`catalog-comparison-list-Vuoxay`, prospective audit). Their source
+identities are pinned in `campaign-20261114/catalog-reserved-groups.json`.
+Neither has supplied timing observations. Related consumers and fixture-size
+variants stay in each workload's group.
+
+Source-only range inspection found a concrete representation blocker. The
+advanced prefix exceeds development ranges for `page.locator().fill`, nested
+`getByRole().click`, and locator construction. The comparison prefix exceeds
+ranges for `page.getByRole().click` and `expect().toContainText`. The existing
+schema treats equivalent locator spellings as different call types. It also
+counts lazy locator construction alongside operations that actually resolve it.
+No fit with these unchanged input ranges can qualify the reserved workloads.
+Evidence is retained in the development inventory's `reserved-prefix-range.json`
+and `reserved-range-attribution.json`. Do not rewrite the workload assertions to
+manufacture input coverage.
+
+**Bounded representation correction.** Test a new, explicitly versioned feature
+schema that canonicalizes known Playwright locator actions and DOM assertions,
+while leaving lazy locator construction represented by ordinary syntax counts.
+Preserve exact navigation/action multiplicity, source hashes, helper attribution,
+backend facts and both timing boundaries; retain v4/v5 extraction for pinned
+older models. Keep the existing Ridge model family and re-extract only the
+16/52 audited development rows from their archived bytes. First require semantic
+locator variants to share operation features, and verify input coverage without
+executing the reserved groups. Cap this source/compute experiment at 15 minutes
+and the existing one fit per timing unit; no additional workload groups or browser
+collection are authorized by this correction. The original 90-minute collection
+budget remains in force. Stop this approach on unresolved input coverage,
+changed execution/assertions, or a validation/audit miss at 95%-within-5%.
+The recorded prefix position (before/after a parent increment) remains a separate
+candidate input to investigate; do not silently change that timing contract.
+
+### 2026-11-14 — representation fit rejected; action attribution diagnostic
+
+The v6 extractor preserves archived v5 vectors exactly and brings both reserved
+prefixes inside the development feature ranges. The final comparison locator was
+corrected after an untimed functional preflight exposed a decorative glyph in its
+accessible name; its original success assertion remains. Neither reserved group
+has supplied timing labels. The dedicated database was restored again after
+that preflight; its 120-product fingerprint matches the original backup.
+
+One candidate fit per timing unit completed in the pinned, network-disabled
+Python runtime (two CPUs, 1 GiB; under one second each). Prefix model `72d61473`
+scored 0/16 grouped cross-validation predictions within 5%; whole-test model
+`87c97c69` scored 2/52. Diagnostic rescoring of training rows reached only 4/16
+and 24/52 respectively. The expensive prefix estimate increased from 1.353 s to
+39.298 s against a 41.641 s development mean, but remains unqualified. Models,
+pinned split, fit protocol, dataset identities and errors are retained under
+`campaign-20261114/catalog-development-v6-TGowmM`. These results stop this fitting
+approach; no held-out timing collection or repeat fit is justified by them.
+
+A source-only attribution diagnostic found a concrete missing distinction:
+all development prefixes have either zero fill/press/click calls or exactly
+20 of each. Those three action columns have rank one. Reserved advanced search
+has 20 fills, no presses and 20 clicks; comparison has no fills/presses and
+20 clicks. Their separate costs cannot be learned from the current observations,
+even though each individual feature lies within range. Repeating the same
+workloads cannot resolve this. `action-identifiability.json` retains the exact
+source-derived counts and nullspace. Prefix position also distinguishes the
+one-navigation home and search increments, but is currently absent from numeric
+inputs. Investigate these two specific attribution gaps before more collection;
+do not expand unrelated corpus groups or tune against held-out observations.
+
+Validation of the versioned locator representation passed 531/531 integration
+checks, with no skips or failures. Static validation passed for all 536 tracked
+files (265 JavaScript, 131 Bash/Python/PHP scripts). No E2E matrix or release
+qualification was run. The model accuracy and paired benchmark gates remain open.

@@ -90,7 +90,7 @@ function assess(manifest, options = {}) {
     const rows = {}, stages = {}, candidates = [], issues = manifest.diagnostics.map(message=>({phase:'collection',message}));
     const runnableByFile = new Map();
     for (const test of manifest.tests) {
-        if (loaded.model.featureSchema === predictor.REACHABLE_SCHEMA_V5 && test.staticallySkipped) continue;
+        if ([predictor.REACHABLE_SCHEMA_V5,predictor.REACHABLE_SCHEMA_V6].includes(loaded.model.featureSchema) && test.staticallySkipped) continue;
         if (!runnableByFile.has(test.file)) runnableByFile.set(test.file,[]);
         runnableByFile.get(test.file).push(test);
     }

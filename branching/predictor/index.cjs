@@ -12,10 +12,12 @@ const COUNTS_SCHEMA = 'syntax-hash-v2-babel-7.29.9';
 const FEATURE_SCHEMA = 'syntax-roles-v3-babel-7.29.9';
 const REACHABLE_SCHEMA_V4 = 'syntax-reachable-v4-babel-7.29.9';
 const REACHABLE_SCHEMA_V5 = 'syntax-reachable-v5-babel-7.29.9';
-const REACHABLE_SCHEMA = REACHABLE_SCHEMA_V5;
-const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5];
+const REACHABLE_SCHEMA_V6 = 'syntax-reachable-v6-babel-7.29.9';
+const REACHABLE_SCHEMA = REACHABLE_SCHEMA_V6;
+const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA_V6];
 const COUNTS_WIDTH = 72, WIDTH = COUNTS_WIDTH * 2, REACHABLE_WIDTH = 1024, HALF_REACHABLE = 512;
-const isReachableSchema = schema => schema === REACHABLE_SCHEMA_V4 || schema === REACHABLE_SCHEMA_V5;
+const isModernReachableSchema = schema => schema === REACHABLE_SCHEMA_V5 || schema === REACHABLE_SCHEMA_V6;
+const isReachableSchema = schema => schema === REACHABLE_SCHEMA_V4 || isModernReachableSchema(schema);
 const width = schema => isReachableSchema(schema) ? REACHABLE_WIDTH : schema === FEATURE_SCHEMA ? WIDTH : COUNTS_WIDTH;
 // Bounded syntax-vector cache: helpers shared by many tests are parsed once.
 // Keys include source bytes and schema; no project source or AST is retained.
@@ -41,7 +43,7 @@ function counts(request) {
     ensure(require('@babel/parser/package.json').version === '7.29.9', 'Feature parser version changed; retrain');
     for (const {name, source} of [...request.sources].sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
         ensure(typeof name === 'string' && typeof source === 'string', 'Invalid source corpus');
-        const sourceHash=sha256(source),cacheKey=schema+':'+sourceHash;
+        const sourceHash=sha256(source),cacheKey=schema+':'+(schema === REACHABLE_SCHEMA_V6 ? request.runner+':' : '')+sourceHash;
         fingerprints.push([name, sourceHash]);
         vector[3] += Buffer.byteLength(source); vector[4]++;
         const cached=syntaxCache.get(cacheKey);
@@ -63,8 +65,11 @@ function counts(request) {
             add(counts,'syntax:' + node.type); counts[5]++;
             if (schema === COUNTS_SCHEMA && ['CallExpression', 'OptionalCallExpression'].includes(node.type))
                 add(counts,'call:' + (node.callee.property?.name ?? node.callee.name ?? node.callee.type));
-            if (isReachableSchema(schema) && ['CallExpression', 'OptionalCallExpression', 'NewExpression'].includes(node.type))
-                add(counts, 'call:' + qualified(node.callee));
+            if (isReachableSchema(schema) && ['CallExpression', 'OptionalCallExpression', 'NewExpression'].includes(node.type)) {
+                const canonical = schema === REACHABLE_SCHEMA_V6 && request.runner === 'playwright'
+                    ? require('./playwright-call-features.cjs').playwrightCallFeature(node) : undefined;
+                if (canonical !== null) add(counts, 'call:' + (canonical ?? qualified(node.callee)));
+            }
             if (node.type === 'NumericLiteral') {
                 counts[6] += Math.log1p(Math.abs(node.value));
                 counts[7] = Math.max(counts[7], Math.log1p(Math.abs(node.value)));
@@ -119,7 +124,7 @@ function features(request) {
         ensure(work.length>0, 'Work source is required');
         const extractor = schema === REACHABLE_SCHEMA_V4 ? reachableContextV4 : reachableContext;
         const reachable = extractor(request.sources);
-        const primary = counts({...request, featureSchema: schema, sources: work, extraFeatures: schema === REACHABLE_SCHEMA_V5
+        const primary = counts({...request, featureSchema: schema, sources: work, extraFeatures: isModernReachableSchema(schema)
             ? {...request.extraFeatures,...backendFeatures(request.backendState)} : request.extraFeatures});
         const supporting = reachable.length ? counts({...request, featureSchema: schema, sources: reachable, extraFeatures: {}}).vector : Array(HALF_REACHABLE).fill(0);
         const fingerprints = [...request.sources].sort((a,b)=>a.name.localeCompare(b.name,'en'))
@@ -130,7 +135,7 @@ function features(request) {
             sourceDigest: sha256(JSON.stringify(fingerprints)),
             selectedImplementations: reachable.map(s => s.name),
             unresolvedEdges: reachable.unknownEdges ?? [],
-            ...(schema === REACHABLE_SCHEMA_V5 ? {registeredCalls: (reachable.edges ?? []).filter(edge=>edge.registration),
+            ...(isModernReachableSchema(schema) ? {registeredCalls: (reachable.edges ?? []).filter(edge=>edge.registration),
                 processCalls: (reachable.edges ?? []).filter(edge=>edge.process)} : {})
         };
     }
@@ -185,7 +190,7 @@ function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
     ensure(ms > 0, 'Model predicted a nonpositive duration');
     const matchingEnvironment = domains.filter(d=>d.environmentDigest === snapshot.environmentDigest);
     const eligibleRanges = matchingEnvironment.length ? matchingEnvironment : ranges;
-    const outOfRange = snapshot.featureSchema === REACHABLE_SCHEMA_V5
+    const outOfRange = isModernReachableSchema(snapshot.featureSchema)
         ? !eligibleRanges.some(domain=>snapshot.vector.every((value,i)=>value>=domain.ranges[i][0] && value<=domain.ranges[i][1]))
         : snapshot.vector.some((x, i) => x < Math.min(...ranges.map(d => d.ranges[i][0])) || x > Math.max(...ranges.map(d => d.ranges[i][1])));
     ensure(shadow || !outOfRange, 'Workload is outside the trained feature range');
@@ -213,7 +218,7 @@ function prepare(request, loaded, {transfer = true} = {}) {
         unresolvedEdges: feat.unresolvedEdges ?? [],
         group: sha256(request.group), sourceFamily: sha256(request.sourceFamily), environmentDigest,
         extraFeatures: {...request.extraFeatures},
-        ...(feat.featureSchema === REACHABLE_SCHEMA_V5 && request.backendState ? {backendState:{...request.backendState}} : {}),
+        ...(isModernReachableSchema(feat.featureSchema) && request.backendState ? {backendState:{...request.backendState}} : {}),
         // Keep the historical training reference independent of checkpoint policy.
         // An explicit baseline remains an opt-in environment calibration.
         baselineMs: request.baselineMs ?? loaded?.model.referenceBaselineMs ?? 106638.8, manualMultiplier: request.manualMultiplier ?? 1,
@@ -279,4 +284,4 @@ const {reconcileWorkloadInputs} = require('./execution-context.cjs');
 const {representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION} = require('./workload-representation.cjs');
 const {auditAndReextractDataset} = require('./audit.cjs');
 const {PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions} = require('./prefix-measurement.cjs');
-module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate, reconcileWorkloadInputs, representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION, auditAndReextractDataset, PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions};
+module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA_V6, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate, reconcileWorkloadInputs, representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION, auditAndReextractDataset, PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions};
