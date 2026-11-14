@@ -934,3 +934,11 @@ and using compact JSON. Node loaded both models by content digest and
 returned identical forecasts and warnings for all 618 audited rows. This is
 an artifact-size result for the reference estimator. Compact feature and
 model comparisons, preparation overhead and independent accuracy remain open.
+
+The private discovery snapshots show why spec-level random splitting would
+leak helper families. At 338 processed specs, the connected components of
+specs sharing selected helper implementations formed a single group. Multiple
+common helper bodies appeared in every processed spec. This is a conservative
+exact-helper grouping. Use the private corpus as one group for source-family
+holdout analysis and investigate separately which shared code belongs to the
+runner baseline before declaring any finer workload groups independent.
