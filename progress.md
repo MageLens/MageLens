@@ -910,3 +910,10 @@ Version 2 campaign manifests now bind the inventory's group assignments to
 the exact split file consumed by the trainer. Five ledger tests passed,
 including verification that a changed split file is rejected when reopening
 the campaign. The real campaign still needs reconciled group assignments.
+
+The historical grouped fit now has a per-observation error ledger tied to its
+dataset and model digests. Its 618 rows reconcile to 26 forecasts within 5%.
+Among the 93 observations between 100 ms and one second, 91 were overpredicted
+by more than 5% and none met the target. These counts identify a duration range
+to investigate. Repeated, source-matched measurements are still needed to
+distinguish model bias from runtime variance and missing inputs.
