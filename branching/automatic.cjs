@@ -105,10 +105,18 @@ function buildWorkflow(manifest, configuration, selected) {
         const test = byId.get(checkpoint.consumers.find(id => selection.has(id)));
         const parent = parentFor(test, checkpoint.depth);
         const boundary = test.steps[checkpoint.depth - 1];
+        const forecast = predictions[checkpoint.id];
+        const fromDepth = parent?.depth ?? 0;
+        const forecastIdentity = forecast?.segment?.representative === test.id &&
+            forecast.segment.fromDepth === fromDepth && forecast.segment.toDepth === checkpoint.depth
+            ? {digest:digest(forecast.trainingSnapshot ?? forecast),modelId:forecast.prediction.modelId,
+                featureSchema:forecast.featureSchema,environmentDigest:forecast.environmentDigest,
+                sourceDigest:forecast.sourceDigest,timingBoundary:forecast.timingBoundary}
+            : null;
         stages.push({id: checkpoint.id, label: checkpoint.label ?? `Shared prefix · ${checkpoint.depth} steps`,
             source: {file: test.file, line: boundary?.line ?? test.line}, parent: parent?.id ?? rootFor(test),
             estimatedMs: duration(checkpoint.id),
-            inputs: {checkpoint, source: manifest.sourceDigest},
+            inputs: {checkpoint, source: manifest.sourceDigest, fromDepth, forecastIdentity},
             run: runtime => execute(test, parent?.depth ?? 0, checkpoint.depth, runtime),
             assert: runtime => configuration.assertCheckpoint(runtime, checkpoint)});
     }

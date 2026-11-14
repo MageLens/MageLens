@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {SEGMENT_TIMING_BOUNDARY} = require('./predictor/prefix-measurement.cjs');
 const protocol = require('./configs/protocol.cjs');
 
 const messages = require('./configs/messages.cjs');
@@ -52,13 +53,31 @@ function createExecution({
             observed: true,
             variant: 'recipe'
         };
+        if (kind === 'Stage' && Number.isInteger(node.inputs?.fromDepth) &&
+            Number.isInteger(node.inputs.checkpoint?.depth)) {
+            entry.prefixTiming = {
+                timingBoundary:SEGMENT_TIMING_BOUNDARY,
+                kind:node.inputs.checkpoint.depth === 0 ? 'fixture' : 'steps',
+                forecast:node.inputs.forecastIdentity ?? null,
+                fromDepth:node.inputs.fromDepth,
+                toDepth:node.inputs.checkpoint.depth,
+                workMs:null,
+                workCompleted:false
+            };
+        }
         report.segments.push(entry);
         if (kind === 'Stage') report.counts.prefixExecutions++;
         const time = performance.now();
         emit(protocol.event.nodeStart, {node: node.id, operation: protocol.operation.execute});
         try {
             await provider.beginSegment?.(entry.id);
-            await node.run(provider, node.inputs);
+            const workStarted = performance.now();
+            try {
+                await node.run(provider, node.inputs);
+                if (entry.prefixTiming) entry.prefixTiming.workCompleted = true;
+            } finally {
+                if (entry.prefixTiming) entry.prefixTiming.workMs = performance.now()-workStarted;
+            }
             await node.assert(provider, node.inputs);
             entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
             entry.status = protocol.status.passed;

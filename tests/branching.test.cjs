@@ -67,6 +67,47 @@ test('failed parent blocks all descendants without executing Specs', async t => 
     assert.ok(result.results.every(r => r.status === 'blocked' && r.blockedBy === 'customer-ready'));
     assert.equal(result.segments.filter(s => s.kind === 'Spec').length, 0);
 });
+test('failed segment work retains forecast identity and elapsed time for audit', async t => {
+    const input = setup(t);
+    const stage = input.workflow.stages[0];
+    const forecastIdentity = {digest:'a'.repeat(64)};
+    stage.inputs = {...stage.inputs,fromDepth:0,checkpoint:{depth:1},forecastIdentity};
+    stage.run = async () => { throw new Error('segment work failed'); };
+    const result = await execute({...input,approach:'branching'});
+    const segment = result.segments.find(entry=>entry.node === stage.id);
+    assert.equal(segment.status,'failed');
+    assert.equal(segment.prefixTiming.workCompleted,false);
+    assert.deepEqual(segment.prefixTiming.forecast,forecastIdentity);
+    assert.ok(Number.isFinite(segment.prefixTiming.workMs));
+});
+test('prefix completion waits for the queued runner work before asserting the boundary', async t => {
+    const input = setup(t);
+    const stage = input.workflow.stages[0];
+    stage.inputs = {...stage.inputs,fromDepth:0,checkpoint:{depth:1}};
+    const originalRun = stage.run;
+    const originalAssert = stage.assert;
+    const {promise:queued,resolve:complete} = Promise.withResolvers();
+    const {promise:started,resolve:entered} = Promise.withResolvers();
+    let asserted = false;
+    stage.run = async (...args) => {
+        entered();
+        await queued;
+        return originalRun(...args);
+    };
+    stage.assert = async (...args) => {
+        asserted = true;
+        return originalAssert(...args);
+    };
+    const execution = execute({...input,approach:'branching'});
+    await started;
+    assert.equal(asserted,false);
+    complete();
+    const result = await execution;
+    assert.equal(result.status,'passed');
+    const segment = result.segments.find(entry=>entry.node === stage.id);
+    assert.equal(segment.prefixTiming.workCompleted,true);
+    assert.ok(segment.prefixTiming.workMs <= segment.wallMs);
+});
 test('corrupted checkpoint falls back to the last compatible ancestor', async t => {
     let corrupted = false;
     const result = await execute({...setup(t), approach: 'branching', fault: async (phase, {ref, stage}) => {

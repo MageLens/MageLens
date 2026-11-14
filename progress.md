@@ -1114,3 +1114,13 @@ request once and removed its run directory. The real engine recorded
 The probe invoked the Rust cost solver directly and used an isolated
 HTTP/filesystem fixture. Magento operation calibration and a matching
 Cypress checkpoint-segment run remain open.
+
+The matching Cypress 16.2.1 checkpoint probe passed on disposable XFS
+and Chrome for Testing 157.0.8103.38. The engine measured 476.3 ms of
+completed work and 476.6 ms of segment wall time. It captured once,
+restored once and sent the delayed request once before cleaning up.
+Together with the Playwright probe, this validates the shared engine
+timer through both real browser adapters on the isolated fixture. The
+fixture used a fixed estimate to exercise checkpoint selection. Native
+suite forecast binding, source-matched observations and Magento
+calibration remain open.
