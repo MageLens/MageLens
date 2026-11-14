@@ -119,3 +119,31 @@ test('version 2 preserves first-attempt order and limits concurrent attempts acr
     append('start-validation', attempt('validation', 'started'));
     assert.equal(ledger.read(root, manifest.cycleId).records.length,5);
 });
+
+test('Playwright campaign records the frozen forecast before execution and binds its observations', async t => {
+    const {root, lease, manifest} = setup(t);
+    const {collect} = require('../branching/predictor/campaign-playwright.cjs');
+    const {fileDigest} = require('../branching/identity.cjs');
+    const {PLAYWRIGHT_TEST_TIMING_BOUNDARY: boundary} = require('../branching/predictor/prefix-measurement.cjs');
+    const model = path.join(root, 'model.json');
+    const forecasts = path.join(root, 'predictions.json');
+    const observations = path.join(root, 'observations.json');
+    fs.writeFileSync(model, '{}');
+    fs.writeFileSync(forecasts, '[]');
+    manifest.candidateDigest = fileDigest(model);
+    Object.assign(manifest.inventory[0], {runner:'playwright', timingBoundary:boundary});
+    ledger.create(root, manifest, lease);
+    await collect({workspace:root,cycle:manifest.cycleId,lease,caseId:'train',profile:{model},
+        resources:()=>({peakMemoryBytes:512,diskBytes:1000}),
+        runner:{async run(_config,_directory,{onPrepared}) {
+            onPrepared({forecastDigest:fileDigest(forecasts)});
+            assert.equal(ledger.read(root, manifest.cycleId).records[0].event.attempt.status, 'started');
+            fs.writeFileSync(observations, JSON.stringify([{eligible:true,modelId:manifest.candidateDigest,
+                featureSchema:manifest.featureSchema,timingBoundary:boundary}]));
+            return {exitCode:0,status:'passed',errors:[],tests:[{}],profileArtifacts:{forecasts,observations}};
+        }}
+    });
+    const records = ledger.read(root, manifest.cycleId).records;
+    assert.deepEqual(records.map(record=>record.event.attempt.status), ['started','passed']);
+    assert.equal(records[1].event.attempt.observationDigest,fileDigest(observations));
+});
