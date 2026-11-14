@@ -1368,3 +1368,13 @@ estimated 14.794 s of setup savings. This replay supplies measured
 times to the cost solver. The actual model still requires independent
 qualification. The eight-test native run and paired coverage checks
 remain pending.
+
+The frozen eight-test source produced a complete forecast assessment,
+but the production execution gate rejected it before launch. The
+37-second-class catalog workload is still forecast at 3.541 s by the
+bundled model. Its measured-cost decision is diagnostic only. The
+normal Playwright mixed-suite path also requires an explicit native
+setup project with a simple dependency graph; the current linear
+probe uses a single default project. Any eventual paired suite must
+exercise the supported startup path in both arms and include its time.
+The retained provider still declares checkpoint coverage unsupported.
