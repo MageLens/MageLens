@@ -1048,3 +1048,13 @@ verified each fragment against its detached archive, including the five
 test-scoped entries from the pinned coverage package. Fixture selection
 still differs. The planner sees the source while native discovery supplies
 which fixture callbacks belong to each timing slot.
+
+The bundled Playwright evaluation now replays hash-verified native
+discovery inputs. All five paired cases match callback ranges, hook and
+fixture work, selected helpers, and runnable ordering. The log-duration
+candidate also returned positive forecasts for all 11 tests and both
+prefixes in the isolated scan. The three cases that failed under the
+reference model remain outside its training feature range, and both
+prefixes lack a matched timing domain. This candidate is unqualified.
+Historical grouped accuracy was 4.05% within 5% versus 4.21% for the
+reference on the same 618 observations. The evaluation is diagnostic.
