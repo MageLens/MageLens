@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
 const assert = require('node:assert/strict');
-const source = {version: '16.2.1', commit: '519d66d80b0ae1bd3f9581665ce69473b82af59b', buildNode: 'v24.15.0'};
+const source = {version: '16.3.0', commit: 'e5b073de605c59a31cf6d9a6fb6576b82a0bfb7d', buildNode: 'v24.22.3'};
 function provenance(architecture = process.arch) {
     return {...source, distribution: 'MageLens source build', repository: 'https://github.com/cypress-io/cypress', architecture,
         patchSha256: createHash('sha256').update(fs.readFileSync(path.join(__dirname, 'runner-fixes.patch'))).digest('hex')};

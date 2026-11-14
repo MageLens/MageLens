@@ -9,6 +9,7 @@ License: see LICENSE in the repository root.
 ## 1.9.4 - 2026-11-14
 
 - Update PHP code coverage to 14.5.2 to correct nested match executable lines and merged match coverage.
+- Update Cypress to 16.3.0 for cookie interception fixes and faster runner startup, retaining source fixes and all eleven runner regressions.
 
 ## 1.9.3 - 2026-11-09
 
