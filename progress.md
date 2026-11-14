@@ -1426,3 +1426,15 @@ repetitions within 5%, but neither short segment had a common
 inputs. The shorter segments also need controlled starting states
 before qualification. These source-slice runs are development
 diagnostics without coverage or retained-provider restoration.
+
+The routed prefix snapshots all map to one correlated training group,
+because their shared source is in one spec. The existing grouped trainer
+requires at least two independent groups. Splitting repetitions or the
+three prefixes from this file into artificial groups would leak source
+and state across the fit and audit. The retained feature vectors already
+distinguish the short paths from the catalog path. The workload summary
+also counts navigation calls from full-file context, so its total is
+not an executed request count. Use the source-slice work roles for
+boundary attribution. Qualification needs independently grouped
+development and prospective repetitions within the declared catalog
+scope, with starting state recorded and full coverage still gated.
