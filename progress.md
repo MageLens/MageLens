@@ -1230,3 +1230,13 @@ snapshot. The completed test produced an eligible
 The probe used a network-disabled container and a 230 ms loopback
 delay. Cypress still needs to reconcile multiple spec records with
 campaign attempts, including interruptions between specs.
+
+A live Playwright interruption probe stopped an owned, network-disabled
+Docker runner after its first loopback request and confirmed exit 137.
+A fresh runner acquired the workflow lease, reconciled the unfinished
+attempt once and reran the same source with pinned Chrome 157.0.8103.38.
+The journal retained `started → interrupted → started → passed`, with
+a new attempt ID and exactly one observation digest. The probe removed
+its containers and temporary workspace. Production recovery still
+needs to establish the stopped-runner evidence before invoking the
+ledger reconciliation API.
