@@ -35,6 +35,15 @@ Rust rediscovered both restorable prefixes after replanning the changed
 source. The passing linear run is a fixture check; it has no paired
 branching result or complete coverage measurement.
 
+A diagnostic browser probe timed the original Rust-identified source slices
+in six fresh contexts on the populated installation. The common navigation
+took 0.321–0.457 s. The cumulative navigation and search prefix took
+0.827–1.257 s. Both stayed far below the corresponding calibrated
+break-even thresholds. Neither set of repetitions admits one forecast
+within 5% of all six durations. These are prefix diagnostics, without
+checkpoint or complete-suite coverage. Use this workload as the cheap
+control when a profitable journey is established.
+
 The execution gate rejects the current model for this scope. It lacks
 independent qualification and a validated checkpoint timing domain, and
 the candidate inputs are outside its trained range. Collect source-matched
