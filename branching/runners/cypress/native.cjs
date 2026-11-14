@@ -55,7 +55,8 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
             report.prediction = require('../../predictor/native.cjs').finish(run,report);
             report.profileArtifacts = {
                 forecasts:path.join(run,'predictions.json'),
-                observations:path.join(run,'prediction-samples.json')
+                observations:path.join(run,'prediction-samples.json'),
+                forecastDigests:path.join(run,'forecast-digests.ndjson')
             };
         }
         return report;

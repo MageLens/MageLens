@@ -5,7 +5,7 @@
 const fs = require('node:fs'), path = require('node:path');
 const p = require('./index.cjs');
 const {EstimationError} = require('../estimation.cjs');
-function collector(profile, directory, root) {
+function collector(profile, directory, root, {onPrepared} = {}) {
     const model = profile.model ? p.loadModel(profile.model,profile.modelDigest) : null;
     const file = path.join(directory,'predictions.json');
     return batch => {
@@ -40,6 +40,7 @@ function collector(profile, directory, root) {
         // Cypress attributes this root before hook to the first runnable test.
         // Record the measured collector work separately; never estimate or
         // retrospectively subtract overhead from older observations.
+        if (onPrepared) onPrepared(rows.slice(firstRow).map(({id,snapshot})=>({id,snapshot})));
         if ((profile.runner ?? 'cypress') === 'cypress' && rows[firstRow])
             rows[firstRow].preparationMs = performance.now() - preparationStarted;
         fs.writeFileSync(file,JSON.stringify(rows)+'\n',{mode:0o600});

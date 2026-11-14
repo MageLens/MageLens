@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {digest} = require('../../identity.cjs');
 async function install(on, config, original, options) {
     const events = new Map(), tasks = {};
     const collect = (name, callback) => {
@@ -32,7 +33,13 @@ async function install(on, config, original, options) {
     }});
     if (options.profile) collect('task', {'magelens:timing:prepare':
         require('../../predictor/native.cjs').collector({...options.profile,supportFile,configFile:options.originalConfig,
-            discoveryOnly:options.list, configDigest:options.configDigest},options.directory,config.projectRoot)});
+            discoveryOnly:options.list, configDigest:options.configDigest},options.directory,config.projectRoot,{
+            onPrepared:options.list ? undefined : snapshots => {
+                const file = path.join(options.directory, 'forecast-digests.ndjson');
+                const batch = snapshots.map(({id,snapshot}) => ({id, digest:digest(snapshot)}));
+                fs.appendFileSync(file, JSON.stringify(batch) + '\n', {mode:0o600,flush:true});
+            }
+        })});
     collect('before:browser:launch', (browser, launch) => {
         if (browser.name !== 'chrome-for-testing' || browser.version !== process.env.CHROME_VERSION) throw new Error('Native Cypress requires pinned Chrome for Testing');
         return launch;
