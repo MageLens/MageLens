@@ -6,7 +6,7 @@ const fs = require('node:fs');
 class CoverageReporter {
     onBegin(config, suite) {
         this.tests = suite.allTests();
-        if (process.env.MAGELENS_NATIVE_PROFILE) {
+        if (process.env.MAGELENS_NATIVE_PROFILE && process.env.MAGELENS_NATIVE_PREPARE === undefined) {
             this.predictor = new (require('../branching/runners/playwright/native-reporter.cjs'))();
             this.predictor.onBegin(config, suite);
         }

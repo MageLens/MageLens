@@ -16,8 +16,8 @@ class NativeReporter {
                 selector: `[${project.name}] › ${path.relative(config.rootDir, test.location.file).replaceAll(path.sep, '/')} › ${test.titlePath().slice(3).join(' › ')}`,
                 expectedStatus: test.expectedStatus, annotations: test.annotations};
         });
-        if(process.env.MAGELENS_NATIVE_PROFILE) {
-            this.profile=JSON.parse(process.env.MAGELENS_NATIVE_PROFILE);
+        if(process.env.MAGELENS_NATIVE_PROFILE) this.profile=JSON.parse(process.env.MAGELENS_NATIVE_PROFILE);
+        if(this.profile && process.env.MAGELENS_NATIVE_PREPARE !== '0') {
             fs.mkdirSync(this.profile.directory,{recursive:true});
             const timing=require('../../predictor/native.cjs');
             const lifecycle=require('../../predictor/playwright.cjs');
@@ -40,9 +40,17 @@ class NativeReporter {
     onEnd(result) {
         const report = {schemaVersion: 1, config: this.config, tests: this.tests ?? [], results: [...this.results.values()],
             status: result.status, durationMs: result.duration, errors: this.errors};
-        if(this.profile) {
-            if(this.profile.discoveryOnly) report.profileDiscovery={directory:this.profile.directory};
-            else report.prediction=require('../../predictor/native.cjs').finish(this.profile.directory,report);
+        if(this.profile && !this.errors.length) {
+            if(this.profile.discoveryOnly) report.profileDiscovery={directory:this.profile.directory,configDigest:this.profile.configDigest};
+            else if(process.env.MAGELENS_NATIVE_PREPARE !== '1') {
+                if(process.env.MAGELENS_NATIVE_PREPARE === '0') {
+                    const prepared=JSON.parse(fs.readFileSync(path.join(this.profile.directory,'preflight.json')));
+                    const ids=tests=>tests.map(test=>[test.id,test.expectedStatus,test.selector]);
+                    if(JSON.stringify(ids(prepared.tests))!==JSON.stringify(ids(report.tests)))
+                        throw new Error('Playwright inventory changed after profile preparation');
+                }
+                report.prediction=require('../../predictor/native.cjs').finish(this.profile.directory,report);
+            }
         }
         fs.writeFileSync(process.env.MAGELENS_NATIVE_REPORT, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
     }

@@ -1084,3 +1084,14 @@ path. Playwright caught the reporter's preparation error and still ran
 the test. The adapter returned a failure and emitted no usable sample.
 Collection needs to prevent browser tests from starting when pre-run
 profile preparation fails.
+
+Profiled runs through the native Playwright adapter now prepare predictions
+in a list-only invocation before launching tests. The adapter checks the
+configuration and source hashes before execution and checks the resulting
+inventory against the prepared selection before recording observations.
+The pinned browser probe rejected an incomplete profile with zero HTTP
+requests. With a valid profile the same probe passed and recorded a
+560 ms whole-test observation. All 57 focused predictor and entry-point
+tests passed. The ordinary coverage reporter still uses its existing
+in-process profiling path. This evidence concerns the native whole-test
+adapter; checkpoint segment timing remains open.
