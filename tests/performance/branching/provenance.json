@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "source": "retained local performance generator",
+  "sourceSha256": "87913ca7cb668efa0bdb34668d700c905568b299517f1aa578225b0566a8544f",
+  "sourceRevision": null,
+  "revisionNote": "Recovered from an ignored installation copy; no Git revision establishes the exact retained bytes.",
+  "historicalPolicy": "doubled checkpoint overhead; historical decisions are not current assertions",
+  "runner": "playwright",
+  "families": 13,
+  "qualification": "unqualified; native discovery, Cypress implementation and current measured economics pending",
+  "generatedSuites": [
+    {
+      "id": "short-5",
+      "tests": 5,
+      "sha256": "e251e562ad89df87b8ef14597d92b65b4bc56311696aaef510990e09f71ed000"
+    },
+    {
+      "id": "reuse-2",
+      "tests": 2,
+      "sha256": "f84bd68ca14ea1647cf34f88efbdcf53915a4b7a02e7cf8eb1f25130db0d7b43"
+    },
+    {
+      "id": "boundary-5",
+      "tests": 5,
+      "sha256": "e119b1db2017b6da469155641922654a3c2cd18e387e391499aea2ff6df5d4c3"
+    },
+    {
+      "id": "large-5",
+      "tests": 5,
+      "sha256": "c90db40f7070579a2fb85e4d18e89078b648c3c3c59856be47aeca730b2ba23b"
+    },
+    {
+      "id": "strong-5",
+      "tests": 5,
+      "sha256": "594df1c183e24bb5a9aa0c6886757d8881af3ec8c324a4a548887a649975de76"
+    },
+    {
+      "id": "unrelated-5",
+      "tests": 5,
+      "sha256": "19cb0f239f61d74849cf16080b9350cbcd19011f420ffd50ef376fb13789e678"
+    },
+    {
+      "id": "large-9",
+      "tests": 9,
+      "sha256": "63f3345f6dc401652ea19679688d443a2bb8b6118f4da01c22cc79c7e8bdb272"
+    },
+    {
+      "id": "medium-9",
+      "tests": 9,
+      "sha256": "0f2bff7e083f3c696149b83db7b84f8b9a41058064a41050718e1a6e271755a9"
+    },
+    {
+      "id": "deep-shallow",
+      "tests": 24,
+      "sha256": "d27c9793cd4789f9d47e4f618f55bace2c60945b7a1986b2310b63c8268649ec"
+    },
+    {
+      "id": "deep-large",
+      "tests": 36,
+      "sha256": "040e43a7f77cf1242600520c69618c7a1c318aad355576f086f5231dd9952a93"
+    },
+    {
+      "id": "fixture-small-5",
+      "tests": 5,
+      "sha256": "4ead56910db5486470a49052d529e123ed4789d8069421b0fb5d5b3737363fc1"
+    },
+    {
+      "id": "fixture-large-9",
+      "tests": 9,
+      "sha256": "5805dafa782663ba28cba30ed37452e7153fa74fd6ee4986e55bad2b43d6d7f4"
+    },
+    {
+      "id": "fixture-state-9",
+      "tests": 9,
+      "sha256": "0f2f0f1dec911427b30910985acf1a2ed0459b48cdc3eb811ee31c2aa04a5487"
+    }
+  ]
+}
