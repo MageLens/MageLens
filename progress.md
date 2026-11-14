@@ -342,7 +342,7 @@ versioned contract. Relevant regressions pass before broad collection.
 - [ ] Measure preparation, setup, body, teardown, capture, restore, release, reset,
   backend lifecycle and end-to-end wall time separately. Account for instrumentation
   overhead without changing original source bytes or PHP line numbers.
-- [ ] Calibrate all checkpoint operations on a matching dedicated backend/profile,
+- [x] Calibrate all checkpoint operations on a matching dedicated backend/profile,
   including its worker requirement. Collect variability across realistic snapshot
   sizes and states. Keep current forecasts fixed; updates affect future runs only.
 - [ ] Validate measurement accounting and clean provider/source/cleanup audits on a
@@ -1190,3 +1190,16 @@ The three warmed snapshots were approximately 1.05 MB each. This
 measures repetition variability for one state; the calibration item
 still needs representative size and state variation. The XFS mount,
 loop image, workflow lock and recovery record were removed.
+
+The same retained Mage-OS profile passed another three-sample
+calibration after 120 synthetic catalog products were saved through
+the application repository, reindexed and caches cleaned. Snapshots
+increased from 1.05 MB to 1.64 MB. In the populated catalog, captures
+took 1.705–1.746 s, restores 10.957–11.916 s, resets 11.330–16.051 s,
+and releases 0.946–1.140 ms. Backend preparation and cleanup took
+4.431 s and 10.771 s. Source verification, schema removal, grant
+restoration and nine worker continuity checks passed again. The
+operation samples changed only the dedicated project's baseline for
+future runs. No source forecast was changed. The observations cover
+two states of this profile and provide no extrapolation to other
+runners or larger stores.
