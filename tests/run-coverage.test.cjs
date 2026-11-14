@@ -32,7 +32,9 @@ dc() {
         *project-hooks.php\\ prepare) echo '{}' ;;
         *collection.php\\ start) touch coverage/.active-run ;;
         *collection.php\\ stop|*report.php) rm -f coverage/.active-run ;;
-        *run-browser.cjs\\ --warmup|*run-playwright.cjs\\ --warmup) [[ "$TEST_FAILURE" != warmup ]] || return 124 ;;
+        *run-browser.cjs\\ --warmup|*run-playwright.cjs\\ --warmup)
+            [[ "$TEST_FAILURE" != warmup ]] || return 124
+            if [[ "$TEST_FAILURE" == change-run ]]; then echo '{"id":"changed"}' > coverage/run.json; fi ;;
         *run-browser.cjs|*run-playwright.cjs) [[ "$TEST_FAILURE" != tests ]] || return 23 ;;
     esac
 }
@@ -134,5 +136,48 @@ test('coverage refuses an uninstalled runner before touching services or collect
         assert.equal(result.status, 1);
         assert.match(result.stderr, /not installed/);
         assert.equal(result.calls, '');
+    }
+});
+
+for (const runner of ['cypress', 'playwright']) {
+test(`${runner}: warming a native reference preserves prior hits and the run identity`, t => {
+    const {directory} = workflow(t, [], '', false, runner);
+    const identity = JSON.stringify({id:'f'.repeat(32)});
+    fs.writeFileSync(path.join(directory,'coverage/run.json'),identity);
+    fs.writeFileSync(path.join(directory,'coverage/.active-run'),'f'.repeat(32));
+    fs.writeFileSync(path.join(directory,'coverage/prior-hits.json'),'retained prefix evidence');
+    fs.writeFileSync(path.join(directory,'.runtime/hooks-active'),'');
+    fs.writeFileSync(path.join(directory,'calls'),'');
+    const browserScript = runner === 'playwright' ? 'run-playwright.cjs' : 'run-browser.cjs';
+    const result = spawnSync('bash',['-c',`source bin/common; source bin/coverage-lifecycle; coverage_resume_after_warmup bin/${browserScript}`],
+        {cwd:directory,encoding:'utf8',env:{...process.env,TEST_FAILURE:''}});
+    assert.equal(result.status,0,result.stderr);
+    const calls = fs.readFileSync(path.join(directory,'calls'),'utf8');
+    assert.ok(calls.indexOf('collection.php stop') < calls.indexOf('--warmup'));
+    assert.ok(calls.indexOf('--warmup') < calls.indexOf('collection.php start'));
+    assert.doesNotMatch(calls,/prepare.cjs|project-hooks|manifest.php/);
+    assert.equal(fs.readFileSync(path.join(directory,'coverage/run.json'),'utf8'),identity);
+    assert.equal(fs.readFileSync(path.join(directory,'coverage/prior-hits.json'),'utf8'),'retained prefix evidence');
+    assert.ok(fs.existsSync(path.join(directory,'coverage/.active-run')));
+    assert.ok(fs.existsSync(path.join(directory,'.runtime/hooks-active')));
+});
+}
+
+test('failed reference warm-up or changed run identity cannot resume collection', t => {
+    for (const failure of ['warmup','change-run']) {
+        const {directory} = workflow(t, [], '', false, 'playwright');
+        fs.writeFileSync(path.join(directory,'coverage/run.json'),JSON.stringify({id:'f'.repeat(32)}));
+        fs.writeFileSync(path.join(directory,'coverage/.active-run'),'f'.repeat(32));
+        fs.writeFileSync(path.join(directory,'.runtime/hooks-active'),'');
+        fs.writeFileSync(path.join(directory,'calls'),'');
+        const result = spawnSync('bash',['-c',
+            'source bin/common; source bin/coverage-lifecycle; trap coverage_cleanup EXIT; coverage_resume_after_warmup bin/run-playwright.cjs'],
+        {cwd:directory,encoding:'utf8',env:{...process.env,TEST_FAILURE:failure}});
+        assert.equal(result.status,failure === 'warmup' ? 124 : 1,result.stderr);
+        const calls = fs.readFileSync(path.join(directory,'calls'),'utf8');
+        assert.doesNotMatch(calls,/collection.php start|manifest.php|report.php/);
+        assert.match(calls,/project-hooks.php cleanup/);
+        assert.ok(!fs.existsSync(path.join(directory,'coverage/.active-run')));
+        assert.ok(!fs.existsSync(path.join(directory,'.runtime/hooks-active')));
     }
 });

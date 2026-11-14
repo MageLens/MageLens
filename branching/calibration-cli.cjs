@@ -52,6 +52,9 @@ async function execute(args) {
             require('./predictor/catalog-observations.cjs').assertCatalogEnvironment(qualificationSegment.snapshot, runtimeBefore);
             require('node:assert/strict').equal(project.catalogQualification.nativeProfile?.environment?.executionRuntimeDigest,
                 require('./identity.cjs').digest(runtimeBefore), 'Native forecast profile does not identify the execution environment');
+            require('node:assert/strict').equal(project.catalogQualification.nativeProfile.environment.cachePreparation,
+                require('./predictor/catalog-observations.cjs').NATIVE_CACHE_PREPARATION,
+                'Native forecast profile has a different cache preparation contract');
         }
         if (qualificationSegment) qualificationSegment.runtimeContext = () => {
             const actual = require('./predictor/catalog-observations.cjs').catalogRuntimeContext(backend);
@@ -70,6 +73,16 @@ async function execute(args) {
             const retained = report.providerDiagnostics?.retainedServices;
             if (!retained?.schemasRemoved || !retained?.grantsRestored || leases.needsRecovery(workflowLease))
                 throw new Error('Catalog measurement requires a clean retained-provider audit');
+            const preparationStarted = performance.now();
+            const {coverageInputIdentity} = require('./predictor/catalog-observations.cjs');
+            const coverageBeforeWarmup = coverageInputIdentity(workspace);
+            // Cleanup recreates PHP and clears Redis. Match ordinary coverage's
+            // warmed native reference without adding warm-up hits or new fixtures.
+            coverageCommand(['coverage_resume_after_warmup', 'bin/run-playwright.cjs']);
+            const coverageAfterWarmup = coverageInputIdentity(workspace);
+            require('node:assert/strict').deepEqual(coverageAfterWarmup, coverageBeforeWarmup,
+                'Native warm-up changed prefix coverage evidence');
+            const preparationMs = performance.now() - preparationStarted;
             const directory = path.join(workspace, '.runtime/branching-results', 'qualification-native-' + report.run);
             const native = await runner.native.run(project.native.config, directory, {coverageRoot:workspace,
                 profile:project.catalogQualification.nativeProfile});
@@ -97,6 +110,8 @@ async function execute(args) {
                 coverageEvidence[name] = require('./identity.cjs').fileDigest(destination);
             }
             report.native = {totalTests:result.totalTests, totalPassed:result.totalPassed, reportFile:native.reportFile,
+                preparationMs, cachePreparation:require('./predictor/catalog-observations.cjs').NATIVE_CACHE_PREPARATION,
+                coverageBeforeWarmup, coverageAfterWarmup,
                 executionRuntimeDigest:require('./identity.cjs').digest(report.runtimeContext.afterNative),
                 coverageRunId:coverage.coverageRunId, coverageFinalized:true,
                 coverageDirectory, coverageEvidence,

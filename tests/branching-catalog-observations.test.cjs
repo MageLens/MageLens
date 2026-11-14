@@ -26,6 +26,9 @@ function evidence() {
             providerDiagnostics:{retainedServices:{schemasRemoved:true,grantsRestored:true}},
             counts:{fallbacks:0,failures:0,blockedSpecs:0}, wallMs:120000,
             native:{coverageFinalized:true,coverageRunId:'coverage',totalTests:2,totalPassed:2,
+                coverageBeforeWarmup:{digest:'prefix-evidence',files:5,bytes:100},
+                coverageAfterWarmup:{digest:'prefix-evidence',files:5,bytes:100},
+                preparationMs:100,cachePreparation:require('../branching/predictor/catalog-observations.cjs').NATIVE_CACHE_PREPARATION,
                 executionRuntimeDigest:digest(context())},
             calibration:{requestedSamples:2,samples:[0,1].map(i => ({stage:'sample-'+i,status:'passed',
                 runtimeContext:context(),
@@ -54,6 +57,10 @@ test('incomplete, retried, mismatched or failed catalog collection cannot supply
         x => delete x.report.runtimeContext.before.execution,
         x => delete x.report.runtimeContext.afterNative,
         x => x.report.native.executionRuntimeDigest = 'different-runtime',
+        x => delete x.report.native.cachePreparation,
+        x => x.report.native.preparationMs = NaN,
+        x => x.report.native.coverageAfterWarmup.digest = 'warmup-hits',
+        x => delete x.report.native.coverageBeforeWarmup,
         x => x.report.runtimeContext.before.execution.nanoCpus = 0,
         x => x.report.runtimeContext.after.execution.image = 'different-driver',
         x => delete x.manifest.assessment.stages.catalog.trainingSnapshot.environment,
@@ -108,4 +115,27 @@ test('catalog runtime audits the actual driver separately from the Compose runne
     driver.HostConfig.NanoCpus = 2000000000;
     driver.Config.Labels['org.magelens.workspace'] = '/another/workspace';
     assert.throws(() => catalogRuntimeContext(backend));
+});
+
+test('warm-up coverage audit detects overwritten hits, new observations and redirected inputs', t => {
+    const fs = require('node:fs'), path = require('node:path');
+    const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(),'magelens-coverage-inputs-'));
+    t.after(() => fs.rmSync(root,{recursive:true,force:true}));
+    const {coverageInputIdentity} = require('../branching/predictor/catalog-observations.cjs');
+    for (const directory of ['coverage/raw/php','.nyc_output']) fs.mkdirSync(path.join(root,directory),{recursive:true});
+    for (const file of ['run.json','collector.json','project-fixtures.json','template-manifest.json'])
+        fs.writeFileSync(path.join(root,'coverage',file),'{}');
+    const hit = path.join(root,'coverage/raw/php/prefix.pcov');
+    fs.writeFileSync(hit,'prefix hits');
+    const before = coverageInputIdentity(root);
+    assert.deepEqual(coverageInputIdentity(root),before);
+    fs.writeFileSync(hit,'warmup hits');
+    assert.notEqual(coverageInputIdentity(root).digest,before.digest);
+    fs.writeFileSync(hit,'prefix hits');
+    const extra = path.join(root,'.nyc_output/warmup.json');
+    fs.writeFileSync(extra,'{}');
+    assert.notEqual(coverageInputIdentity(root).digest,before.digest);
+    fs.rmSync(extra);
+    fs.symlinkSync(hit,extra);
+    assert.throws(() => coverageInputIdentity(root),/symlink/);
 });

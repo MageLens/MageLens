@@ -19,17 +19,11 @@ coverage_cleanup() {
     return "$result"
 }
 
-coverage_prepare() {
-    local runner=$1 browser_script=$2 result
-    say 'Preparing fresh coverage'
-    dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
-    dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json
-    touch .runtime/hooks-active
-    dc exec -T phpfpm php /application/docker/php/project-hooks.php before
-    dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
+coverage_warmup() {
+    local browser_script=$1 result
     say 'Warming the storefront and fixture pages in a separate browser (up to 10 minutes)'
     if dc exec -T runner timeout --signal=TERM --kill-after=10s 600s node "$browser_script" --warmup; then
-        say 'Browser warm-up completed; starting fresh coverage collection'
+        say 'Browser warm-up completed'
     else
         result=$?
         if [[ "$result" == 124 || "$result" == 137 ]]; then
@@ -38,7 +32,28 @@ coverage_prepare() {
         printf 'Warm-up failed. Inspect coverage/warmup-results.json, coverage/warmup-diagnostics.json and coverage/warmup-screenshots/.\n' >&2
         exit "$result"
     fi
+}
+
+coverage_prepare() {
+    local runner=$1 browser_script=$2
+    say 'Preparing fresh coverage'
+    dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
+    dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json
+    touch .runtime/hooks-active
+    dc exec -T phpfpm php /application/docker/php/project-hooks.php before
+    dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
+    coverage_warmup "$browser_script"
     dc exec -T phpfpm php /application/docker/php/manifest.php
+    dc exec -T phpfpm php /application/docker/php/collection.php start
+}
+
+coverage_resume_after_warmup() {
+    local browser_script=$1 run_identity
+    [[ -f coverage/.active-run && -f coverage/run.json ]] || fail 'An active coverage run is required before resuming warm-up.'
+    run_identity=$(sha256sum coverage/run.json)
+    dc exec -T phpfpm php /application/docker/php/collection.php stop
+    coverage_warmup "$browser_script"
+    [[ "$(sha256sum coverage/run.json)" == "$run_identity" ]] || fail 'Coverage identity changed during warm-up.'
     dc exec -T phpfpm php /application/docker/php/collection.php start
 }
 

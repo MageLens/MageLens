@@ -3,8 +3,28 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {digest} = require('../identity.cjs');
 const {observeExecutedSegment, SEGMENT_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
+const NATIVE_CACHE_PREPARATION = 'coverage-warmup-after-retained-cleanup/v1';
+
+function coverageInputIdentity(workspace) {
+    const files = [];
+    function visit(relative) {
+        const file = path.join(workspace, relative), stat = fs.lstatSync(file);
+        assert.ok(!stat.isSymbolicLink(), 'Coverage evidence must not be a symlink');
+        if (stat.isDirectory()) {
+            for (const name of fs.readdirSync(file).sort()) visit(path.join(relative, name));
+        } else {
+            assert.ok(stat.isFile(), 'Unsupported coverage evidence file');
+            files.push([relative.replaceAll(path.sep, '/'), stat.size, require('../identity.cjs').fileDigest(file)]);
+        }
+    }
+    for (const relative of ['coverage/run.json', 'coverage/collector.json', 'coverage/project-fixtures.json',
+        'coverage/template-manifest.json', 'coverage/raw', '.nyc_output']) visit(relative);
+    return {digest:digest(files), files:files.length, bytes:files.reduce((sum, file) => sum + file[1], 0)};
+}
 
 function catalogRuntimeContext(backend) {
     const inspect = id => JSON.parse(require('../command.cjs').command('docker', ['inspect', id]))[0];
@@ -61,6 +81,12 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     assert.deepEqual(report.runtimeContext.afterNative, report.runtimeContext.before, 'Missing or changed native execution context');
     assert.equal(report.native?.executionRuntimeDigest, digest(report.runtimeContext.before),
         'Native collection has a different execution environment');
+    assert.equal(report.native.cachePreparation, NATIVE_CACHE_PREPARATION,
+        'Native reference did not use the declared cache preparation');
+    assert.ok(Number.isFinite(report.native.preparationMs) && report.native.preparationMs > 0);
+    assert.ok(report.native.coverageBeforeWarmup?.files > 0);
+    assert.deepEqual(report.native.coverageAfterWarmup, report.native.coverageBeforeWarmup,
+        'Warm-up changed retained coverage evidence');
     assert.equal(report.sourceIntegrity?.verified, true);
     assert.equal(report.sourceIntegrity.digest, manifest.sourceDigest);
     const retained = report.providerDiagnostics?.retainedServices;
@@ -109,4 +135,4 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     });
 }
 
-module.exports = {catalogObservations, catalogRuntimeContext, assertCatalogEnvironment};
+module.exports = {catalogObservations, catalogRuntimeContext, assertCatalogEnvironment, coverageInputIdentity, NATIVE_CACHE_PREPARATION};

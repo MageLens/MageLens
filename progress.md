@@ -2546,3 +2546,81 @@ Stop this diagnostic; leave production affinity unchanged. Retain both actual
 runtime identities and cgroup counters in `catalog-cpu-quota.json` and
 `catalog-cpu-affinity.json` and their referenced reports. These are not paired
 linear/branching measurements and demonstrate no checkpoint savings.
+
+**Bounded replacement development collection, first pair.** The execution-context
+defect requires new observations; the old durations cannot establish accuracy in
+the corrected environment. Collect only the existing direct-product long prefix
+and the verified long search prefix at 120 products, two prefix samples and one
+complete original native suite per group. Freeze separate existing unqualified
+prefix/whole-test models, full runtime digest, fixture fingerprint, source and
+timing boundary before execution. Keep all repetitions in their existing groups.
+The reserved advanced/comparison groups remain untouched. Cap this pair at eight
+minutes, including resets, within the 1,286 seconds remaining in the original
+browser ledger. Require complete restore, native tests, coverage, source and
+cleanup audits. Stop on failure or context drift; no model fitting belongs to
+this pair. Inspect whether the corrected observations support the next declared
+representation experiment before collecting the remaining short increments or
+240-product cases.
+
+Preflight budget correction before either collection starts: the retained complete
+catalog attempt took 309 seconds, and the long search increment adds roughly
+50–60 seconds to the prior 211-second action collection. Eight minutes would
+risk interrupting valid native suites. Bound the pair to twelve minutes instead:
+360 seconds for catalog, 300 for search and 60 for their resets, all debited from
+the same remaining 1,286-second ledger. This changes no accuracy or acceptance
+criterion and authorizes no repeated attempt.
+
+The first bounded collection was rejected before prefix measurement: the run
+script still forced a source build after freezing the image identity. That rebuilt
+the driver from image `62d5cf46` to `517a0a82`; substituting only that image in the
+frozen context exactly reproduces the rejected actual digest. Cleanup passed and
+no labels were admitted. Correct the experimental order: build first, inspect
+and freeze the resulting image, then use verified cached images for planning and
+collection. Retain the failed input bundle/log unchanged. This is an image-pin
+protocol correction, not a retry that hides an application or accuracy failure.
+
+The corrected-image catalog collection `5c6c0a26` passed both restoration samples,
+all 9 native tests, source/coverage audits and cleanup. Its frozen 41.644 s prefix
+forecast measured 41.849/41.745 s (0.49%/0.24% error). The search collection
+`0c34abfb` passed both restorations, all 6 native tests and the same audits, but its
+30.267 s forecast measured 26.666/26.741 s (13.50%/13.18% error). Both runtime
+digests match before prefix work and after native execution. The four prefix
+observations are development evidence only; 2/4 are within 5%. Whole-test scoring
+reached only 4/14 eligible predictions within 5%. The readiness dependency also
+ran and passed, but remains excluded from training and was underpredicted by 78%.
+No model is qualified and no paired branching speedup has been measured.
+
+A source audit found a concrete cache-lifecycle distinction: retained-provider
+cleanup force-recreates PHP/app and resets Redis immediately before native
+collection. Ordinary coverage warms the application before collection. This
+explains why the two measurement paths have different preparation contracts;
+it does not yet quantify the timing effect. Keep the newly audited cold native
+observations in their declared context, not in a warmed-reference domain.
+
+Next make native-reference preparation explicit and testable. Reuse the existing
+warm-up routine after retained cleanup, with PHP collection stopped and then
+resumed under the same run ID, retaining prior prefix hits. Do not rerun fixture
+hooks, reset coverage counters, suppress application errors or omit this time
+from elapsed reports. Validate failure cleanup and preservation of prior report
+inputs before any browser comparison. The remaining browser budget must be
+checked before a further bounded diagnostic; no additional fit is authorized by
+this result alone.
+
+Native-reference warm-up now pauses/resumes the same coverage run without
+recreating fixtures. Its audit hashes the raw PHP/JavaScript/template inventory
+and run/collector/fixture manifests before and after warm-up, rejecting changed,
+added or redirected evidence. Preparation time is retained in the calibration
+report and the frozen native profile must name the new cache contract. The change
+passed 540/540 integration tests and all static checks, including warm-up failure,
+changed identity, prior-hit preservation and both runner entry points. No E2E or
+release qualification was run.
+
+**Bounded warm-reference comparison.** Repeat only the two declared development
+collections with the new native preparation contract, retaining the same prefix
+forecasts and original sources. Freeze the native environment before execution;
+never combine its timings with the earlier cold-native domain. Cap catalog at
+360 seconds, search at 300 seconds and resets at 38 seconds, within the remaining
+698-second original browser budget. Stop on the first failed preservation or
+runtime audit. No model fitting or qualification collection belongs to this
+comparison. Inspect actual per-test residuals and retained prefix hits afterward;
+this does not relax the 95%-within-5% requirement.
