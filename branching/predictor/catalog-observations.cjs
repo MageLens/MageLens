@@ -33,6 +33,14 @@ function catalogRuntimeContext(backend) {
     }))};
 }
 
+function assertCatalogEnvironment(snapshot, runtimeContext) {
+    assert.equal(snapshot.environment?.executionRuntimeDigest, digest(runtimeContext),
+        'Frozen forecast does not identify the actual execution environment');
+    assert.equal(snapshot.environmentDigest,
+        require('./index.cjs').sha256(JSON.stringify(Object.entries(snapshot.environment).sort())),
+        'Frozen environment identity changed');
+}
+
 // Admit only complete collection attempts. Historical probes without cleanup and
 // finalization evidence remain diagnostics, even when their timings look useful.
 function catalogObservations({manifest, candidateId, report, coverageResult, coverageSummary}) {
@@ -48,7 +56,11 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     const execution = report.runtimeContext.before.execution;
     assert.ok(execution?.image && execution.memoryBytes > 0 && execution.nanoCpus > 0,
         'Missing bounded execution-container audit');
+    assertCatalogEnvironment(snapshot, report.runtimeContext.before);
     assert.deepEqual(report.runtimeContext.after, report.runtimeContext.before, 'Runtime context changed during collection');
+    assert.deepEqual(report.runtimeContext.afterNative, report.runtimeContext.before, 'Missing or changed native execution context');
+    assert.equal(report.native?.executionRuntimeDigest, digest(report.runtimeContext.before),
+        'Native collection has a different execution environment');
     assert.equal(report.sourceIntegrity?.verified, true);
     assert.equal(report.sourceIntegrity.digest, manifest.sourceDigest);
     const retained = report.providerDiagnostics?.retainedServices;
@@ -97,4 +109,4 @@ function catalogObservations({manifest, candidateId, report, coverageResult, cov
     });
 }
 
-module.exports = {catalogObservations, catalogRuntimeContext};
+module.exports = {catalogObservations, catalogRuntimeContext, assertCatalogEnvironment};

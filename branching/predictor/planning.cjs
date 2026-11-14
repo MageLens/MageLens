@@ -38,6 +38,9 @@ function hooks(source) {
     visit(ast); return result;
 }
 function assess(manifest, options = {}) {
+    if (options.prefixEnvironment !== undefined && (!options.prefixEnvironment ||
+        Array.isArray(options.prefixEnvironment) || typeof options.prefixEnvironment !== 'object'))
+        throw new Error('Invalid prefix environment');
     const loaded = options.loaded ?? predictor.loadModel(options.model ?? '/opt/magelens/predictor/model.json', options.modelDigest ?? MODEL_SHA256);
     const prefixModel = options.prefixLoaded ?? loaded;
     const prefixBoundary = options.prefixTimingBoundary ?? boundary;
@@ -104,7 +107,8 @@ function assess(manifest, options = {}) {
             environment:unit === 'test' && options.environment ? {...options.environment,
                 ...(discoveredFixtures ? {hookAttribution:'scoped-once/v1',lifecycle:'playwright-loaded-fixtures/v1'} : {}),
                 boundary:timingBoundary ?? PLAYWRIGHT_TEST_TIMING_BOUNDARY} :
-                {boundary:timingBoundary ?? PLAYWRIGHT_TEST_TIMING_BOUNDARY,collection:'source',platform:process.platform},
+                {...(unit === 'prefix' ? options.prefixEnvironment : {}),
+                    boundary:timingBoundary ?? PLAYWRIGHT_TEST_TIMING_BOUNDARY,collection:'source',platform:process.platform},
             ...(unit === 'prefix' && timingBoundary === SEGMENT_TIMING_BOUNDARY && options.sourceStore ? {sourceStore:options.sourceStore} : {})};
         let snapshot;
         try {

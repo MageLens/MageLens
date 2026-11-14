@@ -13,7 +13,7 @@ function planner(args, options = {}, environment = process.env) {
             command.push('--env', `MAGELENS_PREFIX_TIMING_BOUNDARY=${environment.MAGELENS_PREFIX_TIMING_BOUNDARY}`);
         if (environment.MAGELENS_PREFIX_SOURCE_STORE)
             command.push('--env', `MAGELENS_PREFIX_SOURCE_STORE=${environment.MAGELENS_PREFIX_SOURCE_STORE}`);
-        for (const key of ['MAGELENS_PREFIX_MODEL', 'MAGELENS_PREFIX_MODEL_SHA256', 'MAGELENS_PREDICTOR_BACKEND_STATE']) {
+        for (const key of ['MAGELENS_PREFIX_MODEL', 'MAGELENS_PREFIX_MODEL_SHA256', 'MAGELENS_PREFIX_ENVIRONMENT', 'MAGELENS_PREDICTOR_BACKEND_STATE']) {
             if (environment[key]) command.push('--env', `${key}=${environment[key]}`);
         }
         return execFileSync('docker', [...command, container, 'magelens-plan', ...args], options);

@@ -48,6 +48,11 @@ async function execute(args) {
         if(typeof runtime.calibrate!=='function')throw new Error('This runner does not support checkpoint calibration');
         const backend=new RetainedMagentoBackend({workspace,helperImage:process.env.MAGELENS_BRANCHING_IMAGE,disposable:true,workflowLease});
         const runtimeBefore = qualificationSegment && require('./predictor/catalog-observations.cjs').catalogRuntimeContext(backend);
+        if (qualificationSegment) {
+            require('./predictor/catalog-observations.cjs').assertCatalogEnvironment(qualificationSegment.snapshot, runtimeBefore);
+            require('node:assert/strict').equal(project.catalogQualification.nativeProfile?.environment?.executionRuntimeDigest,
+                require('./identity.cjs').digest(runtimeBefore), 'Native forecast profile does not identify the execution environment');
+        }
         if (qualificationSegment) qualificationSegment.runtimeContext = () => {
             const actual = require('./predictor/catalog-observations.cjs').catalogRuntimeContext(backend);
             require('node:assert/strict').deepEqual(actual, runtimeBefore, 'Runtime context changed before prefix measurement');
@@ -68,6 +73,9 @@ async function execute(args) {
             const directory = path.join(workspace, '.runtime/branching-results', 'qualification-native-' + report.run);
             const native = await runner.native.run(project.native.config, directory, {coverageRoot:workspace,
                 profile:project.catalogQualification.nativeProfile});
+            report.runtimeContext.afterNative = require('./predictor/catalog-observations.cjs').catalogRuntimeContext(backend);
+            require('node:assert/strict').deepEqual(report.runtimeContext.afterNative, runtimeBefore,
+                'Runtime context changed during native collection');
             const {validateNative, playwrightCoverageResult} = require('./suite.cjs');
             validateNative(native, inventory.tests);
             const result = playwrightCoverageResult({status:native.exitCode === 0 && !native.errors.length ? native.status : 'failed',
@@ -89,6 +97,7 @@ async function execute(args) {
                 coverageEvidence[name] = require('./identity.cjs').fileDigest(destination);
             }
             report.native = {totalTests:result.totalTests, totalPassed:result.totalPassed, reportFile:native.reportFile,
+                executionRuntimeDigest:require('./identity.cjs').digest(report.runtimeContext.afterNative),
                 coverageRunId:coverage.coverageRunId, coverageFinalized:true,
                 coverageDirectory, coverageEvidence,
                 ...(native.profileArtifacts ? {profileArtifacts:native.profileArtifacts} : {})};

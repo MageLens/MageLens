@@ -23,6 +23,14 @@ test('syntax features never execute project JavaScript and do not need per-state
     assert.deepEqual(p.features(input),first);
     assert.throws(()=>p.features({...input,sources:[{name:'bad.js',source:'const ='}]}),e=>e.statusCode===500);
 });
+test('frozen forecasts retain independent copies of their pre-execution environment', () => {
+    const input = request(); input.environment.resources = {cpu:2};
+    const snapshot = p.prepare(input);
+    const expected = JSON.parse(JSON.stringify(input.environment));
+    input.environment.resources.cpu = 4;
+    assert.deepEqual(snapshot.environment, expected);
+    assert.equal(snapshot.environmentDigest,p.sha256(JSON.stringify(Object.entries(expected).sort())));
+});
 test('baseline ratio and manual adjustment are fixed before running, including faster environments', t => {
     const {loaded}=model(t), input=request(), frozen=p.prepare(input,loaded);
     assert.ok(Math.abs(frozen.prediction.rawMs-100)<1e-9);assert.ok(Math.abs(frozen.prediction.ms-200)<1e-9);

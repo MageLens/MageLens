@@ -2489,3 +2489,25 @@ Next bind the audited context into forecasts before execution, keeping whole-tes
 and prefix environments independent. Missing or changed context must reject
 catalog label admission rather than silently borrowing the Compose runner's
 identity. Existing incomplete-context models remain diagnostic only.
+
+The forecast-binding correction retains a detached copy of explicit environment
+inputs in new snapshots. Prefix planning accepts a separately supplied environment
+through `MAGELENS_PREFIX_ENVIRONMENT`; whole-test discovery keeps its own identity.
+Catalog calibration checks the frozen prefix runtime digest and native profile
+against the actual driver/service context before measurement, then verifies the
+context again after native execution. Missing, altered or mismatched evidence
+rejects admission. This does not upgrade historical snapshots or qualify a model.
+
+Frozen environment binding passed 87 focused tests, the complete 536/536
+integration suite and all static checks. No browser timing was collected during
+validation. The common source-built planner gate passed with the new input path.
+
+The step trace supplies another concrete representation distinction: readiness
+`toBeDisabled` assertions consumed 2.915/2.709 s per long consumer, versus
+0.779/0.697 s for the same number of `toBeVisible` assertions. The current schema
+merges both into one DOM-assertion count. A source-only feasibility audit may now
+retain the matcher names alongside the previously diagnosed navigation categories.
+Use the same historical development rows only as diagnostics; they cannot qualify
+the new execution environment. Cap this audit at 30 seconds/two CPUs/1 GiB, with
+no model fit or new browser observations. Stop unless the structural bound falls
+to at most 5%; do not tune coefficients or inspect reserved timings.

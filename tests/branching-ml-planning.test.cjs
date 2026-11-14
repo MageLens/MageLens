@@ -317,6 +317,14 @@ test('planner replays hash-verified fixture discovery and rejects stale configur
     }).sort()));
     assert.equal(assess(f.manifest,options).assessment.tests.first.environmentDigest,row.snapshot.environmentDigest);
     assert.equal(assess(f.manifest,options).assessment.stages['cp-cart'].environmentDigest,prefixEnvironmentBefore);
+    options.prefixEnvironment = {executionRuntimeDigest:'bounded-prefix-runtime'};
+    const separated = assess(f.manifest,options).assessment;
+    assert.notEqual(separated.stages['cp-cart'].environmentDigest,prefixEnvironmentBefore);
+    assert.equal(separated.stages['cp-cart'].environmentDigest,p.sha256(JSON.stringify(Object.entries({
+        ...options.prefixEnvironment,boundary,collection:'source',platform:process.platform
+    }).sort())));
+    assert.equal(separated.tests.first.environmentDigest,row.snapshot.environmentDigest);
+    assert.throws(()=>assess(f.manifest,{...options,prefixEnvironment:[]}),/Invalid prefix environment/);
     options.environment.platform='changed';
     assert.throws(()=>assess(f.manifest,options),/Discovery environment does not match/);
     options.environment.platform='catalog-fixture';

@@ -231,6 +231,7 @@ function prepare(request, loaded, {transfer = true} = {}) {
         selectedImplementations: feat.selectedImplementations ?? [],
         unresolvedEdges: feat.unresolvedEdges ?? [],
         group: sha256(request.group), sourceFamily: sha256(request.sourceFamily), environmentDigest,
+        environment: JSON.parse(JSON.stringify(request.environment)),
         extraFeatures: {...request.extraFeatures},
         ...(isModernReachableSchema(feat.featureSchema) && request.backendState ? {backendState:{...request.backendState}} : {}),
         // Keep the historical training reference independent of checkpoint policy.

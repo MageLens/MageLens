@@ -41,6 +41,6 @@ docker run --rm --init --memory 1g --memory-swap 1g --user "$(id -u):$(id -g)" \
     --env MAGELENS_PREDICTOR_MODEL --env MAGELENS_PREDICTOR_MODEL_SHA256 \
     --env MAGELENS_PREDICTOR_BACKEND_STATE \
     --env MAGELENS_PREFIX_MODEL --env MAGELENS_PREFIX_MODEL_SHA256 \
-    --env MAGELENS_PREFIX_TIMING_BOUNDARY --env MAGELENS_PREFIX_SOURCE_STORE \
+    --env MAGELENS_PREFIX_TIMING_BOUNDARY --env MAGELENS_PREFIX_SOURCE_STORE --env MAGELENS_PREFIX_ENVIRONMENT \
     "$planner_image" "$operation" "$source_root" "$manifest" "${discovery[@]}"
 printf 'Manifest: %s\n' "$manifest"

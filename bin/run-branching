@@ -55,7 +55,7 @@ controller=$(docker run --detach --rm --init --network none --cpus 2 --memory 51
     --env MAGELENS_PREDICTOR_MODEL --env MAGELENS_PREDICTOR_MODEL_SHA256 \
     --env MAGELENS_PREDICTOR_BACKEND_STATE \
     --env MAGELENS_PREFIX_MODEL --env MAGELENS_PREFIX_MODEL_SHA256 --env MAGELENS_PREFIX_TIMING_BOUNDARY \
-    --env MAGELENS_PREFIX_SOURCE_STORE \
+    --env MAGELENS_PREFIX_SOURCE_STORE --env MAGELENS_PREFIX_ENVIRONMENT \
     --label org.magelens.role=branching-orchestrator --entrypoint sleep "$planner_image" infinity)
 verification_error=''
 cleanup_controller() { local result=$?; trap - EXIT; if [[ -n "$verification_error" ]]; then rm -f -- "$verification_error" || result=1; fi; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }

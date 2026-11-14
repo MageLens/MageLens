@@ -46,6 +46,8 @@ function run(args=process.argv.slice(2)) {
         }
         const backendState = process.env.MAGELENS_PREDICTOR_BACKEND_STATE;
         if (backendState) options.backendState = JSON.parse(backendState);
+        if (process.env.MAGELENS_PREFIX_ENVIRONMENT)
+            options.prefixEnvironment = JSON.parse(process.env.MAGELENS_PREFIX_ENVIRONMENT);
         const evidence=discoveryFile ? JSON.parse(fs.readFileSync(discoveryFile,'utf8')) : saved?.assessment.discovery;
         if (evidence) {
             const ids=new Set(structure.tests.map(test=>test.id));
