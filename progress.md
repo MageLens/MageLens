@@ -1025,3 +1025,12 @@ forecasts were present. Bare imports now resolve through ancestor package
 directories, and superclass resolution uses lexical bindings and imports.
 Unresolved cases remain inspectable. This replay supplies no execution
 timing or fixture validation.
+
+The pinned Playwright discovery run archived lifecycle inputs for all five
+bundled tests with zero runner errors and no execution labels. The static
+comparison found no corresponding declarations for these five tests. They
+use the project's coverage-enabled test wrapper, whose exported fixture
+chain is built through function calls. A scan of the entire checkout also
+encountered an unrelated compatibility fixture import outside the scan root.
+The isolated comparison retained the bundled test and dependency sources.
+These results identify a source-assessment gap, so bundled parity stays open.
