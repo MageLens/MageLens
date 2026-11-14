@@ -905,3 +905,8 @@ validation reached 4.21% within 5% error versus 0.81% for the median comparator
 on those same rows. P95 absolute percentage error was 1813.22%. The model
 remains unqualified. These historical folds do not supply locked prospective
 evidence or demonstrate the required accuracy.
+
+Version 2 campaign manifests now bind the inventory's group assignments to
+the exact split file consumed by the trainer. Five ledger tests passed,
+including verification that a changed split file is rejected when reopening
+the campaign. The real campaign still needs reconciled group assignments.

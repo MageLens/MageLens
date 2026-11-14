@@ -35,21 +35,31 @@ function location(workspace, cycle, lease) {
     }
     return directory;
 }
+function splitBytes(inventory) {
+    const groups = new Map();
+    for (const {group,split} of inventory) {
+        requireValue(typeof group === 'string' && group, 'missing correlated group');
+        requireValue(['train', 'validation', 'audit'].includes(split), 'unassigned split');
+        requireValue(!groups.has(group) || groups.get(group) === split, 'correlated group crosses splits');
+        groups.set(group, split);
+    }
+    return encode({schemaVersion:1,groups:Object.fromEntries(groups)});
+}
 function validateManifest(manifest) {
-    requireValue(manifest.schemaVersion === 1 && identifier(manifest.cycleId), 'invalid manifest version or cycle ID');
+    requireValue([1,2].includes(manifest.schemaVersion) && identifier(manifest.cycleId), 'invalid manifest version or cycle ID');
     for (const field of ['candidateDigest', 'splitDigest', 'protocolDigest', 'sourceDigest', 'environmentDigest', 'ownedResourceDigest']) {
         requireValue(hash(manifest[field]), `missing ${field}`);
     }
     requireValue(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(manifest.extractorCommit), 'missing extractor commit');
     requireValue(typeof manifest.featureSchema === 'string' && manifest.featureSchema, 'missing feature schema');
     requireValue(Array.isArray(manifest.inventory) && manifest.inventory.length, 'empty inventory');
-    const ids = new Set(), splits = new Map();
+    const ids = new Set(), split = splitBytes(manifest.inventory);
+    if (manifest.schemaVersion === 2) {
+        requireValue(digest(split) === manifest.splitDigest, 'inventory differs from the frozen split digest');
+        requireValue(new Set(manifest.inventory.map(item=>item.split)).size === 3, 'frozen split needs training, validation and audit groups');
+    }
     for (const item of manifest.inventory) {
         requireValue(identifier(item.id) && !ids.has(item.id), 'duplicate or invalid case ID'); ids.add(item.id);
-        requireValue(['train', 'validation', 'audit'].includes(item.split), 'unassigned split');
-        requireValue(typeof item.group === 'string' && item.group, 'missing correlated group');
-        requireValue(!splits.has(item.group) || splits.get(item.group) === item.split, 'correlated group crosses splits');
-        splits.set(item.group, item.split);
         requireValue(['scheduled', 'blocked', 'inapplicable'].includes(item.disposition), 'missing disposition');
         requireValue(item.disposition === 'scheduled' || typeof item.reason === 'string' && item.reason, 'omitted case needs a reason');
         requireValue(['cypress', 'playwright'].includes(item.runner) && typeof item.timingBoundary === 'string' && item.timingBoundary, 'missing runner or timing boundary');
@@ -71,7 +81,12 @@ function read(workspace, cycle) {
     validateManifest(manifest);
     requireValue(manifest.cycleId === cycle, 'cycle identity changed');
     const manifestDigest = digest(manifestBytes), records = [];
-    const names = fs.readdirSync(directory).filter(name => name !== 'manifest.json' && !name.startsWith('.pending-')).sort();
+    const metadataFiles = new Set(['manifest.json']);
+    if (manifest.schemaVersion === 2) {
+        requireValue(readFile('split.json') === splitBytes(manifest.inventory), 'frozen split file changed');
+        metadataFiles.add('split.json');
+    }
+    const names = fs.readdirSync(directory).filter(name => !metadataFiles.has(name) && !name.startsWith('.pending-')).sort();
     let previous = manifestDigest;
     for (const [index, name] of names.entries()) {
         requireValue(name === `${String(index).padStart(8, '0')}.json`, 'missing or unexpected record');
@@ -129,8 +144,14 @@ function create(workspace, manifest, lease) {
     const temporary = path.join(path.dirname(directory), `.pending-${randomUUID()}`);
     fs.mkdirSync(temporary, {mode: 0o700});
     try {
-        const fd = fs.openSync(path.join(temporary, 'manifest.json'), 'wx', 0o600);
-        try { fs.writeFileSync(fd, encode(manifest)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        const files = [['manifest.json',encode(manifest)]];
+        if (manifest.schemaVersion === 2) files.push(['split.json',splitBytes(manifest.inventory)]);
+        for (const [name,bytes] of files) {
+            const fd = fs.openSync(path.join(temporary,name), 'wx', 0o600);
+            try { fs.writeFileSync(fd, bytes); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        }
+        const pending = fs.openSync(temporary,'r');
+        try { fs.fsyncSync(pending); } finally { fs.closeSync(pending); }
         requireValue(!fs.existsSync(directory), 'cycle already exists');
         fs.renameSync(temporary, directory);
         const parent = fs.openSync(path.dirname(directory), 'r');
@@ -154,4 +175,4 @@ function append(workspace, cycle, event, lease) {
     try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
     return read(workspace, cycle);
 }
-module.exports = {create, read, append};
+module.exports = {create, read, append, splitBytes};

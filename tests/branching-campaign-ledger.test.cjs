@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 const ledger = require('../branching/predictor/campaign-ledger.cjs');
 const workflow = require('../branching/workflow-lease.cjs');
 const hash = character => character.repeat(64);
@@ -73,6 +74,20 @@ test('campaign writes require this workspace lease and immutable disjoint group 
     assert.throws(() => ledger.create(root, {...manifest, runOrder: ['train', 'validation']}, lease), /every scheduled case/);
     const blocked = {...manifest, inventory: manifest.inventory.map(item => ({...item, disposition: 'blocked'})), runOrder: []};
     assert.throws(() => ledger.create(root, blocked, lease), /needs a reason/);
+});
+
+test('version 2 ledger persists the exact split consumed by training', t => {
+    const {root,lease,manifest} = setup(t);
+    manifest.schemaVersion = 2;
+    const bytes = ledger.splitBytes(manifest.inventory);
+    assert.equal(ledger.splitBytes([...manifest.inventory].reverse()),bytes);
+    assert.throws(() => ledger.create(root,manifest,lease),/frozen split digest/);
+    manifest.splitDigest = createHash('sha256').update(bytes).digest('hex');
+    const created = ledger.create(root,manifest,lease);
+    const file = path.join(created.directory,'split.json');
+    assert.equal(fs.readFileSync(file,'utf8'),bytes);
+    fs.appendFileSync(file,'\n');
+    assert.throws(() => ledger.read(root,manifest.cycleId),/frozen split file changed/);
 });
 
 test('journal rejects altered history and symlinks while ignoring unpublished crash remnants', t => {
