@@ -2681,3 +2681,35 @@ intersections of the allowable forecast intervals [0.95*actual,1.05*actual] and
 report both short and long consumers. Empty intersections establish a concrete
 representation/noise problem for identical inputs; nonempty intersections do
 not establish qualification. No fitting or retries belong to this check.
+
+All three repeatability runs passed 9/9 tests, pinned-browser/source/runtime audits,
+coverage finalization and cleanup, in 134.559, 133.601 and 133.286 s. Long consumers
+were stable: 41.684/41.522/41.551 s, 39.323/39.122/38.636 s and
+39.675/39.492/39.914 s. Four short tests had no common 5%-accurate forecast range:
+readiness 340/252/280 ms, search identity 1310/1491/1225 ms, visible body
+693/595/675 ms and robots 324/387/331 ms. Even choosing each test's best fixed
+forecast retrospectively could cover only 22/27 observations (21/24 excluding
+the lifecycle dependency). This is an empirical same-input compatibility bound,
+not a qualification score or a claim about all future runs. It demonstrates why
+another static-source fit alone cannot satisfy this observed sample. Evidence:
+`catalog-repeatability.json`, `catalog-repeatability-audit.json` and the three
+referenced complete reports/coverage archives.
+
+The first two native runs throttled in 437/1269 and 426/1263 CPU-quota periods.
+The earlier single affinity comparison eliminated throttling but was slower;
+it did not test repeatability. A targeted comparison is now justified by the
+short-test spread, without claiming throttling causes it.
+
+**Bounded scheduling repeatability comparison.** Repeat the same three complete
+catalog runs and resets with only the driver affinity fixed to CPUs 12,13 (two
+distinct cores on this host), retaining the two-CPU quota, 2 GiB limit and pinned
+image/browser. Freeze and verify this distinct runtime identity; do not mix these
+observations into quota-only models. Keep all original tests, coverage and cleanup.
+No service affinity changes, additional infrastructure, model fitting, untouched
+qualification groups or production defaults belong to this diagnostic. Cap each
+run at 180 seconds and resets at 60 seconds total (ten minutes). Stop on any
+failure; do not repeat the comparison. Success requires at least 26/27 compatible
+observations at one fixed forecast per test and no per-test disjoint range;
+this is a stability screen only, with independent prediction qualification still
+mandatory. If it fails, stop the affinity approach and inspect the short-test
+execution/timing boundary instead of gathering more repetitions.
