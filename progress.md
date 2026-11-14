@@ -1169,3 +1169,24 @@ Node 24.22.1 and a two-worker limit. The repository static check also
 passed for tracked files. These checks ran while the separate Mage-OS
 installation downloaded its Composer dependencies. They do not cover
 the pending Magento calibration or the GitHub Actions matrix.
+
+The dedicated Mage-OS 4.0.0 Luma stack completed retained-backend
+calibration with Playwright 1.65.0, Chrome for Testing 157.0.8103.38,
+one static PHP worker, an internal Docker network and disposable XFS.
+The matching planner verified the manifest before execution. Source
+integrity passed afterward, and the provider removed its temporary
+schemas, restored grants and passed nine worker continuity checks.
+The run took 134.2 seconds and updated the dedicated stack's baseline.
+
+| Operation | Observed time |
+| --- | ---: |
+| Capture | 15.367 s, 2.045 s, 2.342 s |
+| Restore | 11.245 s, 13.559 s, 13.286 s |
+| Reset | 16.579 s, 9.903 s, 11.552 s |
+| Release | 1.237 ms, 1.098 ms, 0.756 ms |
+| Backend prepare and cleanup | 5.008 s and 12.902 s |
+
+The three warmed snapshots were approximately 1.05 MB each. This
+measures repetition variability for one state; the calibration item
+still needs representative size and state variation. The XFS mount,
+loop image, workflow lock and recovery record were removed.
