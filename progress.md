@@ -1323,3 +1323,14 @@ to the historical inputs. It does not identify whether the differences
 come from omitted state or runtime variability. Fresh collection needs
 matched repetitions with pre-run state recorded before another recipe
 comparison can distinguish those causes.
+
+The production Rust solver also rejected both storefront controls when
+given the rounded-up maximum measured segment durations as a diagnostic
+counterfactual. The home and cumulative search paths were 0.458 s and
+1.259 s, with estimated losses of 66.82 s and 43.68 s if checkpointed
+individually. The calibrated restore alone costs 11.628 s after the
+policy margin. For a standalone checkpoint, increasing fanout can spread
+startup and capture cost, but cannot make either control profitable
+under this calibration. The profitable candidate needs a different
+shared journey whose measured work exceeds that restore floor. The
+counterfactual does not authorize execution or establish wall-time savings.
