@@ -1511,3 +1511,27 @@ evidence. The stopped approach is resource-unstable collection; the next attempt
 uses persistent Compose limits and verifies them during restoration. The bounded
 experiment's collection clock includes the approximately five-minute diagnostic
 attempt; its model-fit and held-out budgets are unchanged.
+
+The generated Compose overlay was not a persistent place for resource limits:
+`bin/project.cjs` rewrites it during coverage preparation. The second attempt
+(`bde7ddd9`) is invalid as well. Its complete native run additionally exposed a
+missing OpenSearch product index after the service recreation; Magento's index
+status still said Ready, so that status alone is insufficient preflight evidence.
+The original search assertion failed on the rendered exception page. No labels
+from that attempt are admitted, no assertions are relaxed, and no model is fit.
+
+The dedicated base `compose.yaml` now carries the limits. Recreate once, rebuild
+the product index, and verify the actual search page before further collection.
+The admission path checks resources before timing each prefix, rather than only
+rejecting at final export. This keeps unsupported state from consuming the full
+collection budget. Native failures must retain a failed collection report after
+cleanup. Roughly ten minutes of the bounded browser budget have been spent on
+the two diagnostic attempts.
+
+The repaired search workload's finite loop is conservatively non-portable in
+Rust. A private literal expansion preserves the 101–120 iteration order, all
+fill/Enter/click actions and all 20 heading assertions per consumer. An executed
+operation-trace comparison found identical sequences (81 and 82 operations);
+Rust now discovers one eligible 81-statement duplicated prefix. The original
+loop, failed locator source, expansion hashes and trace evidence are retained.
+All variants remain in the single `browse.spec.mjs` development group.

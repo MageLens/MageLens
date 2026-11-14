@@ -8,7 +8,11 @@ const {observeExecutedSegment, SEGMENT_TIMING_BOUNDARY} = require('./prefix-meas
 
 function catalogRuntimeContext(backend) {
     return Object.fromEntries(['app', 'phpfpm', 'db', 'redis', 'opensearch', 'runner'].map(service => {
-        const container = backend.inspect(service);
+        // The retained override is removed by cleanup. Query the owned Compose
+        // project through its original files in all phases, including cleanup.
+        const id = backend.dc(['ps', '-a', '-q', service], true);
+        assert.match(id, /^[a-f0-9]{12,64}$/);
+        const container = JSON.parse(require('../command.cjs').command('docker', ['inspect', id]))[0];
         const {Memory, MemorySwap, NanoCpus} = container.HostConfig;
         return [service, {image:container.Image, memoryBytes:Memory, memorySwapBytes:MemorySwap, nanoCpus:NanoCpus}];
     }));
