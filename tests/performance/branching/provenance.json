@@ -7,7 +7,7 @@
   "historicalPolicy": "doubled checkpoint overhead; historical decisions are not current assertions",
   "runner": "playwright",
   "families": 13,
-  "qualification": "unqualified; native discovery, Cypress implementation and current measured economics pending",
+  "qualification": "unqualified; complete native inventory, execution and current measured economics pending",
   "generatedSuites": [
     {
       "id": "short-5",
@@ -74,5 +74,78 @@
       "tests": 9,
       "sha256": "0f2f0f1dec911427b30910985acf1a2ed0459b48cdc3eb811ee31c2aa04a5487"
     }
-  ]
+  ],
+  "cypress": {
+    "source": "Cypress adaptation of the recovered Playwright generator",
+    "sourceFile": "cypress.cjs",
+    "preserves": "Parameterized journeys and assertions; native window/selector references represent Playwright page/locator fixture references",
+    "qualification": "unqualified; native discovery and real application execution pending",
+    "generatedSuites": [
+      {
+        "id": "short-5",
+        "tests": 5,
+        "sha256": "e13c05a694c85988cb03a3d1d94c0bb70bf9e2db992086f65b1d9c91994fcf07"
+      },
+      {
+        "id": "reuse-2",
+        "tests": 2,
+        "sha256": "4196c237a3654009df878a03f828fe8254572674eb2587bcb9e15c3239580d09"
+      },
+      {
+        "id": "boundary-5",
+        "tests": 5,
+        "sha256": "74a019b105a3863e0845b68631d0f818a974249652eb22f0a0ca37f75cc2d574"
+      },
+      {
+        "id": "large-5",
+        "tests": 5,
+        "sha256": "8757cb8f986d0e3fb927c943bcd6f9154e0f0f6b0d69eef81d2e20d2c41901a8"
+      },
+      {
+        "id": "strong-5",
+        "tests": 5,
+        "sha256": "dcdfcbbb02e84752127aa5f9c8a75c6347a90c3c0696e6a6d10f15a1849a42d0"
+      },
+      {
+        "id": "unrelated-5",
+        "tests": 5,
+        "sha256": "83194a75929b4d7cfea3c2e779931a81a9d7afe0751af07da89ae62d0992c6e2"
+      },
+      {
+        "id": "large-9",
+        "tests": 9,
+        "sha256": "4132d8229481986e762530674175b03ce897eef651430296f84848416bbce628"
+      },
+      {
+        "id": "medium-9",
+        "tests": 9,
+        "sha256": "626ab701204a4fd13e41d4f3fa76194e2ee4605738cc8f5314c0bbfc567daed0"
+      },
+      {
+        "id": "deep-shallow",
+        "tests": 24,
+        "sha256": "7d80e13b98f267d76de6d367bee6308e37b27e5fe6b4faf76d74bed46f0114d9"
+      },
+      {
+        "id": "deep-large",
+        "tests": 36,
+        "sha256": "11881d0aae23881d8dd5a75380ee8ed924204dcc83ba40a86bf86c45392ceea3"
+      },
+      {
+        "id": "fixture-small-5",
+        "tests": 5,
+        "sha256": "56060fee20131746cc87f85124be3ceac3096513909e8f5bcec953090b5d0717"
+      },
+      {
+        "id": "fixture-large-9",
+        "tests": 9,
+        "sha256": "5c0ddce3667205ce1cf0641ff625ae6a699b65fd52109d7a41f268a5b70254c2"
+      },
+      {
+        "id": "fixture-state-9",
+        "tests": 9,
+        "sha256": "ec5caea78789947d2e9a89a80858bfcf142de1c79bd9d8a1dc334872d33b1b28"
+      }
+    ]
+  }
 }

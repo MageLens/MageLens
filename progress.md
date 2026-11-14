@@ -277,7 +277,7 @@ scope and insufficient independent evidence rather than inventing confidence.
   repository/generator revision, native test IDs and hashes, helper groups, runner,
   theme/platform, browser version, fixtures, local-provider setup, owned resources,
   readiness, blockers, timing boundaries and split assignment.
-- [ ] Recover and version all invented workload generators and retain the original
+- [x] Recover and version all invented workload generators and retain the original
   tests/assertions. Include diverse short/long cases, cheap/expensive prefixes,
   two/many consumers, nesting, unrelated work and lifecycle/state variations.
 - [ ] Reserve development training groups, reusable grouped validation groups and
@@ -762,3 +762,22 @@ failures/skips**, and repository static checks passed. This includes three new
 generator checks whose implementation remains separate from this adapter fix.
 Private evidence is under `campaign-20261114` (`baseurl-regression-01-*`,
 `integration-baseurl.log`, `static-baseurl.log`).
+
+### 2026-11-14 — generated workload recovery complete
+
+Package 1's generator-recovery checkbox is complete: the original 13-family
+Playwright generator and byte-hash provenance are versioned, and the Cypress
+adaptation retains all 128 parameterized journeys and their assertions. The
+families include short/long work, two/many consumers, nested and unrelated work,
+and fixture setup, identity, mutation and teardown checks. Cypress uses native
+window/selector references for the Playwright page/locator fixture references.
+Both generators have per-family output hashes; original Playwright output remains
+byte-identical to the recovered source. Historical policy decisions remain clearly
+marked and do not assert current economics.
+
+Five focused generator regressions pass, including ordered browser action/assertion
+comparisons for every ordinary and nested variant. Cypress fixture-state assertions
+are retained; real application execution/restoration is still unverified. Native
+Cypress registration of the generated families is queued after the serialized
+private inventory. This checkbox records generator recovery only; it does not
+complete package 1, establish fresh labels or qualify accuracy and speedup.
