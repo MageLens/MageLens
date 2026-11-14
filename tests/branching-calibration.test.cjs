@@ -34,3 +34,32 @@ test('failed restoration cannot produce a usable calibration and still cleans th
     assert.equal(report.calibration.samples[0].phases.cleanup,undefined);
     assert.equal(provider.state,null);assert.deepEqual(fs.readdirSync(root),[]);
 });
+test('qualification measurement times the frozen increment and requires a passing restored continuation', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-qualification-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    const {digest} = require('../branching/identity.cjs');
+    const {samples} = require('../branching/baseline.cjs');
+    const {SEGMENT_TIMING_BOUNDARY} = require('../branching/predictor/prefix-measurement.cjs');
+    const snapshot = {unit: 'prefix', timingBoundary: SEGMENT_TIMING_BOUNDARY};
+    for (const valid of [true, false]) {
+        const report = await measure({provider: new FixtureProvider(), root, samples: 1, warmup: async () => {},
+            qualificationSegment: {
+                snapshot,
+                prepare: async provider => { provider.state.db.customer = 'prepared'; },
+                execute: async provider => {
+                    assert.equal(provider.state.db.customer, 'prepared');
+                    provider.state.db.customer = 'checkpoint';
+                },
+                verifyContinuation: async provider => {
+                    assert.equal(provider.state.db.customer, 'checkpoint');
+                    if (!valid) throw new Error('Continuation failed');
+                }
+            }});
+        assert.equal(report.kind, 'catalog-qualification-measurement');
+        assert.equal(report.status, valid ? 'passed' : 'failed');
+        assert.equal(report.calibration.samples[0].segment.forecastDigest, digest(snapshot));
+        assert.ok(report.calibration.samples[0].segment.workMs > 0);
+        assert.equal(samples(report), null);
+        assert.deepEqual(fs.readdirSync(root), []);
+    }
+});

@@ -11,13 +11,19 @@ const config=require('./configs/runtime.cjs');
 
 // Project setup operation: exercise the provider and store without executing or
 // forcing any user test. Ordinary test execution remains AUTO-only.
-async function measure({provider,root,samples=3,warmup}) {
+async function measure({provider,root,samples=3,warmup,qualificationSegment}) {
     assert.ok(Number.isInteger(samples)&&samples>=1&&samples<=9,'Calibration requires 1–9 samples');
     assert.equal(typeof warmup,'function');
+    if (qualificationSegment) {
+        const {snapshot, prepare, execute, verifyContinuation} = qualificationSegment;
+        assert.equal(snapshot?.timingBoundary, require('./predictor/prefix-measurement.cjs').SEGMENT_TIMING_BOUNDARY);
+        assert.equal(snapshot.unit, 'prefix');
+        for (const action of [prepare, execute, verifyContinuation]) assert.equal(typeof action, 'function');
+    }
     const run=randomUUID();fs.mkdirSync(root,{recursive:true});
     const directory=fs.mkdtempSync(path.join(root,config.files.runPrefix));
     write(path.join(directory,config.files.owner),{schemaVersion:1,kind:config.checkpoint.ownerKind,run});
-    const report={schemaVersion:1,kind:'baseline-calibration',run,directory,status:'failed',errors:[],phases:{},
+    const report={schemaVersion:1,kind:qualificationSegment?'catalog-qualification-measurement':'baseline-calibration',run,directory,status:'failed',errors:[],phases:{},
         counts:{fallbacks:0,failures:0,blockedSpecs:0},checkpoints:[],releases:[],
         costs:{captures:[],restores:[],releases:[],resets:[]},
         calibration:{schemaVersion:1,profileDigest:digest(provider.identity),requestedSamples:samples,samples:[]}};
@@ -41,6 +47,15 @@ async function measure({provider,root,samples=3,warmup}) {
             report.calibration.samples.push(sample);
             let time=performance.now();await measured('reset',()=>provider.reset());report.costs.resets.push(performance.now()-time);
             await measured('warmup',()=>warmup(provider));
+            if (qualificationSegment) {
+                const {snapshot, prepare, execute} = qualificationSegment;
+                await prepare(provider);
+                await provider.beginSegment?.(stage);
+                const workStarted = performance.now();
+                await execute(provider);
+                sample.segment = {forecastDigest:digest(snapshot), workMs:performance.now()-workStarted};
+                await provider.endSegment?.(stage);
+            }
             const expected=digest(await provider.normalizedState());
             time=performance.now();
             const ref=await store.capture({key,stage,parent:null,lineage:[],ttlMs:config.checkpoint.ttlMs,provider,measured,
@@ -52,6 +67,7 @@ async function measure({provider,root,samples=3,warmup}) {
             store.verify(ref,key);
             await measured('restore',()=>provider.restore(path.join(ref.directory,config.files.payload)));
             assert.equal(digest(await provider.normalizedState()),expected,'Calibration restoration changed application state');
+            if (qualificationSegment) await qualificationSegment.verifyContinuation(provider);
             report.costs.restores.push({stage,ms:performance.now()-time});
             time=performance.now();const checkpoint=await measured('release',()=>store.release(stage));
             report.costs.releases.push({stage,ms:performance.now()-time});report.releases.push({stage,checkpoint});
