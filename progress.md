@@ -1040,3 +1040,11 @@ with native discovery and retained native routing for their custom fixture
 wrapper. All five callback ranges matched and received forecasts. The
 planner still missed the 25 native test-scoped fixture entries, so those
 forecasts are incomplete representations of runtime work.
+
+With the installed dependencies mounted read-only, the bundled planner's
+context contains the exact original source hashes for all 30 fixture
+entries recorded by native Playwright discovery. Hash and range checks
+verified each fragment against its detached archive, including the five
+test-scoped entries from the pinned coverage package. Fixture selection
+still differs. The planner sees the source while native discovery supplies
+which fixture callbacks belong to each timing slot.

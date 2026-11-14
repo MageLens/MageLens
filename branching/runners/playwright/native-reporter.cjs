@@ -40,7 +40,10 @@ class NativeReporter {
     onEnd(result) {
         const report = {schemaVersion: 1, config: this.config, tests: this.tests ?? [], results: [...this.results.values()],
             status: result.status, durationMs: result.duration, errors: this.errors};
-        if(this.profile)report.prediction=require('../../predictor/native.cjs').finish(this.profile.directory,report);
+        if(this.profile) {
+            if(this.profile.discoveryOnly) report.profileDiscovery={directory:this.profile.directory};
+            else report.prediction=require('../../predictor/native.cjs').finish(this.profile.directory,report);
+        }
         fs.writeFileSync(process.env.MAGELENS_NATIVE_REPORT, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
     }
 }

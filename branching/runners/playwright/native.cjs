@@ -11,14 +11,14 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
     const config = fs.realpathSync(configuration);
     fs.mkdirSync(directory, {recursive: true});
     const token = randomUUID(), reportFile = path.join(directory, `${token}.json`);
-    const timing = profile && !list ? {...profile, runner:'playwright', directory:path.join(directory, `${token}-timing`)} : null;
+    const timing = profile ? {...profile, runner:'playwright', discoveryOnly:list, directory:path.join(directory, `${token}-timing`)} : null;
     // Keep relative config paths relative to the user's original config. The
     // temporary wrapper is hidden, never changes test bytes, and is removed.
     const wrapper = path.join(path.dirname(config), `.magelens-native-${token}.cjs`);
     const selection = path.join(directory, `${token}.tests.txt`);
     if (tests?.some(test => /[\r\n]/.test(test.selector))) throw new Error('Multiline test titles need a native selector encoding');
     if (tests && !tests.length) throw new Error('Native execution needs a nonempty selection');
-    fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nconst reporters = typeof c.reporter === 'string' ? [[c.reporter]] : c.reporter ?? [];\nmodule.exports = {...c, reporter: [...reporters, [${JSON.stringify(path.join(__dirname, 'native-reporter.cjs'))}]], ${setup ? '' : 'globalSetup: undefined,'} ${teardown ? '' : 'globalTeardown: undefined,'}};\n`, {mode: 0o600, flag: 'wx'});
+    fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nconst reporters = ${list} ? [] : typeof c.reporter === 'string' ? [[c.reporter]] : c.reporter ?? [];\nmodule.exports = {...c, reporter: [...reporters, [${JSON.stringify(path.join(__dirname, 'native-reporter.cjs'))}]], ${setup ? '' : 'globalSetup: undefined,'} ${teardown ? '' : 'globalTeardown: undefined,'}};\n`, {mode: 0o600, flag: 'wx'});
     const args = [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'test',
         '--config', wrapper, '--workers', '1', '--retries', '0', '--forbid-only'];
     if (list) args.push('--list');
