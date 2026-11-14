@@ -192,22 +192,26 @@ function observe(snapshot, actualMs, {passed, attempts = 1, sourceDigest} = {}) 
         errorMs: snapshot.prediction ? snapshot.prediction.ms - actualMs : null};
 }
 function evaluate(rows) {
-    const valid = rows.filter(r => r.eligible), scored = valid.filter(r => r.prediction && Number.isFinite(r.errorMs));
-    const percentile = (values, q) => [...values].sort((a, b) => a - b)[Math.max(0, Math.ceil(q * values.length) - 1)] ?? null;
-    const groups = {};
-    for (const row of scored) (groups[`${row.runner}/${row.unit}/${row.sourceFamily}`] ??= []).push(row);
-    const metrics = items => ({samples: items.length,
-        meanAbsoluteErrorMs: items.length ? items.reduce((s, r) => s + Math.abs(r.errorMs), 0) / items.length : null,
-        biasMs: items.length ? items.reduce((s, r) => s + r.errorMs, 0) / items.length : null,
-        medianAbsolutePercentError: percentile(items.map(r => Math.abs(r.errorMs) / r.actualMs * 100), .5),
-        p90AbsolutePercentError: percentile(items.map(r => Math.abs(r.errorMs) / r.actualMs * 100), .9),
-        intervalCoverage: items.length ? items.filter(r => r.actualMs >= r.prediction.lowerMs && r.actualMs <= r.prediction.upperMs).length / items.length : null});
+    const {accuracyMetrics, accuracyStrata} = require('./accuracy.cjs');
+    const valid = rows.filter(r => r.eligible === true);
+    const scored = valid.filter(r => Number.isFinite(r.prediction?.ms) && r.prediction.ms > 0);
+    const groups = new Map();
+    for (const row of valid) {
+        const key = `${row.runner}/${row.unit}/${row.sourceFamily}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+    }
+    const metrics = accuracyMetrics(valid);
+    const strata = accuracyStrata(valid);
     return {schemaVersion: 1, status: scored.length === valid.length && valid.length > 0 ? 'scored' : 'incomplete',
         total: rows.length, eligible: valid.length, excluded: rows.length - valid.length, unpredicted: valid.length - scored.length,
         modelIds: [...new Set(scored.map(r => r.prediction.modelId))], outOfRange: scored.filter(r => r.prediction.outOfRange).length,
-        ...metrics(scored), raw: metrics(scored.map(r => ({...r, errorMs: r.prediction.rawMs - r.actualMs,
-            prediction: {...r.prediction, lowerMs: r.prediction.rawLowerMs, upperMs: r.prediction.rawUpperMs}}))),
-        groups: Object.fromEntries(Object.entries(groups).map(([key, items]) => [key, metrics(items)])),
+        ...metrics, raw: accuracyMetrics(valid, {raw: true}),
+        groups: Object.fromEntries([...groups].map(([key, items]) => [key, accuracyMetrics(items)])),
+        strata,
+        meetsErrorTarget: metrics.meetsErrorTarget && Object.values(strata).every(dimension =>
+            Object.values(dimension).every(group => group.meetsErrorTarget)),
+        qualification: 'diagnostic-only; requires frozen prospective protocol and independent audit',
         checkpointDecisions: {status: 'unmeasured', reason: 'Whole-suite durations are not shared-prefix labels'}};
 }
 module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate};

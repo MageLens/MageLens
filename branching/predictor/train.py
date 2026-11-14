@@ -10,6 +10,8 @@ import json
 import platform
 from pathlib import Path
 
+from accuracy import metrics as accuracy_metrics
+
 import numpy as np
 import sklearn
 from sklearn.linear_model import Ridge
@@ -146,19 +148,31 @@ def train(rows, dataset_digest):
         test = np.array([folds[row['group']] == fold for row in rows])
         scale, model = fit(x[~test], y[~test])
         predictions[test] = model.predict(scale.transform(np.log1p(x[test])))
-        naive_predictions[test] = np.median(y[~test])
+        for index in np.flatnonzero(test):
+            domain = rows[index]
+            training_domain = np.array([not test[i] and all(row.get(key) == domain.get(key)
+                                        for key in ['runner', 'unit', 'timingBoundary'])
+                                        for i, row in enumerate(rows)])
+            naive_predictions[index] = np.median(y[training_domain]) if training_domain.any() else np.nan
     residuals = np.abs(predictions - y)
     predicted_ms = np.expm1(predictions) * baseline / reference_baseline
     percent = np.abs(predicted_ms - actual) / actual * 100
     naive_ms = np.expm1(naive_predictions) * baseline / reference_baseline
-    naive_percent = np.abs(naive_ms - actual) / actual * 100
     by_source = []
+    error_p90 = percentile(residuals, .9)
     for runner, family in sorted({(r['runner'], r['sourceFamily']) for r in rows}):
         selected = np.array([r['runner'] == runner and r['sourceFamily'] == family for r in rows])
         by_source.append({'runner': runner, 'sourceFamily': family, 'samples': int(selected.sum()),
                           'groups': len({r['group'] for r in rows if r['runner'] == runner and r['sourceFamily'] == family}),
+                          'maeMs': float(np.mean(np.abs(predicted_ms[selected] - actual[selected]))),
+                          'signedBiasMs': float(np.mean(predicted_ms[selected] - actual[selected])),
+                          'signedBiasPercent': float(np.mean((predicted_ms[selected] - actual[selected]) / actual[selected] * 100)),
+                          'medianAbsolutePercentError': percentile(percent[selected], .5),
                           'p90AbsolutePercentError': percentile(percent[selected], .9),
-                          'medianBaselineP90AbsolutePercentError': percentile(naive_percent[selected], .9)})
+                          'medianBaselineP90AbsolutePercentError': accuracy_metrics(actual[selected], naive_ms[selected])['p90AbsolutePercentError'],
+                          'intervalCoverage': float(np.mean(residuals[selected] <= error_p90)),
+                          **accuracy_metrics(actual[selected], predicted_ms[selected]),
+                          'medianBaseline': accuracy_metrics(actual[selected], naive_ms[selected])})
     transfer = []
     if len(families) > 1:
         for family in families:
@@ -166,6 +180,13 @@ def train(rows, dataset_digest):
             scale, model = fit(x[~test], y[~test])
             errors = np.abs(np.expm1(model.predict(scale.transform(np.log1p(x[test])))) * baseline[test] / reference_baseline - actual[test]) / actual[test] * 100
             transfer.append({'sourceFamily': family, 'samples': int(test.sum()), 'p90AbsolutePercentError': percentile(errors, .9)})
+    strict = accuracy_metrics(actual, predicted_ms)
+    strata = {}
+    for dimension in ['runner', 'unit', 'timingBoundary', 'sourceFamily', 'workloadFamily', 'environmentDigest']:
+        strata[dimension] = {}
+        for value in sorted({row.get(dimension) or '<unspecified>' for row in rows}):
+            selected = np.array([(row.get(dimension) or '<unspecified>') == value for row in rows])
+            strata[dimension][value] = accuracy_metrics(actual[selected], predicted_ms[selected])
     scale, model = fit(x, y)
     domains = []
     for runner, unit, environment, boundary in sorted({(r['runner'], r['unit'], r['environmentDigest'], r.get('timingBoundary', '')) for r in rows}):
@@ -179,17 +200,26 @@ def train(rows, dataset_digest):
             'qualification': 'candidate-awaiting-independent-campaign',
             'estimator': {'inputTransform': 'log1p', 'intercept': float(model.intercept_), 'coefficients': model.coef_.tolist(),
                           'mean': scale.mean_.tolist(), 'scale': scale.scale_.tolist()},
-            'errorLogP90': percentile(residuals, .9), 'domains': domains,
+            'errorLogP90': error_p90, 'domains': domains,
             'training': {'datasetDigest': dataset_digest, 'samples': len(rows), 'groups': len(groups),
                          'sourceFamilies': families, 'folds': folds, 'recipe': 'log1p-features/standard-scaler-floor-sparse1-core005/log1p-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
                          'python': platform.python_version(), 'sklearn': sklearn.__version__, 'numpy': np.__version__},
             'validation': {'method': 'grouped-cross-validation', 'percentileMethod': 'nearest-rank',
+                           'maeMs': float(np.mean(np.abs(predicted_ms - actual))),
+                           'signedBiasMs': float(np.mean(predicted_ms - actual)),
+                           'signedBiasPercent': float(np.mean((predicted_ms - actual) / actual * 100)),
+                           'intervalCoverage': float(np.mean(residuals <= error_p90)),
                            'medianAbsolutePercentError': percentile(percent, .5),
                            'p90AbsolutePercentError': percentile(percent, .9), 'leaveSourceFamilyOut': transfer,
-                           'medianBaselineP90AbsolutePercentError': percentile(naive_percent, .9),
-                           'beatsMedianBaseline': all(item['p90AbsolutePercentError'] < item['medianBaselineP90AbsolutePercentError'] for item in by_source),
-                           'targetP90Percent': 15, 'bySource': by_source,
-                           'meetsErrorTarget': all(item['p90AbsolutePercentError'] <= 15 for item in by_source),
+                           'medianBaselineP90AbsolutePercentError': accuracy_metrics(actual, naive_ms)['p90AbsolutePercentError'],
+                           'beatsMedianBaseline': all(item['medianBaseline']['unpredicted'] == 0
+                               and item['withinTargetRate'] > item['medianBaseline']['withinTargetRate']
+                               and item['p95AbsolutePercentError'] < item['medianBaseline']['p95AbsolutePercentError']
+                               for item in by_source),
+                           **strict, 'bySource': by_source, 'strata': strata,
+                           'medianBaseline': accuracy_metrics(actual, naive_ms),
+                           'meetsErrorTarget': strict['meetsErrorTarget'] and all(
+                               item['meetsErrorTarget'] for groups in strata.values() for item in groups.values()),
                            'sufficientCoverage': len(families) >= 3 and all(item['groups'] >= 5 for item in by_source),
                            'predictionsMs': predicted_ms.tolist()}}
 

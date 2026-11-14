@@ -665,3 +665,32 @@ Repository static checks passed (510 tracked files checked for notices, 242
 JavaScript files linted, 128 scripts syntax-checked). This does not establish
 final-candidate CI, model accuracy or speedup. Compact evidence is in
 `.runtime/ml-estimation/campaign-20261114/validation.json`.
+
+### 2026-11-14 — native inventory and strict accuracy reporting
+
+Bundled Playwright discovery now records five native tests from a byte-matched,
+disposable copy of the 510 tracked source files. Discovery from the full working
+directory first failed while traversing unreadable historical runtime output; that
+attempt is retained. Both successful discovery passes used network-disabled,
+resource-bounded containers and executed no test bodies. Cypress discovery is
+pending a shared-runner rebuild: the retained training launcher names an older
+Chrome build than `dependencies.yaml`. No timing labels were collected with it.
+
+Training and native evaluation now use `duration-within-five-percent/v1` instead
+of the former P90 15% target. Missing/invalid forecasts remain misses, percentage
+errors have no denominator floor, and reports include nearest-rank P95, signed
+bias and per-runner/boundary/source/workload/environment strata. An overall pass
+cannot hide a failing reported stratum. Missing stratum identities remain visible
+as unspecified. These are development diagnostics, not prospective qualification.
+The training comparator uses the matching runner/target/boundary's training-fold
+median; an absent training domain stays unavailable. Candidates stay unqualified.
+
+Validation: **442 integration tests passed, zero failed/skipped**, and static
+checks passed. The earlier 440-pass/two-failure attempt could not obtain the new
+source-matched orchestrator image; the shared source build completed, 18 focused
+packaged-planner tests passed, then the entire suite passed. The staged accuracy
+change independently passed 33 Node checks and two trainer regressions using the
+pinned Python packages in an isolated container. Existing uncommitted reachability,
+prefix and economics work remains separate from this commit. Packages 1, 4–6 and
+8 remain incomplete; reporting the strict metric does not satisfy their execution,
+feedback, accuracy, speedup or final-CI gates.

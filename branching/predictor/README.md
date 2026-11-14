@@ -29,7 +29,15 @@ uses the pinned packages in `requirements.txt`. Model snapshots, datasets and gr
 validation results are saved by SHA-256 under a private registry. Training never
 changes a selected model. Select an older snapshot to roll back.
 Grouped validation also compares the model with the training fold's median
-duration, so a model that performs worse than this simple baseline is visible.
+duration for the same runner and timing boundary. A missing training domain leaves
+that comparator unavailable; it does not borrow another runner's median.
+
+Accuracy uses `duration-within-five-percent/v1`: at least 95% of eligible durations
+must be predicted within 5%, overall and in each reported stratum. Missing or invalid
+forecasts count as misses. Reports include nearest-rank P95 error, signed bias,
+interval availability and runner, boundary, source-family, workload-family and
+environment results. These development diagnostics do not qualify a candidate;
+qualification still requires a frozen prospective protocol and independent audit.
 
 The pre-run scaling rule is:
 
