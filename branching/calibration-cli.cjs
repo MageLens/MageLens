@@ -26,7 +26,7 @@ async function execute(args) {
     try {
         const runner=loadRunner(process.env.MAGELENS_RUNNER??'playwright');
         const discovery=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'magelens-calibration-inventory-'));
-        try {await require('./suite.cjs').collectAssessed(manifest,project,discovery,runner.native);}
+        try {await require('./suite.cjs').collectAssessed(manifest,project,discovery,runner.native,{calibration:true});}
         finally {fs.rmSync(discovery,{recursive:true,force:true});}
         const store=openProject(workspace,project.baseline),used=store.load();
         runtime=await runner.open(process.env,project.runnerOptions);

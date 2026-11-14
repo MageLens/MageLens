@@ -1154,3 +1154,12 @@ configuration includes an extra local-provider service outside the
 retained backend's supported service set, so these checks did not start
 it or change its volumes. The bundled calibration workload still needs
 a separate, supported Compose configuration.
+
+A fresh Mage-OS/Luma/Playwright calibration installation has started in
+a separate checkout with its own Compose project, domain and ports.
+The one-test calibration fixture has a complete source assessment,
+and the model marks its forecast ineligible. Calibration now accepts
+that assessed inventory for list-only discovery. Native and
+checkpoint test execution still require qualified forecasts. The
+regression also verifies that stale source blocks calibration. All
+21 focused suite and calibration tests passed.

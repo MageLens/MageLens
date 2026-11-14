@@ -82,9 +82,11 @@ function validateNative(report, expected) {
         throw new Error('Native runner claimed success with incomplete results');
     }
 }
-async function collectAssessed(manifest, project, directory, runner) {
+async function collectAssessed(manifest, project, directory, runner, {calibration = false} = {}) {
     verifySources(manifest);
-    require('./estimation.cjs').assertExecutable(manifest);
+    // Calibration lists the suite and measures provider operations without
+    // executing any tests. Forecast qualification still gates suite execution.
+    if (!calibration) require('./estimation.cjs').assertExecutable(manifest);
     if (!project.native?.config) throw new EstimationError([{phase: 'native-collection', message: 'A native runner configuration is required to assess the complete inventory and lifecycle'}]);
     let inventory;
     try { inventory = await runner.collect(project.native.config, directory); }

@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {fileDigest} = require('../branching/engine.cjs');
 const costs = require('../branching/costs.cjs');
-const {partition, validateNative, runSuite} = require('../branching/suite.cjs');
+const {partition, validateNative, collectAssessed, runSuite} = require('../branching/suite.cjs');
 function fixture(t) {
     t.mock.method(costs, 'solveCosts', () => ({selected:['shared']}));
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-suite-'));
@@ -41,6 +41,16 @@ test('native inventory preserves every assessed generated and fixture-based test
     const f=fixture(t),g=partition(f.manifest,f.inventory,f.project);
     assert.equal(g.setup.length,1);assert.equal(g.checkpoint.length,2);assert.equal(g.native.length,100);
     assert.equal(new Set([...g.setup,...g.checkpoint,...g.native].map(t=>t.id)).size,103);
+});
+test('calibration can list a fully assessed suite before the model qualifies', async t => {
+    const f = fixture(t);
+    f.manifest.assessment.executionEligible = false;
+    f.runner.run = () => assert.fail('Calibration discovery must not launch tests');
+    await assert.rejects(runSuite({...f,directory:f.root}), error => error.issues?.[0]?.phase === 'qualification');
+    const inventory = await collectAssessed(f.manifest,f.project,f.root,f.runner,{calibration:true});
+    assert.equal(inventory.tests.length,103);
+    fs.appendFileSync(path.join(f.root,'flow.spec.ts'),'\n');
+    await assert.rejects(collectAssessed(f.manifest,f.project,f.root,f.runner,{calibration:true}), /Stale source/);
 });
 test('mixed suite runs native setup once, checkpoints, then every remaining native test',async t=>{
     const f=fixture(t); const report=await runSuite({...f,mode:'AUTO',directory:f.root});
