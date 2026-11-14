@@ -13,6 +13,12 @@ is recorded in the dated work log at the end of this file.
 
 ## Next milestone: one complete economical branching run
 
+Current blocker (latest work log below): no prediction candidate is independently
+qualified. The driver now has an audited two-CPU execution environment; older
+catalog observations omitted that driver's resource identity and remain diagnostic
+only. New forecasts bind the actual environment before measurement. The original
+costs and projected savings below are starting evidence, not a paired benchmark.
+
 Use the isolated Mage-OS 4.0.0 / Luma / Playwright installation with
 Chrome for Testing 157.0.8103.38, a populated catalog, and one PHP worker.
 The chosen suite has eight original tests and one native readiness check.
@@ -2511,3 +2517,32 @@ Use the same historical development rows only as diagnostics; they cannot qualif
 the new execution environment. Cap this audit at 30 seconds/two CPUs/1 GiB, with
 no model fit or new browser observations. Stop unless the structural bound falls
 to at most 5%; do not tune coefficients or inspect reserved timings.
+
+The matcher-name feasibility audit stopped at 7.22% minimum worst error (versus
+7.45% with navigation categories), still above its predeclared 5% criterion. No
+new schema or fit was produced. Do not repeat this additive-feature approach on
+the same incomplete-environment labels.
+
+**Bounded CPU scheduling diagnostic.** Hypothesis: a two-CPU quota with sixteen
+schedulable CPUs lets the browser exhaust each quota period in bursts, introducing
+unrepresented waits. Run the unchanged verified six-test suite after restoring
+its owned 120-product database, clearing its dedicated cache and reindexing.
+Capture actual runtime identity and cgroup CPU counters before/after native
+execution; no browser observer or extra fixture. Use two CPUs/2 GiB and the pinned
+browser, with one attempt capped at 180 seconds. If more than 5% of quota periods
+are throttled, run one comparison with the same quota plus a two-CPU affinity
+mask after the identical reset. Bound the pair and resets to six minutes within
+the existing cumulative browser budget. Stop after that pair or a failure. These
+are scheduling diagnostics, not admitted labels, accuracy qualification or a
+speedup benchmark. Do not change production affinity from one unreplicated pair.
+
+Both scheduling diagnostics passed all six tests, finalized coverage and cleaned
+up. Quota-only execution took 63.983 s natively (71.845 s including preparation,
+reporting and cleanup); 169/640 quota periods throttled. Adding affinity 12,13
+eliminated throttling but increased native time to 73.025 s (80.570 s total).
+Recorded CPU usage also increased from 55.201 to 71.057 CPU-seconds. Affinity is
+not an established improvement, and this pair does not measure repeatability.
+Stop this diagnostic; leave production affinity unchanged. Retain both actual
+runtime identities and cgroup counters in `catalog-cpu-quota.json` and
+`catalog-cpu-affinity.json` and their referenced reports. These are not paired
+linear/branching measurements and demonstrate no checkpoint savings.
