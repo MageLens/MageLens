@@ -52,12 +52,14 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
         if (profile && fileDigest(config) !== configDigest) throw new Error('Cypress configuration changed during collection');
         if (profile && list) report.profileDiscovery = {directory:run, configDigest};
         if (profile && !list) {
-            report.prediction = require('../../predictor/native.cjs').finish(run,report);
             report.profileArtifacts = {
                 forecasts:path.join(run,'predictions.json'),
                 observations:path.join(run,'prediction-samples.json'),
                 forecastDigests:path.join(run,'forecast-digests.ndjson')
             };
+            const {forecasts, forecastDigests} = report.profileArtifacts;
+            require('./forecast-journal.cjs').verifyForecastJournal(forecastDigests, JSON.parse(fs.readFileSync(forecasts)));
+            report.prediction = require('../../predictor/native.cjs').finish(run,report);
         }
         return report;
     } finally { fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }

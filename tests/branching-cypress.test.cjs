@@ -111,13 +111,16 @@ test('Cypress native plugin composes hooks and suppresses execution hooks during
     }
 });
 
-for (const selectedOnly of [false,true]) test(`Cypress profiling preserves native registrations and snapshots before project hooks (selection: ${selectedOnly})`, () => {
+for (const {selectedOnly,list} of [{selectedOnly:false},{selectedOnly:true},{selectedOnly:false,list:true}]) test(`Cypress profiling snapshots before project hooks (selection: ${selectedOnly}, discovery: ${!!list})`, () => {
     const vm = require('node:vm'), before = [], after = [], registrations = [], tasks = [];
     const context = {module:{exports:{}}, Cypress:{spec:{absolute:'/suite/example.cy.js'}},
         cy:{task(name, value) { tasks.push({name,value:structuredClone(value)}); return Promise.resolve(null); }}};
     for (const name of ['describe','context']) context[name] = (_,callback) => callback();
     for (const name of ['it','specify']) {
-        context[name] = (...args) => registrations.push(args);
+        context[name] = (...args) => {
+            registrations.push(args);
+            return {invocationDetails:{absoluteFile:'/suite/example.cy.js',line:12,column:4}};
+        };
         context[name].skip = context[name];
     }
     context.before = callback => before.push(callback);
@@ -125,24 +128,32 @@ for (const selectedOnly of [false,true]) test(`Cypress profiling preserves nativ
     context.beforeEach = context.afterEach = callback => registrations.push(callback);
     vm.runInNewContext(fs.readFileSync(require.resolve('../branching/runners/cypress/native-support.cjs'),'utf8'),context);
     const selected=selectedOnly?[context.module.exports.identity('/suite/example.cy.js',['suite','journey'],0)]:undefined;
-    context.module.exports.install({profile:true,selected});
+    context.module.exports.install({profile:true,selected,list});
     const hook = () => { throw Error('Must not execute project code while registering'); };
     context.describe('suite', () => {
         context.before(hook);
         if(selectedOnly) context.it('unselected',()=>{});
         context.it('journey',hook);
     });
-    assert.equal(before[1],hook);
-    assert.equal(registrations[0][1],hook);
+    if (list) {
+        assert.equal(before.length,2);
+        assert.doesNotThrow(before[1]);
+        assert.doesNotThrow(registrations[0][1]);
+    } else {
+        assert.equal(before[1],hook);
+        assert.equal(registrations[0][1],hook);
+    }
     return before[0]().then(() => {
         assert.equal(tasks[0].name,'magelens:timing:prepare');
         assert.equal(tasks[0].value.tests.length,1);
         assert.match(tasks[0].value.tests[0].timingSource,/Must not execute/);
+        assert.deepEqual(tasks[0].value.tests[0].timingLocation,{line:12,column:5});
         assert.deepEqual(tasks[0].value.hooks[0].scope,['suite']);
         return after[0]();
     }).then(() => {
         assert.equal(tasks[1].name,'magelens:inventory');
         assert.equal(tasks[1].value.tests[0].timingSource,undefined);
+        assert.equal(tasks[1].value.tests[0].timingLocation,undefined);
     });
 });
 
@@ -183,4 +194,21 @@ test('native Cypress retains compilation failures even when a spec registered no
     assert.deepEqual(reportErrors({failures:1,message:'Config load failed'},[]),[{message:'Config load failed'}]);
     assert.deepEqual(reportErrors({runs:[{spec:{absolute:'/suite/config.cy.js'},error:{message:'Preprocessor failed'}}]},[]),
         [{file:'/suite/config.cy.js',message:'Preprocessor failed'}]);
+});
+
+test('native Cypress verifies every persisted spec forecast before producing observations', t => {
+    const {verifyForecastJournal} = require('../branching/runners/cypress/forecast-journal.cjs');
+    const {digest} = require('../branching/identity.cjs');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(),'magelens-cypress-forecasts-'));
+    t.after(() => fs.rmSync(directory,{recursive:true}));
+    const file = path.join(directory,'forecast-digests.ndjson');
+    const forecasts = ['first','second'].map(id=>({id,snapshot:{group:id}}));
+    const lines = forecasts.map(({id,snapshot})=>JSON.stringify([{id,digest:digest(snapshot)}])+'\n');
+    fs.writeFileSync(file,lines.join(''));
+    verifyForecastJournal(file,forecasts);
+    assert.throws(()=>verifyForecastJournal(file,[...forecasts].reverse()),/differs/);
+    fs.writeFileSync(file,lines[0]+lines[0]);
+    assert.throws(()=>verifyForecastJournal(file,forecasts),/differs/);
+    fs.writeFileSync(file,lines.join('').slice(0,-1));
+    assert.throws(()=>verifyForecastJournal(file,forecasts),/Incomplete/);
 });
