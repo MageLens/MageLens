@@ -1058,3 +1058,14 @@ reference model remain outside its training feature range, and both
 prefixes lack a matched timing domain. This candidate is unqualified.
 Historical grouped accuracy was 4.05% within 5% versus 4.21% for the
 reference on the same 618 observations. The evaluation is diagnostic.
+
+Isolated loopback probes used Chrome for Testing 157.0.8103.38. The
+Cypress 16.2.1 dispatcher acknowledged a queued visit and delayed request
+after 351.7 ms. Playwright 1.65.0 completed an awaited visit and delayed
+browser fetch after 351.8 ms. Both requests returned the expected body
+after the fixture's 230 ms delay. The Playwright probe mounted the pinned
+browser from the local Cypress image because the cached Playwright image
+contained Chrome 156. The engine regression also verifies that assertion
+and checkpoint work begin after asynchronous segment execution resolves.
+Real Playwright adapter timing and dedicated checkpoint calibration remain
+open.
