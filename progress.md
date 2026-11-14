@@ -1221,3 +1221,12 @@ normalization baseline. This is a collection check and a diagnostic
 miss. The container recorded a 391 MB memory peak and the probe
 workspace occupied about 52 kB. Full inventory collection, Cypress
 journal integration and independent qualification remain open.
+
+The native Cypress 16.2.1 loopback run on pinned Chrome for Testing
+157.0.8103.38 verified that its persisted spec forecast digest was
+present before the test request and matched the final forecast
+snapshot. The completed test produced an eligible
+`cypress-test-duration-minus-preparation/v2` observation of 489.9 ms.
+The probe used a network-disabled container and a 230 ms loopback
+delay. Cypress still needs to reconcile multiple spec records with
+campaign attempts, including interruptions between specs.
