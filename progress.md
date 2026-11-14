@@ -1395,3 +1395,13 @@ with the application stack already healthy. The routed copy has a
 separate, source-assessed readiness test and must be timed as its
 own complete suite. The 113.36 s run has no paired branching or
 coverage result. The disposable calibration stack was stopped.
+
+The routed catalog suite now has frozen source archives and forecasts
+for the explicit incremental segment boundary. Its three candidates
+remain outside the model's trained feature range and have no matching
+model domain. Against prior diagnostic timings of the same shared
+statements, the home forecast missed all six repetitions, the search
+increment was 51–69% low across six repetitions, and the catalog
+forecast was about 90% low across three repetitions. These earlier
+executions are diagnostic only. Qualification requires new observations
+after freezing the candidate and protocol on this routed scope.
