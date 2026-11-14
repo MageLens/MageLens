@@ -896,3 +896,12 @@ metadata. Re-extracted features keep the original forecast and its source and
 schema identities as historical provenance. The original dataset was preserved.
 The 39 focused predictor tests passed. This audit supplies no fresh timing
 labels or prospective accuracy evidence.
+
+The audited dataset now runs through the predictor CLI and trainer as one
+immutable artifact containing retained observations and quarantine provenance.
+A diagnostic fit on the 618 historical Cypress observations ran eight fits in
+1.71 seconds, peaked at 276 MiB RSS, and produced a 504 KiB model. Grouped
+validation reached 4.21% within 5% error versus 0.81% for the median comparator
+on those same rows. P95 absolute percentage error was 1813.22%. The model
+remains unqualified. These historical folds do not supply locked prospective
+evidence or demonstrate the required accuracy.
