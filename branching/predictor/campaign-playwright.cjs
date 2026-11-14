@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
-const {randomUUID} = require('node:crypto');
+const {createHash, randomUUID} = require('node:crypto');
 const {fileDigest} = require('../identity.cjs');
 const ledger = require('./campaign-ledger.cjs');
 const {PLAYWRIGHT_TEST_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
@@ -55,20 +55,26 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
         measuredResources.diskBytes > manifest.budget.maxDiskBytes) {
         append('quarantined', {reason:'Run exceeded the frozen memory or disk budget'}, 'Inspect resource measurements', measuredResources);
         collectionStatus = 'quarantined';
-    } else if (!artifacts?.observations || !fs.existsSync(artifacts.observations) ||
-        !fs.existsSync(artifacts.forecasts) || fileDigest(artifacts.forecasts) !== snapshotDigest) {
-        append('quarantined', {reason:'Missing observation or changed frozen forecast'}, 'Audit the native timing artifacts', measuredResources);
-        collectionStatus = 'quarantined';
     } else {
-        const samples = JSON.parse(fs.readFileSync(artifacts.observations, 'utf8'));
-        if (!samples.length || samples.length !== report.tests.length ||
-            samples.some(sample => !sample.eligible || sample.modelId !== manifest.candidateDigest ||
-                sample.featureSchema !== manifest.featureSchema || sample.timingBoundary !== entry.timingBoundary))
-            collectionStatus = 'quarantined';
-        else collectionStatus = 'passed';
-        if (collectionStatus === 'quarantined')
-            append('quarantined', {reason:'Native observation did not pass the frozen profile checks'}, 'Audit the rejected observation', measuredResources);
-        else append('passed', {observationDigest:fileDigest(artifacts.observations)}, 'Continue the frozen run order', measuredResources);
+        let reason, observationDigest;
+        try {
+            if (!artifacts?.observations || !artifacts.forecasts || fileDigest(artifacts.forecasts) !== snapshotDigest)
+                reason = 'Missing observation or changed frozen forecast';
+            else {
+                const bytes = fs.readFileSync(artifacts.observations);
+                const samples = JSON.parse(bytes);
+                if (!Array.isArray(samples) || !samples.length || samples.length !== report.tests.length ||
+                    samples.some(sample => !sample?.eligible || sample.modelId !== manifest.candidateDigest ||
+                        sample.featureSchema !== manifest.featureSchema || sample.timingBoundary !== entry.timingBoundary))
+                    reason = 'Native observation did not pass the frozen profile checks';
+                else observationDigest = createHash('sha256').update(bytes).digest('hex');
+            }
+        } catch {
+            reason = 'Native timing artifacts are unreadable or malformed';
+        }
+        collectionStatus = reason ? 'quarantined' : 'passed';
+        if (reason) append('quarantined', {reason}, 'Audit the rejected observation', measuredResources);
+        else append('passed', {observationDigest}, 'Continue the frozen run order', measuredResources);
     }
     return {...report, collectionStatus};
 }
