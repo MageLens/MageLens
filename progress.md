@@ -1405,3 +1405,12 @@ increment was 51–69% low across six repetitions, and the catalog
 forecast was about 90% low across three repetitions. These earlier
 executions are diagnostic only. Qualification requires new observations
 after freezing the candidate and protocol on this routed scope.
+
+A fresh native timing run on the routed scope passed the readiness
+project and all eight original tests. Forecast inputs were frozen
+before browser launch. The collector recorded the populated catalog
+size and the single PHP worker. It kept the readiness test visible
+in the suite result and excluded it from individual-test training
+as a project lifecycle dependency. This is whole-test collection
+with no model loaded, so it supplies development labels and no
+forecast qualification. The run did not collect checkpoint coverage.
