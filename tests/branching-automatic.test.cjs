@@ -37,6 +37,38 @@ test('compiled fragments preserve strict module semantics',async()=>{
     await assert.rejects(compileFragment([], 'unboundAutomaticTestVariable = 1;')(),ReferenceError);
 });
 
+test('fixture checkpoint times setup instead of a no-op after root preparation', async t => {
+    const {manifest, configuration} = fixture(t);
+    const calls = [];
+    const runtime = {page:{goto:async url=>calls.push(url)}};
+    const checkpoint = manifest.checkpoints[0];
+    checkpoint.depth = 0;
+    const rootId = `root-${manifest.tests[0].scope}`;
+    manifest.assessment.stages[rootId] = {...estimate(0),empty:true};
+    manifest.assessment.stages[checkpoint.id] = estimate(10);
+    for (const entry of manifest.tests) {
+        entry.restoration = {
+            version:1,
+            functions:{body:{code:'async()=>{}',bindings:{}},setup:{code:'async()=>{}',bindings:{}}},
+            fixtures:[{name:'ready',function:'setup',dependencies:['page'],parameters:'{page}',
+                setup:'await page.goto("/prepare");',valueExpression:'true',locals:[],teardown:''}],
+            callback:'body'
+        };
+    }
+    const {workflow} = buildWorkflow(manifest, configuration);
+    const stage = workflow.stages.get(checkpoint.id);
+    await workflow.stages.get(stage.parent).run(runtime);
+    assert.deepEqual(calls, []);
+    await stage.run(runtime);
+    assert.deepEqual(calls, ['/prepare']);
+
+    const single = buildWorkflow(manifest, configuration, [manifest.tests[0].id]).workflow;
+    const spec = single.specs.get(manifest.tests[0].id);
+    assert.equal(single.stages.get(spec.parent).estimatedMs,10);
+    await single.stages.get(spec.parent).run(runtime);
+    assert.deepEqual(calls, ['/prepare', '/prepare']);
+});
+
 test('Cypress fragments use their own queue with original UTF-8 source bytes', async t => {
     const {root, manifest, configuration} = fixture(t);
     const source = "// 🛒\ncy.visit('/cart');\ncy.visit('/one');\ncy.visit('/two');";

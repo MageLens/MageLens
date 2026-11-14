@@ -86,19 +86,34 @@ function buildWorkflow(manifest, configuration, selected) {
     const roots = new Map();
     const stages = [];
     const predictions = manifest.assessment.stages;
+    const fixtureCheckpointFor = test => manifest.checkpoints.find(checkpoint => checkpoint.depth === 0 && checkpoint.consumers.includes(test.id));
+    const usableIds = new Set(usable.map(checkpoint => checkpoint.id));
     const duration = id => {
         const value = predictions[id]?.prediction?.ms;
         if (!Number.isFinite(value) || value < 0) throw new Error(`Missing ML stage prediction: ${id}`);
         return Math.ceil(value);
     };
     const rootFor = test => {
-        if (!roots.has(test.scope)) {
-            const id = `root-${test.scope.slice(0, 20)}`; roots.set(test.scope, id);
+        // A fixture moved into a checkpoint must not share its empty root
+        // with a test that still prepares its fixture in the root.
+        const fixtureCheckpoint = !adapter && test.restoration ? fixtureCheckpointFor(test) : undefined;
+        const checkpointOwnsSetup = usableIds.has(fixtureCheckpoint?.id);
+        const key = `${test.scope}:${checkpointOwnsSetup}`;
+        if (!roots.has(key)) {
+            const forecastId = `root-${test.scope.slice(0, 20)}`;
+            const id = checkpointOwnsSetup ? `${forecastId}-checkpoint` : forecastId;
+            roots.set(key, id);
             stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
-                estimatedMs: duration(id),
-                run: async runtime => { if(test.restoration&&!adapter)await fixtureState.prepare(test,runtime);else await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
+                estimatedMs: checkpointOwnsSetup ? 0 : duration(
+                    fixtureCheckpoint && predictions[forecastId]?.empty ? fixtureCheckpoint.id : forecastId
+                ),
+                run: async runtime => {
+                    if (checkpointOwnsSetup) return;
+                    if (test.restoration && !adapter) await fixtureState.prepare(test,runtime);
+                    else await adapter?.prepare?.(test, runtime);
+                }, assert: async () => {}});
         }
-        return roots.get(test.scope);
+        return roots.get(key);
     };
     const parentFor = (test, depth) => usable.filter(c => c.depth < depth && c.consumers.includes(test.id)).sort((a,b) => b.depth-a.depth)[0];
     for (const checkpoint of usable) {
@@ -107,7 +122,8 @@ function buildWorkflow(manifest, configuration, selected) {
         const boundary = test.steps[checkpoint.depth - 1];
         const forecast = predictions[checkpoint.id];
         const fromDepth = parent?.depth ?? 0;
-        const forecastIdentity = forecast?.segment?.representative === test.id &&
+        const forecastIdentity = (checkpoint.depth > 0 || (!adapter && test.restoration)) &&
+            forecast?.segment?.representative === test.id &&
             forecast.segment.fromDepth === fromDepth && forecast.segment.toDepth === checkpoint.depth
             ? {digest:digest(forecast.trainingSnapshot ?? forecast),modelId:forecast.prediction.modelId,
                 featureSchema:forecast.featureSchema,environmentDigest:forecast.environmentDigest,
@@ -117,7 +133,8 @@ function buildWorkflow(manifest, configuration, selected) {
             source: {file: test.file, line: boundary?.line ?? test.line}, parent: parent?.id ?? rootFor(test),
             estimatedMs: duration(checkpoint.id),
             inputs: {checkpoint, source: manifest.sourceDigest, fromDepth, forecastIdentity},
-            run: runtime => execute(test, parent?.depth ?? 0, checkpoint.depth, runtime),
+            run: runtime => checkpoint.depth === 0 && test.restoration && !adapter
+                ? fixtureState.prepare(test, runtime) : execute(test, fromDepth, checkpoint.depth, runtime),
             assert: runtime => configuration.assertCheckpoint(runtime, checkpoint)});
     }
     const specs = manifest.schedule.filter(id => selection.has(id)).map(id => {

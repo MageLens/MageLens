@@ -1124,3 +1124,11 @@ timer through both real browser adapters on the isolated fixture. The
 fixture used a fixed estimate to exercise checkpoint selection. Native
 suite forecast binding, source-matched observations and Magento
 calibration remain open.
+
+Playwright fixture setup now executes inside the depth-zero checkpoint
+stage when the workflow includes that stage. Previously the root did
+the setup while the timed stage did no work. A single selected test
+still prepares its fixture in the root and uses the fixture forecast
+there. Thirty focused workflow and engine tests passed. The separate
+Rust fixture-continuation integration still needs a matching planner
+image and the pinned Node runtime.
