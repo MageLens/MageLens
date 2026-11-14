@@ -82,7 +82,10 @@ test('Rust AUTO restores real fixture frames through checkpoint inventory and la
         test('one',async({cart})=>{if(cart.items.length!==1)throw new Error('leaked');cart.items.push('one');await cart.button.click();});
         test('two',async({cart})=>{if(cart.items.length!==1)throw new Error('leaked');cart.items.push('two');await cart.button.click();});
         test('empty',async({cart})=>{});`);
-    const manifestFile=path.join(root,'manifest.json');planner(['plan',source,manifestFile],{stdio:'pipe'});
+    const manifestFile=path.join(root,'manifest.json');
+    const timingBoundary='checkpoint-segment-run-duration/v1';
+    const sourceStore=path.join(root,'sources');
+    planner(['plan',source,manifestFile],{stdio:'pipe'},{...process.env,MAGELENS_PREFIX_TIMING_BOUNDARY:timingBoundary,MAGELENS_PREFIX_SOURCE_STORE:sourceStore});
     const manifest=JSON.parse(fs.readFileSync(manifestFile));assert.ok(manifest.tests.every(t=>t.restoration));
     class Provider extends FixtureProvider {
         constructor(){super();this.calls=[];this.pageSerial=0;}
@@ -94,6 +97,20 @@ test('Rust AUTO restores real fixture frames through checkpoint inventory and la
     const built=buildWorkflow(manifest,{identity:'fixture-frame-integration',expect:assert,state:async p=>p.normalizedState(),assertCheckpoint:async p=>assert.equal(p.state.browser.url,'/prepare')});
     const report=await execute({...built,root,provider});
     assert.equal(report.status,'passed',JSON.stringify(report.errors));assert.equal(report.checkpoints.length,1);
+    const [fixtureSegment] = report.segments.filter(segment=>segment.prefixTiming);
+    const fixtureTiming = fixtureSegment.prefixTiming;
+    assert.equal(fixtureTiming.timingBoundary,'checkpoint-segment-run-duration/v1');
+    assert.equal(fixtureTiming.kind,'fixture');
+    assert.match(fixtureTiming.forecast.digest,/^[a-f0-9]{64}$/);
+    assert.equal(fixtureTiming.forecast.timingBoundary,timingBoundary);
+    assert.equal(fixtureTiming.workCompleted,true);
+    assert.ok(Number.isFinite(fixtureTiming.workMs) && fixtureTiming.workMs >= 0);
+    const snapshot=manifest.assessment.stages[fixtureSegment.node].trainingSnapshot;
+    require('../branching/automatic.cjs').verifySources(manifest);
+    const observation=require('../branching/predictor/prefix-measurement.cjs').observeExecutedSegment(snapshot,fixtureSegment,
+        {passed:report.status==='passed',attempts:1,sourceDigest:snapshot.sourceDigest});
+    assert.equal(observation.eligible,true);
+    assert.equal(observation.actualMs,fixtureTiming.workMs);
     assert.equal(report.counts.reuseHits,2);assert.equal(report.counts.fallbacks,0);
     assert.equal(provider.calls.filter(c=>c==='/prepare').length,500,'Setup executes once across both siblings');
     assert.equal(provider.calls.filter(c=>c==='/cleanup/2').length,2,'Teardown executes for each consumer');

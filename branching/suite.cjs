@@ -6,7 +6,35 @@ const path = require('node:path');
 const {buildWorkflow, verifySources} = require('./automatic.cjs');
 const costs = require('./costs.cjs');
 const {EstimationError} = require('./estimation.cjs');
+const {SEGMENT_TIMING_BOUNDARY, observeExecutedSegment} = require('./predictor/prefix-measurement.cjs');
+const {digest} = require('./identity.cjs');
 const testKey = test => `${path.resolve(test.file)}:${test.framework === 'cypress' || test.fixture?.startsWith('cypress:') ? 'cypress' : test.line}:${test.title}`;
+
+function segmentEvidence(manifest, phases, suitePassed) {
+    const snapshots = new Map(Object.entries(manifest.assessment.stages)
+        .flatMap(([id, stage]) => stage.trainingSnapshot ? [[id, {
+            value:stage.trainingSnapshot, digest:digest(stage.trainingSnapshot)
+        }]] : []));
+    return phases.filter(phase => phase.kind === 'checkpoint').flatMap(({report}) =>
+        (report.segments ?? []).filter(segment => segment.prefixTiming).map(segment => {
+            const snapshot = snapshots.get(segment.node);
+            const matched = snapshot && snapshot.digest === segment.prefixTiming.forecast?.digest;
+            const retained = report.providerDiagnostics?.retainedServices;
+            const audited = suitePassed && report.status === 'passed' && report.counts.fallbacks === 0 &&
+                !report.errors?.length && retained?.schemasRemoved === true && retained?.grantsRestored === true;
+            const observation = matched ? observeExecutedSegment(snapshot.value, segment, {
+                passed:audited, attempts:1, sourceDigest:snapshot.value.sourceDigest
+            }) : null;
+            return {
+                segmentId:segment.id,
+                stageId:segment.node,
+                snapshotDigest:matched ? snapshot.digest : null,
+                sourceVerified:true,
+                providerAuditPassed:audited,
+                observation
+            };
+        }));
+}
 function assertInventoryAssessed(manifest, inventory) {
     const lifecycle = [...(inventory.config.unassessedLifecycle ?? []),
         ...['globalSetup', 'globalTeardown', 'webServer'].filter(key => inventory.config[key])];
@@ -131,6 +159,8 @@ async function runSuite(options) {
     report.status = !report.missing.length && !report.duplicates.length && phases.every(p => p.kind === 'native' ? p.status === 'passed' && p.exitCode === 0 && !p.errors.length : p.report.status === 'passed') ? 'passed' : 'failed';
     if (report.results.some(r => !['passed', 'skipped'].includes(r.status))) report.status = 'failed';
     if (report.status === 'passed' && report.skipped.length) report.status = 'completed-with-skips';
+    if (manifest.assessment.prefixTimingBoundary === SEGMENT_TIMING_BOUNDARY)
+        report.prefixEvidence = segmentEvidence(manifest, phases, report.status === 'passed');
     report.wallMs = performance.now() - started;
     return report;
 }

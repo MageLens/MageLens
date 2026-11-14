@@ -1132,3 +1132,12 @@ still prepares its fixture in the root and uses the fixture forecast
 there. Thirty focused workflow and engine tests passed. The separate
 Rust fixture-continuation integration still needs a matching planner
 image and the pinned Node runtime.
+
+The rebuilt Rust planner image and pinned Node 24.22.1 passed all seven
+fixture-continuation checks, including the depth-zero forecast binding,
+fixture teardown and last-consumer cleanup. Full-suite reports now
+attach a segment observation when the frozen forecast digest matches
+after source verification. The observation records failed provider
+cleanup audits as ineligible. All 25 fixture and suite integration
+checks passed. This verifies the collection path with fixture providers;
+an audited Magento suite collection remains pending.

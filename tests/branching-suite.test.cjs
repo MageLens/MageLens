@@ -49,6 +49,37 @@ test('mixed suite runs native setup once, checkpoints, then every remaining nati
     assert.deepEqual(f.calls[1].checkpoint,['first','second']);assert.equal(f.calls[2].options.setup,false);
     assert.deepEqual(report.missing,[]);assert.deepEqual(report.duplicates,[]);
 });
+test('suite records a frozen segment observation only with passing provider audits', async t => {
+    const {SEGMENT_TIMING_BOUNDARY} = require('../branching/predictor/prefix-measurement.cjs');
+    const f = fixture(t);
+    const stage = f.manifest.assessment.stages.shared;
+    stage.segment = {representative:'first',fromDepth:0,toDepth:1};
+    stage.timingBoundary = SEGMENT_TIMING_BOUNDARY;
+    stage.featureSchema = 'fixture';
+    stage.environmentDigest = 'environment';
+    stage.sourceDigest = f.manifest.sourceDigest;
+    stage.trainingSnapshot = {unit:'prefix',timingBoundary:SEGMENT_TIMING_BOUNDARY,
+        sourceDigest:f.manifest.sourceDigest,segment:stage.segment,prediction:stage.prediction};
+    f.manifest.assessment.prefixTimingBoundary = SEGMENT_TIMING_BOUNDARY;
+    for (const grantsRestored of [true,false]) {
+        const report = await runSuite({...f,directory:f.root,runCheckpoint:async options=>{
+            const result = await f.runCheckpoint(options);
+            result.counts.fallbacks = 0;
+            result.providerDiagnostics = {retainedServices:{schemasRemoved:true,grantsRestored}};
+            result.segments = [{id:'segment',node:'shared',status:'passed',wallMs:12,prefixTiming:{
+                timingBoundary:SEGMENT_TIMING_BOUNDARY,kind:'steps',fromDepth:0,toDepth:1,
+                workCompleted:true,workMs:10,forecast:options.workflow.stages.get('shared').inputs.forecastIdentity
+            }}];
+            return result;
+        }});
+        const [evidence] = report.prefixEvidence;
+        assert.ok(evidence.snapshotDigest);
+        assert.equal(evidence.sourceVerified,true);
+        assert.equal(evidence.providerAuditPassed,grantsRestored);
+        assert.equal(evidence.observation.eligible,grantsRestored);
+        assert.equal(evidence.observation.actualMs,10);
+    }
+});
 test('checkpoint execution preserves the order costed by Rust when native inventory differs',async t=>{
     const f=fixture(t);f.inventory.tests.reverse();
     const report=await runSuite({...f,directory:f.root});
