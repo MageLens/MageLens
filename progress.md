@@ -11,6 +11,40 @@ work plan for `codex/ml-branching-estimation`, based on `branching`. It replaces
 the separate model-accuracy plan. The assessment below is retained as the starting evidence; implementation progress
 is recorded in the dated work log at the end of this file.
 
+## Next milestone: one complete economical branching run
+
+Use the isolated Mage-OS 4.0.0 / Luma / Playwright installation with Chrome
+for Testing 157.0.8103.38, one PHP worker and the retained-backend
+calibration for the populated catalog. Freeze one suite containing a long
+reusable journey, a cheaper duplicated prefix and unique work. First
+identify all original tests with Rust and the native runner. Assess
+restoration support and forecast duration for each candidate, then use the
+production Rust solver with the measured operation costs.
+
+The first five-test storefront probe found two automatically restorable
+candidate prefixes and one unique test. The common navigation had four
+consumers and a diagnostic forecast of 0.419 s against 22.747 s break-even.
+The nested navigation had two consumers and a combined forecast of 0.664 s
+against 44.986 s break-even. The Rust cost replay rejected both. This
+candidate does not yet contain a demonstrated profitable prefix. Its
+first native run passed four tests and failed the probe's robots response
+assertion, taking 12.426 s. That failed run is excluded from the benchmark.
+
+The execution gate rejects the current model for this scope. It lacks
+independent qualification and a validated checkpoint timing domain, and
+the candidate inputs are outside its trained range. Collect source-matched
+repetitions for the selected suite and retain the existing 95% within 5%
+accuracy requirement. The retained provider currently reports checkpoint
+coverage as unsupported. Comparable PHP, JavaScript, template and DOM
+coverage is required before a paired run can establish savings.
+
+Use equivalent initial application, browser, cache and fixture states for
+each pair. Record original test results, each candidate's decision and
+reason, forecast preparation, execution, capture/restore/release/reset,
+cleanup and total elapsed time. Compute seconds and percent saved from the
+paired totals. Defer broader corpus expansion, model alternatives and
+unneeded infrastructure.
+
 ## Objective and readiness
 
 Deliver functional branching that makes complete test suites faster:
