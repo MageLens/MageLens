@@ -727,3 +727,20 @@ were removed. The normal image resolver supplied an exact-input, digest-pinned
 runner base; building the existing branching adapter against it is in progress.
 The interrupted source build, resource stop and replacement build have separate
 private records. No new duration labels or qualification claims result from them.
+
+The replacement Cypress adapter build completed against the resolver-selected
+base digest. The unchanged standard runner regression harness passed **11/11**
+(cookie/authorization, document initialization and delayed response), reporting
+Chrome for Testing **157.0.8103.38**, Cypress **16.2.1**, and the matching source/
+patch provenance. It ran on an internal loopback fixture with Docker networking
+disabled, 6 GiB RAM and two CPUs; peak memory was about 896 MiB with zero OOM events.
+Bundled Cypress native discovery then found **five tests** and verified unchanged
+source bytes. Discovery executes registration with empty bodies, not the original
+application assertions, so these times are not training labels or application
+acceptance evidence. Both temporary containers were removed.
+
+Cleanup removed only eleven exact, private, reclaimable cache entries created by
+the interrupted source build. Application images, databases, volumes and unrelated
+cache entries were preserved. The retained runner and compact regression/native
+inventory reports support the next discovery stage; no package completion or
+full-matrix qualification is claimed.
