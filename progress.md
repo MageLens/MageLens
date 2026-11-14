@@ -983,3 +983,13 @@ by relative file and title. The other six native registrations come from
 four conditional blocks guarded by runtime checkout or viewport settings.
 Static planning reports those blocks explicitly. The full inventory still
 requires native evidence for the conditional cases.
+
+The corrected v5 third-party assessment matched the native callback ranges,
+hook work and selected helper sets for all 156 cases. CommonJS dependency
+parsing now accepts top-level return under Node's module wrapper while ES
+module syntax remains strict. All 156 whole-test forecasts were generated.
+Five prefix forecasts failed the positive-duration check, so the overall
+assessment remained incomplete. The run took 18.35 seconds and peaked at
+about 1.06 GiB RSS. All 34 focused reachability tests passed. This parity
+comparison covers third-party discovery, and private and bundled comparisons
+and execution traces remain open.
