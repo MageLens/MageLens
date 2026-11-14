@@ -1034,3 +1034,9 @@ chain is built through function calls. A scan of the entire checkout also
 encountered an unrelated compatibility fixture import outside the scan root.
 The isolated comparison retained the bundled test and dependency sources.
 These results identify a source-assessment gap, so bundled parity stays open.
+
+The rebuilt Rust planner paired all five bundled Playwright registrations
+with native discovery and retained native routing for their custom fixture
+wrapper. All five callback ranges matched and received forecasts. The
+planner still missed the 25 native test-scoped fixture entries, so those
+forecasts are incomplete representations of runtime work.

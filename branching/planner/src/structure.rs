@@ -499,7 +499,20 @@ impl Project {
         }
         names
             .into_iter()
-            .filter(|name| self.provider(file, name, &mut BTreeSet::new()).is_some())
+            .filter(|name| {
+                self.provider(file, name, &mut BTreeSet::new()).is_some()
+                    || self.symbol(file, name, 0).is_some_and(|reference| {
+                        let source = &self.modules[&reference.file].source;
+                        self.node(&reference).is_some_and(|node| {
+                            node.kind() == "call_expression"
+                                && field(node, "function").is_some_and(|function| {
+                                    function.kind() == "member_expression"
+                                        && field(function, "property")
+                                            .is_some_and(|property| text(property, source) == "extend")
+                                })
+                        })
+                    })
+            })
             .map(|name| {
                 let identity = self
                     .imports(file)
