@@ -956,3 +956,12 @@ used an isolated network-disabled runner, and produced no timing labels.
 The implementation and worktree passed 486 integration tests and static
 checks. Real execution, runner-to-planner parity, and timing qualification
 remain open.
+
+The third-party Cypress profiling discovery reproduced all 156 native IDs
+across 41 specs. Original-source attribution covered seven test callbacks
+and 156 of 325 hook snapshots. The gap from the private corpus shows that
+the current location and structural matching do not generalize to this
+preprocessing configuration. Discovery produced no timing labels. The v5
+resolver also now retains literal task names in unresolved edges so task
+registrations can be reconciled without guessing dynamic arguments. All 33
+focused reachability tests passed.
