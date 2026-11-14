@@ -16,10 +16,12 @@ function report(restores=[100,200,300]) {
         costs:{captures:[{ms:50}],restores:restores.map(ms=>({ms})),releases:[{ms:2}],resets:[80]},
         phases:{prepare:30,cleanup:40},providerDiagnostics:{retainedServices:{schemasRemoved:true,grantsRestored:true}}}}]};
 }
-test('fresh projects use fixed defaults with double overhead and an added twenty percent margin',t=>{
+test('fresh projects use fixed defaults with operation costs once and a one percent margin',t=>{
     const {store}=fixture(t),loaded=store.load();
-    assert.equal(loaded.source,'default');assert.equal(loaded.baseline.overheadMultiplier,2);
-    assert.equal(loaded.baseline.overheadMargin,.2);
+    assert.equal(loaded.source,'default');assert.equal(loaded.baseline.overheadMultiplier,1);
+    assert.equal(loaded.baseline.overheadMargin,.01);
+    assert.equal(loaded.baseline.restoreMs,8200);
+    assert.ok(Math.abs(loaded.decisionBaselineMs-44906.12)<1e-8);
     assert.ok(loaded.baseline.captureMs>0);assert.equal(fs.existsSync(store.file),false);
 });
 test('successful runs learn weighted operation averages for subsequent runs without changing the current plan',t=>{
@@ -64,7 +66,7 @@ test('restore calibration uses per-operation cost and keeps one-time lifecycle c
     assert.equal(learned.baseline.captureMs,3000);
     assert.equal(learned.baseline.firstResetMs,16500);
     assert.equal(learned.baseline.backendMs,16500);
-    assert.equal(learned.decisionBaselineMs,(33000+3000+7500+8)*2*1.2+50);
+    assert.equal(learned.decisionBaselineMs,(33000+3000+7500+8)*1.01+50);
 });
 test('failed runs, fallback, missing releases and incomplete cleanup cannot train the baseline',t=>{
     const {store}=fixture(t);store.update(report());const saved=fs.readFileSync(store.file,'utf8');

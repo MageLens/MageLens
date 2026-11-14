@@ -36,6 +36,8 @@ pub struct Decision {
     pub break_even_prefix_ms: Option<f64>,
     pub minimum_combined_estimated_ms: Option<u64>,
     pub standalone_saving_ms: Option<f64>,
+    /// Estimated extra setup time if this checkpoint is removed from the chosen plan.
+    pub removal_cost_ms: Option<f64>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -264,6 +266,11 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
             });
             let saving = known.then(|| linear - simulate(&BTreeSet::from([i])));
             let chosen = selected.contains(&i);
+            let removal_cost_ms = chosen.then(|| {
+                let mut remaining = selected.clone();
+                remaining.remove(&i);
+                simulate(&remaining) - best
+            });
             Decision {
                 stage: s.id.clone(),
                 selected: chosen,
@@ -293,6 +300,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
                     }
                 }),
                 standalone_saving_ms: saving,
+                removal_cost_ms,
             }
         })
         .collect();
@@ -328,7 +336,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
 mod tests {
     use super::*;
     #[test]
-    fn production_baseline_doubles_overhead_adds_margin_and_charges_shared_work_once() {
+    fn production_baseline_adds_one_percent_and_charges_shared_work_once() {
         let input = input(vec![stage("long", None, 5000, true)], &["long"; 2]);
         let baseline = input.baseline.clone();
         let plan = super::select(input).unwrap();
@@ -337,7 +345,7 @@ mod tests {
             + baseline.capture_ms
             + baseline.release_ms
             + baseline.restore_ms;
-        let expected = 5000.0 * 125.0 - overhead * 2.0 * 1.20;
+        let expected = 5000.0 * 125.0 - overhead * 1.01;
         assert_eq!(plan.selected, vec!["long"]);
         assert!((plan.estimated_saving_ms - expected).abs() < 0.001);
         let mut changed = input_with_default();
@@ -346,6 +354,21 @@ mod tests {
         let mut invalid = input_with_default();
         invalid.baseline.overhead_multiplier *= 2.0;
         assert!(super::select(invalid).err().unwrap().contains("baseline"));
+    }
+    #[test]
+    fn policy_comparison_preserves_work_estimates_and_only_changes_checkpoint_costs() {
+        let make = || input(vec![stage("shared", None, 400, true)], &["shared"; 2]);
+        let current = make().baseline;
+        let mut previous = current.clone();
+        previous.overhead_multiplier = 2.0;
+        previous.overhead_margin = 0.2;
+        let a = select_with(make(), previous).unwrap();
+        let b = select_with(make(), current).unwrap();
+        assert_eq!(a.estimated_linear_setup_ms, Some(100000.0));
+        assert_eq!(b.estimated_linear_setup_ms, a.estimated_linear_setup_ms);
+        assert!(a.selected.is_empty());
+        assert_eq!(b.selected, vec!["shared"]);
+        assert!((b.estimated_saving_ms - 5143.88).abs() < 0.001);
     }
     fn input_with_default() -> Input {
         input(vec![stage("long", None, 5000, true)], &["long"; 2])
@@ -529,6 +552,10 @@ mod tests {
         .unwrap();
         assert_eq!(together.selected, vec!["a", "b"]);
         assert!(together.estimated_saving_ms > 0.0);
+        for decision in together.decisions {
+            assert!(decision.standalone_saving_ms.unwrap() < 0.0);
+            assert!(decision.removal_cost_ms.unwrap() > 0.0);
+        }
     }
     #[test]
     fn malformed_graph_or_overflow_is_rejected() {

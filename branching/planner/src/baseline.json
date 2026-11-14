@@ -1,12 +1,12 @@
 {
-  "version": "pw1.65-calibrated-checkpoint-2026-11-08-v6",
+  "version": "checkpoint-cost-policy-v7",
   "captureMs": 3000,
   "restoreMs": 8200,
   "releaseMs": 12,
   "resetMs": 11700,
   "firstResetMs": 16600,
   "backendMs": 16600,
-  "overheadMultiplier": 2,
-  "overheadMargin": 0.2,
+  "overheadMultiplier": 1,
+  "overheadMargin": 0.01,
   "minSavingMs": 50
 }
