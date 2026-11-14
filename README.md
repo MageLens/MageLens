@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -297,6 +297,8 @@ Thank you to [Mark Shust](https://github.com/markshust) for creating and maintai
 For reproducible setup or reporting problems, [open an issue](https://github.com/MageLens/MageLens/issues) with the MageLens version, platform, theme, runner and relevant diagnostics. See [releases](https://github.com/MageLens/MageLens/releases) and the [changelog](CHANGELOG.md) for version changes.
 
 ## License
+
+MageLens TM is owned by Vitalii Boiko; copyright notices naming MageLens refer to Vitalii Boiko.
 
 MageLens is source-available under the [Elastic License 2.0](LICENSE). Commercial use, modification and redistribution are allowed under its terms, including agencies using MageLens to check clients' projects and deliver reports.
 

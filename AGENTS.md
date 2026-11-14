@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -9,6 +9,12 @@ License: see LICENSE in the repository root.
 MageLens provides a local Magento Open Source or Mage-OS environment with Cypress or Playwright and PHP, JavaScript and template coverage. Use [README.md](README.md) for installation and daily commands, [docs/coverage.md](docs/coverage.md) for scenarios and coverage configuration, and [tests/README.md](tests/README.md) for isolated validation.
 
 Follow the [engineering-discipline skill](.agents/skills/engineering-discipline/SKILL.md) for implementation, documentation updates, testing and releases.
+
+## Copyright notices
+
+For first-party files owned by Vitalii Boiko, use `Copyright (c)  MageLens` (two spaces before `MageLens`, no years). Keep the existing license identifier and license reference. Apply this format to newly created files and files whose contents are already being changed for the task; leave untouched legacy notices valid. Never modify a file solely to replace its notice or introduce unrelated edits to make it eligible. Preserve third-party copyright notices, contributor credits, author metadata and license text. This attribution wording does not change ownership or licensing terms.
+
+`npm run check:copyright` accepts legacy notices in untouched files and requires the new format for added or content-modified first-party files, including their notice sidecars. Local checks inspect staged and working-tree changes to tracked files; add new files to Git before checking. PR checks compare the full candidate against the target branch's merge base. If change detection fails, restore the required Git history or base reference; never replace notices repository-wide to pass a check.
 
 ## Choose an installation
 
