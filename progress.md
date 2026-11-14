@@ -1617,3 +1617,36 @@ invocation was not a passing check. This resolves the observed work-attribution
 mismatch in assessment, not yet production discovery wiring or environment-domain
 identity. Those remain necessary before using native whole-test labels to
 qualify executable plans. No accuracy or speedup gate is marked complete.
+
+Before the single prefix fit, complete the existing catalog family's two short
+incremental domains (home and search increment) at both already declared fixture
+sizes. These are additional cases within the same development group, not new
+independent groups or short-only retraining. Each case keeps two repetitions,
+the exact frozen planner boundary and the complete original native suite.
+The hypothesis is unchanged: representative labels must cover the measured
+work at each required boundary; long-only observations cannot constrain cheap
+increments. The existing 90-minute execution cap and one-fit-per-unit limit
+remain unchanged. Stop collection on resource/source drift or failed original
+assertions; never admit partial attempts. After these four collections, assess
+the available domains once before any further collection or fit. Independent
+validation/audit families remain untouched and must be pinned before fitting.
+
+The short home-prefix attempt `218b32b5` failed during its second capture:
+MariaDB still reported one application connection after PHP/queue draining and
+no blocking transaction. Both timings are excluded; cleanup succeeded. The
+barrier previously waited for transactions but checked connection teardown only
+once. It now waits for both conditions within the existing 30-second deadline,
+records any wait and still rejects persistent connections, foreign transactions
+or invalid counts. It does not kill sessions or rerun test assertions. Three
+focused drain tests cover delayed teardown, persistent connections and the owned
+inactive import. All 26 drain/discovery/planning checks passed with the local
+orchestrator. A fresh collection will test this barrier correction; the failed
+attempt is retained and does not contribute labels.
+
+Fresh home collection `56a7ad5c` passed both restores, all nine native tests,
+coverage finalization and cleanup. Prefix durations were 0.857 s and 0.923 s.
+No delayed connection teardown occurred in this run, so it does not reproduce
+the prior race; the deterministic regression covers delayed teardown and timeout
+rejection. Archive audits retained both prefix rows and eight whole-test rows,
+with the readiness lifecycle row excluded. All coverage archive hashes verified.
+The expanded focused drain/discovery/planning/entrypoint run passed 43/43 checks.
