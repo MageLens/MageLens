@@ -1599,3 +1599,21 @@ measurement repetitions. Also retain the short incremental domains as an open
 representation/label requirement; a long-only fit cannot authorize every prefix
 in the original suite. Meaningful restored JS/template execution and a complete
 paired total-time comparison remain outstanding.
+
+The list-only experiment found the omitted fixtures in dependency context.
+Reconstructing those verified inputs matched all nine tests' callback origins,
+fixture work, reachable helpers and execution ordering. The live-container
+reproduction then read current dependency files, verified discovery hashes and
+matched 9/9 inputs without copying archive bytes into application sources.
+Evidence: `campaign-20261114/catalog-discovery-live-comparison.json`.
+
+The planner assessment now accepts explicitly selected dependency roots for
+source-backed discovery. It rejects changed files, symlinks escaping those roots,
+missing identities and conflicting source names. Prefix source extraction is
+unchanged. The 23 focused discovery/planning checks passed with the locally built
+orchestrator (`MAGELENS_BRANCHING_BUILD_FROM_SOURCE=1`); the first invocation
+could not find a prebuilt image for the changed source fingerprint, so that
+invocation was not a passing check. This resolves the observed work-attribution
+mismatch in assessment, not yet production discovery wiring or environment-domain
+identity. Those remain necessary before using native whole-test labels to
+qualify executable plans. No accuracy or speedup gate is marked complete.
