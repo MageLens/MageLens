@@ -1000,3 +1000,13 @@ registrations overall and emitted 41 diagnostics for other files.
 It used an isolated copy with six contained directory aliases materialized
 and the sibling application tree mounted read-only. No private test bodies
 ran in this scan. Input and timing parity still require their own evidence.
+
+The private v5 comparison paired all 751 runnable E2E registrations and
+matched every callback range. It generated 751 whole-test forecasts.
+None of the pairs matched the complete hook and helper sets. In 747 pairs,
+the planner added two hooks and six helper implementations. The two extra
+hooks came from a support module imported conditionally through
+`Cypress.expose`; the native discovery configuration did not load it.
+Four other pairs also had missing native hooks and helper implementations.
+The assessment took 6.64 seconds and peaked at about 1.75 GiB RSS.
+Runtime support dependency selection and prefix forecast failures remain open.
