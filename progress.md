@@ -1535,3 +1535,29 @@ operation-trace comparison found identical sequences (81 and 82 operations);
 Rust now discovers one eligible 81-statement duplicated prefix. The original
 loop, failed locator source, expansion hashes and trace evidence are retained.
 All variants remain in the single `browse.spec.mjs` development group.
+
+The controlled catalog collection `aed56bc8` passed both retained restores,
+all nine native tests, source verification, coverage finalization and cleanup.
+Image/CPU/memory identities matched before work, during both samples and after
+restoration. The product fixture fingerprint also matched before and after.
+The exact prefix durations were 41.438 s and 41.397 s against the frozen
+1.353 s forecast from the previously fitted short-workload model. Source-archive
+re-extraction admitted both prefix rows and eight whole-test rows with no
+missing source hashes. The readiness lifecycle row remains explicitly excluded
+from individual-test training. All these observations share the existing
+catalog development group; they are not independent qualification evidence.
+The complete coverage JSON was not archived separately before the following
+collection replaced the reports. Finalization and source audits succeeded, so
+these are development labels, but this attempt cannot supply a retrospectively
+reconstructed paired coverage comparison. Future successful collections archive
+all report JSON and file hashes alongside their collection report.
+
+The first corrected search-family collection failed before capture because its
+anchored product-name regex did not accept the link's rendered surrounding
+whitespace. A focused pinned-browser reproduction confirmed the exact product
+was present and that allowing surrounding whitespace selects it and passes the
+original exact heading assertion. Both original and expanded source traces were
+updated and rechecked; all operations and assertions remain equivalent. A new
+frozen collection of that same development family is running. The failed attempt
+is excluded, rather than retried with unchanged source or weakened assertions.
+No model fit or prospective qualification has occurred during this resumed work.
