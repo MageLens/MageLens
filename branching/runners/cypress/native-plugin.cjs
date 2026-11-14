@@ -30,8 +30,9 @@ async function install(on, config, original, options) {
         if (inventories.some(item => item.file === value.file)) throw new Error('Duplicate Cypress spec inventory');
         inventories.push(value); fs.writeFileSync(options.inventory, JSON.stringify(inventories), {mode: 0o600}); return null;
     }});
-    if (options.profile && !options.list) collect('task', {'magelens:timing:prepare':
-        require('../../predictor/native.cjs').collector(options.profile,options.directory,config.projectRoot)});
+    if (options.profile) collect('task', {'magelens:timing:prepare':
+        require('../../predictor/native.cjs').collector({...options.profile,supportFile,configFile:options.originalConfig,
+            discoveryOnly:options.list, configDigest:options.configDigest},options.directory,config.projectRoot)});
     collect('before:browser:launch', (browser, launch) => {
         if (browser.name !== 'chrome-for-testing' || browser.version !== process.env.CHROME_VERSION) throw new Error('Native Cypress requires pinned Chrome for Testing');
         return launch;
