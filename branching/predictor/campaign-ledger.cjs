@@ -127,8 +127,9 @@ function validateEvent(manifest, records, event) {
         if (prior.length) requireValue(prior[0].caseId === attempt.caseId && prior[0].snapshotDigest === attempt.snapshotDigest, 'attempt identity changed');
         if (manifest.schemaVersion === 2 && attempt.status === 'started') {
             const latest = new Map(attempts.map(item => [item.id, item]));
-            const active = [...latest.values()].filter(item => item.status === 'started').length;
-            requireValue(active < manifest.budget.maxParallelRuns, 'concurrent attempt exceeds the frozen budget');
+            const active = [...latest.values()].filter(item => item.status === 'started');
+            requireValue(!active.some(item => item.caseId === attempt.caseId), 'case already has an active attempt');
+            requireValue(active.length < manifest.budget.maxParallelRuns, 'concurrent attempt exceeds the frozen budget');
             const startedCases = new Set(attempts.map(item => item.caseId));
             if (!startedCases.has(attempt.caseId)) {
                 const next = manifest.runOrder.find(id => !startedCases.has(id));

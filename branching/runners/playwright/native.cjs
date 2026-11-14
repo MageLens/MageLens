@@ -7,7 +7,8 @@ const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
-async function invoke(configuration, directory, {list = false, tests, setup = true, teardown = true, profile} = {}) {
+async function invoke(configuration, directory, {list = false, tests, setup = true, teardown = true, profile, onPrepared} = {}) {
+    if (onPrepared && (!profile || list)) throw new Error('Preparation callback requires a profiled Playwright run');
     if (require('playwright/package.json').version !== '1.65.0') throw new Error('Native execution requires the pinned Playwright 1.65.0');
     const config = fs.realpathSync(configuration);
     directory = path.resolve(directory);
@@ -45,29 +46,36 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
             fs.writeFileSync(selection, tests.map(test => test.selector).join('\n') + '\n', {mode: 0o600});
             args.push('--test-list', selection, '--no-deps');
         }
+        const forecasts = timing && path.join(timing.directory, 'predictions.json');
+        let prepared;
         if (timing && !list) {
             // Reporter exceptions do not stop Playwright from dispatching tests.
             // Prepare in a list-only invocation before allowing a browser run.
             const output = path.join(timing.directory, 'preflight.json');
             fs.mkdirSync(timing.directory, {recursive:true, mode:0o700});
-            const prepared = await launch({listing:true, prepare:true, output});
+            prepared = await launch({listing:true, prepare:true, output});
             if (prepared.exitCode !== 0 || prepared.status !== 'passed' || prepared.errors.length ||
-                !fs.existsSync(path.join(timing.directory, 'predictions.json'))) {
+                !fs.existsSync(forecasts)) {
                 throw new Error(`Playwright profile preparation failed: ${prepared.errors.map(error => error.message).join('; ') || prepared.status}`);
             }
-            for (const row of JSON.parse(fs.readFileSync(path.join(timing.directory, 'predictions.json')))) {
+            for (const row of JSON.parse(fs.readFileSync(forecasts))) {
                 if (row.files.some(({file,hash}) => fileDigest(file) !== hash))
                     throw new Error('Playwright source changed during profile preparation');
             }
         }
         if (timing && fileDigest(config) !== timing.configDigest)
             throw new Error('Playwright configuration changed before execution');
+        if (onPrepared) await onPrepared({forecastDigest:fileDigest(forecasts), tests:prepared.tests});
         const report = await launch({listing:list, prepare:list, output:reportFile});
         if (timing && fileDigest(config) !== timing.configDigest)
             throw new Error('Playwright configuration changed during collection');
         const uid = Number(process.env.MAGELENS_HOST_UID), gid = Number(process.env.MAGELENS_HOST_GID);
         if (Number.isInteger(uid) && Number.isInteger(gid)) fs.chownSync(reportFile, uid, gid);
-        return {...report, wallMs: performance.now() - started, reportFile};
+        return {...report, wallMs: performance.now() - started, reportFile,
+            ...(timing && !list ? {profileArtifacts:{
+                forecasts,
+                observations:report.prediction ? path.join(timing.directory, 'prediction-samples.json') : null
+            }} : {})};
     } finally { fs.unlinkSync(wrapper); if (fs.existsSync(selection)) fs.unlinkSync(selection); }
 }
 module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke};
