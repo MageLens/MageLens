@@ -22,7 +22,7 @@ from accuracy import metrics as accuracy_metrics
 import numpy as np
 import sklearn
 from sklearn.linear_model import Ridge
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MaxAbsScaler, StandardScaler
 
 SCHEMAS = {
     'syntax-hash-v2-babel-7.29.9': 72,
@@ -129,18 +129,20 @@ def percentile(values, quantile):
     return float(np.quantile(values, quantile, method='inverted_cdf'))
 
 
-def fit_additive(x, y):
+def fit_additive(x, y, positive=False):
     # Sequential work is additive in milliseconds. Relative-error weighting
     # keeps long journeys from overwhelming short increments in the objective.
-    scale = StandardScaler().fit(x)
-    model = Ridge(alpha=1e-6, solver='svd')
+    scale = (MaxAbsScaler() if positive else StandardScaler()).fit(x)
+    model = Ridge(alpha=1e-6, solver='lbfgs' if positive else 'svd', positive=positive,
+                  fit_intercept=not positive, tol=1e-8, max_iter=10000)
     model.fit(scale.transform(x), y, sample_weight=(np.median(y) / y) ** 2)
     return scale, model
 
 
 def train(rows, dataset_digest, target_transform='log1p', recipe='log-ridge'):
-    additive = recipe == 'additive-relative-ridge'
-    if recipe not in ('log-ridge', 'additive-relative-ridge'):
+    additive = recipe in ('additive-relative-ridge', 'additive-positive-ridge')
+    positive = recipe == 'additive-positive-ridge'
+    if recipe not in ('log-ridge', 'additive-relative-ridge', 'additive-positive-ridge'):
         raise ValueError('Unknown fitting recipe')
     if additive and target_transform != 'log1p':
         raise ValueError('The additive recipe fixes its identity target transform')
@@ -167,7 +169,7 @@ def train(rows, dataset_digest, target_transform='log1p', recipe='log-ridge'):
     transform, inverse = ((lambda values: values), (lambda values: values)) if additive else (
         (np.log, np.exp) if target_transform == 'log' else (np.log1p, np.expm1))
     input_transform = (lambda values: values) if additive else np.log1p
-    fitting = fit_additive if additive else fit
+    fitting = (lambda x, y: fit_additive(x, y, positive)) if additive else fit
     y = transform(actual * reference_baseline / baseline)
     families = sorted({row['sourceFamily'] for row in rows})
     groups = sorted({row['group'] for row in rows}, key=lambda group: digest(group.encode()))
@@ -240,11 +242,11 @@ def train(rows, dataset_digest, target_transform='log1p', recipe='log-ridge'):
             'estimator': {'inputTransform': 'identity' if additive else 'log1p',
                           **({'targetTransform': 'identity'} if additive else {'targetTransform': 'log'} if target_transform == 'log' else {}),
                           'intercept': float(model.intercept_), 'coefficients': model.coef_.tolist(),
-                          'mean': scale.mean_.tolist(), 'scale': scale.scale_.tolist()},
+                          'mean': (np.zeros(x.shape[1]) if positive else scale.mean_).tolist(), 'scale': scale.scale_.tolist()},
             'errorLogP90': error_p90, 'domains': domains,
             'training': {'datasetDigest': dataset_digest, 'samples': len(rows), 'groups': len(groups),
                          'fitCount': len(set(folds.values())) + (len(families) if len(families) > 1 else 0) + 1,
-                         'sourceFamilies': families, 'folds': folds, 'recipe': 'raw-counts/standard-scaler/identity-ms/relative-weighted-ridge-alpha1e-6/v1' if additive else f'log1p-features/standard-scaler-floor-sparse1-core005/{target_transform}-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
+                         'sourceFamilies': families, 'folds': folds, 'recipe': ('raw-counts/max-abs-scaler/identity-ms/relative-weighted-nonnegative-ridge-alpha1e-6/v1' if positive else 'raw-counts/standard-scaler/identity-ms/relative-weighted-ridge-alpha1e-6/v1') if additive else f'log1p-features/standard-scaler-floor-sparse1-core005/{target_transform}-ms/split-ridge-runner0001-core10-work5-ctx20-runnerctx50-huber05/v6',
                          'python': platform.python_version(), 'sklearn': sklearn.__version__, 'numpy': np.__version__},
             'validation': {'method': 'grouped-cross-validation', 'percentileMethod': 'nearest-rank',
                            'maeMs': float(np.mean(np.abs(predicted_ms - actual))),
@@ -330,7 +332,7 @@ def main():
     parser.add_argument('--error-ledger', type=Path)
     parser.add_argument('--compact', action='store_true', help='Store fold diagnostics separately from the inference artifact')
     parser.add_argument('--target-transform', choices=['log1p','log'], default='log1p')
-    parser.add_argument('--recipe', choices=['log-ridge','additive-relative-ridge'], default='log-ridge')
+    parser.add_argument('--recipe', choices=['log-ridge','additive-relative-ridge','additive-positive-ridge'], default='log-ridge')
     args = parser.parse_args()
     if bool(args.split) != bool(args.split_digest):
         parser.error('--split and --split-digest must be supplied together')

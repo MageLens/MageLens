@@ -2313,3 +2313,132 @@ all static checks, and the source-built planner gate. No E2E/release qualificati
 was run. Models remain explicitly unqualified. The collection ledger currently
 accounts for 3,586 seconds of the 5,400-second browser budget, including failed
 attempts; functional probes are additionally retained and bounded separately.
+
+Native list-only discovery passed for both reserved two-test groups without
+executing test bodies. It exposed a stopping condition: the whole-test additive
+model predicts negative durations for both comparison tests (about -19.6 s and
+-21.7 s), although individual feature ranges match. Advanced-filter whole-test
+forecasts are about 62.5 s. Coefficient attribution shows cancellation in work
+features, not helper context: the 14.834 s intercept combines with about -34.450 s
+and -36.506 s work contributions. `reserved-native-inputs.json` and
+`reserved-coefficient-attribution.json` retain this evidence. Stop this whole-test
+candidate; do not collect qualification labels for it. The independently pinned
+prefix candidate is unchanged and still unqualified.
+
+**Bounded positive-cost correction.** Fit one whole-test-only nonnegative Ridge
+candidate on the same 64 v7 development rows. Raw nonnegative counts are scaled
+by their maximum absolute value; coefficients and the zero intercept must not
+cancel to produce negative duration. Keep relative squared-error weighting and
+alpha 1e-6, with no parameter sweep or new labels. This is a constrained version
+of the same additive linear family, justified by the demonstrated cancellation.
+Cap implementation/compute at ten minutes, training at 90 seconds/two CPUs/1 GiB.
+Require export parity, at least 95%-within-5% development rescoring, and positive,
+in-range native forecasts for both untouched reserved groups. Stop on any miss;
+retain poor cross-validation results and do not call these checks qualification.
+
+The positive-cost whole-test candidate `45222285` removes cancellation (all
+coefficients nonnegative; reserved forecasts about 22–23 s) and preserves export
+parity within 3.7e-12 ms, but reaches only 44/64 development predictions within
+5% and 4/64 in grouped cross-validation. Stop this candidate; no held-out timings
+were collected. Artifacts and per-title residuals are retained in
+`catalog-positive-PMKaNA`. Repeating Ridge variants or collecting more repetitions
+is not justified by these results.
+
+Residuals localize the next investigation. All 18 direct-product long consumer
+rows fall within 5% under the constrained fit, while the second long search
+consumer misses in all four observations, as do the six short search-results
+assertion rows. First/last execution metadata and generic DOM assertion counts
+may not describe actual cache/lifecycle work at the native timing boundary.
+Audit the pinned Playwright timing implementation against attributed worker and
+suite setup/teardown before changing features or collecting more labels. Bound
+this initial source audit to ten minutes; preserve assertions, hooks and current
+source archives. A source attribution defect or a concrete residual distinction
+is required before another candidate fit.
+
+The pinned Playwright source audit found no lifecycle-attribution defect:
+`workerProcessEntry.js` reports the test and after-each timeout slots, while
+suite-wide hooks and worker/explicit-timeout fixtures use separate slots.
+`predictor/playwright.cjs` already assigns those excluded callbacks to context.
+Keep that behavior unchanged. The residual diagnosis therefore moves to backend
+cache exposure rather than another speculative lifecycle rewrite.
+
+**Bounded cache trace.** Run one complete six-test verified search variant with
+read-only request/response observers in a separate source copy. Preserve every
+action, assertion and coverage fixture; retain the observer/config hashes.
+Record main-document timings and cache headers per test, comparing the original
+long consumers' repeated URLs. This is a diagnostic trace, not a training or
+qualification observation. Use the same owned 120-product installation, pinned
+Chrome and resource limits, one attempt capped at three minutes within the
+remaining cumulative collection budget. No retries or model fitting belong to
+this experiment. A trace must identify a concrete timing/context distinction
+before changing the representation.
+
+The first cache trace is invalid: its observer used `response.allHeaders()`, a
+protocol-backed operation that remained pending during test teardown and caused
+an instrumentation timeout. The bounded run cleaned up and retained no training
+observations. Keep its source/report separately. Replace it with synchronous
+`response.headers()` data already held by the client and synchronous completion
+events; no observer promise may delay teardown. One corrected diagnostic attempt
+is bounded to three minutes, included in the cumulative budget. This is an
+observer correction, not a retry that hides an application failure; the failed
+trace supplies no cache conclusion.
+
+The corrected cache trace passed all six tests and finalized coverage, with
+cleanup complete. The two long consumers took 28.210 s and 28.045 s; their
+main-document response times were nearly identical (product totals about
+10.86/10.89 s, search totals about 9.22/9.23 s). Headers report no-store, with no
+cache-hit evidence. This does not establish a backend-cache explanation for the
+earlier consumer residuals. Observer work changes the fixture and these timings
+remain diagnostic only. Native forecast preparation was also inspected: it runs
+in a separate list-only process, not inside reported test durations.
+
+Do not fit another candidate from this trace. Next inspect retained source and
+feature identities for conflated action/assertion costs before collecting any
+more observations. Keep the reserved qualification timings untouched.
+
+The cumulative browser ledger now accounts for 3,849/5,400 seconds, including
+both cache-trace attempts; 1,551 seconds remain. Static checks for the optional
+positive-cost recipe pass (536 license, 265 JavaScript and 131 script checks).
+
+**Bounded representation feasibility audit.** Before another fit, test whether
+any nonnegative additive coefficient vector can satisfy the existing development
+rows' 5% intervals. This is a linear-constraint diagnostic, not a forecast model
+or qualification result. Use only the same 64 whole-test development vectors;
+no new observations, reserved timings or parameter search. Bound computation to
+30 seconds, two CPUs and 1 GiB. If infeasible, inspect the conflicting source
+pairs and their vector ordering; if feasible, investigate optimizer convergence
+instead of inventing new features. Retain only feasibility/error evidence, not
+coefficients for execution. Stop this audit after that distinction is resolved.
+
+The feasibility audit completed in 0.043 s. Its minimum worst relative error is
+16.57%, so solver convergence cannot fix this representation under nonnegative
+additive costs. A direct source/vector witness explains the result: the search
+results test vector is componentwise no greater than the sum of the home-title
+and robots-response vectors, although measured durations are 1,020 ms versus
+465 + 265 ms. Two generic `page.goto` calls cannot distinguish rendering a search
+page from fetching a text resource. This diagnostic does not prove the exact
+maximum fraction within 5%; it identifies a concrete contradictory cost relation.
+
+**Bounded navigation representation audit.** Before changing the public schema,
+append diagnostic source-only navigation target categories (root, query-bearing
+URL and literal extension) to the same development vectors. No route names,
+product IDs, observed durations or reserved outcomes enter extraction. Recheck
+the identical nonnegative feasibility problem, capped at 30 seconds/two CPUs/
+1 GiB. Success means removing the demonstrated structural conflict and lowering
+the feasibility error to at most 5%; otherwise stop this correction and inspect
+remaining conflicts before fitting. This remains a representation audit, not a
+trained forecast or independent qualification.
+
+Literal navigation categories reduce the diagnostic minimum worst error from
+16.57% to 7.45%, but miss the predeclared 5% feasibility criterion. Stop this
+correction before publishing a new schema or fitting a candidate. The source-only
+categories and constraint evidence are retained in `catalog-navigation-*.json`.
+The remaining conflicts include first versus later long consumers. Archived
+backend metadata records fixture rows, workers and index backlog, but no known
+cache state; the warm diagnostic trace cannot retroactively supply it. Do not
+label those older observations warm or cold from their measured durations.
+
+The optional positive-cost training recipe is validated by its real bounded fit,
+Python/exported-JavaScript parity and static checks. Its model is rejected, and
+no execution or qualification gate was relaxed. The last full integration result
+remains 534/534 from the preceding versioned-context change.
