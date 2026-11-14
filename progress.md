@@ -1334,3 +1334,12 @@ startup and capture cost, but cannot make either control profitable
 under this calibration. The profitable candidate needs a different
 shared journey whose measured work exceeds that restore floor. The
 counterfactual does not authorize execution or establish wall-time savings.
+
+Rust scanned the bundled Blog suite with its original support layout.
+The mixed-runner inventory contained ten tests and two repeated
+prefixes, neither automatically restorable. The Admin publishing
+journey belongs to neither repeated prefix. Its historical 49.59 s
+whole-test measurement therefore cannot supply the profitable shared
+prefix. Playwright also classified its fixture and module lifecycle as
+adapter-required. This workload remains native under the milestone's
+restoration rules.
