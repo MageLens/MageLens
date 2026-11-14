@@ -927,3 +927,10 @@ The grouping includes source, environment, boundary, vector and available
 backend fields. Historical rows can lack state or execution conditions that
 would distinguish them, so the bound applies to the recorded inputs only.
 Independent reset-and-repeat measurements are still required.
+
+The same historical fit exported a 121,893-byte inference artifact, down
+from 530,075 bytes, by storing grouped validation and fold details separately
+and using compact JSON. Node loaded both models by content digest and
+returned identical forecasts and warnings for all 618 audited rows. This is
+an artifact-size result for the reference estimator. Compact feature and
+model comparisons, preparation overhead and independent accuracy remain open.
