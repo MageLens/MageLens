@@ -1249,3 +1249,12 @@ same journal's recovery, yielding one successful observation after
 the retry with pinned Chrome 157.0.8103.38. This is loopback evidence
 for frozen inventory and recovery. The representative campaign
 inventory and prospective qualification remain open.
+
+The committed trainer refit a compact candidate on 615 historical
+training observations under the frozen split. Eight fits took 1.54 s
+with 280 MB peak RSS. The 122,050-byte inference artifact, dataset
+archive, split and 615-case error ledger passed digest checks. Internal
+grouped cross-validation reached 5.53% within 5%, versus 1.79% for
+the median comparator. P95 absolute percentage error was 2,008%.
+These historical results fall short of the accuracy gate. No audit
+labels entered the fit and the candidate remains unqualified.
