@@ -122,7 +122,7 @@ test('version 2 preserves first-attempt order and limits concurrent attempts acr
 
 test('Playwright campaign records the frozen forecast before execution and binds its observations', async t => {
     const {root, lease, manifest} = setup(t);
-    const {collect} = require('../branching/predictor/campaign-playwright.cjs');
+    const {collect,inventoryDigest} = require('../branching/predictor/campaign-playwright.cjs');
     const {fileDigest} = require('../branching/identity.cjs');
     const {PLAYWRIGHT_TEST_TIMING_BOUNDARY: boundary} = require('../branching/predictor/prefix-measurement.cjs');
     const model = path.join(root, 'model.json');
@@ -133,18 +133,23 @@ test('Playwright campaign records the frozen forecast before execution and binds
     const snapshot = {observationId:'sample-1',modelId:manifest.candidateDigest,
         featureSchema:manifest.featureSchema,timingBoundary:boundary};
     fs.writeFileSync(forecasts, JSON.stringify([{id:'native-test',snapshot}]));
-    Object.assign(manifest.inventory[0], {runner:'playwright', timingBoundary:boundary});
+    const tests = [{id:'native-test',selector:'native selector',expectedStatus:'passed'}];
+    manifest.schemaVersion = 2;
+    manifest.splitDigest = createHash('sha256').update(ledger.splitBytes(manifest.inventory)).digest('hex');
+    Object.assign(manifest.inventory[0], {runner:'playwright', timingBoundary:boundary,nativeInventoryDigest:inventoryDigest(tests)});
     ledger.create(root, manifest, lease);
     const run = (peakMemoryBytes, defect) => collect({workspace:root,cycle:manifest.cycleId,lease,caseId:'train',profile:{model},
         resources:()=>({peakMemoryBytes,diskBytes:1000}),
         runner:{async run(_config,_directory,{onPrepared}) {
-            onPrepared({forecastDigest:fileDigest(forecasts)});
+            onPrepared({forecastDigest:fileDigest(forecasts),tests:defect === 'inventory' ? [] : tests});
             assert.equal(ledger.read(root, manifest.cycleId).records[0].event.attempt.status, 'started');
             fs.writeFileSync(observations, defect === 'malformed' ? '[' : JSON.stringify([{...snapshot,
                 observationId:defect === 'mismatch' ? 'different-sample' : snapshot.observationId,eligible:true,actualMs:10}]));
-            return {exitCode:0,status:'passed',errors:[],tests:[{id:'native-test'}],profileArtifacts:{forecasts,observations}};
+            return {exitCode:0,status:'passed',errors:[],tests,profileArtifacts:{forecasts,observations}};
         }}
     });
+    await assert.rejects(run(512,'inventory'),/inventory differs/);
+    assert.equal(ledger.read(root,manifest.cycleId).records.length,0);
     assert.equal((await run(512)).collectionStatus,'passed');
     const acceptedDigest = fileDigest(observations);
     assert.equal((await run(1025)).collectionStatus,'quarantined');

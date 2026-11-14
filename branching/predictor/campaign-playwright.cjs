@@ -8,6 +8,10 @@ const {digest, fileDigest} = require('../identity.cjs');
 const ledger = require('./campaign-ledger.cjs');
 const {PLAYWRIGHT_TEST_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
 
+function inventoryDigest(tests) {
+    return digest(tests.map(({id,selector,expectedStatus})=>[id,selector,expectedStatus]));
+}
+
 function observationsMatch(forecasts, samples, tests, manifest, boundary) {
     if (!Array.isArray(forecasts) || !Array.isArray(samples) || !tests.length ||
         forecasts.length !== tests.length || samples.length !== tests.length) return false;
@@ -33,6 +37,8 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
         entry.timingBoundary !== PLAYWRIGHT_TEST_TIMING_BOUNDARY) throw new Error('Playwright test is outside the frozen campaign');
     if (!profile.model || fileDigest(profile.model) !== manifest.candidateDigest)
         throw new Error('Playwright profile does not match the frozen candidate');
+    if (manifest.schemaVersion === 2 && !/^[a-f0-9]{64}$/.test(entry.nativeInventoryDigest ?? ''))
+        throw new Error('Campaign case is missing its frozen Playwright inventory');
 
     const id = randomUUID();
     const startedAt = new Date().toISOString();
@@ -51,7 +57,9 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
     try {
         report = await runner.run(configuration, directory, {
             profile:{...profile, modelDigest:manifest.candidateDigest, featureSchema:manifest.featureSchema},
-            onPrepared({forecastDigest}) {
+            onPrepared({forecastDigest, tests}) {
+                if (entry.nativeInventoryDigest && inventoryDigest(tests) !== entry.nativeInventoryDigest)
+                    throw new Error('Playwright inventory differs from the frozen campaign case');
                 snapshotDigest = forecastDigest;
                 append('started', {}, 'Run the frozen Playwright selection');
             }
@@ -96,4 +104,4 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
     return {...report, collectionStatus};
 }
 
-module.exports = {collect};
+module.exports = {collect, inventoryDigest};
