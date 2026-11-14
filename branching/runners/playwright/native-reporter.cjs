@@ -4,11 +4,21 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {digest} = require('../../identity.cjs');
+function browserProfile(use = {}) {
+    const {browserName = 'chromium', channel = null, headless = true, baseURL = null,
+        ignoreHTTPSErrors = false, viewport = {width: 1280, height: 720}, serviceWorkers = 'allow'} = use;
+    const supported = new Set(['browserName', 'channel', 'headless', 'baseURL', 'ignoreHTTPSErrors', 'viewport',
+        'serviceWorkers', 'trace', 'screenshot', 'video']);
+    return {digest: digest({browserName, channel, headless, baseURL, ignoreHTTPSErrors, viewport, serviceWorkers}),
+        portable: Object.keys(use).every(key => supported.has(key)) && browserName === 'chromium' && channel === 'chrome' && headless};
+}
 class NativeReporter {
     constructor() { this.results = new Map(); this.errors = []; }
     onBegin(config, suite) {
         this.config = {rootDir: config.rootDir, globalSetup: !!config.globalSetup, globalTeardown: !!config.globalTeardown, webServer: !!config.webServer,
-            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown}))};
+            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown,
+                browserProfile: browserProfile(p.use)}))};
         this.tests = suite.allTests().map(test => {
             const project = test.parent.project();
             return {id: test.id, project: project.name, file: test.location.file, line: test.location.line,
@@ -56,3 +66,4 @@ class NativeReporter {
     }
 }
 module.exports = NativeReporter;
+module.exports.browserProfile = browserProfile;

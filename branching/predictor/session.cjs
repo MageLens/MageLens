@@ -19,7 +19,7 @@ function start(files, runner) {
     if (unit !== 'suite-tests') throw new (require('../estimation.cjs').EstimationError)([{phase:'predictor',message:'Native browser profiling requires a test or suite-tests model'}]);
     const request = {runner, unit:'suite-tests', sources:sources(), sourceFamily:settings.sourceFamily ?? 'native-browser-suite',
         group:settings.group ?? 'native-browser-suite', extraFeatures:settings.extraFeatures,
-        baselineMs:settings.baselineMs ?? require('../../branching-baseline.json').checkpointDecisionBaselineMs,
+        baselineMs:settings.baselineMs,
         manualMultiplier:settings.multiplier ?? 1,
         environment:{boundary:'native-runner-process', runner, architecture:process.arch,
             dependencies:p.sha256(fs.readFileSync('dependencies.yaml')),

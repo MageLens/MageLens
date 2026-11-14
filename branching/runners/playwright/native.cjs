@@ -7,7 +7,7 @@ const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
-async function invoke(configuration, directory, {list = false, tests, setup = true, teardown = true, profile, onPrepared} = {}) {
+async function invoke(configuration, directory, {list = false, tests, setup = true, teardown = true, profile, onPrepared, coverageRoot} = {}) {
     if (onPrepared && (!profile || list)) throw new Error('Preparation callback requires a profiled Playwright run');
     if (require('playwright/package.json').version !== '1.65.0') throw new Error('Native execution requires the pinned Playwright 1.65.0');
     const config = fs.realpathSync(configuration);
@@ -29,7 +29,8 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
     async function launch({listing, prepare, output}) {
         const child = spawn(process.execPath, listing ? [...args, '--list'] : args, {cwd: path.dirname(config),
             env: {...process.env, MAGELENS_NATIVE_REPORT:output, MAGELENS_NATIVE_LIST:listing ? '1' : '',
-                MAGELENS_NATIVE_PREPARE:prepare ? '1' : '0', MAGELENS_NATIVE_PROFILE:timing ? JSON.stringify(timing) : ''},
+                MAGELENS_NATIVE_PREPARE:prepare ? '1' : '0', MAGELENS_NATIVE_PROFILE:timing ? JSON.stringify(timing) : '',
+                ...(coverageRoot ? {MAGELENS_PLAYWRIGHT_COVERAGE_ROOT:path.resolve(coverageRoot)} : {})},
             stdio: 'inherit'});
         const signals = ['SIGINT', 'SIGTERM'];
         const forward = signal => child.kill(signal);
@@ -47,7 +48,7 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
             args.push('--test-list', selection, '--no-deps');
         }
         const forecasts = timing && path.join(timing.directory, 'predictions.json');
-        let prepared;
+        let prepared, forecastDigest;
         if (timing && !list) {
             // Reporter exceptions do not stop Playwright from dispatching tests.
             // Prepare in a list-only invocation before allowing a browser run.
@@ -58,15 +59,22 @@ async function invoke(configuration, directory, {list = false, tests, setup = tr
                 !fs.existsSync(forecasts)) {
                 throw new Error(`Playwright profile preparation failed: ${prepared.errors.map(error => error.message).join('; ') || prepared.status}`);
             }
+            forecastDigest = fileDigest(forecasts);
+        }
+        function verifyForecastInputs() {
+            if (fileDigest(forecasts) !== forecastDigest)
+                throw new Error('Frozen Playwright forecasts changed');
             for (const row of JSON.parse(fs.readFileSync(forecasts))) {
                 if (row.files.some(({file,hash}) => fileDigest(file) !== hash))
-                    throw new Error('Playwright source changed during profile preparation');
+                    throw new Error('Playwright source changed after profile preparation');
             }
         }
         if (timing && fileDigest(config) !== timing.configDigest)
             throw new Error('Playwright configuration changed before execution');
-        if (onPrepared) await onPrepared({forecastDigest:fileDigest(forecasts), tests:prepared.tests});
+        if (onPrepared) await onPrepared({forecastDigest, tests:prepared.tests});
+        if (forecastDigest) verifyForecastInputs();
         const report = await launch({listing:list, prepare:list, output:reportFile});
+        if (forecastDigest) verifyForecastInputs();
         if (timing && fileDigest(config) !== timing.configDigest)
             throw new Error('Playwright configuration changed during collection');
         const uid = Number(process.env.MAGELENS_HOST_UID), gid = Number(process.env.MAGELENS_HOST_GID);

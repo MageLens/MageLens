@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+coverage_cleanup_hooks() {
+    if [[ -f .runtime/hooks-active ]]; then
+        dc exec -T phpfpm php /application/docker/php/project-hooks.php cleanup || return
+        rm -f .runtime/hooks-active
+    fi
+}
+
+coverage_cleanup() {
+    local result=0
+    if [[ -f coverage/.active-run ]]; then
+        dc exec -T phpfpm php /application/docker/php/collection.php stop || result=1
+    fi
+    coverage_cleanup_hooks || result=1
+    return "$result"
+}
+
+coverage_prepare() {
+    local runner=$1 browser_script=$2 result
+    say 'Preparing fresh coverage'
+    dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
+    dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json
+    touch .runtime/hooks-active
+    dc exec -T phpfpm php /application/docker/php/project-hooks.php before
+    dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
+    say 'Warming the storefront and fixture pages in a separate browser (up to 10 minutes)'
+    if dc exec -T runner timeout --signal=TERM --kill-after=10s 600s node "$browser_script" --warmup; then
+        say 'Browser warm-up completed; starting fresh coverage collection'
+    else
+        result=$?
+        if [[ "$result" == 124 || "$result" == 137 ]]; then
+            printf 'Browser warm-up exceeded its 10-minute limit.\n' >&2
+        fi
+        printf 'Warm-up failed. Inspect coverage/warmup-results.json, coverage/warmup-diagnostics.json and coverage/warmup-screenshots/.\n' >&2
+        exit "$result"
+    fi
+    dc exec -T phpfpm php /application/docker/php/manifest.php
+    dc exec -T phpfpm php /application/docker/php/collection.php start
+}
+
+coverage_finalize() {
+    say 'Generating coverage reports'
+    dc exec -T phpfpm php /application/docker/php/report.php
+    dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/finalize.cjs'
+    say 'Open coverage/index.html for the combined report'
+}

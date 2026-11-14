@@ -11,6 +11,18 @@ const {loadRunner} = require('./runners/index.cjs');
 const {RetainedMagentoBackend} = require('./retained-magento.cjs');
 const {probe} = require('./storage.cjs');
 
+function activeCoverage(workspace) {
+    const directory = path.join(workspace, 'coverage');
+    const marker = path.join(directory, '.active-run');
+    if (!fs.existsSync(marker)) return {};
+    const coverageRunId = fs.readFileSync(marker, 'utf8').trim();
+    const {id} = JSON.parse(fs.readFileSync(path.join(directory, 'run.json'), 'utf8'));
+    if (!/^[a-f0-9]{32}$/.test(coverageRunId) || coverageRunId !== id)
+        throw new Error('Active PHP coverage run does not match the prepared browser run');
+    return {coverageRunId, javascriptCoverageDirectory:path.join(workspace, '.nyc_output'),
+        templateCoverageDirectory:path.join(directory, 'raw', 'templates')};
+}
+
 async function main(configuration, storage) {
     const costs = require('./costs.cjs');
     costs.assertAutomatic(configuration);
@@ -20,7 +32,9 @@ async function main(configuration, storage) {
     graph.select(specs);
     if (typeof configuration.state !== 'function') throw new Error(messages.workflowModuleMustExportStateRuntime);
     const {plan} = costs.resolvePlan(graph, specs, configuration.plan);
-    const adapter = loadRunner(process.env.MAGELENS_RUNNER ?? 'playwright');
+    const runner = process.env.MAGELENS_RUNNER ?? 'playwright';
+    const adapter = loadRunner(runner);
+    const coverage = configuration.coverage ?? {};
     probe(storage);
     const runtime = await adapter.open(process.env, configuration.runnerOptions);
     const interrupt = () => { process.exitCode = 130; runtime.close().catch(() => {}); };
@@ -28,7 +42,7 @@ async function main(configuration, storage) {
     try {
         const backend = new RetainedMagentoBackend({workspace, helperImage: process.env.MAGELENS_BRANCHING_IMAGE, disposable: true, workflowLease: configuration.workflowLease});
         const report = await runtime.run({workflow: graph, backend, state: configuration.state,
-            root: storage, specs, plan,
+            root: storage, specs, plan, ...coverage,
             checkpointLifetime: configuration.checkpointLifetime ?? 'run',
             eventDirectory: process.env.MAGELENS_BRANCHING_EVENTS || path.join(workspace, '.runtime/branching-events')});
         report.browser = runtime.description;
@@ -49,4 +63,4 @@ async function main(configuration, storage) {
     }
 }
 if (require.main === module) { console.error('Use run-coverage --branching with an automatic source manifest and native runner configuration.'); process.exitCode = 1; }
-module.exports = {main};
+module.exports = {main, activeCoverage};

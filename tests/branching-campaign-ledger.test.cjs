@@ -71,6 +71,8 @@ test('campaign writes require this workspace lease and immutable disjoint group 
     assert.throws(() => ledger.create(root, manifest), /lease required/);
     assert.throws(() => ledger.create(root, manifest, {...lease, token: 'other'}), /does not own/);
     assert.throws(() => ledger.create(root, {...manifest, inventory: manifest.inventory.map(item => ({...item, group: 'shared'}))}, lease), /crosses splits/);
+    assert.throws(() => ledger.create(root, {...manifest, inventory: manifest.inventory.map(item =>
+        ({...item, workDigest: 'a'.repeat(64)}))}, lease), /identical work crosses splits/);
     assert.throws(() => ledger.create(root, {...manifest, runOrder: ['train', 'validation']}, lease), /every scheduled case/);
     const blocked = {...manifest, inventory: manifest.inventory.map(item => ({...item, disposition: 'blocked'})), runOrder: []};
     assert.throws(() => ledger.create(root, blocked, lease), /needs a reason/);
@@ -145,7 +147,8 @@ test('Playwright campaign records the frozen forecast before execution and binds
             assert.equal(ledger.read(root, manifest.cycleId).records[0].event.attempt.status, 'started');
             fs.writeFileSync(observations, defect === 'malformed' ? '[' : JSON.stringify([{...snapshot,
                 observationId:defect === 'mismatch' ? 'different-sample' : snapshot.observationId,eligible:true,actualMs:10}]));
-            return {exitCode:0,status:'passed',errors:[],tests,profileArtifacts:{forecasts,observations}};
+            const executed = defect === 'changed-selection' ? [{...tests[0], selector:'different selector'}] : tests;
+            return {exitCode:0,status:'passed',errors:[],tests:executed,profileArtifacts:{forecasts,observations}};
         }}
     });
     await assert.rejects(run(512,'inventory'),/inventory differs/);
@@ -155,14 +158,16 @@ test('Playwright campaign records the frozen forecast before execution and binds
     assert.equal((await run(1025)).collectionStatus,'quarantined');
     assert.equal((await run(512,'malformed')).collectionStatus,'quarantined');
     assert.equal((await run(512,'mismatch')).collectionStatus,'quarantined');
+    assert.equal((await run(512,'changed-selection')).collectionStatus,'quarantined');
     const records = ledger.read(root, manifest.cycleId).records;
     assert.deepEqual(records.map(record=>record.event.attempt.status),
-        ['started','passed','started','quarantined','started','quarantined','started','quarantined']);
+        ['started','passed','started','quarantined','started','quarantined','started','quarantined','started','quarantined']);
     assert.equal(records[1].event.attempt.observationDigest,acceptedDigest);
     assert.equal(records[3].event.attempt.observationDigest,undefined);
     assert.match(records[3].event.attempt.reason,/budget/);
     assert.match(records[5].event.attempt.reason,/malformed/);
     assert.match(records[7].event.attempt.reason,/frozen profile/);
+    assert.match(records[9].event.attempt.reason,/Executed Playwright inventory differs/);
 });
 
 test('recovery records unfinished attempts once and preserves completed observations', t => {

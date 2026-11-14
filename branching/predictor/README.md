@@ -76,15 +76,24 @@ node branching/predictor/cli.cjs prepare request.json before.json model.json
 # Execute the authorized workload once, with its native runner.
 node branching/predictor/cli.cjs observe before.json sample.json measurement.json
 node branching/predictor/cli.cjs evaluate samples.json quality.json
-python3 branching/predictor/train.py samples.json .runtime/predictor/registry
+node branching/predictor/cli.cjs audit-dataset samples.json audit.json .runtime/predictor/registry/sources
+python3 branching/predictor/train.py audit.json .runtime/predictor/registry
 ```
 
 `measurement.json` contains `actualMs`, `passed`, `attempts` and the independently
-recomputed `sourceDigest`. `samples.json` is an array of observations. Training rejects
-failed, retried and changed-source observations; preserve these separately as failure
-evidence. A suite duration is never a shared-prefix training label. Prefix collection
+recomputed `sourceDigest`. `samples.json` is an array of observations. Set
+`sourceStore` in the preparation request to archive the sources for auditing. The
+audit retains eligible rows with verified source and timing provenance and
+records excluded observations with their reasons. Training archives the audit
+file alongside the candidate model. A suite duration is never a shared-prefix training label. Prefix collection
 must measure the exact prefix boundary, including its fixtures and hooks. A trained
 candidate remains unqualified pending an independent prospective campaign.
+
+For a frozen campaign, pass `--split split.json --split-digest SHA256` to
+`train.py`. The split file contains `schemaVersion: 1` and a `groups` map
+from observation group IDs to `train`, `validation`, or `audit`. Supply
+only training rows to the trainer. It checks the split file digest and rejects
+datasets containing unassigned or held-out groups before writing to the registry.
 
 Normal native runner commands remain unchanged unless profiling is explicitly enabled
 with `.runtime/predictor/profile.json`. That file can supply `model`, `modelDigest`,
@@ -160,3 +169,10 @@ use `unit: "prefix"` and `timingBoundary: "checkpoint-prefix/v1"`; the current
 whole-test package forecasts these source fragments with an explicit domain-transfer
 warning. Qualification for execution is separate from forecast availability.
 No heuristic fallback or whole-test-to-prefix conversion is used.
+
+
+For evaluation against measured checkpoint stages, set
+`MAGELENS_PREFIX_TIMING_BOUNDARY=checkpoint-segment-run-duration/v1` for planning
+and manifest verification. This boundary measures the awaited stage, excluding
+checkpoint operations and coverage finalization. A model must qualify for the
+selected boundary before its forecasts can authorize checkpoint execution.

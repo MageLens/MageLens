@@ -4,14 +4,17 @@
 
 const {setTimeout: delay} = require('node:timers/promises');
 const {restoreContext, storageState} = require('./browser-context.cjs');
+const {coverageCookie, withoutCoverageCookie} = require('../playwright/coverage-cookie.cjs');
 const {CodeCache} = require('./code-cache.cjs');
 const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
 
 class PlaywrightState {
-    constructor(browser, {baseURL, timeout = 30000, contextOptions = {}, javascriptCoverageDirectory}) {
+    constructor(browser, {baseURL, timeout = 30000, contextOptions = {}, javascriptCoverageDirectory, templateCoverageDirectory, coverageRunId}) {
         this.browser = browser; this.baseURL = baseURL; this.timeout = timeout;
         this.options = {...contextOptions, baseURL, serviceWorkers: 'block'};
         this.javascriptCoverageDirectory = javascriptCoverageDirectory;
+        this.templateCoverageDirectory = templateCoverageDirectory;
+        this.coverageCookie = coverageRunId === undefined ? null : coverageCookie(baseURL, coverageRunId);
         this.cache = new CodeCache();
         this.requests = new Map(); this.errors = []; this.sessions = new Map(); this.sockets = new Set();
     }
@@ -43,7 +46,8 @@ class PlaywrightState {
     }
     async open(saved = {url: 'about:blank', storage: {cookies: [], origins: []}}) {
         if (this.context) await this.context.unrouteAll({behavior: 'wait'});
-        const restored = await restoreContext(this.browser, this.context, saved.storage, this.options);
+        const storage = this.coverageCookie ? withoutCoverageCookie(saved.storage) : saved.storage;
+        const restored = await restoreContext(this.browser, this.context, storage, this.options);
         this.context = restored.context; this.requests.clear(); this.sessions.clear(); this.sockets.clear(); this.frozen = false;
         if (restored.created && this.javascriptCoverageDirectory) {
             const {collectJavaScriptCoverage} = require('../playwright/javascript-coverage.cjs');
@@ -51,6 +55,20 @@ class PlaywrightState {
                 directory:this.javascriptCoverageDirectory, flushOnPageClose:false
             });
         }
+        if (restored.created && this.templateCoverageDirectory) {
+            const {registerTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/playwright');
+            const context = this.context;
+            // Checkpoint fencing flushes explicitly before freezing. Page-close
+            // hooks must never evaluate scripts on a frozen document.
+            this.templateCoverage = await registerTemplateCoverage({
+                exposeBinding:context.exposeBinding.bind(context),
+                addInitScript:context.addInitScript.bind(context),
+                pages:() => this.frozen ? [] : context.pages(),
+                on() {},
+                off() {}
+            }, {outputDir:this.templateCoverageDirectory});
+        }
+        if (this.coverageCookie) await this.context.addCookies([this.coverageCookie]);
         this.page = await this.context.newPage();
         this.page.setDefaultTimeout(this.timeout); this.page.setDefaultNavigationTimeout(this.timeout);
         await this.track(this.page);
@@ -86,13 +104,15 @@ class PlaywrightState {
         this.saved = {url: this.page.url(), storage: await storageState(this.context)};
         this.check();
         await this.javascriptCoverage?.flushPages();
+        await this.templateCoverage?.flush();
         this.frozen = true;
         await this.sessions.get(this.page).send('Page.setWebLifecycleState', {state: 'frozen'});
     }
     async save() {
         this.check();
         if (!this.frozen) throw new Error('Browser must be frozen before capture');
-        return {...this.saved, storage: {...this.saved.storage, cookies: await this.context.cookies()}};
+        const storage = {...this.saved.storage, cookies: await this.context.cookies()};
+        return {...this.saved, storage: this.coverageCookie ? withoutCoverageCookie(storage) : storage};
     }
     async resume() {
         if (!this.frozen) throw new Error('No retained page to resume');
@@ -100,11 +120,15 @@ class PlaywrightState {
         this.frozen = false; this.check();
     }
     async close() {
-        try { await this.javascriptCoverage?.finish({flush:!this.frozen}); }
+        try {
+            try { await this.javascriptCoverage?.finish({flush:!this.frozen}); }
+            finally { await this.templateCoverage?.stop(); }
+        }
         finally {
             if (this.context) await this.context.close();
             this.context = null;
             this.javascriptCoverage = null;
+            this.templateCoverage = null;
         }
     }
 }

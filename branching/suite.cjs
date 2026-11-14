@@ -82,6 +82,36 @@ function validateNative(report, expected) {
         throw new Error('Native runner claimed success with incomplete results');
     }
 }
+function playwrightCoverageResult(report, runId, browserVersion) {
+    if (report.status !== 'passed' || !report.inventory.length ||
+        report.results.length !== report.inventory.length || !/^[a-f0-9]{32}$/.test(runId) || !browserVersion)
+        throw new Error('Playwright coverage requires a complete successful suite and a matching run');
+    const results = new Map(report.results.map(result => [result.id, result]));
+    const browser = {name: 'chrome', version: browserVersion};
+    const tests = report.inventory.map(test => {
+        const result = results.get(test.id);
+        if (result?.status !== 'passed') throw new Error('Playwright coverage suite result is missing or failed');
+        if (result.execution === 'native') {
+            const identity = result.annotations?.find(annotation => annotation.type === 'magelens-browser');
+            const actual = identity && JSON.parse(identity.description);
+            if (actual?.name !== browser.name || actual.version !== browserVersion || result.attempts !== 1)
+                throw new Error('Invalid native Playwright browser or attempt evidence');
+        } else if (result.execution !== 'checkpoint') {
+            throw new Error('Unknown Playwright execution phase');
+        }
+        return {title: test.title, status: result.status};
+    });
+    if (new Set(report.inventory.map(test => test.id)).size !== results.size ||
+        results.size !== report.results.length) throw new Error('Duplicate Playwright test identities');
+    for (const phase of report.phases.filter(phase => phase.kind === 'checkpoint')) {
+        const actual = phase.report.browser;
+        if (actual?.name !== 'Chrome for Testing' || actual.version !== browserVersion ||
+            phase.report.counts.fallbacks !== 0) throw new Error('Invalid checkpoint Playwright browser or restore evidence');
+    }
+    return {run: runId, runner: 'playwright', status: 'passed', browser, totalTests: tests.length,
+        totalPassed: tests.length, totalFailed: 0, totalPending: 0, totalSkipped: 0, maxAttempts: 1,
+        specs: [...new Set(report.inventory.map(test => test.file))].sort(), tests};
+}
 async function collectAssessed(manifest, project, directory, runner, {calibration = false} = {}) {
     verifySources(manifest);
     // Calibration lists the suite and measures provider operations without
@@ -100,7 +130,7 @@ async function collectAssessed(manifest, project, directory, runner, {calibratio
 }
 async function runSuite(options) {
     costs.assertAutomatic(options);
-    const {manifest, project, directory, runner, runCheckpoint} = options;
+    const {manifest, project, directory, runner, runCheckpoint, coverageRoot} = options;
     costs.assertAutomatic(project);
     require('./checkpoint-limit.cjs').validateLimit(project.maxCheckpointsPerTest);
     const mode = 'AUTO';
@@ -108,6 +138,7 @@ async function runSuite(options) {
     const inventory = await collectAssessed(manifest, project, directory, runner);
     const groups = partition(manifest, inventory, project);
     let decision, plan, built, checkpoint = groups.checkpoint;
+    const browserIneligible = [];
     const setupProjects = [...new Set(groups.setup.map(t => t.project))];
     const simpleDependencies = setupProjects.length === 1 && inventory.config.projects.every(p =>
         p.name === setupProjects[0] ? !p.dependencies?.length : p.dependencies?.length === 1 && p.dependencies[0] === setupProjects[0]);
@@ -115,6 +146,19 @@ async function runSuite(options) {
     // Project teardown dependencies need one untouched native invocation.
     if (project.native.splitSafe !== true || (!simpleDependencies && !independent) || inventory.config.globalTeardown || inventory.config.webServer ||
         inventory.config.projects.some(p => p.teardown)) checkpoint = [];
+    if (coverageRoot && checkpoint.length) {
+        const {browserProfile} = require('./runners/playwright/native-reporter.cjs');
+        const expected = browserProfile({channel: 'chrome', baseURL: process.env.PLAYWRIGHT_BASE_URL,
+            ignoreHTTPSErrors: true, ...project.runnerOptions?.contextOptions, serviceWorkers: 'block'});
+        const projects = new Map(inventory.config.projects.map(p => [p.name, p]));
+        checkpoint = checkpoint.filter(test => {
+            const profile = projects.get(test.project)?.browserProfile;
+            const compatible = !Object.keys(project.runnerOptions?.launchOptions ?? {}).length &&
+                expected.portable && profile?.portable && profile.digest === expected.digest;
+            if (!compatible) browserIneligible.push({id: test.id, reason: 'incompatible-playwright-browser-settings'});
+            return compatible;
+        });
+    }
     if (checkpoint.length) {
         built = buildWorkflow(manifest, independent ? {...project, runnerOptions: {...project.runnerOptions, nativeConfig: project.native.config}} : project, checkpoint.map(t => t.staticId));
         ({plan, decision} = costs.planWorkflow(built.workflow));
@@ -127,9 +171,11 @@ async function runSuite(options) {
     const report = {schemaVersion: 1, kind: 'full-native-suite', mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
         setupDiagnostics: {nativeCollectionMs: inventory.wallMs},
         diagnostics: manifest.diagnostics, assessment: manifest.assessment, decision, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
-        routing: {checkpoint: checkpoint.map(t => t.id), native: inventory.tests.filter(t => !checkpoint.some(c => c.id === t.id)).map(t => t.id)}};
+        routing: {checkpoint: checkpoint.map(t => t.id), native: inventory.tests.filter(t => !checkpoint.some(c => c.id === t.id)).map(t => t.id),
+            ...(browserIneligible.length ? {browserIneligible} : {})}};
     async function native(tests, options = {}) {
-        const result = await runner.run(project.native.config, directory, {...options, ...(tests ? {tests} : {})});
+        const result = await runner.run(project.native.config, directory, {...options,
+            ...(coverageRoot ? {coverageRoot} : {}), ...(tests ? {tests} : {})});
         validateNative(result, tests ?? inventory.tests); phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
     if (!checkpoint.length) {
@@ -166,4 +212,4 @@ async function runSuite(options) {
     report.wallMs = performance.now() - started;
     return report;
 }
-module.exports = {partition, validateNative, collectAssessed, runSuite};
+module.exports = {partition, validateNative, collectAssessed, runSuite, playwrightCoverageResult};

@@ -19,6 +19,13 @@ function main(args) {
     } else if (command === 'observe') {
         const measurement = read(extra);
         write(output, predictor.observe(read(input), measurement.actualMs, measurement));
+    } else if (command === 'observe-segment') {
+        const {segment,audit} = read(extra);
+        const {observeExecutedSegment} = require('./prefix-measurement.cjs');
+        write(output, observeExecutedSegment(read(input),segment,audit));
+    } else if (command === 'audit-dataset') {
+        if (!input || !output || !extra) throw new Error('Usage: predictor/cli.cjs audit-dataset samples.json audit.json source-store');
+        write(output, predictor.auditAndReextractDataset(input, extra));
     } else if (command === 'evaluate') write(output, predictor.evaluate(read(input)));
     else if(command==='pack-ci' || command==='pack-ci-chunks') {
         const bytes=fs.readFileSync(input),id=predictor.sha256(bytes);
@@ -27,7 +34,7 @@ function main(args) {
         const payload=command==='pack-ci' ? transport.pack(bytes) : JSON.stringify(Object.fromEntries(transport.packChunks(bytes).map((chunk,i)=>[`MAGELENS_PREDICTOR_MODEL_GZIP_BASE64_${i+1}`,chunk])),null,2);
         fs.writeFileSync(output,payload+'\n',{flag:'wx',mode:0o600});
         console.log(JSON.stringify({modelId:id,...(command==='pack-ci' ? {variable:'MAGELENS_PREDICTOR_MODEL_GZIP_BASE64'} : {variables:Object.keys(JSON.parse(payload))})}));
-    } else throw new Error('Usage: predictor/cli.cjs prepare request.json snapshot.json [model.json] | observe snapshot.json sample.json measurement.json | evaluate samples.json report.json | pack-ci model.json model.b64 | pack-ci-chunks model.json variables.json');
+    } else throw new Error('Usage: predictor/cli.cjs prepare request.json snapshot.json [model.json] | observe snapshot.json sample.json measurement.json | observe-segment snapshot.json sample.json segment-and-audit.json | audit-dataset samples.json audit.json source-store | evaluate samples.json report.json | pack-ci model.json model.b64 | pack-ci-chunks model.json variables.json');
 }
 module.exports = {main};
 if (require.main === module) {

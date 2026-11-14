@@ -14,6 +14,7 @@ function workflow(t, args = [], failure = '', interrupted = false, runner = 'cyp
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const name of ['bin', '.runtime', 'coverage']) fs.mkdirSync(path.join(directory, name));
     fs.copyFileSync(path.resolve(__dirname, '../bin/run-coverage'), path.join(directory, 'bin/run-coverage'));
+    fs.copyFileSync(path.resolve(__dirname, '../bin/coverage-lifecycle'), path.join(directory, 'bin/coverage-lifecycle'));
     fs.writeFileSync(path.join(directory, '.runtime/installed'), installedVersion + '\n');
     if (interrupted) fs.writeFileSync(path.join(directory, '.runtime/hooks-active'), '');
     fs.writeFileSync(path.join(directory, 'bin/common'), `

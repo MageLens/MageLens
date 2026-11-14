@@ -37,11 +37,17 @@ function location(workspace, cycle, lease) {
 }
 function splitBytes(inventory) {
     const groups = new Map();
-    for (const {group,split} of inventory) {
+    const sources = new Map();
+    for (const {group,split,workDigest} of inventory) {
         requireValue(typeof group === 'string' && group, 'missing correlated group');
         requireValue(['train', 'validation', 'audit'].includes(split), 'unassigned split');
         requireValue(!groups.has(group) || groups.get(group) === split, 'correlated group crosses splits');
         groups.set(group, split);
+        if (workDigest !== undefined) {
+            requireValue(hash(workDigest), 'invalid work digest');
+            requireValue(!sources.has(workDigest) || sources.get(workDigest) === split, 'identical work crosses splits');
+            sources.set(workDigest, split);
+        }
     }
     return encode({schemaVersion:1,groups:Object.fromEntries(groups)});
 }

@@ -7,13 +7,27 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source branching/configs/entrypoints.conf
 if [[ ${1:-} == --help ]]; then
-    printf 'Usage: ./bin/plan-branching [--evaluate] SOURCE_ROOT [MANIFEST.json]\nDefault manifest: %s (override with MAGELENS_BRANCHING_MANIFEST).\n' "$BRANCHING_DEFAULT_MANIFEST"
+    printf 'Usage: ./bin/plan-branching [--evaluate] [--discovery FILE] SOURCE_ROOT [MANIFEST.json]\nDefault manifest: %s (override with MAGELENS_BRANCHING_MANIFEST).\n' "$BRANCHING_DEFAULT_MANIFEST"
     exit 0
 fi
 operation=plan
 if [[ ${1:-} == --evaluate ]]; then operation=evaluate; shift; fi
-[[ $# -ge 1 && $# -le 2 ]] || { echo 'Expected [--evaluate] SOURCE_ROOT [MANIFEST.json]' >&2; exit 1; }
+discovery=()
+if [[ ${1:-} == --discovery ]]; then
+    [[ $# -ge 3 ]] || { echo 'Expected a discovery evidence file and source root' >&2; exit 1; }
+    discovery=("$(realpath -e "$2")"); shift 2
+fi
+[[ $# -ge 1 && $# -le 2 ]] || { echo 'Expected [--evaluate] [--discovery FILE] SOURCE_ROOT [MANIFEST.json]' >&2; exit 1; }
 root=$(pwd -P)
+dependency_mount=()
+if (( ${#discovery[@]} )); then
+    [[ "${discovery[0]}" == "$root/"* && -f "${discovery[0]}" ]] || { echo 'Discovery evidence must be a file in this checkout' >&2; exit 1; }
+    runner=$(./bin/application-compose ps -q runner)
+    [[ -n "$runner" ]] || { echo 'Start the installed runner before verifying native discovery' >&2; exit 1; }
+    modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/node_modules"}}type={{.Type}},source={{if eq .Type "volume"}}{{.Name}}{{else}}{{.Source}}{{end}},target=/workspace/node_modules,readonly{{end}}{{end}}' "$runner")
+    [[ -n "$modules" ]] || { echo 'The installed runner has no dependency mount' >&2; exit 1; }
+    dependency_mount=(--mount "$modules")
+fi
 source_root=$(realpath -e "$1")
 [[ "$source_root" == "$root/"* || "$source_root" == "$root" ]] || { echo 'Source must be within this checkout' >&2; exit 1; }
 manifest=${2-${MAGELENS_BRANCHING_MANIFEST:-$BRANCHING_DEFAULT_MANIFEST}}
@@ -23,5 +37,10 @@ manifest=$(realpath -m "$manifest")
 planner_image=$(./bin/branching-image orchestrator)
 docker run --rm --init --memory 1g --memory-swap 1g --user "$(id -u):$(id -g)" \
     --mount "type=bind,source=$root,target=$root" --workdir "$root" \
-    "$planner_image" "$operation" "$source_root" "$manifest"
+    "${dependency_mount[@]}" \
+    --env MAGELENS_PREDICTOR_MODEL --env MAGELENS_PREDICTOR_MODEL_SHA256 \
+    --env MAGELENS_PREDICTOR_BACKEND_STATE \
+    --env MAGELENS_PREFIX_MODEL --env MAGELENS_PREFIX_MODEL_SHA256 \
+    --env MAGELENS_PREFIX_TIMING_BOUNDARY --env MAGELENS_PREFIX_SOURCE_STORE \
+    "$planner_image" "$operation" "$source_root" "$manifest" "${discovery[@]}"
 printf 'Manifest: %s\n' "$manifest"

@@ -8,8 +8,9 @@ function model(durationMs = 1000000) {
     return {schemaVersion:1,featureSchema,qualified:true,referenceBaselineMs:106638.8,errorLogP90:0,
         estimator:{intercept:Math.log1p(durationMs),inputTransform:'log1p',mean:Array(width).fill(0),scale:Array(width).fill(1),coefficients:Array(width).fill(0)},
         domains:['cypress','playwright'].flatMap(runner=>[
-            {runner,unit:'test',...(runner==='cypress'?{timingBoundary:'cypress-test-duration-minus-preparation/v2'}:{})},
-            {runner,unit:'prefix',timingBoundary:'checkpoint-prefix/v1'}
+            {runner,unit:'test',timingBoundary:runner==='cypress'?'cypress-test-duration-minus-preparation/v2':'playwright-test-result-duration/v1'},
+            {runner,unit:'prefix',timingBoundary:'checkpoint-prefix/v1'},
+            {runner,unit:'prefix',timingBoundary:'checkpoint-segment-run-duration/v1'}
         ]).map(domain=>({...domain,environmentDigest:'synthetic-integration',ranges:Array(width).fill([0,1e12])}))};
 }
 module.exports={model};

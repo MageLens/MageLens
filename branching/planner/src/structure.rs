@@ -398,6 +398,13 @@ struct Fixture {
     order: usize,
 }
 impl Project {
+    pub fn fixture_provider_known(&self, test: &crate::Test) -> bool {
+        self.test_aliases(&test.file)
+            .into_iter()
+            .find(|(_, identity)| identity == &test.fixture)
+            .is_some_and(|(alias, _)| self.provider(&test.file, &alias, &mut BTreeSet::new()).is_some())
+    }
+
     fn provider(
         &self,
         file: &str,

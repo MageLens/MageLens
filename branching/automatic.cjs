@@ -31,9 +31,82 @@ function verifySources(manifest) {
             if (!file.startsWith(root + path.sep) || fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('Source escapes the manifest root');
             if (fileDigest(file) !== source.sha256) throw new Error(`Stale source: ${source.path}; generate the manifest again`);
         }
+        const discovery = manifest.assessment.discovery;
+        if (discovery) {
+            for (const {row} of discovery.tests) {
+                if (row.files) require('./predictor/discovery-context.cjs').discoveryContext(row,
+                    {root,dependencyRoots:discovery.dependencyRoots});
+            }
+        }
     } catch (error) {
         throw new (require('./estimation.cjs').EstimationError)([{phase: 'source', message: error.message}], error.message);
     }
+}
+
+function playwrightCoverageAdapter(manifest, expect) {
+    const files = ['playwright/support.cjs', 'playwright/coverage-cookie.cjs',
+        'playwright/javascript-coverage.cjs', 'bin/browser-navigation.cjs'];
+    const expected = new Map(files.map(file => [file, fileDigest(path.resolve(__dirname, '..', file))]));
+    const verified = new Set(manifest.sources.filter(source =>
+        expected.get(source.path) === source.sha256).map(source => source.path));
+    const fixtureReasons = new Set([
+        'Custom fixture lifecycle is not equivalent to a bare page',
+        'Project imports or custom fixtures require an execution adapter'
+    ]);
+    const imports = new Map();
+    function supportedImports(file) {
+        if (!imports.has(file)) {
+            const source = fs.readFileSync(path.join(manifest.root, file), 'utf8');
+            const ast = require('@babel/parser').parse(source, {sourceType: 'module', plugins: ['typescript']});
+            const declarations = ast.program.body.filter(node => node.type === 'ImportDeclaration');
+            imports.set(file, declarations.length === 1 && declarations[0].source.value === './playwright/support.cjs' &&
+                declarations[0].specifiers.length === 2 && ['test', 'expect'].every(name =>
+                    declarations[0].specifiers.some(specifier => specifier.type === 'ImportSpecifier' &&
+                        specifier.imported.name === name && specifier.local.name === name)));
+        }
+        return imports.get(file);
+    }
+    const checkedBodies = new Map();
+    function supportedBindings(test) {
+        if (!checkedBodies.has(test.id)) {
+            const source = fs.readFileSync(path.join(manifest.root, test.file));
+            const body = test.steps.map(step => source.subarray(step.start, step.end).toString('utf8')).join('\n');
+            const ast = require('@babel/parser').parse(`async function fragment(page, expect) {\n${body}\n}`,
+                {sourceType: 'module', plugins: ['typescript']});
+            let supported = true;
+            require('@babel/traverse').default(ast, {
+                ReferencedIdentifier(identifier) {
+                    if (!identifier.scope.hasBinding(identifier.node.name, {noGlobals: true})) supported = false;
+                }
+            });
+            checkedBodies.set(test.id, supported);
+        }
+        return checkedBodies.get(test.id);
+    }
+    const supports = test => test.fixture === './playwright/support.cjs:test' &&
+        test.parameters === '( { page } )' && !test.restoration &&
+        files.every(file => verified.has(file) && test.contextFiles.includes(file)) &&
+        test.contextFiles.every(file => file === test.file || verified.has(file)) &&
+        test.reasons.length === fixtureReasons.size && test.reasons.every(reason => fixtureReasons.has(reason)) &&
+        test.steps.every(step => step.kind === 'statement' && step.portable) &&
+        supportedImports(test.file) && supportedBindings(test);
+    const tests = new Map(manifest.tests.map(test => [test.id, test]));
+    const compiled = new Map();
+    return {
+        identity: digest([...expected]),
+        supports,
+        supportsCheckpoint: checkpoint => checkpoint.depth > 0 &&
+            checkpoint.consumers.every(id => tests.has(id) && supports(tests.get(id))),
+        execute(test, from, to, runtime) {
+            const key = JSON.stringify([test.id, from, to]);
+            if (!compiled.has(key)) {
+                const bytes = fs.readFileSync(path.join(manifest.root, test.file));
+                const code = test.steps.slice(from, to).map(step => bytes.subarray(step.start, step.end).toString('utf8')).join('\n');
+                compiled.set(key, compileFragment(['page', 'expect'], code));
+            }
+            return compiled.get(key)(runtime.page, expect ?? require('@playwright/test').expect);
+        }
+    };
 }
 
 function buildWorkflow(manifest, configuration, selected) {
@@ -131,7 +204,9 @@ function buildWorkflow(manifest, configuration, selected) {
             : null;
         stages.push({id: checkpoint.id, label: checkpoint.label ?? `Shared prefix · ${checkpoint.depth} steps`,
             source: {file: test.file, line: boundary?.line ?? test.line}, parent: parent?.id ?? rootFor(test),
-            estimatedMs: duration(checkpoint.id),
+            // Filtering native-only tests can change the representative or
+            // ancestor. Keep that work in the graph, with an unknown cost.
+            estimatedMs: forecast?.segment && !forecastIdentity ? null : duration(checkpoint.id),
             inputs: {checkpoint, source: manifest.sourceDigest, fromDepth, forecastIdentity},
             run: runtime => checkpoint.depth === 0 && test.restoration && !adapter
                 ? fixtureState.prepare(test, runtime) : execute(test, fromDepth, checkpoint.depth, runtime),
@@ -162,4 +237,4 @@ function buildWorkflow(manifest, configuration, selected) {
         state: configuration.state, checkpointLifetime: 'last-consumer', runnerOptions: configuration.runnerOptions
     };
 }
-module.exports = {buildWorkflow, verifySources, compileFragment};
+module.exports = {buildWorkflow, verifySources, compileFragment, playwrightCoverageAdapter};

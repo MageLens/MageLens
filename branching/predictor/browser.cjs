@@ -14,7 +14,7 @@ function start(settings, runner, model) {
     const directory = fs.mkdtempSync(path.resolve('coverage/predictor-'));
     const profile = {...settings, ...model, directory, runner,
         sourceFamily:settings.sourceFamily ?? 'native-browser-suite',
-        baselineMs:settings.baselineMs ?? require('../../branching-baseline.json').checkpointDecisionBaselineMs,
+        baselineMs:settings.baselineMs,
         environment:{...settings.environment, runner, architecture:process.arch,
             dependencies:p.sha256(fs.readFileSync('dependencies.yaml')),
             platform:process.env.MAGELENS_PLATFORM ?? 'unknown', theme:process.env.MAGELENS_THEME ?? 'unknown'}};
@@ -57,7 +57,7 @@ function installCypress(on, config) {
     const support = config.supportFile && path.resolve(config.projectRoot, config.supportFile);
     const wrapper = path.join(profile.directory, 'support.cjs');
     fs.writeFileSync(wrapper, `require(${JSON.stringify(require.resolve('../runners/cypress/native-support.cjs'))}).install({profile:true,inventory:false});\n${support ? `require(${JSON.stringify(support)});` : ''}\n`, {flag:'wx', mode:0o600});
-    on('task', {'magelens:timing:prepare':native.collector(profile, profile.directory, config.projectRoot)});
+    on('task', {'magelens:timing:prepare':native.collector({...profile,supportFile:support,configFile:config.configFile}, profile.directory, config.projectRoot)});
     config.supportFile = wrapper;
     return config;
 }

@@ -15,6 +15,8 @@ class CoverageReporter {
     onError(error) { this.predictor?.onError(error); }
     onEnd(result) {
         this.predictor?.onEnd(result);
+        // The branching driver validates and writes one result for the complete suite.
+        if (process.env.MAGELENS_NATIVE_REPORT) return;
         const tests = this.tests || [];
         const count = status => tests.filter(test => test.results.at(-1)?.status === status).length;
         const run = JSON.parse(fs.readFileSync('coverage/run.json'));

@@ -150,6 +150,13 @@ matching are reported separately and remain prerequisites for checkpoint executi
 There is no operation-point estimator or handwritten call-cost override. See
 [branching estimation](../docs/branching-estimation.md) for the timing boundaries.
 
+For Playwright fixtures discovered by the native profiler, use
+`./bin/plan-branching [--evaluate] --discovery FILE SOURCE_ROOT [MANIFEST]`.
+The evidence must come from list-only discovery of the same configuration and
+callbacks. Start the installed runner so the planner can verify its dependency
+files. Plans retain the discovery identities and reject changed source or
+environment inputs; discovery does not qualify a duration model.
+
 A profitable predicted prefix still needs a supported execution boundary:
 ML inference does not restore arbitrary JavaScript closures or process state.
 AUTO can restore test-scoped `test.extend` fixtures with a standalone `await use(value)`

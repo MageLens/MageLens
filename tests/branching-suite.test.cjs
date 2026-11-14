@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {fileDigest} = require('../branching/engine.cjs');
 const costs = require('../branching/costs.cjs');
-const {partition, validateNative, collectAssessed, runSuite} = require('../branching/suite.cjs');
+const {partition, validateNative, collectAssessed, runSuite, playwrightCoverageResult} = require('../branching/suite.cjs');
 function fixture(t) {
     t.mock.method(costs, 'solveCosts', () => ({selected:['shared']}));
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-suite-'));
@@ -42,6 +42,51 @@ test('native inventory preserves every assessed generated and fixture-based test
     assert.equal(g.setup.length,1);assert.equal(g.checkpoint.length,2);assert.equal(g.native.length,100);
     assert.equal(new Set([...g.setup,...g.checkpoint,...g.native].map(t=>t.id)).size,103);
 });
+test('mixed Playwright coverage reports the original inventory and rejects incomplete or mismatched evidence', async t => {
+    const f = fixture(t);
+    const version = '157.0.8103.38';
+    const {browserProfile} = require('../branching/runners/playwright/native-reporter.cjs');
+    const use = {channel: 'chrome', baseURL: process.env.PLAYWRIGHT_BASE_URL, ignoreHTTPSErrors: true, serviceWorkers: 'block'};
+    f.inventory.config.projects[1].browserProfile = browserProfile(use);
+    assert.notEqual(browserProfile({...use, viewport: {width: 900, height: 700}}).digest, browserProfile(use).digest);
+    assert.notEqual(browserProfile({...use, serviceWorkers: 'allow'}).digest, browserProfile(use).digest);
+    assert.equal(browserProfile({...use, proxy: {server: 'http://localhost:8080'}}).portable, false);
+    const annotation = {type: 'magelens-browser', description: JSON.stringify({name: 'chrome', version})};
+    const run = f.runner.run;
+    f.runner.run = async (...args) => {
+        const phase = await run(...args);
+        for (const result of phase.results) Object.assign(result, {attempts: 1, annotations: [annotation]});
+        return phase;
+    };
+    const report = await runSuite({...f, directory: f.root, coverageRoot: f.root, runCheckpoint: async options => {
+        const phase = await f.runCheckpoint(options);
+        phase.browser = {name: 'Chrome for Testing', version};
+        phase.counts.fallbacks = 0;
+        return phase;
+    }});
+    const runId = 'a'.repeat(32);
+    const coverage = playwrightCoverageResult(report, runId, version);
+    assert.equal(coverage.run, runId);
+    assert.equal(coverage.totalPassed, 103);
+    assert.equal(f.calls.filter(call => call.options?.coverageRoot === f.root).length, 2);
+    assert.deepEqual(coverage.tests.map(test => test.title), report.inventory.map(test => test.title));
+    assert.throws(() => playwrightCoverageResult(report, runId, 'other'), /browser/);
+    assert.throws(() => playwrightCoverageResult({...report, results: report.results.slice(1)}, runId, version), /complete/);
+    report.phases.find(phase => phase.kind === 'checkpoint').report.counts.fallbacks = 1;
+    assert.throws(() => playwrightCoverageResult(report, runId, version), /restore evidence/);
+});
+test('incompatible browser settings keep the complete suite native and report the rejected routes', async t => {
+    const f = fixture(t);
+    const coverageRoot = f.root;
+    const {browserProfile} = require('../branching/runners/playwright/native-reporter.cjs');
+    f.inventory.config.projects[1].browserProfile = browserProfile({channel: 'chrome', viewport: {width: 900, height: 700}});
+    const report = await runSuite({...f, directory: f.root, coverageRoot});
+    assert.equal(report.status, 'passed');
+    assert.equal(report.routing.checkpoint.length, 0);
+    assert.equal(report.routing.native.length, 103);
+    assert.deepEqual(report.routing.browserIneligible, ['native-first', 'native-second'].map(id =>
+        ({id, reason: 'incompatible-playwright-browser-settings'})));
+});
 test('calibration can list a fully assessed suite before the model qualifies', async t => {
     const f = fixture(t);
     f.manifest.assessment.executionEligible = false;
@@ -51,6 +96,20 @@ test('calibration can list a fully assessed suite before the model qualifies', a
     assert.equal(inventory.tests.length,103);
     fs.appendFileSync(path.join(f.root,'flow.spec.ts'),'\n');
     await assert.rejects(collectAssessed(f.manifest,f.project,f.root,f.runner,{calibration:true}), /Stale source/);
+});
+test('the branching driver reports unqualified forecasts before loading the project', async t => {
+    const f = fixture(t);
+    f.manifest.assessment.executionEligible = false;
+    const forecast = f.manifest.assessment.stages.shared;
+    forecast.unit = 'prefix';
+    forecast.prediction.qualified = false;
+    const manifestFile = path.join(f.root, 'manifest.json');
+    fs.writeFileSync(manifestFile, JSON.stringify(f.manifest));
+    await assert.rejects(require('../branching/auto-cli.cjs').run([
+        manifestFile, path.join(f.root, 'missing-config.cjs'), path.join(f.root, 'missing-storage')
+    ]), error => error.code === 'ESTIMATION_FAILED' && error.issues[0].phase === 'qualification');
+    const failure = JSON.parse(fs.readFileSync(manifestFile + '.error.json'));
+    assert.match(failure.issues.find(issue => issue.id === 'shared').message, /independent qualification/);
 });
 test('mixed suite runs native setup once, checkpoints, then every remaining native test',async t=>{
     const f=fixture(t); const report=await runSuite({...f,mode:'AUTO',directory:f.root});

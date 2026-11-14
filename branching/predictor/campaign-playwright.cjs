@@ -43,7 +43,7 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
     const id = randomUUID();
     const startedAt = new Date().toISOString();
     const started = performance.now();
-    let snapshotDigest;
+    let snapshotDigest, preparedInventoryDigest;
     function append(status, details, nextAction, measuredResources = resources()) {
         ledger.append(workspace, cycle, {
             id: `${id}-${status}`, state:'collecting', startedAt,
@@ -58,7 +58,8 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
         report = await runner.run(configuration, directory, {
             profile:{...profile, modelDigest:manifest.candidateDigest, featureSchema:manifest.featureSchema},
             onPrepared({forecastDigest, tests}) {
-                if (entry.nativeInventoryDigest && inventoryDigest(tests) !== entry.nativeInventoryDigest)
+                preparedInventoryDigest = inventoryDigest(tests);
+                if (entry.nativeInventoryDigest && preparedInventoryDigest !== entry.nativeInventoryDigest)
                     throw new Error('Playwright inventory differs from the frozen campaign case');
                 snapshotDigest = forecastDigest;
                 append('started', {}, 'Run the frozen Playwright selection');
@@ -90,7 +91,9 @@ async function collect({workspace, cycle, lease, caseId, configuration, director
             else {
                 const bytes = fs.readFileSync(artifacts.observations);
                 const samples = JSON.parse(bytes);
-                if (!observationsMatch(JSON.parse(forecastBytes), samples, report.tests, manifest, entry.timingBoundary))
+                if (inventoryDigest(report.tests) !== preparedInventoryDigest)
+                    reason = 'Executed Playwright inventory differs from the frozen inventory';
+                else if (!observationsMatch(JSON.parse(forecastBytes), samples, report.tests, manifest, entry.timingBoundary))
                     reason = 'Native observation did not pass the frozen profile checks';
                 else observationDigest = createHash('sha256').update(bytes).digest('hex');
             }

@@ -28,12 +28,12 @@ function describe(test, api=runtime()) {
     const project=parents.find(parent=>parent._fullProject)?._fullProject;
     const pool=api.poolBuilder.PoolBuilder.createForWorker(project)._buildPoolForTest(test);
     const sources=[],files=new Set(),selected=new Map();
-    const add=(fn,location,role,kind)=>{
+    const add=(fn,location,role,kind,fixtureName)=>{
         if(typeof fn!=='function')return;
         if(!location?.file || !path.isAbsolute(location.file))fail('Loaded Playwright fixture has no physical source file');
         if(location.file.startsWith(api.root+path.sep))return; // Runner implementation is represented by its pinned version.
         files.add(location.file);
-        sources.push({name:`lifecycle-${sources.length}-${kind}.js`,source:functionSource(fn),role});
+        sources.push({name:`lifecycle-${sources.length}-${kind}.js`,source:functionSource(fn),role,location,kind,fixtureName});
     };
     const visit=(registration,role)=>{
         if(!registration)fail('Unresolved loaded Playwright fixture');
@@ -67,7 +67,7 @@ function describe(test, api=runtime()) {
         // virtual project location. Keep the callback's actual source provenance.
         let origin=registration;
         while(origin.optionOverride && origin.super?.fn===origin.fn)origin=origin.super;
-        add(registration.fn,origin.location,role,'fixture');
+        add(registration.fn,origin.location,role,'fixture',origin.name);
     }
     return {timingSource:functionSource(test.fn),timingSources:sources,files:[...files]};
 }

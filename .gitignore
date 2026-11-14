@@ -32,6 +32,7 @@
 !/bin/badges.cjs
 !/bin/browser-navigation.cjs
 !/bin/common
+!/bin/coverage-lifecycle
 !/bin/compose-project
 !/bin/dependencies
 !/bin/expose-tools

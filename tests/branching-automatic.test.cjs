@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const {assessed, estimate} = require('./fixtures/branching/assessment.cjs');
 const os = require('node:os');
 const path = require('node:path');
-const {buildWorkflow, compileFragment} = require('../branching/automatic.cjs');
+const {buildWorkflow, compileFragment, playwrightCoverageAdapter} = require('../branching/automatic.cjs');
 const {execute, fileDigest, CheckpointStore, digest} = require('./fixtures/branching/engine.cjs');
 const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
 
@@ -31,6 +31,44 @@ function fixture(t) {
     assessed(manifest);
     return {root,manifest,configuration,Provider};
 }
+
+test('coverage replay requires verified support and resolves all bindings before routing', async t => {
+    const {manifest} = fixture(t);
+    const dependencies = ['playwright/support.cjs', 'playwright/coverage-cookie.cjs',
+        'playwright/javascript-coverage.cjs', 'bin/browser-navigation.cjs'];
+    for (const file of dependencies) {
+        const source = path.resolve(__dirname, '..', file);
+        const target = path.join(manifest.root, file);
+        fs.mkdirSync(path.dirname(target), {recursive: true});
+        fs.copyFileSync(source, target);
+        manifest.sources.push({path: file, sha256: fileDigest(target)});
+    }
+    const [entry] = manifest.tests;
+    const file = path.join(manifest.root, entry.file);
+    const imports = "import {test, expect} from './playwright/support.cjs';\n";
+    function setBody(body) {
+        fs.writeFileSync(file, imports + body);
+        manifest.sources.find(source => source.path === entry.file).sha256 = fileDigest(file);
+        entry.steps = [{start: Buffer.byteLength(imports), end: Buffer.byteLength(imports + body),
+            kind: 'statement', portable: true}];
+    }
+    Object.assign(entry, {fixture: './playwright/support.cjs:test', parameters: '( { page } )',
+        contextFiles: [entry.file, ...dependencies], reasons: [
+            'Custom fixture lifecycle is not equivalent to a bare page',
+            'Project imports or custom fixtures require an execution adapter'
+        ]});
+    setBody("await page.goto('/cart');");
+    const adapter = playwrightCoverageAdapter(manifest, assert);
+    assert.equal(adapter.supports(entry), true);
+    const routes = [];
+    await adapter.execute(entry, 0, 1, {page: {goto: async url => routes.push(url)}});
+    assert.deepEqual(routes, ['/cart']);
+    setBody('await page.goto(moduleRoute);');
+    assert.equal(playwrightCoverageAdapter(manifest).supports(entry), false);
+    setBody("await page.goto('/cart');");
+    manifest.sources.find(source => source.path === dependencies[0]).sha256 = '0'.repeat(64);
+    assert.equal(playwrightCoverageAdapter(manifest).supports(entry), false);
+});
 
 test('compiled fragments preserve strict module semantics',async()=>{
     assert.equal(await compileFragment([], 'return this;')(),undefined);
@@ -67,6 +105,20 @@ test('fixture checkpoint times setup instead of a no-op after root preparation',
     assert.equal(single.stages.get(spec.parent).estimatedMs,10);
     await single.stages.get(spec.parent).run(runtime);
     assert.deepEqual(calls, ['/prepare', '/prepare']);
+});
+
+test('costing refuses a forecast for a different representative or depth', t => {
+    const {manifest, configuration} = fixture(t);
+    const forecast = manifest.assessment.stages['cp-cart'];
+    Object.assign(forecast, {featureSchema: 'fixture', environmentDigest: 'environment',
+        sourceDigest: 'source', timingBoundary: 'checkpoint-segment-run-duration/v1'});
+    forecast.segment = {representative: 'test-two', fromDepth: 0, toDepth: 1};
+    const stage = () => buildWorkflow(manifest, configuration).workflow.stages.get('cp-cart');
+    assert.equal(stage().estimatedMs, null);
+    forecast.segment.representative = 'test-one';
+    assert.equal(stage().estimatedMs, 1);
+    forecast.segment.fromDepth = 1;
+    assert.equal(stage().estimatedMs, null);
 });
 
 test('Cypress fragments use their own queue with original UTF-8 source bytes', async t => {

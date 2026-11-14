@@ -7,12 +7,16 @@ const path = require('node:path');
 const {createHash, randomUUID} = require('node:crypto');
 const {EstimationError} = require('../estimation.cjs');
 const {reachableContext} = require('./reachable.cjs');
+const {reachableContext: reachableContextV4} = require('./reachable-v4.cjs');
 const COUNTS_SCHEMA = 'syntax-hash-v2-babel-7.29.9';
 const FEATURE_SCHEMA = 'syntax-roles-v3-babel-7.29.9';
-const REACHABLE_SCHEMA = 'syntax-reachable-v4-babel-7.29.9';
-const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA];
+const REACHABLE_SCHEMA_V4 = 'syntax-reachable-v4-babel-7.29.9';
+const REACHABLE_SCHEMA_V5 = 'syntax-reachable-v5-babel-7.29.9';
+const REACHABLE_SCHEMA = REACHABLE_SCHEMA_V5;
+const SCHEMAS = ['syntax-hash-v1-babel-7.29.9', COUNTS_SCHEMA, FEATURE_SCHEMA, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5];
 const COUNTS_WIDTH = 72, WIDTH = COUNTS_WIDTH * 2, REACHABLE_WIDTH = 1024, HALF_REACHABLE = 512;
-const width = schema => schema === REACHABLE_SCHEMA ? REACHABLE_WIDTH : schema === FEATURE_SCHEMA ? WIDTH : COUNTS_WIDTH;
+const isReachableSchema = schema => schema === REACHABLE_SCHEMA_V4 || schema === REACHABLE_SCHEMA_V5;
+const width = schema => isReachableSchema(schema) ? REACHABLE_WIDTH : schema === FEATURE_SCHEMA ? WIDTH : COUNTS_WIDTH;
 // Bounded syntax-vector cache: helpers shared by many tests are parsed once.
 // Keys include source bytes and schema; no project source or AST is retained.
 const syntaxCache = new Map();
@@ -26,8 +30,8 @@ function counts(request) {
     const schema = request.featureSchema;
     ensure(SCHEMAS.includes(schema), 'Unknown feature schema');
     ensure(Array.isArray(request.sources) && request.sources.length > 0, 'Source corpus is required');
-    const roleWidth = schema === REACHABLE_SCHEMA ? HALF_REACHABLE : COUNTS_WIDTH;
-    const bucketCount = schema === REACHABLE_SCHEMA ? HALF_REACHABLE - 8 : 64;
+    const roleWidth = isReachableSchema(schema) ? HALF_REACHABLE : COUNTS_WIDTH;
+    const bucketCount = isReachableSchema(schema) ? HALF_REACHABLE - 8 : 64;
     const vector = Array(roleWidth).fill(0), fingerprints = [];
     vector[0] = request.runner === 'playwright' ? 1 : 0;
     vector[1] = request.runner === 'cypress' ? 1 : 0;
@@ -59,7 +63,7 @@ function counts(request) {
             add(counts,'syntax:' + node.type); counts[5]++;
             if (schema === COUNTS_SCHEMA && ['CallExpression', 'OptionalCallExpression'].includes(node.type))
                 add(counts,'call:' + (node.callee.property?.name ?? node.callee.name ?? node.callee.type));
-            if (schema === REACHABLE_SCHEMA && ['CallExpression', 'OptionalCallExpression', 'NewExpression'].includes(node.type))
+            if (isReachableSchema(schema) && ['CallExpression', 'OptionalCallExpression', 'NewExpression'].includes(node.type))
                 add(counts, 'call:' + qualified(node.callee));
             if (node.type === 'NumericLiteral') {
                 counts[6] += Math.log1p(Math.abs(node.value));
@@ -81,20 +85,54 @@ function counts(request) {
     }
     return {featureSchema: schema, vector, sourceDigest: sha256(JSON.stringify(fingerprints))};
 }
+const backendFields = new Set([
+    'fixtureBytes','dataRows','indexBacklog','cpuCount','memoryBytes','workers'
+]);
+
+function backendFeatures(state) {
+    if (state === undefined) return {};
+    ensure(state && state.version === 1 && typeof state === 'object', 'Invalid pre-run backend state version');
+    const result = {};
+    for (const [name,value] of Object.entries(state)) {
+        if (name === 'version') continue;
+        if (name === 'cacheState') {
+            ensure(value === 'warm' || value === 'cold', 'Invalid pre-run cache state');
+            result['backend.v1.cache.'+value] = 1;
+        } else {
+            ensure(backendFields.has(name) && Number.isSafeInteger(value) && value >= 0,
+                'Invalid pre-run backend field: '+name);
+            // Keep a measured zero distinct from missing metadata.
+            result['backend.v1.'+name.toLowerCase()+'.known'] = 1;
+            result['backend.v1.'+name.toLowerCase()] = value;
+        }
+    }
+    return result;
+}
+
 function features(request) {
     const schema=request.featureSchema ?? FEATURE_SCHEMA;
-    if (schema === REACHABLE_SCHEMA) {
+    if (isReachableSchema(schema)) {
         ensure(Array.isArray(request.sources) && request.sources.length>0, 'Source corpus is required');
         ensure(request.sources.every(s=>['work','context'].includes(s.role ?? 'work')), 'Unknown source role');
         ensure(new Set(request.sources.map(s=>s.name)).size===request.sources.length, 'Duplicate source in corpus');
         const work=request.sources.filter(s=>s.role!=='context');
         ensure(work.length>0, 'Work source is required');
-        const reachable = reachableContext(request.sources);
-        const primary = counts({...request, featureSchema: REACHABLE_SCHEMA, sources: work});
-        const supporting = reachable.length ? counts({...request, featureSchema: REACHABLE_SCHEMA, sources: reachable, extraFeatures: {}}).vector : Array(HALF_REACHABLE).fill(0);
+        const extractor = schema === REACHABLE_SCHEMA_V4 ? reachableContextV4 : reachableContext;
+        const reachable = extractor(request.sources);
+        const primary = counts({...request, featureSchema: schema, sources: work, extraFeatures: schema === REACHABLE_SCHEMA_V5
+            ? {...request.extraFeatures,...backendFeatures(request.backendState)} : request.extraFeatures});
+        const supporting = reachable.length ? counts({...request, featureSchema: schema, sources: reachable, extraFeatures: {}}).vector : Array(HALF_REACHABLE).fill(0);
         const fingerprints = [...request.sources].sort((a,b)=>a.name.localeCompare(b.name,'en'))
-            .map(s=>[s.name,sha256(s.source),s.role ?? 'work']);
-        return {featureSchema: schema, vector: [...primary.vector, ...supporting], sourceDigest: sha256(JSON.stringify(fingerprints))};
+            .map(s=>[s.name,sha256(s.source),s.role ?? 'work', ...(schema !== REACHABLE_SCHEMA_V4 && s.origin ? [[s.origin.file,(s.origin.ranges ?? [s.origin]).map(({start,end})=>[start,end])]] : [])]);
+        return {
+            featureSchema: schema,
+            vector: [...primary.vector, ...supporting],
+            sourceDigest: sha256(JSON.stringify(fingerprints)),
+            selectedImplementations: reachable.map(s => s.name),
+            unresolvedEdges: reachable.unknownEdges ?? [],
+            ...(schema === REACHABLE_SCHEMA_V5 ? {registeredCalls: (reachable.edges ?? []).filter(edge=>edge.registration),
+                processCalls: (reachable.edges ?? []).filter(edge=>edge.process)} : {})
+        };
     }
     if(schema!==FEATURE_SCHEMA)return counts({...request,featureSchema:schema});
     ensure(Array.isArray(request.sources) && request.sources.length>0, 'Source corpus is required');
@@ -117,6 +155,7 @@ function loadModel(file, expectedDigest) {
     ensure(model.schemaVersion === 1 && SCHEMAS.includes(model.featureSchema), 'Incompatible model schema');
     const e = model.estimator;
     ensure(e && ['identity', 'log1p'].includes(e.inputTransform ?? 'identity'), 'Unknown model input transform');
+    ensure(['log1p','log'].includes(e.targetTransform ?? 'log1p'), 'Unknown model target transform');
     ensure(e && Number.isFinite(e.intercept) && ['mean', 'scale', 'coefficients'].every(key =>
         Array.isArray(e[key]) && e[key].length === width(model.featureSchema) && e[key].every(Number.isFinite)) && e.scale.every(x => x > 0), 'Invalid model coefficients');
     ensure(Number.isFinite(model.errorLogP90) && model.errorLogP90 >= 0 && Array.isArray(model.domains) && model.domains.length > 0, 'Missing model validation');
@@ -140,42 +179,60 @@ function predict(snapshot, loaded, {shadow = false, transfer = false} = {}) {
     ensure(snapshot.vector.every(x => x >= 0), 'Negative syntax features');
     const logMs = e.intercept + snapshot.vector.reduce((sum, x, i) =>
         sum + ((e.inputTransform === 'log1p' ? Math.log1p(x) : x) - e.mean[i]) / e.scale[i] * e.coefficients[i], 0);
-    const ms = Math.expm1(logMs);
-    ensure(Number.isFinite(ms) && ms > 0, 'Invalid predicted duration');
-    const outOfRange = snapshot.vector.some((x, i) => x < Math.min(...ranges.map(d => d.ranges[i][0])) || x > Math.max(...ranges.map(d => d.ranges[i][1])));
+    const inverse = e.targetTransform === 'log' ? Math.exp : Math.expm1;
+    const ms = inverse(logMs);
+    ensure(Number.isFinite(ms), 'Model predicted a nonfinite duration');
+    ensure(ms > 0, 'Model predicted a nonpositive duration');
+    const matchingEnvironment = domains.filter(d=>d.environmentDigest === snapshot.environmentDigest);
+    const eligibleRanges = matchingEnvironment.length ? matchingEnvironment : ranges;
+    const outOfRange = snapshot.featureSchema === REACHABLE_SCHEMA_V5
+        ? !eligibleRanges.some(domain=>snapshot.vector.every((value,i)=>value>=domain.ranges[i][0] && value<=domain.ranges[i][1]))
+        : snapshot.vector.some((x, i) => x < Math.min(...ranges.map(d => d.ranges[i][0])) || x > Math.max(...ranges.map(d => d.ranges[i][1])));
     ensure(shadow || !outOfRange, 'Workload is outside the trained feature range');
     ensure(Number.isFinite(model.referenceBaselineMs) && model.referenceBaselineMs > 0 &&
         Number.isFinite(snapshot.baselineMs) && snapshot.baselineMs > 0 &&
         Number.isFinite(snapshot.manualMultiplier) && snapshot.manualMultiplier > 0, 'Missing or invalid pre-run baseline or multiplier');
     const factor = snapshot.baselineMs / model.referenceBaselineMs * snapshot.manualMultiplier;
-    ensure(Number.isFinite(ms * factor) && ms * factor > 0 && Number.isFinite(Math.expm1(logMs + model.errorLogP90) * factor), 'Prediction scaling overflow');
+    const lower = Math.max(0,inverse(logMs - model.errorLogP90)), upper = inverse(logMs + model.errorLogP90);
+    ensure(Number.isFinite(ms * factor) && ms * factor > 0 && Number.isFinite(upper * factor), 'Prediction scaling overflow');
     return {modelId: id, rawMs: ms, ms: ms * factor, factor, environmentKnown, ...(transfer ? {domainMatched, executionEligible:model.qualified && domainMatched && !outOfRange} : {}),
         referenceBaselineMs: model.referenceBaselineMs, baselineMs: snapshot.baselineMs, manualMultiplier: snapshot.manualMultiplier,
-        rawLowerMs: Math.max(0, Math.expm1(logMs - model.errorLogP90)), rawUpperMs: Math.expm1(logMs + model.errorLogP90),
-        lowerMs: Math.max(0, Math.expm1(logMs - model.errorLogP90)) * factor,
-        upperMs: Math.expm1(logMs + model.errorLogP90) * factor, outOfRange, qualified: model.qualified};
+        rawLowerMs: lower, rawUpperMs: upper,
+        lowerMs: lower * factor, upperMs: upper * factor, outOfRange, qualified: model.qualified};
 }
 function prepare(request, loaded, {transfer = true} = {}) {
     ensure(request.timingBoundary === undefined || (typeof request.timingBoundary === 'string' && /^[a-z0-9][a-z0-9_./-]{0,99}$/.test(request.timingBoundary)), 'Invalid timing boundary version');
     ensure(request.environment && Object.keys(request.environment).length > 0, 'Environment identity is required');
     ensure(typeof request.group === 'string' && request.group && typeof request.sourceFamily === 'string' && request.sourceFamily, 'Training group and source family are required');
     const environmentDigest = sha256(JSON.stringify(Object.entries(request.environment).sort()));
-    const snapshot = {schemaVersion: 1, observationId: randomUUID(), ...features({...request, featureSchema: loaded?.model.featureSchema ?? request.featureSchema}), runner: request.runner, unit: request.unit,
+    const feat = features({...request, featureSchema: loaded?.model.featureSchema ?? request.featureSchema});
+    const snapshot = {schemaVersion: 1, observationId: randomUUID(), ...feat, runner: request.runner, unit: request.unit,
         ...(request.timingBoundary ? {timingBoundary:request.timingBoundary} : {}),
+        modelId: loaded?.id ?? null,
+        selectedImplementations: feat.selectedImplementations ?? [],
+        unresolvedEdges: feat.unresolvedEdges ?? [],
         group: sha256(request.group), sourceFamily: sha256(request.sourceFamily), environmentDigest,
         extraFeatures: {...request.extraFeatures},
-        baselineMs: request.baselineMs, manualMultiplier: request.manualMultiplier ?? 1,
+        ...(feat.featureSchema === REACHABLE_SCHEMA_V5 && request.backendState ? {backendState:{...request.backendState}} : {}),
+        // Keep the historical training reference independent of checkpoint policy.
+        // An explicit baseline remains an opt-in environment calibration.
+        baselineMs: request.baselineMs ?? loaded?.model.referenceBaselineMs ?? 106638.8, manualMultiplier: request.manualMultiplier ?? 1,
         capturedAt: new Date().toISOString(), prediction: null, predictionError: null};
     if (request.sourceStore) {
         fs.mkdirSync(request.sourceStore, {recursive: true, mode: 0o700});
-        snapshot.sourceArchive = request.sources.map(({name,source,role}) => {
+        snapshot.sourceArchive = request.sources.map(({name,source,role,origin}) => {
             const digest=sha256(source), file=path.join(request.sourceStore,digest);
-            try { fs.writeFileSync(file,source,{flag:'wx',mode:0o600}); }
-            catch(error) {
-                if(error.code!=='EEXIST')throw error;
-                ensure(sha256(fs.readFileSync(file))===digest,'Archived training source changed');
+            try {
+                const fd = fs.openSync(file,fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+                try {
+                    ensure(fs.fstatSync(fd).isFile() && sha256(fs.readFileSync(fd))===digest,
+                        'Archived training source changed or is not a regular file');
+                } finally { fs.closeSync(fd); }
+            } catch(error) {
+                if(error.code!=='ENOENT')throw error;
+                fs.writeFileSync(file,source,{flag:'wx',mode:0o600});
             }
-            return {name,sha256:digest,...(role ? {role} : {})};
+            return {name,sha256:digest,...(role ? {role} : {}), ...(origin ? {origin} : {})};
         });
     }
     try {
@@ -203,6 +260,10 @@ function evaluate(rows) {
     }
     const metrics = accuracyMetrics(valid);
     const strata = accuracyStrata(valid);
+    const prefixRows = rows.filter(r => r.unit === 'prefix');
+    const checkpointDecisions = prefixRows.length
+        ? evaluateCheckpointDecisions(prefixRows)
+        : {status: 'unmeasured', reason: 'Whole-suite durations are not shared-prefix labels'};
     return {schemaVersion: 1, status: scored.length === valid.length && valid.length > 0 ? 'scored' : 'incomplete',
         total: rows.length, eligible: valid.length, excluded: rows.length - valid.length, unpredicted: valid.length - scored.length,
         modelIds: [...new Set(scored.map(r => r.prediction.modelId))], outOfRange: scored.filter(r => r.prediction.outOfRange).length,
@@ -212,6 +273,10 @@ function evaluate(rows) {
         meetsErrorTarget: metrics.meetsErrorTarget && Object.values(strata).every(dimension =>
             Object.values(dimension).every(group => group.meetsErrorTarget)),
         qualification: 'diagnostic-only; requires frozen prospective protocol and independent audit',
-        checkpointDecisions: {status: 'unmeasured', reason: 'Whole-suite durations are not shared-prefix labels'}};
+        checkpointDecisions};
 }
-module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate};
+const {reconcileWorkloadInputs} = require('./execution-context.cjs');
+const {representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION} = require('./workload-representation.cjs');
+const {auditAndReextractDataset} = require('./audit.cjs');
+const {PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions} = require('./prefix-measurement.cjs');
+module.exports = {FEATURE_SCHEMA, WIDTH, REACHABLE_SCHEMA_V4, REACHABLE_SCHEMA_V5, REACHABLE_SCHEMA, REACHABLE_WIDTH, sha256, features, loadModel, predict, prepare, observe, evaluate, reconcileWorkloadInputs, representWorkload, summarizeWorkloadRepresentations, WORKLOAD_REPRESENTATION_VERSION, auditAndReextractDataset, PREFIX_TIMING_BOUNDARY, TEST_TIMING_BOUNDARY, validatePrefixMeasurement, recordPrefixObservation, evaluateCheckpointDecisions};

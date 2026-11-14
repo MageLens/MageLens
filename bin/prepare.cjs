@@ -93,6 +93,9 @@ function prepare({plain = false, runtimeOnly = false, themeRoots} = {}) {
     for (const name of fs.readdirSync('coverage')) fs.rmSync(`coverage/${name}`, {recursive: true, force: true});
     for (const directory of ['.nyc_output', 'cypress/screenshots', 'cypress/videos']) fs.rmSync(directory, {recursive: true, force: true});
     fs.mkdirSync('coverage/raw/templates', {recursive: true});
+    // The checkpoint driver can write as root. Keep the directory owned by
+    // the normal runner so that a subsequent run can replace its contents.
+    fs.mkdirSync('.nyc_output', {recursive: true});
     const run = {id: randomBytes(16).toString('hex'), runner: process.env.MAGELENS_RUNNER || 'cypress', startedAt: new Date().toISOString(), roots: project.roots,
         sources: Object.fromEntries(Object.entries(inputs).filter(([file]) => scoped(file)))};
     fs.mkdirSync(`coverage/raw/php/${run.id}`, {recursive: true, mode: 0o777});

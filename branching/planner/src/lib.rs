@@ -57,6 +57,10 @@ pub struct Test {
     pub steps: Vec<Step>,
     pub reasons: Vec<String>,
     pub disposition: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub statically_skipped: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub opaque_fixture_provider: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restoration: Option<serde_json::Value>,
     #[serde(skip)]
@@ -281,6 +285,7 @@ struct Scope {
     reasons: Vec<String>,
     identity: Vec<String>,
     bindings: structure::Bindings,
+    skipped: bool,
 }
 
 #[cfg(test)]
@@ -594,6 +599,7 @@ fn walk_scope(
         };
         if method.starts_with("describe") {
             let mut child = scope.clone();
+            child.skipped |= matches!(method, "describe.skip" | "describe.fixme");
             if tagged {
                 child.reasons.push("Tagged Cypress registration requires native selection".into());
             }
@@ -730,6 +736,8 @@ fn walk_scope(
             }
             .into(),
             reasons,
+            statically_skipped: scope.skipped || matches!(method, "skip" | "fixme"),
+            opaque_fixture_provider: false,
             restoration: None,
             context_identity: serde_json::to_string(&(
                 fixture,
@@ -883,6 +891,9 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     for test in &mut tests {
         test.context_files = project.dependency_closure(&test.file).into_iter().collect();
         test.fixture_setup = project.fixture_setup_sources(test);
+        test.opaque_fixture_provider = !test.fixture.starts_with("cypress:")
+            && test.fixture != "@playwright/test:test"
+            && !project.fixture_provider_known(test);
         test.scope = hash(
             serde_json::to_vec(&(&test.context_identity, project.context(&test.file))).unwrap(),
         );

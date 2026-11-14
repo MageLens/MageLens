@@ -13,50 +13,162 @@ is recorded in the dated work log at the end of this file.
 
 ## Next milestone: one complete economical branching run
 
-Use the isolated Mage-OS 4.0.0 / Luma / Playwright installation with Chrome
-for Testing 157.0.8103.38, one PHP worker and the retained-backend
-calibration for the populated catalog. Freeze one suite containing a long
-reusable journey, a cheaper duplicated prefix and unique work. First
-identify all original tests with Rust and the native runner. Assess
-restoration support and forecast duration for each candidate, then use the
-production Rust solver with the measured operation costs.
+Use the isolated Mage-OS 4.0.0 / Luma / Playwright installation with
+Chrome for Testing 157.0.8103.38, a populated catalog, and one PHP worker.
+The chosen suite has eight original tests and one native readiness check.
+Rust discovered three duplicated prefixes. The coverage adapter accepts
+seven tests for consideration. The readiness and robots checks run natively.
 
-The first five-test storefront probe found two automatically restorable
-candidate prefixes and one unique test. The common navigation had four
-consumers and a diagnostic forecast of 0.419 s against 22.747 s break-even.
-The nested navigation had two consumers and a combined forecast of 0.664 s
-against 44.986 s break-even. The Rust cost replay rejected both. This
-candidate does not yet contain a demonstrated profitable prefix. Its
-first native run passed four tests and failed the probe's robots response
-assertion, taking 12.426 s. That failed run is excluded from the benchmark.
-The probe now checks the robots response status and content type. All five
-original tests passed in 4.919 s of runner wall time on pinned Chrome.
-Rust rediscovered both restorable prefixes after replanning the changed
-source. The passing linear run is a fixture check; it has no paired
-branching result or complete coverage measurement.
+| Shared work | Consumers | Measured development duration | v7 break-even | Measured-cost replay |
+| --- | ---: | ---: | ---: | --- |
+| Home navigation | 4 | up to 0.413 s | 23.308 s | Below break-even |
+| Home and search | 2 | up to 1.171 s | 46.853 s | Below break-even |
+| Catalog product pages | 3 | at least 35.215 s | 29.194 s | Select, with 12.092 s projected setup savings |
 
-A diagnostic browser probe timed the original Rust-identified source slices
-in six fresh contexts on the populated installation. The common navigation
-took 0.321–0.457 s. The cumulative navigation and search prefix took
-0.827–1.257 s. Both stayed far below the corresponding calibrated
-break-even thresholds. Neither set of repetitions admits one forecast
-within 5% of all six durations. These are prefix diagnostics, without
-checkpoint or complete-suite coverage. Use this workload as the cheap
-control when a profitable journey is established.
+The table uses the v7 calibration from the populated catalog replay.
+The production benchmark must verify which measured baseline it loads.
+The suite report now lists any checkpoint operations whose cost fell
+back to a default because the installation had no matching measurements.
+The frozen forecast for the catalog was 3.541 s, so a replay with the same
+costs and forecasts selected no checkpoints. Independent qualification
+at the existing 95%-within-5% target still gates execution. Keep related
+repetitions together and obtain complete, source-matched observations
+within the declared catalog scope.
 
-The execution gate rejects the current model for this scope. It lacks
-independent qualification and a validated checkpoint timing domain, and
-the candidate inputs are outside its trained range. Collect source-matched
-repetitions for the selected suite and retain the existing 95% within 5%
-accuracy requirement. The retained provider currently reports checkpoint
-coverage as unsupported. Comparable PHP, JavaScript, template and DOM
-coverage is required before a paired run can establish savings.
+The matching-browser linear run passed all nine tests in 129 s including
+warm-up, execution, reports and fixture cleanup. The clock excluded
+stack startup, reindexing and forecast preparation. The retained-provider
+probe collected PHP coverage after restore. Separate browser probes
+verified JavaScript and template/DOM collection across page replacement.
+A complete paired coverage result has yet to be measured.
+
+### Bounded long-prefix qualification experiment
+
+**Hypothesis.** The bundled model transfers a whole-test timing domain to
+an incremental prefix. It sees the catalog's syntax but has no matching
+long-sequence labels or verified backend state for that boundary. The
+long prefix contains 80 direct navigation sites and 80 awaited assertions.
+The previously inflated diagnostic call count came from scanning context
+as work. Verify on the frozen manifest whether all 80 navigations actually
+execute, whether they resolve through helpers, and whether the measured
+cost tracks realized work across catalog sizes. Compare static attribution
+with browser navigation evidence and source hashes before changing inputs
+or fitting again.
+
+**Inputs and groups.** Use Mage-OS/Luma, the pinned runner and Chrome,
+one PHP worker, active coverage and a verified search index. Freeze source
+and fixture fingerprints, actual catalog row count, cache preparation,
+browser configuration, model SHA-256 and the timing boundary before each
+run. Measure both the existing 120-product state and a 240-product
+state with the same seed procedure on the disposable installation.
+Use two independently authored long development families: ordered
+product-detail verification and search-to-product browsing. Each must
+exercise repeated real product work and finish with its original
+assertions. Variants across sizes and all repetitions stay in their
+family's group. Reserve one independently authored long catalog group
+for validation and another for prospective audit before any fitting.
+Keep the existing benchmark and all previously inspected timings out of
+the untouched groups. The benchmark's known measurements are useful for
+diagnosis only.
+
+**Budget and stop.** Cap this experiment at four long groups, two
+catalog states, two repetitions per group and state, one existing-model
+fit per timing unit after input verification, and 90 minutes of isolated
+execution. Keep whole-test and exact incremental-prefix contracts and
+models separate. For prefix labels, first verify that the approved
+measurement route binds the exact increment to its frozen forecast and
+audits source, test completion and provider state. Source-fragment
+probes remain diagnostics. If the route cannot supply accepted labels
+without invoking the gated suite, stop and record that dependency before
+spending the browser budget. Stop on unsupported state or evidence, an
+unresolved attribution mismatch, or a validation or audit miss at the
+existing 95%-within-5% target. Report the missing evidence and the
+specific decision required. The broad-corpus coverage requirement in the
+trainer remains in force wherever it already applies.
+
+**Preflight result.** Source verification and AST inspection found
+exactly 80 direct `page.goto` calls and 80 awaited assertions in each
+of the three consumers, with zero unresolved references or selected
+helpers in the frozen prefix forecast. The bundled model flags both
+domain transfer and out-of-range input, and that snapshot has no
+backend-state record. The matched linear run's server access log confirms
+three ordered sequences of 80 product-page requests, all HTTP 200. This
+rules out a missing helper or an unexecuted navigation in that run.
+The first-to-last response timestamp spans were 40, 37 and 39 s.
+The access log has whole-second timestamps and no request or upstream
+duration fields. Those spans corroborate wall time but cannot apportion
+backend and browser work. Collect navigation timing and server-side
+durations in the same untimed diagnostic pass, if the scoped experiment
+proceeds.
+The native profiler emits whole-test timings only,
+and calibration measures restore operations without executing the
+catalog source. The current audited incremental labels can only come
+from the retained suite, which requires qualified forecasts before
+it can run. The experiment stops at this prerequisite. To proceed
+locally, add an explicit qualification-only measurement route on the
+disposable installation that runs the complete original coverage suite,
+times the exact source-matched segments, and audits restoration without
+using an unqualified model to select checkpoints. Alternatively, supply
+independently qualified artifacts with matching timing-domain evidence.
+
+The bounded experiment also cannot make the existing trainer's
+`sufficientCoverage` flag true. That diagnostic requires at least
+three source families and five groups per runner and family. Four
+long groups total, including validation and audit, cannot meet it.
+The trainer always writes an unqualified artifact, and the campaign
+ledger ends at evaluation. A catalog-only qualification decision would
+therefore need an explicitly scoped evidence and promotion contract
+that preserves the 95%-within-5% threshold and fails closed outside
+that scope. If broad-corpus coverage remains mandatory for promotion,
+the four-group experiment can diagnose the error but cannot authorize
+the benchmark. Additional browser runs alone cannot resolve either
+prerequisite.
+
+Catalog-only qualification is authorized at the existing accuracy target.
+The retained calibration machinery can now time a frozen increment,
+capture and restore its state, and require its original continuation to
+pass. It reports these observations separately from operation costs and
+does not update the cost baseline. The source binding accepts all three
+discovered catalog slices. The experiment still needs complete native
+suite and coverage evidence tied to the same collection attempt before
+any resulting observation can be admitted.
+
+The first live measurement-path check on the existing 120-product
+benchmark exercised the 160-statement increment twice with coverage
+active. Work took 41.570 s and 41.132 s. Both retained restores and their
+continuation assertions passed, then all nine original native tests
+passed. Source and provider audits passed, fixture cleanup completed, and
+the normalized coverage comparison against the 129 s linear reference
+reported zero differences. The PHP report collected 410 requests. This
+was a measurement-path check using previously inspected sources and the
+unqualified bundled model. It supplies neither untouched qualification
+data nor a branching-arm benchmark. The older 35 s development probes
+used a different collection setup; use the coverage-enabled timing
+contract for both development and held-out measurements.
+
+At the low end of the controlled long-prefix measurements, a forecast
+5% low would be 33.516 s, still 4.322 s above the 29.194 s replay
+break-even. Qualification is the immediate blocker. These numbers only
+check the decision margin against development timings.
+
+The earlier in-flight search-to-product development probe timed out
+while filling the search field and supplied no eligible timing. It
+finished before any new collection under this experiment. Its fixture
+cleanup completed and the isolated services stopped.
+
+If both models qualify, use the existing solver with a measured complete
+baseline and run the original nine-test workload in both arms. Require
+clean retained restoration and meaningful, positive coverage on a
+restored application path in addition to full report equivalence. Use a
+companion probe if needed to verify collector behavior, and distinguish
+its evidence from coverage exercised by the benchmark workload itself.
 
 Use equivalent initial application, browser, cache and fixture states for
-each pair. Record original test results, each candidate's decision and
+each arm. Record original test results, each candidate's decision and
 reason, forecast preparation, execution, capture/restore/release/reset,
 cleanup and total elapsed time. Compute seconds and percent saved from the
-paired totals. Defer broader corpus expansion, model alternatives and
+paired totals. Compare unchanged source and full PHP, JavaScript, template
+and DOM outcomes. Defer broader corpus expansion, model alternatives and
 unneeded infrastructure.
 
 ## Objective and readiness
@@ -922,6 +1034,14 @@ audit. The separate support-hook fixture passed its discovery run but failed
 the archive-origin assertion. Hook provenance and real workload reconciliation
 remain open.
 
+With service workers blocked to match the checkpoint runtime, a
+second linear run passed all nine tests in 129 s, including coverage
+preparation, reports and fixture cleanup. The prior native-default run
+and this run have identical source fingerprints, test outcomes and
+normalized PHP, JavaScript, template and DOM coverage. Keep the newer
+linear reference for the paired comparison. Its clock excludes service
+startup and search reindexing, which established the initial state.
+
 ### 2026-11-14 — recursive callback and support-hook attribution
 
 The pinned Cypress support-hook fixture mapped a transformed TypeScript hook to
@@ -1448,6 +1568,250 @@ network-disabled container. Magento instrumentation, PHP and
 template/DOM collection, and paired coverage equivalence remain
 unverified.
 
+Local Playwright checkpoint probes also preserved template execution and
+DOM observations across page replacement and replaced a stale PHP
+collection cookie with the active run cookie. The isolated storefront
+smoke produced a PHP coverage fragment with the active cookie on a normal
+request. PHP collection across a retained Magento restore remains
+unverified. Each native Playwright phase writes its own coverage result,
+so the file from the final phase cannot attest to the complete mixed
+suite. Complete-suite result validation and equivalent reports are required
+before recording a paired benchmark.
+
+The routed plan's qualification check identifies nine test forecasts and
+three prefix forecasts with no validated timing domain and features outside
+the training range. The bundled model is unqualified for all twelve. The
+planning integration suite passed all 21 cases with the orchestrator built
+from the current source, including the check that a failed assessment
+cannot reuse an older plan. This validates the gate and leaves the
+95%-within-5% forecast target open.
+
+For the exact same frozen inputs, the best possible single estimate
+covers only two of three development repetitions for each short segment
+at the 5% tolerance. Their measured spreads were 74 ms and 259 ms.
+The catalog segment's three tolerance intervals intersect from 33.779 s
+to 36.976 s, while its frozen forecast was 3.541 s. Fix the starting
+state for the short paths before collecting new labels and use the
+catalog repetitions to diagnose the duration bias. The source-slice
+probe created a fresh browser context per repetition and reused one
+running application stack. Record and control application warm-up and
+cache state as well as browser state in the next collection. Keep the
+production timing boundary and measure setup and cleanup separately
+for wall-clock accounting.
+
+The stored populated-catalog calibration passed source and provider
+checks and contains samples for all six operation costs. It was recorded
+under policy v6. The current worktree uses policy v7, and the runtime
+baseline store keys records to both policy and installation identity.
+The measured-cost replay supplied operation times explicitly. Before
+timing either benchmark arm, recalibrate the dedicated installation
+with the same orchestrator image and verify that the branching run
+loads a measured baseline with samples for every operation.
+
+Fresh calibration on the isolated populated catalog passed under policy
+v7 with three captures, three restores, three releases, two subsequent
+resets, one first reset and one backend lifecycle measurement. It verified
+source integrity, schema removal and grant restoration. Mean restore cost
+was 11.421 s. The break-even duration is 46.853 s for two consumers and
+29.194 s for three. The measured catalog segment remains above the
+three-consumer threshold. The installation was stopped and the temporary
+checkpoint filesystem was unmounted and removed. Verify baseline reuse
+in the eventual branching run, which remains gated by qualification.
+
+With the fresh v7 costs, the Rust solver rejects both short prefixes.
+Their conservative combined durations were 0.413 s and 1.171 s, against
+23.308 s and 46.853 s break-even. It selects only the catalog prefix
+using the rounded-down minimum measured duration of 35.215 s and
+projects 12.092 s of setup savings. Replaying the frozen forecasts
+against the same graph and costs selects no checkpoints. The catalog
+forecast alone changes the decision. Both replays used source-verified
+inputs and performed no workload execution. The projected setup savings
+exclude prediction preparation and full-suite coverage finalization.
+
+The workload report now counts direct call sites in the assessed work
+fragments. Previously it also counted each navigation in the full spec
+supplied as resolution context. In the routed catalog plan, the two
+short segments each contain one application navigation site and the long
+segment contains 80. The old report counted 248, 248 and 327. This
+corrects attribution in the report. The duration model still receives
+the original source context for recursive helper resolution, and the
+report makes clear that its call-site counts do not measure runtime
+frequency or backend latency. All 21 planning tests passed.
+
+The Playwright driver can opt into the shared coverage lifecycle through
+the native project configuration. Qualification and source verification
+precede collection. Preparation, suite execution, report generation
+and cleanup run under the same workflow lease. The suite result includes
+browser evidence from native and checkpoint phases and rejects restore
+fallbacks. The 51 focused suite, coverage workflow and entrypoint tests
+passed. The isolated Magento paired coverage run still awaits a
+qualified forecast and end-to-end coverage comparison.
+
+An isolated retained-provider probe with active coverage collected a new
+native PHP export on each of three restored storefront navigations.
+It used the existing calibration path with an assertion around restore
+and did not execute the forecast-gated catalog suite. The probe exposed
+an ownership error when the privileged driver created the JavaScript raw
+directory. Coverage preparation now creates that directory as the regular
+runner so later runs can clear it. The probe removed its application
+fixtures and stopped the dedicated services after restore.
+
+A copy of the same catalog suite imports the MageLens coverage support
+without changing the original callbacks or assertions. Rust and native
+Playwright agreed on all nine registrations. Rust still discovered the
+same three duplicated prefixes, but conservatively classified all eight
+catalog tests as requiring an adapter because the coverage support adds
+a custom fixture lifecycle. There are zero automatically restorable
+candidates in this copy. The coverage support now exposes named
+CommonJS exports so the existing ESM specs can import it. The paired
+workload needs verified lifecycle support in addition to forecast
+qualification. All four Playwright support tests passed.
+
+The first live linear coverage attempt ran all nine registrations with
+the original assertions. Eight passed. The search result assertion
+correctly failed because Magento rendered an OpenSearch exception for a
+missing product index. Coverage finalization did not run, fixture cleanup
+completed, and the dedicated stack was stopped. Rebuild and verify the
+catalog search index as part of establishing the starting state, before
+timing either arm. This attempt is excluded from the benchmark.
+
+After rebuilding the product search index, the isolated linear coverage
+run passed all nine tests on Chrome for Testing 157.0.8103.38. The run
+spent 126 s on coverage preparation, browser execution, reporting and
+fixture cleanup. Stack startup, search indexing and forecast preparation
+were outside that clock. The finalizer verified matching collection and
+unchanged source. PHP reported one covered application line out of 323
+from 248 collected requests. The catalog did not visit the measured Blog
+JavaScript or template code, so those reports have zero hits across 154
+JavaScript statements, 62 template lines and 10 DOM observations. The
+paired comparison must still account for every measured file and metric.
+
+The Playwright coverage adapter now accepts the repository coverage
+fixture when its source and dependencies match the verified manifest
+and Rust marks every replayed statement portable. List-only checks on
+the catalog copy found seven eligible tests and three duplicated
+candidates. The readiness check and the robots assertion stay native.
+A mismatched fixture hash rejected all candidates. Thirty-three
+automatic workflow and suite tests passed. No retained catalog test
+has run through the adapter because the forecast gate is still closed.
+
+The coverage-enabled manifest also exposes a qualification integration
+gap. It requires nine whole-test predictions and three prefix
+predictions from the same model ID. The existing trainer deliberately
+fits one timing unit at a time, so a prefix-only candidate cannot
+authorize the complete suite even if it passes its prospective audit.
+Preserve separate timing labels and the 95%-within-5% target for each
+required domain. The planner needs to bind the independently qualified
+models to their respective timing units and verify all model identities
+when reopening the manifest.
+
+Planning and verification now accept an independently pinned prefix
+model alongside the existing whole-test model. The executable manifest
+binds each forecast to its timing unit's artifact. The packaged planner
+verified a two-model test plan, then rejected it when the prefix bytes
+changed under the original SHA-256. All 22 planning tests passed. This
+removes the single-artifact integration restriction. Independently
+qualified catalog models are still required.
+
+The audited historical training archive contains 618 Cypress whole-test
+rows across 156 groups. It cannot provide Playwright catalog labels.
+The readable Playwright historical archives contain 79 eligible
+whole-test rows without the current timing-boundary ID and no eligible
+incremental prefix rows. The current routed Playwright profile has eight
+eligible whole-test observations, and the incremental development probe
+has nine segment timings from the same source group. Keep these routed
+observations together when assigning groups. Independently scoped
+collection must supply both current whole-test and segment labels before
+either model can pass qualification.
+
+The bundled Playwright suite supplies separate Blog catalog and
+storefront privacy scenarios on the same installation. Both use shared
+fixture and readiness helpers. The catalog scenario also uses local
+variables across awaits, and the privacy scenario installs a route
+callback, so their whole-test labels can inform development diagnostics
+but do not establish restoration eligibility or provide held-out labels
+for the product-catalog checkpoint. Preserve these scope boundaries when
+selecting independent product-catalog collection groups.
+
+The controlled development repetition rebuilt the search index and
+warmed each exact segment in a separate browser context before taking
+each measurement in a fresh context. All nine source-verified
+measurements succeeded with no failed navigations or uncaught page
+errors. The short segments took 0.330–0.344 s and 0.522–0.523 s, and
+the catalog segment took 35.280–35.497 s. Each segment now has a common
+5% tolerance interval across its three repeats. The original forecasts
+missed all nine. Each repeated segment still belongs to the same source
+group, and the untimed full-segment warm-up is diagnostic. A production
+benchmark must include its actual preparation cost and use equivalent
+starting states in both arms.
+
+The native profiler now audits source and records actual timing for
+Playwright dependency projects before categorizing them as lifecycle
+work. The readiness check stays visible and timed in the complete
+suite, and remains excluded from individual-test training. A changed
+source is reported explicitly even on an excluded dependency. The
+planner still forecasts the readiness check, so its qualification
+scope needs to identify the costed work using verified native discovery
+before it can use these labels.
+
+On the coverage-enabled catalog sources, the pinned orchestrator took
+0.62 s to generate the incremental-segment plan and archive its source
+fragments. Reopening and verifying the plan took 0.59 s against a
+read-only checkout mount. Both clocks include container creation and
+removal but exclude image preparation. The plan still reports seven
+adapter-eligible tests and three duplicated prefixes, with execution
+gated. These costs document preparation overhead for the bundled model.
+Re-measure it for the exact qualified artifacts in the paired run.
+
+A retained-provider calibration on the indexed catalog loaded the search
+route successfully before each capture and matched the URL, rendered
+main-element count and database probe after each of three restores.
+This checks continuity for the read-only search route on this
+installation. Search index mutations remain outside the supported
+checkpoint scope. Calibration and provider cleanup passed, and the
+dedicated stack was stopped.
+
+The packaged planner generated and then verified a private catalog
+plan carrying the recorded 120-product, single-worker, warm-cache
+input in each of the three incremental snapshots. This used an
+explicitly unqualified test model to check the metadata path, and
+execution stayed gated. The original and coverage-enabled plans have
+identical work-fragment hashes for all three candidates, but different
+complete source digests and the same workload group. Keep the
+original labels as development evidence. Use fresh coverage-enabled
+observations with the complete source identity for qualification.
+
+A separately authored product-search workload contributed one new
+development group in the same installation. Both original tests passed
+with coverage enabled after the new fixture accounted for two matching
+links. Rust discovered one shared two-statement prefix. With coverage
+active and source hashes checked, three fresh-context repeats took
+0.665–0.679 s against the frozen 0.454 s forecast. These are development
+source-fragment timings. They do not exercise retained restore or
+establish prospective qualification.
+
+The native profiler repeated both product-search development tests with
+active coverage and froze their fixture inputs before launch. The tests
+took 1.090 s and 0.802 s at the native whole-test boundary. The source
+archive auditor retained both rows without quarantine, as one workload
+group. These labels can contribute to a development fit. They do not
+supply an independent prospective audit for the benchmark.
+
+The existing Ridge trainer fit a development-only whole-test candidate on
+four audited timings from two independent product-search and detail
+groups. Grouped cross-validation hit the 5% tolerance on zero of four
+tests. Median absolute error was 40.97% and p90 was 49.93%. The artifact
+remains unqualified. These short journeys do not supply training
+coverage for the long product-page sequence, and the prefix model still
+requires separately audited segment labels.
+
+The complete host integration suite passed 518 of 518 tests using
+Node 24.22.1 and containerized PHP 8.4.27. Earlier runs exposed missing
+host runtimes and an incomplete test-only PHP mount. The passing rerun
+mounted both repository sources and the individual fixture directory
+where required. The full browser matrix and paired checkpoint benchmark
+remain open.
+
 ### 2026-11-14 — resumed catalog qualification collection
 
 The task branch and upstream both point to `87af3dd`; the pre-existing
@@ -1650,3 +2014,38 @@ the prior race; the deterministic regression covers delayed teardown and timeout
 rejection. Archive audits retained both prefix rows and eight whole-test rows,
 with the readiness lifecycle row excluded. All coverage archive hashes verified.
 The expanded focused drain/discovery/planning/entrypoint run passed 43/43 checks.
+
+The 240-product search-increment collection `45c7e8a9` passed both restores,
+all nine native tests, coverage finalization and cleanup. Durations were 0.534 s
+and 0.529 s. The archive audit retained both prefix observations and eight
+whole-test observations; all coverage hashes verified. The post-collection
+240-product fixture fingerprint matched the pre-collection identity.
+
+The original 120-product database was restored from the verified private backup
+at 18:00 UTC and all indexers rebuilt. Its restored product/stock fingerprint
+exactly matches the original 120-product evidence. The database backup remains
+retained. No recovery marker or workflow lock remains after restoration.
+
+Native discovery is now carried through `plan-branching --discovery`, persisted
+with the plan and reverified against live dependency bytes. The packaged planner
+created and verified the original nine-test/three-prefix inventory with this
+route. All nine whole-test source digests, environment digests and forecasts
+exactly match native discovery (`catalog-discovery-host/identity-comparison.json`).
+Native whole-test environment attribution does not rewrite the independently
+frozen incremental-prefix contract. Model qualification remains required.
+
+The full host integration suite passed 528/528 checks with Node 24.22.1 and
+containerized PHP. The host npm 9 rejected the existing lockfile; the pinned
+runner's npm 11.19.1 installed it successfully with `ci --ignore-scripts`, without
+modifying the lockfile. After the subsequent timing-contract separation and a
+lint-only declaration fix, 27 focused planning/calibration/admission checks
+passed. Static checks passed for 534 tracked files (263 JavaScript files and
+131 Bash/Python/PHP scripts). The source-built orchestrator includes the locked
+Rust unit/CLI test gate. Full E2E/CI qualification has not been performed here.
+
+The accumulated source-attribution, lifecycle discovery and coverage-admission
+implementation is being retained as a validated research unit. Its complete
+forecast qualification, meaningful restored collector exercise and paired
+elapsed-time acceptance remain open. The next measurements are the same two
+short increments at the restored 120-product state; no model fit has yet used
+these development observations.

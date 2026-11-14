@@ -51,6 +51,11 @@ modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/works
 [[ -n "$modules" ]] || fail 'The installed runner has no dependency mount.'
 controller=$(docker run --detach --rm --init --network none --memory 512m --memory-swap 512m \
     --user "$LOCAL_UID:$LOCAL_GID" --mount "type=bind,source=$ROOT,target=$ROOT,readonly" --workdir "$ROOT" \
+    --mount "$modules" \
+    --env MAGELENS_PREDICTOR_MODEL --env MAGELENS_PREDICTOR_MODEL_SHA256 \
+    --env MAGELENS_PREDICTOR_BACKEND_STATE \
+    --env MAGELENS_PREFIX_MODEL --env MAGELENS_PREFIX_MODEL_SHA256 --env MAGELENS_PREFIX_TIMING_BOUNDARY \
+    --env MAGELENS_PREFIX_SOURCE_STORE \
     --label org.magelens.role=branching-orchestrator --entrypoint sleep "$planner_image" infinity)
 verification_error=''
 cleanup_controller() { local result=$?; trap - EXIT; if [[ -n "$verification_error" ]]; then rm -f -- "$verification_error" || result=1; fi; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }

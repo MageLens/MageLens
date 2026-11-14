@@ -130,6 +130,8 @@ def percentile(values, quantile):
 def train(rows, dataset_digest, target_transform='log1p'):
     if not rows or any(row.get('eligible') is not True for row in rows):
         raise ValueError('Quarantine unsuccessful samples before training')
+    if any(row.get('measurementKind') == 'source-fragment-diagnostic' for row in rows):
+        raise ValueError('Source fragment diagnostics lack a complete execution audit')
     schema = rows[0]['featureSchema']
     assert schema in SCHEMAS and all(row['featureSchema'] == schema and len(row['vector']) == SCHEMAS[schema] for row in rows), 'Mixed or invalid feature schemas'
     assert all(row['unit'] in ['suite-tests', 'test', 'prefix'] and row['runner'] in ['playwright', 'cypress'] for row in rows)
@@ -156,6 +158,10 @@ def train(rows, dataset_digest, target_transform='log1p'):
         family_groups = sorted({row['group'] for row in rows if row['sourceFamily'] == family}, key=lambda group: digest(group.encode()))
         for index, group in enumerate(family_groups):
             folds[group] = index % min(5, len(family_groups))
+    if len(set(folds.values())) == 1:
+        # A separate family per group puts every observation in fold zero.
+        # Use the deterministic group order so each fold has training data.
+        folds = {group: index % min(5, len(groups)) for index, group in enumerate(groups)}
     predictions = np.empty(len(rows))
     naive_predictions = np.empty(len(rows))
     for fold in sorted(set(folds.values())):

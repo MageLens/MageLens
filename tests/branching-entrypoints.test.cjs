@@ -261,6 +261,7 @@ function imageFixture(t, kind = 'orchestrator') {
         'dependencies.yaml', 'package.json', 'package-lock.json', '.dockerignore']) copy(directory, file);
     if(kind === 'orchestrator') {
         for(const file of ['branching/build-orchestrator.sh','branching-baseline.json','branching/estimation.cjs',
+            'branching/identity.cjs','branching/configs/messages.cjs',
             'branching/planner/Dockerfile','branching/planner/Cargo.toml','branching/planner/Cargo.lock']) copy(directory,file);
         for(const folder of ['branching/planner/src','branching/planner/tests','branching/predictor'])
             fs.cpSync(path.join(root,folder),path.join(directory,folder),{recursive:true});
@@ -324,4 +325,23 @@ test('explicit browser builds compile the product runner without release lookup 
     assert.equal(failed.status, 29, failed.stderr);
     assert.equal(failed.calls.trim().split('\n').map(JSON.parse).filter(args => args[0] === 'build').length, 1);
     }
+});
+
+test('checkpoint coverage uses only the matching active Playwright run', t => {
+    const {activeCoverage} = require('../branching/cli.cjs');
+    const workspace = temporary(t);
+    const directory = path.join(workspace, 'coverage');
+    fs.mkdirSync(directory);
+    const id = 'a'.repeat(32);
+    fs.writeFileSync(path.join(directory, 'run.json'), JSON.stringify({id}));
+    assert.deepEqual(activeCoverage(workspace), {});
+    const marker = path.join(directory, '.active-run');
+    fs.writeFileSync(marker, 'b'.repeat(32));
+    assert.throws(() => activeCoverage(workspace), /does not match/);
+    fs.writeFileSync(marker, id);
+    assert.deepEqual(activeCoverage(workspace), {
+        coverageRunId:id,
+        javascriptCoverageDirectory:path.join(workspace, '.nyc_output'),
+        templateCoverageDirectory:path.join(directory, 'raw', 'templates')
+    });
 });

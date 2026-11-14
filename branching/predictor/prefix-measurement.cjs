@@ -34,7 +34,9 @@ function observeExecutedSegment(snapshot, segment, audit) {
         if (workPassed) observation.exclusion = 'Provider or suite audit failed';
         observation.eligible = false;
     }
-    return {...observation,observationId:digest([timing.forecast.digest,segment.id]),executionSegmentId:segment.id};
+    return {...observation, measurementKind: 'retained-provider-segment',
+        forecastDigest: timing.forecast.digest,
+        observationId:digest([timing.forecast.digest,segment.id]),executionSegmentId:segment.id};
 }
 
 function validatePrefixMeasurement(observation) {

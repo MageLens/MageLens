@@ -9,11 +9,11 @@ const {RetainedProvider} = require('../branching/retained-provider.cjs');
 
 async function runBranches(options) {
     require('../branching/costs.cjs').assertAutomatic(options);
-    const {workflow, browser, backend, baseURL, root, state, specs, approach = APPROACH.automatic, contextOptions, javascriptCoverageDirectory, retain = false, checkpointLifetime = 'run', eventDirectory, onEvent, plan} = options;
+    const {workflow, browser, backend, baseURL, root, state, specs, approach = APPROACH.automatic, contextOptions, javascriptCoverageDirectory, templateCoverageDirectory, coverageRunId, retain = false, checkpointLifetime = 'run', eventDirectory, onEvent, plan} = options;
     // Validate before touching the application, even when invoked as a library.
     const graph = workflow instanceof Graph ? workflow : new Graph(workflow); graph.select(specs);
     const Provider = backend.retainsServices ? RetainedProvider : BranchingProvider;
-    const provider = new Provider({browser, backend, baseURL, state, contextOptions, javascriptCoverageDirectory});
+    const provider = new Provider({browser, backend, baseURL, state, contextOptions, javascriptCoverageDirectory, templateCoverageDirectory, coverageRunId});
     return execute({workflow: graph, provider, approach, root, specs, retain, checkpointLifetime, eventDirectory, onEvent, plan});
 }
 module.exports = {runBranches, Graph, BranchingProvider};
