@@ -5,6 +5,7 @@
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
 async function invoke(configuration, directory, {list = false, tests, profile} = {}) {
+    if (profile && !list) throw new Error('ML profiling was removed; source discovery is list-only');
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
     const config = fs.realpathSync(configuration);
     const configDigest = profile ? fileDigest(config) : null;
@@ -51,16 +52,6 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
             browser: {name: result.browserName, version: result.browserVersion}};
         if (profile && fileDigest(config) !== configDigest) throw new Error('Cypress configuration changed during collection');
         if (profile && list) report.profileDiscovery = {directory:run, configDigest};
-        if (profile && !list) {
-            report.profileArtifacts = {
-                forecasts:path.join(run,'predictions.json'),
-                observations:path.join(run,'prediction-samples.json'),
-                forecastDigests:path.join(run,'forecast-digests.ndjson')
-            };
-            const {forecasts, forecastDigests} = report.profileArtifacts;
-            require('./forecast-journal.cjs').verifyForecastJournal(forecastDigests, JSON.parse(fs.readFileSync(forecasts)));
-            report.prediction = require('../../predictor/native.cjs').finish(run,report);
-        }
         return report;
     } finally { fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }
 }

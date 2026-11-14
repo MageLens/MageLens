@@ -5,7 +5,7 @@
 use crate::Manifest;
 use serde_json::{Value, json};
 pub fn error(message: &str, issues: Vec<Value>) -> Value {
-    json!({"statusCode":500,"code":"ESTIMATION_FAILED","message":message,"issues":issues,"remediation":"Resolve collection or ML prediction failures and replan."})
+    json!({"statusCode":500,"code":"ESTIMATION_FAILED","message":message,"issues":issues,"remediation":"Resolve source collection failures and replan."})
 }
 pub fn issues(m: &Manifest) -> Vec<Value> {
     m.diagnostics

@@ -1,5 +1,5 @@
 {
-  "version": "checkpoint-cost-policy-v7",
+  "version": "checkpoint-cost-policy-v8",
   "captureMs": 3000,
   "restoreMs": 8200,
   "releaseMs": 12,

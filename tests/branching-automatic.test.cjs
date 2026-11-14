@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {assessed, estimate} = require('./fixtures/branching/assessment.cjs');
+const {assessed} = require('./fixtures/branching/assessment.cjs');
 const os = require('node:os');
 const path = require('node:path');
 const {buildWorkflow, compileFragment, playwrightCoverageAdapter} = require('../branching/automatic.cjs');
@@ -81,9 +81,6 @@ test('fixture checkpoint times setup instead of a no-op after root preparation',
     const runtime = {page:{goto:async url=>calls.push(url)}};
     const checkpoint = manifest.checkpoints[0];
     checkpoint.depth = 0;
-    const rootId = `root-${manifest.tests[0].scope}`;
-    manifest.assessment.stages[rootId] = {...estimate(0),empty:true};
-    manifest.assessment.stages[checkpoint.id] = estimate(10);
     for (const entry of manifest.tests) {
         entry.restoration = {
             version:1,
@@ -102,23 +99,9 @@ test('fixture checkpoint times setup instead of a no-op after root preparation',
 
     const single = buildWorkflow(manifest, configuration, [manifest.tests[0].id]).workflow;
     const spec = single.specs.get(manifest.tests[0].id);
-    assert.equal(single.stages.get(spec.parent).estimatedMs,10);
+    assert.equal(single.stages.get(spec.parent).estimatedMs,undefined);
     await single.stages.get(spec.parent).run(runtime);
     assert.deepEqual(calls, ['/prepare', '/prepare']);
-});
-
-test('costing refuses a forecast for a different representative or depth', t => {
-    const {manifest, configuration} = fixture(t);
-    const forecast = manifest.assessment.stages['cp-cart'];
-    Object.assign(forecast, {featureSchema: 'fixture', environmentDigest: 'environment',
-        sourceDigest: 'source', timingBoundary: 'checkpoint-segment-run-duration/v1'});
-    forecast.segment = {representative: 'test-two', fromDepth: 0, toDepth: 1};
-    const stage = () => buildWorkflow(manifest, configuration).workflow.stages.get('cp-cart');
-    assert.equal(stage().estimatedMs, null);
-    forecast.segment.representative = 'test-one';
-    assert.equal(stage().estimatedMs, 1);
-    forecast.segment.fromDepth = 1;
-    assert.equal(stage().estimatedMs, null);
 });
 
 test('Cypress fragments use their own queue with original UTF-8 source bytes', async t => {
@@ -213,21 +196,15 @@ test('retained evidence suppresses last-consumer deletion',async t=>{
 });
 
 
-test('ML predictions are the only workflow duration inputs',t=>{
-    const {manifest,configuration}=fixture(t);
-    manifest.assessment.stages['root-same-scope']=estimate(20);
-    manifest.assessment.stages['cp-cart']=estimate(8);
-    const workflow=buildWorkflow(manifest,configuration).workflow;
-    assert.equal(workflow.stages.get('root-same-scope').estimatedMs,20);
-    assert.equal(workflow.stages.get('cp-cart').estimatedMs,8);
-    manifest.assessment.stages['cp-cart']=estimate(-1);
-    assert.throws(()=>buildWorkflow(manifest,configuration),error=>error.statusCode===500);
+test('workflow construction needs no duration forecasts', t => {
+    const {manifest, configuration} = fixture(t);
+    const {workflow} = buildWorkflow(manifest, configuration);
+    assert.ok([...workflow.stages.values()].every(stage => stage.estimatedMs === undefined));
 });
-
 test('outdated duration models require replanning before workflow construction',t=>{
     const {manifest,configuration}=fixture(t);manifest.implementation='rust-prefix-v2';
     for(const assessment of [{version:'retired'}, {version:'ml-duration-v1',status:'incomplete'}]) {
         manifest.assessment=assessment;
-        assert.throws(()=>buildWorkflow(manifest,configuration),/ML assessment.*replan/i);
+        assert.throws(()=>buildWorkflow(manifest,configuration),error => error.issues?.some(issue => /Replan/.test(issue.message)));
     }
 });

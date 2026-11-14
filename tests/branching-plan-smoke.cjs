@@ -14,6 +14,6 @@ assert.ok(manifest.checkpoints.some(checkpoint => checkpoint.automatic && checkp
 assert.deepEqual([...manifest.schedule].sort(), manifest.tests.map(test => test.id).sort());
 console.log('Rust image planned both continuations and their shared prefix.');
 
-assert.equal(manifest.assessment.version, 'ml-duration-v1');
-assert.ok(manifest.assessment.modelId);
-assert.equal(Object.keys(manifest.assessment.tests).length,2);
+assert.equal(manifest.assessment.version, 'measured-first-use-v1');
+assert.equal(manifest.assessment.status, 'complete');
+assert.equal(manifest.assessment.modelId, undefined);

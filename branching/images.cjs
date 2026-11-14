@@ -23,7 +23,7 @@ function describe(root, kind) {
         visit('branching/planner/src'); visit('branching/planner/tests');
         files.push('branching/build-orchestrator.sh','package.json','package-lock.json','branching-baseline.json',
             'branching/estimation.cjs','branching/identity.cjs','branching/configs/messages.cjs');
-        files.push(...fs.readdirSync(path.join(root,'branching/predictor')).filter(f=>f.endsWith('.cjs')).map(f=>'branching/predictor/'+f));
+        files.push('branching/planning-cli.cjs', 'branching/discovery-context.cjs');
     } else files.push('branching/runners/index.cjs', 'branching/build-runner.sh', 'bin/sync-dependencies.cjs',
         'bin/sync-runner-dependencies', `${adapter.context}/Dockerfile`);
     const hash = createHash('sha256').update(kind + '\0');

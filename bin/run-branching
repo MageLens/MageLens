@@ -10,10 +10,13 @@ source "$ROOT/branching/configs/entrypoints.conf"
 disposable=0
 if [[ "${1:-}" == --disposable ]]; then disposable=1; shift; fi
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching [--calibrate] [MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nCreate the saved plan with ./bin/plan-branching SOURCE_ROOT and configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching produces execution reports; coverage collection is not supported yet.\n' \
+    printf 'Usage: ./bin/run-coverage --branching [--calibrate] [MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nCreate the saved plan with ./bin/plan-branching SOURCE_ROOT and configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching preserves configured Playwright coverage collection.\n' \
         "$BRANCHING_DEFAULT_MANIFEST" "$BRANCHING_DEFAULT_CONFIGURATION" "$BRANCHING_DEFAULT_STORAGE" "$BRANCHING_DEFAULT_CONFIGURATION"
     exit 0
 fi
+for obsolete in ${!MAGELENS_PREDICTOR_@} ${!MAGELENS_PREFIX_MODEL@} ${!MAGELENS_PREFIX_TIMING@} ${!MAGELENS_PREFIX_SOURCE@} ${!MAGELENS_PREFIX_ENVIRONMENT@}; do
+    [[ -z "${!obsolete}" ]] || { echo "$obsolete was removed; remove ML configuration and replan for measured first use." >&2; exit 1; }
+done
 (( disposable )) || fail 'Use ./bin/run-coverage --branching.'
 [[ "$MAGELENS_RUNNER" == playwright || "$MAGELENS_RUNNER" == cypress ]] || fail "Unknown branching runner: $MAGELENS_RUNNER"
 calibrate=0
@@ -52,10 +55,6 @@ modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/works
 controller=$(docker run --detach --rm --init --network none --cpus 2 --memory 512m --memory-swap 512m \
     --user "$LOCAL_UID:$LOCAL_GID" --mount "type=bind,source=$ROOT,target=$ROOT,readonly" --workdir "$ROOT" \
     --mount "$modules" \
-    --env MAGELENS_PREDICTOR_MODEL --env MAGELENS_PREDICTOR_MODEL_SHA256 \
-    --env MAGELENS_PREDICTOR_BACKEND_STATE \
-    --env MAGELENS_PREFIX_MODEL --env MAGELENS_PREFIX_MODEL_SHA256 --env MAGELENS_PREFIX_TIMING_BOUNDARY \
-    --env MAGELENS_PREFIX_SOURCE_STORE --env MAGELENS_PREFIX_ENVIRONMENT \
     --label org.magelens.role=branching-orchestrator --entrypoint sleep "$planner_image" infinity)
 verification_error=''
 cleanup_controller() { local result=$?; trap - EXIT; if [[ -n "$verification_error" ]]; then rm -f -- "$verification_error" || result=1; fi; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }

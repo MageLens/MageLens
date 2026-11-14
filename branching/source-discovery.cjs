@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {TEST_TIMING_BOUNDARY,PLAYWRIGHT_TEST_TIMING_BOUNDARY} = require('./prefix-measurement.cjs');
 const fs = require('node:fs'), path = require('node:path');
-const p = require('./index.cjs');
-const {EstimationError} = require('../estimation.cjs');
+const {createHash} = require('node:crypto');
+const sha256 = value => createHash('sha256').update(value).digest('hex');
+const {EstimationError} = require('./estimation.cjs');
 const callbackMetadata = new Set([
     'start','end','loc','extra','leadingComments','innerComments','trailingComments',
     'typeAnnotation','returnType','typeParameters','typeArguments'
@@ -130,14 +130,14 @@ function localDependencies(file, source, root, packageRoots = []) {
 }
 
 function collector(profile, directory, root, {onPrepared} = {}) {
-    const model = profile.model ? p.loadModel(profile.model,profile.modelDigest) : null;
-    const v5 = [p.REACHABLE_SCHEMA_V5,p.REACHABLE_SCHEMA_V6,p.REACHABLE_SCHEMA_V7].includes(model?.model.featureSchema ?? profile.featureSchema);
-    const file = path.join(directory,'predictions.json');
+    if (!profile.discoveryOnly) throw new Error('Source discovery is list-only; duration forecasting was removed');
+    const v5 = true;
+    const file = path.join(directory,'discovery.json');
     return batch => {
         const preparationStarted = performance.now();
         const rows = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : [];
         const firstRow = rows.length;
-        const original = fs.readFileSync(batch.file,'utf8'), fileHash=p.sha256(original);
+        const original = fs.readFileSync(batch.file,'utf8'), fileHash=sha256(original);
         const inputs = new Map([[batch.file,original]]);
         const pending = [...(profile.files ?? []), ...(batch.files ?? []),
             ...(v5 ? [profile.supportFile,profile.configFile].filter(file=>typeof file === 'string' && file) : [])].map(file=>path.resolve(root,file));
@@ -168,7 +168,7 @@ function collector(profile, directory, root, {onPrepared} = {}) {
         }
         const context = [...inputs.keys()].filter(file=>file!==batch.file).sort()
             .map(file=>({file,source:inputs.get(file)}));
-        const files=[{file:batch.file,hash:fileHash},...context.map(item=>({file:item.file,hash:p.sha256(item.source)}))];
+        const files=[{file:batch.file,hash:fileHash},...context.map(item=>({file:item.file,hash:sha256(item.source)}))];
         const runnableTests = batch.tests.filter(test=>test.expectedStatus !== 'skipped');
         const scopedTests = new Map(batch.hooks.map(hook => [hook, runnableTests.filter(test =>
             hook.scope.every((title,i) => test.titlePath[i] === title))]));
@@ -231,7 +231,7 @@ function collector(profile, directory, root, {onPrepared} = {}) {
             return {...source,origin,source:source.source.includes(fragment) ? source.source : restored};
         }
         const timingOrder = v5 ? runnableTests : batch.tests;
-        for (const [index,test] of timingOrder.entries()) {
+        for (const test of timingOrder) {
             if (test.expectedStatus === 'skipped') continue;
             const hooks = batch.hooks.filter(h => h.scope.every((title,i) => test.titlePath[i] === title));
             const workloadHooks = hooks.filter(h => !isDiagnostic(h));
@@ -255,15 +255,7 @@ function collector(profile, directory, root, {onPrepared} = {}) {
                         false,kind === 'fixture' ? undefined : hookRegistrationNames)),
                 ...contextSources
             ];
-            const runner=profile.runner ?? 'cypress';
-            const snapshot=p.prepare({runner,unit:'test',sources,backendState:profile.backendState,featureSchema:profile.featureSchema,sourceStore:profile.sourceStore,
-                timingBoundary:runner==='cypress'?TEST_TIMING_BOUNDARY:PLAYWRIGHT_TEST_TIMING_BOUNDARY,
-                sourceFamily:profile.sourceFamily,group:profile.group ?? path.relative(root,batch.file).replaceAll(path.sep,'/'),
-                environment:{...profile.environment,hookAttribution:'scoped-once/v1',...(batch.lifecycle?{lifecycle:batch.lifecycle}:{}),
-                    ...(diagnosticHooks.length ? {diagnosticHooks: diagnosticHooks.map(h => h.source)} : {}),
-                    boundary:runner==='cypress'?TEST_TIMING_BOUNDARY:PLAYWRIGHT_TEST_TIMING_BOUNDARY},
-                baselineMs:profile.baselineMs,manualMultiplier:profile.multiplier ?? 1,
-                extraFeatures:{...profile.extraFeatures,'execution.first':Number(index===0),'execution.last':Number(index===timingOrder.length-1)}},model);
+            const snapshot = {sourceArchive: sources.map(({source, ...entry}) => ({...entry, sha256: sha256(source)}))};
             rows.push({id:test.id,file:batch.file,fileHash,files,snapshot,...(profile.discoveryOnly ? {
                 discoveryOnly:true,...(profile.configDigest ? {configDigest:profile.configDigest} : {})
             } : {})});
@@ -282,7 +274,7 @@ function sourceAt(file, line, column) {
     const source=fs.readFileSync(file,'utf8');
     let ast;
     try { ast=require('@babel/parser').parse(source,{sourceType:'unambiguous',plugins:['typescript','jsx']}); }
-    catch(error) { throw new EstimationError([{phase:'predictor',message:`Cannot parse source ${file}: ${error.message}`}]); }
+    catch(error) { throw new EstimationError([{phase:'discovery',message:`Cannot parse source ${file}: ${error.message}`}]); }
     const pending=[ast];
     while(pending.length) {
         const node=pending.pop();
@@ -294,34 +286,6 @@ function sourceAt(file, line, column) {
         }
         for(const [key,value] of Object.entries(node))if(key!=='loc' && value && typeof value==='object')pending.push(value);
     }
-    throw new EstimationError([{phase:'predictor',message:`No test callback at ${file}:${line}:${column}; provide a source location for generated tests`}]);
+    throw new EstimationError([{phase:'discovery',message:`No test callback at ${file}:${line}:${column}; provide a source location for generated tests`}]);
 }
-function finish(directory, report) {
-    const file=path.join(directory,'predictions.json');
-    if (!fs.existsSync(file)) throw new Error('Missing pre-run test predictions');
-    const dependencyProjects = new Set((report.config?.projects ?? []).flatMap(project =>
-        [...(project.dependencies ?? []), ...(project.teardown ? [project.teardown] : [])]));
-    const setupIds = new Set((report.tests ?? []).filter(t => dependencyProjects.has(t.project)).map(t => t.id));
-    const pending = JSON.parse(fs.readFileSync(file));
-    if (pending.some(row => row.discoveryOnly)) throw new Error('Discovery snapshots cannot produce timing observations');
-    const rows=pending.map(row=>{
-        const result=report.results.find(r=>r.id===row.id);
-        if (!result || !(result.durationMs>0)) return {...row.snapshot,eligible:false,exclusion:'Missing or invalid native result',actualMs:null};
-        const unchanged=(row.files ?? [{file:row.file,hash:row.fileHash}]).every(item=>
-            fs.existsSync(item.file) && p.sha256(fs.readFileSync(item.file))===item.hash);
-        const preparationMs = row.preparationMs ?? 0;
-        const actualMs = result.durationMs - preparationMs;
-        if (!Number.isFinite(preparationMs) || preparationMs < 0 || !(actualMs > 0))
-            throw new EstimationError([{phase:'predictor',message:'Invalid measured preparation overhead'}]);
-        const observation = {...p.observe(row.snapshot,actualMs,{passed:result.status==='passed' && !result.errors.length,
-            attempts:result.attempts,sourceDigest:unchanged?row.snapshot.sourceDigest:'changed'}),
-            timing:{nativeMs:result.durationMs,preparationMs}};
-        // Retain the measured work and source audit for diagnostics while
-        // keeping project dependencies out of individual-test qualification.
-        return setupIds.has(row.id) ? {...observation, eligible:false, lifecycleDependency:true,
-            exclusion:observation.exclusion ?? 'Project lifecycle dependency'} : observation;
-    });
-    fs.writeFileSync(path.join(directory,'prediction-samples.json'),JSON.stringify(rows)+'\n',{mode:0o600});
-    return p.evaluate(rows);
-}
-module.exports={collector,finish,sourceAt};
+module.exports={collector,sourceAt};

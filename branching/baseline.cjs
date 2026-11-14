@@ -293,7 +293,7 @@ function openProject(workspace, configuration = {}) {
         .trim()
         .split(/\s+/)
         .filter(Boolean);
-    if (ids.length !== 2) throw new Error(config.messages.missingServices);
+    if (ids.length !== 3) throw new Error(config.messages.missingServices);
     const containers = JSON.parse(
         execFileSync('docker', [...config.commands.inspect, ...ids], {
             encoding: 'utf8',
@@ -308,6 +308,10 @@ function openProject(workspace, configuration = {}) {
             memory: container.HostConfig.Memory,
             cpuQuota: container.HostConfig.CpuQuota,
             nanoCpus: container.HostConfig.NanoCpus,
+            cpuPeriod: container.HostConfig.CpuPeriod,
+            cpusetCpus: container.HostConfig.CpusetCpus,
+            memorySwap: container.HostConfig.MemorySwap,
+            shmSize: container.HostConfig.ShmSize,
             configuration: container.Mounts.filter(
                 (mount) =>
                     /\.(ini|conf)$/.test(mount.Destination) &&
@@ -320,6 +324,9 @@ function openProject(workspace, configuration = {}) {
         .sort((a, b) => a.service.localeCompare(b.service));
     const identity = {
         version: defaults.version,
+        provider: require('./identity.cjs').implementationDigest(['provider.cjs', 'retained-provider.cjs',
+            'checkpoint-store.cjs', 'browser.cjs', 'runtime-state.cjs'].map(file => path.join(__dirname, file))),
+        sourceDigest: configuration.sourceDigest ?? null,
         architecture: process.arch,
         cpu: os.cpus()[0]?.model,
         // Reuse averages only within a database-size cohort. Small fixtures share

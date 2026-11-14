@@ -279,7 +279,7 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
                 } else if !known {
                     "unknown-estimated_ms"
                 } else if chosen {
-                    "ml-estimated-saving"
+                    "estimated-saving"
                 } else if saving.unwrap_or(0.0) <= baseline.min_saving_ms {
                     "below-break-even"
                 } else if !within_limit(&selected.iter().copied().chain([i]).collect()) {
@@ -309,14 +309,14 @@ fn select_with(input: Input, baseline: Baseline) -> Result<Plan, String> {
         .all(|p| estimated_ms[*p.last().unwrap()].is_some());
     Ok(Plan {
         schema_version: 1,
-        basis: "ml-duration-estimate",
+        basis: "operation-cost-comparison",
         baseline,
         selected: selected
             .iter()
             .map(|i| input.stages[*i].id.clone())
             .collect(),
         reason: if !selected.is_empty() {
-            "ml-estimated-saving"
+            "estimated-saving"
         } else if !complete {
             "unknown-estimated_ms"
         } else {
@@ -412,7 +412,7 @@ mod tests {
         let p = select(input(vec![stage("small", None, 4, true)], &["small"; 3])).unwrap();
         assert!(p.selected.is_empty());
         assert_eq!(p.decisions[0].reason, "below-break-even");
-        assert_eq!(p.basis, "ml-duration-estimate");
+        assert_eq!(p.basis, "operation-cost-comparison");
     }
     #[test]
     fn small_fixture_and_later_steps_are_a_combined_unit() {

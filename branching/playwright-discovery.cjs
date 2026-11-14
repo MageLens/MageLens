@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const path = require('node:path');
-const {EstimationError} = require('../estimation.cjs');
-function fail(message) { throw new EstimationError([{phase:'predictor',message}]); }
+const {EstimationError} = require('./estimation.cjs');
+function fail(message) { throw new EstimationError([{phase:'discovery',message}]); }
 function functionSource(fn) {
     if(typeof fn!=='function')fail('Missing loaded Playwright function');
     const source=Function.prototype.toString.call(fn);

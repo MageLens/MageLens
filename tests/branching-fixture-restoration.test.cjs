@@ -74,7 +74,7 @@ test('Rust AUTO restores real fixture frames through checkpoint inventory and la
     const {buildWorkflow}=require('../branching/automatic.cjs');
     const {execute}=require('../branching/engine.cjs');
     const {FixtureProvider}=require('./fixtures/branching/provider.cjs');
-    const root=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-fixture-continuation-',{model:require('./fixtures/branching/predictor.cjs').model()});
+    const root=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-fixture-continuation-');
     const source=path.join(root,'source');fs.mkdirSync(source);
     fs.writeFileSync(path.join(source,'journey.spec.ts'),`import {test as base} from '@playwright/test';
         async function prepare(page){for(let i=0;i<500;i++)await page.goto('/prepare');}
@@ -83,34 +83,25 @@ test('Rust AUTO restores real fixture frames through checkpoint inventory and la
         test('two',async({cart})=>{if(cart.items.length!==1)throw new Error('leaked');cart.items.push('two');await cart.button.click();});
         test('empty',async({cart})=>{});`);
     const manifestFile=path.join(root,'manifest.json');
-    const timingBoundary='checkpoint-segment-run-duration/v1';
-    const sourceStore=path.join(root,'sources');
-    planner(['plan',source,manifestFile],{stdio:'pipe'},{...process.env,MAGELENS_PREFIX_TIMING_BOUNDARY:timingBoundary,MAGELENS_PREFIX_SOURCE_STORE:sourceStore});
+    planner(['plan',source,manifestFile],{stdio:'pipe'});
     const manifest=JSON.parse(fs.readFileSync(manifestFile));assert.ok(manifest.tests.every(t=>t.restoration));
     class Provider extends FixtureProvider {
         constructor(){super();this.calls=[];this.pageSerial=0;}
-        replace(){const serial=++this.pageSerial;this.page={goto:async url=>{this.state.browser.url=url;this.calls.push(url);},locator:selector=>({click:async()=>this.calls.push(`click:${serial}:${selector}`)})};this.context={};}
+        replace(){const serial=++this.pageSerial;this.page={goto:async url=>{if(url==='/prepare')await new Promise(resolve=>setTimeout(resolve,1));this.state.browser.url=url;this.calls.push(url);},locator:selector=>({click:async()=>this.calls.push(`click:${serial}:${selector}`)})};this.context={};}
         async reset(){await super.reset();this.replace();}
         async restore(directory){await super.restore(directory);this.replace();}
     }
     const provider=new Provider();
-    const built=buildWorkflow(manifest,{identity:'fixture-frame-integration',expect:assert,state:async p=>p.normalizedState(),assertCheckpoint:async p=>assert.equal(p.state.browser.url,'/prepare')});
+    const built=buildWorkflow(manifest,{costBaseline:{...require('../branching/baseline.cjs').defaults,captureMs:1,restoreMs:1,releaseMs:1,backendMs:1,firstResetMs:1,resetMs:1},identity:'fixture-frame-integration',expect:assert,state:async p=>p.normalizedState(),assertCheckpoint:async p=>assert.equal(p.state.browser.url,'/prepare')});
     const report=await execute({...built,root,provider});
     assert.equal(report.status,'passed',JSON.stringify(report.errors));assert.equal(report.checkpoints.length,1);
     const [fixtureSegment] = report.segments.filter(segment=>segment.prefixTiming);
     const fixtureTiming = fixtureSegment.prefixTiming;
     assert.equal(fixtureTiming.timingBoundary,'checkpoint-segment-run-duration/v1');
     assert.equal(fixtureTiming.kind,'fixture');
-    assert.match(fixtureTiming.forecast.digest,/^[a-f0-9]{64}$/);
-    assert.equal(fixtureTiming.forecast.timingBoundary,timingBoundary);
     assert.equal(fixtureTiming.workCompleted,true);
     assert.ok(Number.isFinite(fixtureTiming.workMs) && fixtureTiming.workMs >= 0);
-    const snapshot=manifest.assessment.stages[fixtureSegment.node].trainingSnapshot;
     require('../branching/automatic.cjs').verifySources(manifest);
-    const observation=require('../branching/predictor/prefix-measurement.cjs').observeExecutedSegment(snapshot,fixtureSegment,
-        {passed:report.status==='passed',attempts:1,sourceDigest:snapshot.sourceDigest});
-    assert.equal(observation.eligible,true);
-    assert.equal(observation.actualMs,fixtureTiming.workMs);
     assert.equal(report.counts.reuseHits,2);assert.equal(report.counts.fallbacks,0);
     assert.equal(provider.calls.filter(c=>c==='/prepare').length,500,'Setup executes once across both siblings');
     assert.equal(provider.calls.filter(c=>c==='/cleanup/2').length,2,'Teardown executes for each consumer');

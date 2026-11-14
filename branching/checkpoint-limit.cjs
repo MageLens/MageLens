@@ -28,7 +28,7 @@ function limitCheckpoints(graph, specs, {requested, approach, checkpointLifetime
     let chosen = candidates;
     if (!withinLimit(chosen)) {
         // Prefer marginal repeated work saved, not raw depth. Manual graphs without durations use deterministic structural order;
-        // AUTO requires ML predictions before reaching execution.
+        // AUTO supplies disjoint candidates; timing is measured during execution.
         const work = set => {
             const available = new Set(); let total = 0;
             for (const path of paths) {

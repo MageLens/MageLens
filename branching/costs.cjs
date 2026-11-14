@@ -8,6 +8,8 @@ const solveCosts = input => JSON.parse(planner(['cost-plan'], {
     input: JSON.stringify(input), encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024
 }));
 function assertAutomatic(options = {}) {
+    for (const key of ['model', 'prefixModel', 'predictor', 'catalogQualification'])
+        if (options[key] !== undefined) throw new Error(`${key} was removed; checkpoint reuse measures first use. Remove ML configuration and replan.`);
     for (const key of ['mode', 'approach']) {
         if (options[key] !== undefined && options[key] !== 'AUTO') throw new Error('AUTO is the only branching policy. Use run-coverage without --branching for a linear run.');
     }
@@ -26,7 +28,7 @@ function freeze(value) {
 }
 function planWorkflow(workflow, specs) {
     const input = costInput(workflow, specs);
-    const decision = freeze(structuredClone(module.exports.solveCosts(input)));
+    const decision = freeze(structuredClone(require('./adaptive.cjs').candidates(workflow, specs)));
     if (!Array.isArray(decision.selected) || new Set(decision.selected).size !== decision.selected.length ||
         decision.selected.some(id => !workflow.stages.has(id) || workflow.stages.get(id).checkpoint === false)) throw new Error('Invalid AUTO checkpoint decision');
     const plan = Object.freeze({});

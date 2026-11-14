@@ -4,7 +4,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const {createHash} = require('node:crypto');
-const {discoveryContext} = require('../branching/predictor/discovery-context.cjs');
+const {discoveryContext} = require('../branching/discovery-context.cjs');
 test('discovery reads pinned dependency bytes only within selected roots', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(),'magelens-discovery-'));
     t.after(() => fs.rmSync(directory,{recursive:true,force:true}));

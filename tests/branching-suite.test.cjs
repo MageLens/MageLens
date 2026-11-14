@@ -87,29 +87,20 @@ test('incompatible browser settings keep the complete suite native and report th
     assert.deepEqual(report.routing.browserIneligible, ['native-first', 'native-second'].map(id =>
         ({id, reason: 'incompatible-playwright-browser-settings'})));
 });
-test('calibration can list a fully assessed suite before the model qualifies', async t => {
+test('discovery does not require timing estimates but rejects changed source', async t => {
     const f = fixture(t);
-    f.manifest.assessment.executionEligible = false;
-    f.runner.run = () => assert.fail('Calibration discovery must not launch tests');
-    await assert.rejects(runSuite({...f,directory:f.root}), error => error.issues?.[0]?.phase === 'qualification');
-    const inventory = await collectAssessed(f.manifest,f.project,f.root,f.runner,{calibration:true});
+    const inventory = await collectAssessed(f.manifest,f.project,f.root,f.runner);
     assert.equal(inventory.tests.length,103);
     fs.appendFileSync(path.join(f.root,'flow.spec.ts'),'\n');
-    await assert.rejects(collectAssessed(f.manifest,f.project,f.root,f.runner,{calibration:true}), /Stale source/);
+    await assert.rejects(collectAssessed(f.manifest,f.project,f.root,f.runner), /Stale source/);
 });
-test('the branching driver reports unqualified forecasts before loading the project', async t => {
+test('old ML manifests fail before loading the project with a migration message', async t => {
     const f = fixture(t);
-    f.manifest.assessment.executionEligible = false;
-    const forecast = f.manifest.assessment.stages.shared;
-    forecast.unit = 'prefix';
-    forecast.prediction.qualified = false;
-    const manifestFile = path.join(f.root, 'manifest.json');
-    fs.writeFileSync(manifestFile, JSON.stringify(f.manifest));
-    await assert.rejects(require('../branching/auto-cli.cjs').run([
-        manifestFile, path.join(f.root, 'missing-config.cjs'), path.join(f.root, 'missing-storage')
-    ]), error => error.code === 'ESTIMATION_FAILED' && error.issues[0].phase === 'qualification');
-    const failure = JSON.parse(fs.readFileSync(manifestFile + '.error.json'));
-    assert.match(failure.issues.find(issue => issue.id === 'shared').message, /independent qualification/);
+    f.manifest.assessment.version = 'ml-duration-v1';
+    const file = path.join(f.root, 'manifest.json');
+    fs.writeFileSync(file, JSON.stringify(f.manifest));
+    await assert.rejects(require('../branching/auto-cli.cjs').run([file, 'missing.cjs', f.root]),
+        error => error.issues?.some(issue => /ML manifests are no longer supported/.test(issue.message)));
 });
 test('mixed suite runs native setup once, checkpoints, then every remaining native test',async t=>{
     const f=fixture(t); const report=await runSuite({...f,mode:'AUTO',directory:f.root});
@@ -118,45 +109,13 @@ test('mixed suite runs native setup once, checkpoints, then every remaining nati
     assert.deepEqual(f.calls[1].checkpoint,['first','second']);assert.equal(f.calls[2].options.setup,false);
     assert.deepEqual(report.missing,[]);assert.deepEqual(report.duplicates,[]);
 });
-test('suite records a frozen segment observation only with passing provider audits', async t => {
-    const {SEGMENT_TIMING_BOUNDARY} = require('../branching/predictor/prefix-measurement.cjs');
-    const f = fixture(t);
-    const stage = f.manifest.assessment.stages.shared;
-    stage.segment = {representative:'first',fromDepth:0,toDepth:1};
-    stage.timingBoundary = SEGMENT_TIMING_BOUNDARY;
-    stage.featureSchema = 'fixture';
-    stage.environmentDigest = 'environment';
-    stage.sourceDigest = f.manifest.sourceDigest;
-    stage.trainingSnapshot = {unit:'prefix',timingBoundary:SEGMENT_TIMING_BOUNDARY,
-        sourceDigest:f.manifest.sourceDigest,segment:stage.segment,prediction:stage.prediction};
-    f.manifest.assessment.prefixTimingBoundary = SEGMENT_TIMING_BOUNDARY;
-    for (const grantsRestored of [true,false]) {
-        const report = await runSuite({...f,directory:f.root,runCheckpoint:async options=>{
-            const result = await f.runCheckpoint(options);
-            result.counts.fallbacks = 0;
-            result.providerDiagnostics = {retainedServices:{schemasRemoved:true,grantsRestored}};
-            result.segments = [{id:'segment',node:'shared',status:'passed',wallMs:12,prefixTiming:{
-                timingBoundary:SEGMENT_TIMING_BOUNDARY,kind:'steps',fromDepth:0,toDepth:1,
-                workCompleted:true,workMs:10,forecast:options.workflow.stages.get('shared').inputs.forecastIdentity
-            }}];
-            return result;
-        }});
-        const [evidence] = report.prefixEvidence;
-        assert.ok(evidence.snapshotDigest);
-        assert.equal(evidence.sourceVerified,true);
-        assert.equal(evidence.providerAuditPassed,grantsRestored);
-        assert.equal(evidence.observation.eligible,grantsRestored);
-        assert.equal(evidence.observation.exclusion,grantsRestored ? null : 'Provider or suite audit failed');
-        assert.equal(evidence.observation.actualMs,10);
-    }
-});
-test('checkpoint execution preserves the order costed by Rust when native inventory differs',async t=>{
+test('checkpoint routing never crosses native tests when collection order differs',async t=>{
     const f=fixture(t);f.inventory.tests.reverse();
     const report=await runSuite({...f,directory:f.root});
-    assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
+    assert.equal(report.status,'passed');assert.equal(f.calls.length,3);assert.equal(f.calls[1].tests.length,100);assert.deepEqual(f.calls[2].checkpoint,['first','second']);
 });
 test('unprofitable AUTO retains one complete original native invocation',async t=>{
-    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));
+    const f=fixture(t);f.manifest.checkpoints=[];
     const report=await runSuite({...f,directory:f.root});
     assert.equal(report.mode,'AUTO');assert.equal(report.status,'passed');assert.equal(report.checkpoints,0);assert.equal(f.calls.length,1);
     assert.equal(f.calls[0].options.tests,undefined);assert.equal(report.results.length,103);
@@ -174,20 +133,11 @@ test('a project checkpoint budget is validated even if every test would remain n
     f.runner.collect=()=>assert.fail('invalid budget must fail before discovery');
     await assert.rejects(runSuite({...f,directory:f.root}),/Checkpoint limit/);
 });
-test('AUTO leaves unrelated cheap candidates native while branching profitable shared work', async t => {
-    const f=fixture(t);
-    for(const id of ['cheap-first','cheap-second']) {
-        const item={...f.manifest.tests[0],id,title:id,scope:'cheap'};
-        f.manifest.tests.push(item);f.manifest.schedule.push(id);
-        f.inventory.tests.push({...item,id:'native-'+id,project:'browser',file:path.join(f.root,item.file),expectedStatus:'passed'});
-    }
-    f.manifest.checkpoints.push({id:'cheap',depth:1,representative:'cheap-first',consumers:['cheap-first','cheap-second'],automatic:true});
-    assessed(f.manifest);
-    const report=await runSuite({...f,mode:'AUTO',directory:f.root});
-    assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
-    assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-first'));
-    assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-second'));
-    assert.equal(report.results.length,105);
+test('serial groups remain in one untouched native invocation', async t => {
+    const f=fixture(t); f.inventory.tests[1].serial=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed'); assert.equal(report.checkpoints,0);
+    assert.equal(f.calls.length,1); assert.equal(f.calls[0].options.tests,undefined);
 });
 test('a fully checkpoint-eligible suite needs no artificial native remainder', async t => {
     const f=fixture(t);f.inventory.tests=f.inventory.tests.slice(0,3);
@@ -232,7 +182,7 @@ test('setup failure prevents checkpoints and records the blocked remainder',asyn
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'failed');assert.equal(report.missing.length,102);
 });
 test('native skips remain visible and never become a fully passed qualification',async t=>{
-    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
+    const f=fixture(t);f.manifest.checkpoints=[];f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'completed-with-skips');assert.equal(report.skipped.length,102);
 });
 test('assessed teardown projects and unsplittable suites keep the complete native invocation',async t=>{
@@ -254,7 +204,7 @@ test('unassessed external runner lifecycle stops before native or checkpoint exe
     }
 });
 test('expected failures remain visible instead of qualifying as passed',async t=>{
-    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'failed',expectedStatus:'failed'})),status:'passed',exitCode:0,errors:[]});
+    const f=fixture(t);f.manifest.checkpoints=[];f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'failed',expectedStatus:'failed'})),status:'passed',exitCode:0,errors:[]});
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'failed');
 });
 test('one suite lease fences native collection, checkpoint transitions and recovery',t=>{
@@ -272,4 +222,14 @@ test('one suite lease fences native collection, checkpoint transitions and recov
     fs.unlinkSync(path.join(f.root,'.runtime/branching-recovery.json'));
     assert.equal(leases.release(lease),true);
     assert.equal(fs.existsSync(lease.lock),false);
+});
+
+test('independent single-project Playwright suite uses measured candidates without synthetic setup', async t => {
+    const f = fixture(t);
+    f.inventory.tests = f.inventory.tests.slice(1,3);
+    f.inventory.config.projects = [{name:'browser', dependencies:[]}];
+    const report = await runSuite({...f, directory:f.root});
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(f.calls, [{checkpoint:['first','second']}]);
+    assert.equal(report.results.length,2);
 });

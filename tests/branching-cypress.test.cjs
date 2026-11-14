@@ -195,20 +195,3 @@ test('native Cypress retains compilation failures even when a spec registered no
     assert.deepEqual(reportErrors({runs:[{spec:{absolute:'/suite/config.cy.js'},error:{message:'Preprocessor failed'}}]},[]),
         [{file:'/suite/config.cy.js',message:'Preprocessor failed'}]);
 });
-
-test('native Cypress verifies every persisted spec forecast before producing observations', t => {
-    const {verifyForecastJournal} = require('../branching/runners/cypress/forecast-journal.cjs');
-    const {digest} = require('../branching/identity.cjs');
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(),'magelens-cypress-forecasts-'));
-    t.after(() => fs.rmSync(directory,{recursive:true}));
-    const file = path.join(directory,'forecast-digests.ndjson');
-    const forecasts = ['first','second'].map(id=>({id,snapshot:{group:id}}));
-    const lines = forecasts.map(({id,snapshot})=>JSON.stringify([{id,digest:digest(snapshot)}])+'\n');
-    fs.writeFileSync(file,lines.join(''));
-    verifyForecastJournal(file,forecasts);
-    assert.throws(()=>verifyForecastJournal(file,[...forecasts].reverse()),/differs/);
-    fs.writeFileSync(file,lines[0]+lines[0]);
-    assert.throws(()=>verifyForecastJournal(file,forecasts),/differs/);
-    fs.writeFileSync(file,lines.join('').slice(0,-1));
-    assert.throws(()=>verifyForecastJournal(file,forecasts),/Incomplete/);
-});

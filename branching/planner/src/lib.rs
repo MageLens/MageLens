@@ -1038,7 +1038,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
         diagnostics,
         assessment: serde_json::Value::Null,
     };
-    manifest.assessment = serde_json::json!({"version":"ml-duration-v1","analysis":{"status":if manifest.diagnostics.is_empty(){"complete"}else{"partial"},"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()},"status":"unestimated"});
+    manifest.assessment = serde_json::json!({"version":"measured-first-use-v1","analysis":{"status":if manifest.diagnostics.is_empty(){"complete"}else{"partial"},"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()},"status":"complete"});
     Ok(manifest)
 }
 

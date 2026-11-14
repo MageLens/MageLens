@@ -6,35 +6,8 @@ const path = require('node:path');
 const {buildWorkflow, verifySources} = require('./automatic.cjs');
 const costs = require('./costs.cjs');
 const {EstimationError} = require('./estimation.cjs');
-const {SEGMENT_TIMING_BOUNDARY, observeExecutedSegment} = require('./predictor/prefix-measurement.cjs');
-const {digest} = require('./identity.cjs');
 const testKey = test => `${path.resolve(test.file)}:${test.framework === 'cypress' || test.fixture?.startsWith('cypress:') ? 'cypress' : test.line}:${test.title}`;
 
-function segmentEvidence(manifest, phases, suitePassed) {
-    const snapshots = new Map(Object.entries(manifest.assessment.stages)
-        .flatMap(([id, stage]) => stage.trainingSnapshot ? [[id, {
-            value:stage.trainingSnapshot, digest:digest(stage.trainingSnapshot)
-        }]] : []));
-    return phases.filter(phase => phase.kind === 'checkpoint').flatMap(({report}) =>
-        (report.segments ?? []).filter(segment => segment.prefixTiming).map(segment => {
-            const snapshot = snapshots.get(segment.node);
-            const matched = snapshot && snapshot.digest === segment.prefixTiming.forecast?.digest;
-            const retained = report.providerDiagnostics?.retainedServices;
-            const audited = suitePassed && report.status === 'passed' && report.counts.fallbacks === 0 &&
-                !report.errors?.length && retained?.schemasRemoved === true && retained?.grantsRestored === true;
-            const observation = matched ? observeExecutedSegment(snapshot.value, segment, {
-                passed:audited, attempts:1, sourceDigest:snapshot.value.sourceDigest
-            }) : null;
-            return {
-                segmentId:segment.id,
-                stageId:segment.node,
-                snapshotDigest:matched ? snapshot.digest : null,
-                sourceVerified:true,
-                providerAuditPassed:audited,
-                observation
-            };
-        }));
-}
 function assertInventoryAssessed(manifest, inventory) {
     const lifecycle = [...(inventory.config.unassessedLifecycle ?? []),
         ...['globalSetup', 'globalTeardown', 'webServer'].filter(key => inventory.config[key])];
@@ -66,7 +39,7 @@ function partition(manifest, inventory, project) {
     const checkpoint = [], native = [];
     for (const test of main) {
         const candidate = staticTests.get(key(test));
-        const eligible = occurrences.get(key(test)) === 1 && test.expectedStatus === 'passed' &&
+        const eligible = occurrences.get(key(test)) === 1 && test.expectedStatus === 'passed' && !test.serial &&
             !test.annotations?.some(a => ['skip', 'fixme', 'fail'].includes(a.type)) && candidate &&
             (project.adapter ? project.adapter.supports(candidate) === true : candidate.disposition === 'automatic');
         (eligible ? checkpoint : native).push(eligible ? {...test, staticId: candidate.id} : test);
@@ -112,11 +85,9 @@ function playwrightCoverageResult(report, runId, browserVersion) {
         totalPassed: tests.length, totalFailed: 0, totalPending: 0, totalSkipped: 0, maxAttempts: 1,
         specs: [...new Set(report.inventory.map(test => test.file))].sort(), tests};
 }
-async function collectAssessed(manifest, project, directory, runner, {calibration = false} = {}) {
+async function collectAssessed(manifest, project, directory, runner) {
     verifySources(manifest);
-    // Calibration lists the suite and measures provider operations without
-    // executing any tests. Forecast qualification still gates suite execution.
-    if (!calibration) require('./estimation.cjs').assertExecutable(manifest);
+    // Native inventory and lifecycle checks remain independent of timing.
     if (!project.native?.config) throw new EstimationError([{phase: 'native-collection', message: 'A native runner configuration is required to assess the complete inventory and lifecycle'}]);
     let inventory;
     try { inventory = await runner.collect(project.native.config, directory); }
@@ -137,14 +108,17 @@ async function runSuite(options) {
     const started = performance.now(), phases = [];
     const inventory = await collectAssessed(manifest, project, directory, runner);
     const groups = partition(manifest, inventory, project);
-    let decision, plan, built, checkpoint = groups.checkpoint;
+    let decision, built, checkpoint = groups.checkpoint;
     const browserIneligible = [];
     const setupProjects = [...new Set(groups.setup.map(t => t.project))];
     const simpleDependencies = setupProjects.length === 1 && inventory.config.projects.every(p =>
         p.name === setupProjects[0] ? !p.dependencies?.length : p.dependencies?.length === 1 && p.dependencies[0] === setupProjects[0]);
-    const independent = inventory.config.checkpointLifecycle === 'independent-cypress';
+    const independentCypress = inventory.config.checkpointLifecycle === 'independent-cypress';
+    const independent = independentCypress || inventory.config.projects.length === 1 &&
+        !inventory.config.projects[0].dependencies?.length && !inventory.config.globalSetup &&
+        !inventory.config.globalTeardown && !inventory.config.webServer;
     // Project teardown dependencies need one untouched native invocation.
-    if (project.native.splitSafe !== true || (!simpleDependencies && !independent) || inventory.config.globalTeardown || inventory.config.webServer ||
+    if (inventory.tests.some(test => test.serial) || project.native.splitSafe !== true || (!simpleDependencies && !independent) || inventory.config.globalTeardown || inventory.config.webServer ||
         inventory.config.projects.some(p => p.teardown)) checkpoint = [];
     if (coverageRoot && checkpoint.length) {
         const {browserProfile} = require('./runners/playwright/native-reporter.cjs');
@@ -160,8 +134,8 @@ async function runSuite(options) {
         });
     }
     if (checkpoint.length) {
-        built = buildWorkflow(manifest, independent ? {...project, runnerOptions: {...project.runnerOptions, nativeConfig: project.native.config}} : project, checkpoint.map(t => t.staticId));
-        ({plan, decision} = costs.planWorkflow(built.workflow));
+        built = buildWorkflow(manifest, independentCypress ? {...project, runnerOptions: {...project.runnerOptions, nativeConfig: project.native.config}} : project, checkpoint.map(t => t.staticId));
+        ({decision} = costs.planWorkflow(built.workflow));
         const chosen = new Set(decision.selected);
         const byStaticId = new Map(checkpoint.map(test => [test.staticId, test]));
         checkpoint = built.workflow.select().filter(test => built.workflow.chain(test.parent)
@@ -179,24 +153,40 @@ async function runSuite(options) {
         validateNative(result, tests ?? inventory.tests); phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
     if (!checkpoint.length) {
-        report.selectionReason = decision ? 'ML duration model selected native execution for the complete suite.' : 'No qualified split; execute the complete native suite.';
+        report.selectionReason = decision ? 'No eligible shared prefixes; execute the complete native suite.' : 'No qualified split; execute the complete native suite.';
         await native();
     } else {
         if (!groups.setup.length && !independent) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');
         const setup = groups.setup.length ? await native(groups.setup, {teardown: false}) : {exitCode: 0, status: 'passed', results: []};
         if (setup.exitCode === 0 && setup.status === 'passed' && setup.results.every(r => r.status === 'passed')) {
-            verifySources(manifest);
-            const result = await runCheckpoint({...built, specs: checkpoint.map(t => t.staticId), plan}, decision);
-            phases.push({kind: 'checkpoint', report: result});
-            const byId = new Map(checkpoint.map(t => [t.staticId, t]));
-            for (const entry of result.results) {
-                const source = byId.get(entry.spec);
-                if (!source) throw new Error('Checkpoint worker returned an unselected test');
-                report.results.push({id: source.id, status: entry.status, execution: 'checkpoint', original: entry});
+            const checkpointIds = new Set(checkpoint.map(test => test.id));
+            const blocks = [];
+            for (const test of inventory.tests.filter(test => !groups.setup.some(setup => setup.id === test.id))) {
+                const kind = checkpointIds.has(test.id) ? 'checkpoint' : 'native';
+                if (blocks.at(-1)?.kind !== kind) blocks.push({kind, tests:[]});
+                blocks.at(-1).tests.push(test);
             }
-            report.checkpoints = result.checkpoints.length; report.reuseHits = result.counts.reuseHits;
-            const remaining = inventory.tests.filter(test => !groups.setup.some(s => s.id === test.id) && !checkpoint.some(c => c.id === test.id));
-            if (remaining.length) await native(remaining, {setup: false});
+            let baseline = project.costBaseline;
+            for (const block of blocks) {
+                if (block.kind === 'native') { await native(block.tests, {setup:false}); continue; }
+                verifySources(manifest);
+                const selected = checkpoint.filter(test => block.tests.some(entry => entry.id === test.id));
+                const configuration = {...project, costBaseline:baseline,
+                    ...(independentCypress ? {runnerOptions:{...project.runnerOptions, nativeConfig:project.native.config}} : {})};
+                const built = buildWorkflow(manifest, configuration, selected.map(test => test.staticId));
+                const {plan, decision} = costs.planWorkflow(built.workflow);
+                const byId = new Map(selected.map(test => [test.staticId,test]));
+                const result = await runCheckpoint({...built, specs:built.workflow.select().map(test => test.id), plan}, decision);
+                phases.push({kind:'checkpoint', report:result});
+                for (const entry of result.results) {
+                    const source = byId.get(entry.spec);
+                    if (!source) throw new Error('Checkpoint worker returned an unselected test');
+                    report.results.push({id:source.id, status:entry.status, execution:'checkpoint', original:entry});
+                }
+                report.checkpoints += result.checkpoints.length;
+                report.reuseHits += result.counts.reuseHits;
+                baseline = result.adaptive?.baselineAfter ?? baseline;
+            }
         }
     }
     verifySources(manifest);
@@ -207,8 +197,6 @@ async function runSuite(options) {
     report.status = !report.missing.length && !report.duplicates.length && phases.every(p => p.kind === 'native' ? p.status === 'passed' && p.exitCode === 0 && !p.errors.length : p.report.status === 'passed') ? 'passed' : 'failed';
     if (report.results.some(r => !['passed', 'skipped'].includes(r.status))) report.status = 'failed';
     if (report.status === 'passed' && report.skipped.length) report.status = 'completed-with-skips';
-    if (manifest.assessment.prefixTimingBoundary === SEGMENT_TIMING_BOUNDARY)
-        report.prefixEvidence = segmentEvidence(manifest, phases, report.status === 'passed');
     report.wallMs = performance.now() - started;
     return report;
 }

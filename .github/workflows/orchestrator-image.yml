@@ -9,8 +9,8 @@ on:
     branches: [branching]
     paths:
       - 'branching/planner/**'
-      - 'branching/predictor/**'
-      - 'tests/ci/predictor-model.cjs'
+      - 'branching/planning-cli.cjs'
+      - 'branching/discovery-context.cjs'
       - 'branching/images.cjs'
       - 'branching/build-runner.sh'
       - 'branching/build-orchestrator.sh'

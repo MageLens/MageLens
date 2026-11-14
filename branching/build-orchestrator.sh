@@ -10,7 +10,7 @@ fingerprint=${2:?Expected input fingerprint}
 # out of the build context, including unreadable files owned by service containers.
 tar -cf - package.json package-lock.json branching-baseline.json \
     branching/planner/Dockerfile branching/planner/Cargo.toml branching/planner/Cargo.lock \
-    branching/planner/src branching/planner/tests branching/predictor/*.cjs \
+    branching/planner/src branching/planner/tests branching/planning-cli.cjs branching/discovery-context.cjs \
     branching/estimation.cjs branching/identity.cjs branching/configs/messages.cjs |
     docker build --file branching/planner/Dockerfile --tag "$image" \
         --label "org.magelens.inputs=$fingerprint" \

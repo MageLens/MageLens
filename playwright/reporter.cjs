@@ -6,15 +6,8 @@ const fs = require('node:fs');
 class CoverageReporter {
     onBegin(config, suite) {
         this.tests = suite.allTests();
-        if (process.env.MAGELENS_NATIVE_PROFILE && process.env.MAGELENS_NATIVE_PREPARE === undefined) {
-            this.predictor = new (require('../branching/runners/playwright/native-reporter.cjs'))();
-            this.predictor.onBegin(config, suite);
-        }
     }
-    onTestEnd(test, result) { this.predictor?.onTestEnd(test, result); }
-    onError(error) { this.predictor?.onError(error); }
     onEnd(result) {
-        this.predictor?.onEnd(result);
         // The branching driver validates and writes one result for the complete suite.
         if (process.env.MAGELENS_NATIVE_REPORT) return;
         const tests = this.tests || [];

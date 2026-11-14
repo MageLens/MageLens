@@ -171,7 +171,7 @@ fn formatting_comments_quotes_and_types_do_not_hide_shared_work() {
     let a = &test(&p, "a")["steps"][0];
     let b = &test(&p, "b")["steps"][0];
     assert_eq!(a["fingerprint"], b["fingerprint"]);
-    assert_eq!(p["assessment"]["version"], "ml-duration-v1");
+    assert_eq!(p["assessment"]["version"], "measured-first-use-v1");
 }
 #[test]
 fn literal_whitespace_inputs_and_preceding_state_are_never_erased() {

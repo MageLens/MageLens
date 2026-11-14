@@ -175,7 +175,7 @@ test('direct entry requires opt-in; help and unsupported adapter do not start co
     assert.equal(unacknowledged.status, 1); assert.equal(unacknowledged.calls, '');
     assert.match(unacknowledged.stderr, /Use .*run-coverage --branching/);
     const help = run(['bin/run-coverage', '--branching', '--help']);
-    assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /coverage collection is not supported yet/);
+    assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /preserves configured Playwright coverage/);
     assert.doesNotMatch(help.stdout, /--disposable/);
     const unsupported = run(['bin/run-coverage', '--branching', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'unknown'});
     assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /Unknown branching runner/);
@@ -265,9 +265,9 @@ function imageFixture(t, kind = 'orchestrator') {
         'dependencies.yaml', 'package.json', 'package-lock.json', '.dockerignore']) copy(directory, file);
     if(kind === 'orchestrator') {
         for(const file of ['branching/build-orchestrator.sh','branching-baseline.json','branching/estimation.cjs',
-            'branching/identity.cjs','branching/configs/messages.cjs',
+            'branching/identity.cjs','branching/configs/messages.cjs','branching/planning-cli.cjs','branching/discovery-context.cjs',
             'branching/planner/Dockerfile','branching/planner/Cargo.toml','branching/planner/Cargo.lock']) copy(directory,file);
-        for(const folder of ['branching/planner/src','branching/planner/tests','branching/predictor'])
+        for(const folder of ['branching/planner/src','branching/planner/tests'])
             fs.cpSync(path.join(root,folder),path.join(directory,folder),{recursive:true});
     }
     fs.mkdirSync(path.join(directory, 'commands'));

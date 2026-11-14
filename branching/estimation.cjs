@@ -18,46 +18,11 @@ class EstimationError extends Error {
     }
 }
 function assertAssessed(manifest) {
-    const a=manifest?.assessment;
-    if (manifest?.schemaVersion!==1 || manifest?.implementation!=='rust-prefix-v3' || a?.version!=='ml-duration-v1')
-        throw new EstimationError([{phase:'manifest',message:'An ML assessment is required; replan'}], 'An ML assessment is required; replan');
-    const issues=[...(a.issues ?? [])];
-    if (manifest.diagnostics?.length || !manifest.tests?.length || a.analysis?.collectionComplete!==true)
-        issues.push({phase:'collection',message:'Incomplete source inventory'});
-    if (a.status!=='complete' || !/^[a-f0-9]{64}$/.test(a.modelId ?? ''))
-        issues.push({phase:'predictor',message:'A complete ML assessment is required'});
-    const prefixModelId = a.prefixModelId ?? a.modelId;
-    if (!/^[a-f0-9]{64}$/.test(prefixModelId ?? ''))
-        issues.push({phase:'predictor',message:'Invalid prefix model identity'});
-    function check(id, row, modelId, emptyAllowed=false) {
-        const p=row?.prediction;
-        if (!p || p.modelId!==modelId || row.predictionError ||
-            !Number.isFinite(p.ms) || p.ms<0 || (p.ms===0 && !(emptyAllowed && row.empty)))
-            issues.push({phase:'predictor',id,message:'Missing or invalid ML prediction'});
-    }
-    for(const test of manifest.tests ?? []) {
-        check(test.id,a.tests?.[test.id],a.modelId);
-        check(`root-${test.scope.slice(0,20)}`,a.stages?.[`root-${test.scope.slice(0,20)}`],prefixModelId,true);
-    }
-    for(const cp of manifest.checkpoints ?? []) check(cp.id,a.stages?.[cp.id],prefixModelId);
-    if(issues.length) throw new EstimationError(issues);
-}
-function assertExecutable(manifest) {
-    assertAssessed(manifest);
-    const {executionEligible, tests, stages} = manifest.assessment;
-    if (executionEligible === true) return;
-    const issues = [{phase: 'qualification',
-        message: 'Forecasts are available, but checkpoint execution requires qualified predictions for their timing boundaries'}];
-    for (const [id, row] of [...Object.entries(tests ?? {}), ...Object.entries(stages ?? {})]) {
-        if (row.empty || row.prediction?.executionEligible === true) continue;
-        const reasons = [];
-        if (row.prediction?.qualified === false) reasons.push('Model has not passed independent qualification');
-        if (row.prediction?.domainMatched === false) reasons.push('Timing boundary has no matching validated model domain');
-        if (row.prediction?.outOfRange === true) reasons.push('Source features are outside the training range');
-        issues.push({phase: 'qualification', id, unit: row.unit, timingBoundary: row.timingBoundary,
-            message: reasons.join('. ') || 'Forecast is ineligible for execution'});
-    }
-    throw new EstimationError(issues);
+    const a = manifest?.assessment;
+    if (manifest?.schemaVersion !== 1 || manifest?.implementation !== 'rust-prefix-v3' || a?.version !== 'measured-first-use-v1')
+        throw new EstimationError([{phase: 'manifest', message: 'Replan for measured-first-use checkpoint reuse; ML manifests are no longer supported'}]);
+    if (!manifest.tests?.length || manifest.diagnostics?.length || a.analysis?.collectionComplete !== true || a.status !== 'complete')
+        throw new EstimationError([{phase: 'collection', message: 'Incomplete source inventory'}]);
 }
 function readManifest(file) {
     try {
@@ -104,4 +69,4 @@ function recordFailure(file, error) {
         catch (failure) { error.issues.push({phase: 'failure-report', message: `Could not remove temporary failure report: ${failure.message}`}); }
     }
 }
-module.exports = {EstimationError, assertAssessed, assertExecutable, readManifest, readFailure, recordFailure, formatError};
+module.exports = {EstimationError, assertAssessed, readManifest, readFailure, recordFailure, formatError};

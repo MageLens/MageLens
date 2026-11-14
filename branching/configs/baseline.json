@@ -62,7 +62,8 @@
       "-a",
       "-q",
       "db",
-      "phpfpm"
+      "phpfpm",
+      "runner"
     ],
     "inspect": [
       "inspect"

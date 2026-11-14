@@ -12,13 +12,12 @@ async function open(environment = process.env, {launchOptions = {}, contextOptio
     return {
         description: {name: 'Chrome for Testing', version: browser.version(), playwright: version},
         run: options => runBranches({...options, browser, baseURL: environment.PLAYWRIGHT_BASE_URL, contextOptions: {ignoreHTTPSErrors: true, ...contextOptions}}),
-        calibrate: ({backend,root,samples,qualificationSegment,coverage = {}}) => {
+        calibrate: ({backend,root,samples,coverage = {}}) => {
             const {RetainedProvider}=require('../../../branching/retained-provider.cjs');
             const provider=new RetainedProvider({browser,backend,baseURL:environment.PLAYWRIGHT_BASE_URL,contextOptions:{ignoreHTTPSErrors:true,...contextOptions},
                 ...coverage,state:async runtime=>({url:runtime.page.url(),database:runtime.sql('SELECT 1')})});
-            return require('../../../branching/calibration.cjs').measure({provider,root,samples,qualificationSegment,
+            return require('../../../branching/calibration.cjs').measure({provider,root,samples,
                 warmup:async runtime=>{
-                    if (qualificationSegment) return;
                     await runtime.page.goto(environment.PLAYWRIGHT_BASE_URL);
                     await runtime.page.locator('body').waitFor();
                 }});

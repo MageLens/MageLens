@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {SEGMENT_TIMING_BOUNDARY} = require('./predictor/prefix-measurement.cjs');
+const SEGMENT_TIMING_BOUNDARY = 'checkpoint-segment-run-duration/v1';
 const protocol = require('./configs/protocol.cjs');
 
 const messages = require('./configs/messages.cjs');
@@ -34,8 +34,13 @@ function createExecution({
     checkpointLifetime,
     retain,
     ttlMs,
-    fault
+    fault,
+    adaptive = false
 }) {
+    const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline) : null;
+    const prefixDurations = new Map();
+    if (economics) report.adaptive = {baselineBefore: {...economics.baseline},
+        observations: economics.observations, decisions: economics.decisions, baselineAfter: economics.baseline};
     const remaining = new Map();
     for (const spec of selected) {
         for (const node of graph.chain(spec.parent)) {
@@ -58,7 +63,6 @@ function createExecution({
             entry.prefixTiming = {
                 timingBoundary:SEGMENT_TIMING_BOUNDARY,
                 kind:node.inputs.checkpoint.depth === 0 ? 'fixture' : 'steps',
-                forecast:node.inputs.forecastIdentity ?? null,
                 fromDepth:node.inputs.fromDepth,
                 toDepth:node.inputs.checkpoint.depth,
                 workMs:null,
@@ -92,6 +96,8 @@ function createExecution({
             throw error;
         } finally {
             entry.wallMs = performance.now() - time;
+            if (kind === 'Stage' && entry.status === protocol.status.passed && !prefixDurations.has(node.id))
+                prefixDurations.set(node.id, entry.wallMs);
             emit(protocol.event.nodeEnd, {
                 node: node.id,
                 operation: protocol.operation.execute,
@@ -111,7 +117,7 @@ function createExecution({
 
     const reuse = approach === config.APPROACH.branching;
     function nextPrefetch(next) {
-        if (!next || !provider.prefetch || graph.chain(next.parent).some(node => failed.has(node.id))) return null;
+        if (economics || !next || !provider.prefetch || graph.chain(next.parent).some(node => failed.has(node.id))) return null;
         for (const node of graph.chain(next.parent).reverse()) {
             const ref = reuse && store.available.get(node.id);
             if (!ref) continue;
@@ -145,7 +151,9 @@ function createExecution({
                 report.counts.firstReuseValidations = (report.counts.firstReuseValidations ?? 0) + 1;
             }
             report.counts.reuseHits++;
-            report.costs.restores.push({stage: id, ms: performance.now() - restoreStart});
+            const restoreMs = performance.now() - restoreStart;
+            report.costs.restores.push({stage: id, ms: restoreMs});
+            economics?.observe('restoreMs', restoreMs, id);
             emit(protocol.event.nodeEnd, {
                 node: id,
                 operation: protocol.operation.restore,
@@ -164,7 +172,13 @@ function createExecution({
         for (const ancestor of graph.chain(id))
             if (failed.has(ancestor.id)) throw new ParentFailure(ancestor.id, failed.get(ancestor.id));
         const ref = reuse && store.available.get(id);
-        if (ref) {
+        if (ref && economics && !economics.decide(id, measuredPrefix(id), remaining.get(id), {captured: true})) {
+            // Release only owned, verified snapshot data; resolution below resets
+            // through the same path as ordinary linear execution.
+            await releaseCheckpoint(id);
+            disabled.add(id);
+        }
+        if (ref && !disabled.has(id)) {
             const restored = await restoreCheckpoint(node, ref, next);
             if (restored) return restored;
         }
@@ -173,7 +187,9 @@ function createExecution({
             : await measured('reset', async () => {
                   const time = performance.now();
                   await provider.reset();
-                  report.costs.resets.push(performance.now() - time);
+                  const resetMs = performance.now() - time;
+                  economics?.observe(report.costs.resets.length ? 'resetMs' : 'firstResetMs', resetMs, id);
+                  report.costs.resets.push(resetMs);
                   return {parent: null, lineage: []};
               });
         prior.lineage.push(await measured('prefix', () => segment(node, 'Stage')));
@@ -182,7 +198,8 @@ function createExecution({
             node.checkpoint !== false &&
             (!chosen || chosen.has(id)) &&
             !disabled.has(id) &&
-            (checkpointLifetime === config.checkpoint.lifetime || remaining.get(id) > 1)
+            (checkpointLifetime === config.checkpoint.lifetime || remaining.get(id) > 1) &&
+            (!economics || economics.decide(id, measuredPrefix(id), remaining.get(id) - 1))
         ) {
             try {
                 const time = performance.now();
@@ -199,7 +216,12 @@ function createExecution({
                     fault
                 });
                 const manifest = store.verify(ref, graph.key(id));
-                report.costs.captures.push({stage: id, ms: performance.now() - time});
+                const captureMs = performance.now() - time;
+                report.costs.captures.push({stage: id, ms: captureMs});
+                if (economics) {
+                    economics.observe('captureMs', captureMs, id);
+                    economics.lifecycleCharged = true;
+                }
                 report.checkpoints.push(manifest);
                 prior.parent = ref.id;
                 emit(protocol.event.checkpointReady, {
@@ -255,6 +277,26 @@ function createExecution({
         await releaseConsumed(spec);
     }
 
+    function measuredPrefix(id) {
+        return graph.chain(id).reduce((sum, node) => sum + (prefixDurations.get(node.id) ?? 0), 0);
+    }
+    async function releaseCheckpoint(id, after = null) {
+        try {
+            const time = performance.now();
+            const checkpoint = await measured('checkpointRelease', async () => store.release(id));
+            if (checkpoint) {
+                const ms = performance.now() - time;
+                report.releases.push({stage: id, checkpoint, after});
+                report.costs.releases.push({stage: id, ms});
+                economics?.observe('releaseMs', ms, id);
+                emit(protocol.event.checkpointReleased, {node: id, after});
+            }
+        } catch (error) {
+            errorRecord('checkpointRelease', error, id);
+            throw error;
+        }
+    }
+
     async function releaseConsumed(spec) {
         for (const node of graph.chain(spec.parent).reverse()) {
             remaining.set(node.id, remaining.get(node.id) - 1);
@@ -268,24 +310,7 @@ function createExecution({
                 !retain &&
                 remaining.get(node.id) === 0
             ) {
-                try {
-                    const time = performance.now();
-                    if (store.available.has(node.id))
-                        emit(protocol.event.nodeStart, {
-                            node: node.id,
-                            operation: protocol.operation.release
-                        });
-                    const checkpoint = await measured('checkpointRelease', async () =>
-                        store.release(node.id)
-                    );
-                    if (checkpoint) {
-                        report.releases.push({stage: node.id, checkpoint, after: spec.id});
-                        report.costs.releases.push({stage: node.id, ms: performance.now() - time});
-                        emit(protocol.event.checkpointReleased, {node: node.id, after: spec.id});
-                    }
-                } catch (error) {
-                    errorRecord('checkpointRelease', error, node.id);
-                }
+                await releaseCheckpoint(node.id, spec.id);
             }
         }
     }

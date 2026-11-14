@@ -34,6 +34,7 @@ async function executePlan({
     checkpointLifetime = config.checkpoint.lifetime,
     checkpointSelection,
     checkpointPolicy,
+    adaptive = false,
     eventDirectory = process.env.MAGELENS_BRANCHING_EVENTS,
     onEvent
 }) {
@@ -111,7 +112,8 @@ async function executePlan({
         checkpointLifetime,
         retain,
         ttlMs,
-        fault
+        fault,
+        adaptive
     });
     try {
         emit(protocol.event.runPhase, {phase: 'preparing'});

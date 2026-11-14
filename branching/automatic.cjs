@@ -34,7 +34,7 @@ function verifySources(manifest) {
         const discovery = manifest.assessment.discovery;
         if (discovery) {
             for (const {row} of discovery.tests) {
-                if (row.files) require('./predictor/discovery-context.cjs').discoveryContext(row,
+                if (row.files) require('./discovery-context.cjs').discoveryContext(row,
                     {root,dependencyRoots:discovery.dependencyRoots});
             }
         }
@@ -111,7 +111,6 @@ function playwrightCoverageAdapter(manifest, expect) {
 
 function buildWorkflow(manifest, configuration, selected) {
     verifySources(manifest);
-    require('./estimation.cjs').assertExecutable(manifest);
     if (!configuration.identity || typeof configuration.state !== 'function' || typeof configuration.assertCheckpoint !== 'function') {
         throw new Error('Automatic runs require identity, state(runtime) and assertCheckpoint(runtime, checkpoint) in the project configuration');
     }
@@ -158,14 +157,8 @@ function buildWorkflow(manifest, configuration, selected) {
     };
     const roots = new Map();
     const stages = [];
-    const predictions = manifest.assessment.stages;
     const fixtureCheckpointFor = test => manifest.checkpoints.find(checkpoint => checkpoint.depth === 0 && checkpoint.consumers.includes(test.id));
     const usableIds = new Set(usable.map(checkpoint => checkpoint.id));
-    const duration = id => {
-        const value = predictions[id]?.prediction?.ms;
-        if (!Number.isFinite(value) || value < 0) throw new Error(`Missing ML stage prediction: ${id}`);
-        return Math.ceil(value);
-    };
     const rootFor = test => {
         // A fixture moved into a checkpoint must not share its empty root
         // with a test that still prepares its fixture in the root.
@@ -173,13 +166,10 @@ function buildWorkflow(manifest, configuration, selected) {
         const checkpointOwnsSetup = usableIds.has(fixtureCheckpoint?.id);
         const key = `${test.scope}:${checkpointOwnsSetup}`;
         if (!roots.has(key)) {
-            const forecastId = `root-${test.scope.slice(0, 20)}`;
-            const id = checkpointOwnsSetup ? `${forecastId}-checkpoint` : forecastId;
+            const rootId = `root-${test.scope.slice(0, 20)}`;
+            const id = checkpointOwnsSetup ? `${rootId}-checkpoint` : rootId;
             roots.set(key, id);
-            stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
-                estimatedMs: checkpointOwnsSetup ? 0 : duration(
-                    fixtureCheckpoint && predictions[forecastId]?.empty ? fixtureCheckpoint.id : forecastId
-                ),
+            stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope, rootId},
                 run: async runtime => {
                     if (checkpointOwnsSetup) return;
                     if (test.restoration && !adapter) await fixtureState.prepare(test,runtime);
@@ -193,21 +183,10 @@ function buildWorkflow(manifest, configuration, selected) {
         const test = byId.get(checkpoint.consumers.find(id => selection.has(id)));
         const parent = parentFor(test, checkpoint.depth);
         const boundary = test.steps[checkpoint.depth - 1];
-        const forecast = predictions[checkpoint.id];
         const fromDepth = parent?.depth ?? 0;
-        const forecastIdentity = (checkpoint.depth > 0 || (!adapter && test.restoration)) &&
-            forecast?.segment?.representative === test.id &&
-            forecast.segment.fromDepth === fromDepth && forecast.segment.toDepth === checkpoint.depth
-            ? {digest:digest(forecast.trainingSnapshot ?? forecast),modelId:forecast.prediction.modelId,
-                featureSchema:forecast.featureSchema,environmentDigest:forecast.environmentDigest,
-                sourceDigest:forecast.sourceDigest,timingBoundary:forecast.timingBoundary}
-            : null;
         stages.push({id: checkpoint.id, label: checkpoint.label ?? `Shared prefix · ${checkpoint.depth} steps`,
             source: {file: test.file, line: boundary?.line ?? test.line}, parent: parent?.id ?? rootFor(test),
-            // Filtering native-only tests can change the representative or
-            // ancestor. Keep that work in the graph, with an unknown cost.
-            estimatedMs: forecast?.segment && !forecastIdentity ? null : duration(checkpoint.id),
-            inputs: {checkpoint, source: manifest.sourceDigest, fromDepth, forecastIdentity},
+            inputs: {checkpoint, source: manifest.sourceDigest, fromDepth},
             run: runtime => checkpoint.depth === 0 && test.restoration && !adapter
                 ? fixtureState.prepare(test, runtime) : execute(test, fromDepth, checkpoint.depth, runtime),
             assert: runtime => configuration.assertCheckpoint(runtime, checkpoint)});

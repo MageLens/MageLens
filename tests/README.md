@@ -140,25 +140,17 @@ collection diagnostics; `assessment.analysis.collectionComplete` reports this.
 Rust resolves local and installed dependencies, fingerprints source and finds
 shared prefixes without executing project code. Use a source root containing the
 tests, helpers and installed dependencies. Deterministic collection and restoration
-checks remain separate from duration prediction.
+checks remain independent of timing. Prefix durations are measured at their first
+normal execution boundary; checkpoint operations are recalibrated online. See
+[branching estimation](../docs/branching-estimation.md) for economics and reports.
 
-Duration estimates come only from the pinned ML model. Use
-`./bin/plan-branching --evaluate SOURCE_ROOT` to retain forecasts and model/domain
-warnings without authorizing execution. The model forecasts each test and prefix
-segment, including inputs outside its training domain. Qualification and domain
-matching are reported separately and remain prerequisites for checkpoint execution.
-There is no operation-point estimator or handwritten call-cost override. See
-[branching estimation](../docs/branching-estimation.md) for the timing boundaries.
+For Playwright fixtures discovered by native list-only discovery, use
+`./bin/plan-branching --discovery FILE SOURCE_ROOT [MANIFEST]`.
+The evidence must describe the same configuration and callbacks. Start the
+installed runner so the planner can verify its dependency files. Plans retain
+discovery identities and reject changed source inputs.
 
-For Playwright fixtures discovered by the native profiler, use
-`./bin/plan-branching [--evaluate] --discovery FILE SOURCE_ROOT [MANIFEST]`.
-The evidence must come from list-only discovery of the same configuration and
-callbacks. Start the installed runner so the planner can verify its dependency
-files. Plans retain the discovery identities and reject changed source or
-environment inputs; discovery does not qualify a duration model.
-
-A profitable predicted prefix still needs a supported execution boundary:
-ML inference does not restore arbitrary JavaScript closures or process state.
+An economical prefix still needs a supported execution boundary.
 AUTO can restore test-scoped `test.extend` fixtures with a standalone `await use(value)`
 boundary (including a direct `try { await use(value); } finally { … }`). Rust follows helper imports and fixture dependencies and emits setup and
 teardown continuations. The Playwright runner saves fixture values and live teardown

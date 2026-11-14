@@ -67,17 +67,15 @@ test('failed parent blocks all descendants without executing Specs', async t => 
     assert.ok(result.results.every(r => r.status === 'blocked' && r.blockedBy === 'customer-ready'));
     assert.equal(result.segments.filter(s => s.kind === 'Spec').length, 0);
 });
-test('failed segment work retains forecast identity and elapsed time for audit', async t => {
+test('failed segment work retains elapsed time for audit', async t => {
     const input = setup(t);
     const stage = input.workflow.stages[0];
-    const forecastIdentity = {digest:'a'.repeat(64)};
-    stage.inputs = {...stage.inputs,fromDepth:0,checkpoint:{depth:1},forecastIdentity};
+    stage.inputs = {...stage.inputs,fromDepth:0,checkpoint:{depth:1}};
     stage.run = async () => { throw new Error('segment work failed'); };
     const result = await execute({...input,approach:'branching'});
     const segment = result.segments.find(entry=>entry.node === stage.id);
     assert.equal(segment.status,'failed');
     assert.equal(segment.prefixTiming.workCompleted,false);
-    assert.deepEqual(segment.prefixTiming.forecast,forecastIdentity);
     assert.ok(Number.isFinite(segment.prefixTiming.workMs));
 });
 test('prefix completion waits for the queued runner work before asserting the boundary', async t => {

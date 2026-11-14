@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-// Checkpoint operation overheads; test duration comes only from ML. The Node entry point
+// Checkpoint operation overheads; prefix duration is measured during execution. The Node entry point
 // scales operation defaults using the root checkpoint decision baseline and
 // supplies a complete baseline to the planner. Project calibration replaces the
 // operation estimates. These desktop-derived bootstrap values are not CI gates.

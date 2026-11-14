@@ -14,6 +14,6 @@ async function execute(options) {
     const {decision} = costs.resolvePlan(workflow, options.specs, options.plan);
     return executePlan({...options, workflow,
         approach: decision.selected.length ? 'branching' : 'L0',
-        checkpointSelection: decision.selected, checkpointPolicy: decision});
+        adaptive: true, checkpointSelection: decision.selected, checkpointPolicy: decision});
 }
 module.exports = {Graph, CheckpointStore, execute, cleanup, digest, canonical, fileDigest, inventory};
