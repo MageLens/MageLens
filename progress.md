@@ -1258,3 +1258,20 @@ grouped cross-validation reached 5.53% within 5%, versus 1.79% for
 the median comparator. P95 absolute percentage error was 2,008%.
 These historical results fall short of the accuracy gate. No audit
 labels entered the fit and the candidate remains unqualified.
+
+The historical error ledger shows a duration-dependent bias. Of 93
+subsecond observations, 91 were overpredicted and zero were within 5%.
+Of 162 observations at 20 s or longer, 122 were underpredicted and
+four were within 5%. None of the 615 observations recorded pre-run
+backend state.
+
+Grouping the same rows by runner, timing unit and boundary, feature
+schema, environment digest, baseline, multiplier and exact feature
+vector produced 143 repeated-input groups. In 41 groups the observed
+durations had no single common forecast within 5%. An interval sweep
+found that even an oracle assigning one forecast to each distinct input
+could match at most 543 of 615 observations (88.29%). This bound applies
+to the historical inputs. It does not identify whether the differences
+come from omitted state or runtime variability. Fresh collection needs
+matched repetitions with pre-run state recorded before another recipe
+comparison can distinguish those causes.
