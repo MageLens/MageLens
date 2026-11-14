@@ -186,4 +186,28 @@ function append(workspace, cycle, event, lease) {
     try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
     return read(workspace, cycle);
 }
-module.exports = {create, read, append, splitBytes};
+function reconcileInterrupted(workspace, cycle, {lease, reason, confirmedStopped}) {
+    requireValue(lease, 'workflow lease required');
+    location(workspace, cycle, lease);
+    requireValue(confirmedStopped === true && typeof reason === 'string' && reason.trim(),
+        'recovery requires a confirmed stopped runner and a reason');
+    let current = read(workspace, cycle);
+    const latest = new Map();
+    for (const {event} of current.records) {
+        if (event.attempt) latest.set(event.attempt.id, event);
+    }
+    for (const event of latest.values()) {
+        if (event.attempt.status !== 'started') continue;
+        const finishedAt = new Date().toISOString();
+        current = append(workspace, cycle, {
+            id:randomUUID(), state:'collecting', startedAt:event.startedAt, finishedAt,
+            elapsedMs:event.elapsedMs, resources:event.resources,
+            resourceMeasurement:'last-recorded-before-interruption',
+            nextAction:'Retry the case with a new attempt',
+            attempt:{...event.attempt,status:'interrupted',reason}
+        }, lease);
+    }
+    return current;
+}
+
+module.exports = {create, read, append, splitBytes, reconcileInterrupted};

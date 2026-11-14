@@ -147,3 +147,23 @@ test('Playwright campaign records the frozen forecast before execution and binds
     assert.deepEqual(records.map(record=>record.event.attempt.status), ['started','passed']);
     assert.equal(records[1].event.attempt.observationDigest,fileDigest(observations));
 });
+
+test('recovery records unfinished attempts once and preserves completed observations', t => {
+    const {root, lease, manifest} = setup(t);
+    ledger.create(root, manifest, lease);
+    const append = value => ledger.append(root, manifest.cycleId, value, lease);
+    append(event('first', 'collecting', {attempt:attempt('train','started')}));
+    append(event('pass', 'collecting', {attempt:attempt('train','passed',{observationDigest:hash('b')})}));
+    append(event('second', 'collecting', {attempt:attempt('validation','started')}));
+    const recover = options=>ledger.reconcileInterrupted(root,manifest.cycleId,{lease,reason:'Runner exited',...options});
+    assert.throws(()=>recover({confirmedStopped:false}),/confirmed stopped runner/);
+    assert.throws(()=>recover({confirmedStopped:true,lease:undefined}),/lease required/);
+    const recovered = recover({confirmedStopped:true});
+    assert.deepEqual(recovered.records.map(record=>record.event.attempt.status),
+        ['started','passed','started','interrupted']);
+    const interrupted = recovered.records.at(-1).event;
+    assert.equal(interrupted.attempt.snapshotDigest,hash('a'));
+    assert.equal(interrupted.resourceMeasurement,'last-recorded-before-interruption');
+    assert.equal(recover({confirmedStopped:true}).head,recovered.head);
+    append(event('retry', 'collecting', {attempt:attempt('validation','started',{id:'validation-2'})}));
+});
