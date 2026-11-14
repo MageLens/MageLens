@@ -993,3 +993,10 @@ assessment remained incomplete. The run took 18.35 seconds and peaked at
 about 1.06 GiB RSS. All 34 focused reachability tests passed. This parity
 comparison covers third-party discovery, and private and bundled comparisons
 and execution traces remain open.
+
+The private static registration scan matched all 753 native E2E IDs by
+relative file, title and occurrence count. The scan assessed 757 browser
+registrations overall and emitted 41 diagnostics for other files.
+It used an isolated copy with six contained directory aliases materialized
+and the sibling application tree mounted read-only. No private test bodies
+ran in this scan. Input and timing parity still require their own evidence.
