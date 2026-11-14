@@ -809,3 +809,42 @@ these results do not qualify a final Git candidate. Evidence remains under
 `campaign-20261114`, including `generated-cypress-01-*`,
 `private-dependency-discovery-01-*`, `native-compilation-error-replay.json` and
 `integration-discovery-errors.log`.
+
+### 2026-11-14 — native inventories reconciled for both requested stacks
+
+The fresh private discovery completed successfully: **753 native tests across all
+355 E2E specs**, plus **four tests in two unit specs**. Every expected spec is
+accounted for. Two E2E tests are explicitly skipped in the original source; they
+remain visible and cannot count as passing application executions. The original
+731 files and six symlinks, their disposable copies and the two imported application
+dependencies remain unchanged. Discovery did not execute application test bodies.
+
+The third-party suite initially failed on removed `Cypress.env()` calls. A private,
+reproducible Cypress 16 port preserves its assertions and checkout-selection
+conditions, uses public exposure for configuration and asynchronous token reads
+for authenticated requests, and removes customer-token logging. Six selection
+comparisons (unset/false/true) and the helper request comparison pass. Its local
+storage dependency is pinned to 2.3.1. Because the published accessibility plugin
+excludes Cypress 16, its merged upstream support was built from immutable commit
+`29176384299ee4682e17a009fe563e8910a35525`; the source, lock and package hashes are
+retained. No peer-dependency bypass, assertion removal or runner downgrade was used.
+
+Three real pinned-browser checks pass: the unchanged upstream accessibility test,
+the migrated authenticated helper queue, and local-storage snapshot behavior.
+The compiled accessibility files match the installed package. Subsequent complete
+third-party discovery registered **156 tests across all 41 specs**, with no skipped
+declarations. Original source files remain unchanged, and every migrated source
+hash is verified. The exact private patch and dependency provenance are retained
+in `campaign-20261114/third-party-port-provenance.json`. These checks do not
+establish real storefront, CSP, restoration, timing or coverage qualification.
+
+Generated inventories contain 128 tests per runner; bundled inventories contain
+five per runner. Correlated variants and paired runner implementations are not
+independent statistical cases. Helper groups, frozen splits, real installation
+readiness and exact timing collection remain pending, so package 1 remains open.
+
+Ongoing uncommitted input work now rejects unexported and ambiguous export bindings,
+bounds cyclic re-exports, preserves module-specific cache bindings and requires
+explicit diagnostic markers. **459 working-tree integration tests passed, zero
+failures/skips**, and static checks passed. This is intermediate validation, not
+final-candidate CI or completion of the corrected-input package.
