@@ -103,3 +103,19 @@ test('journal rejects altered history and symlinks while ignoring unpublished cr
     fs.unlinkSync(file); fs.symlinkSync(path.join(created.directory, 'manifest.json'), file);
     assert.throws(() => ledger.read(root, manifest.cycleId), /linked/);
 });
+
+test('version 2 preserves first-attempt order and limits concurrent attempts across resume', t => {
+    const {root, lease, manifest} = setup(t);
+    manifest.schemaVersion = 2;
+    manifest.splitDigest = createHash('sha256').update(ledger.splitBytes(manifest.inventory)).digest('hex');
+    ledger.create(root, manifest, lease);
+    const append = (id, value) => ledger.append(root, manifest.cycleId, event(id, 'collecting', {attempt:value}), lease);
+    assert.throws(() => append('wrong-order', attempt('audit', 'started')), /frozen run order/);
+    append('start-train', attempt('train', 'started'));
+    assert.throws(() => append('too-many', attempt('validation', 'started')), /concurrent attempt/);
+    append('interrupt', attempt('train', 'interrupted', {reason:'Runner interrupted'}));
+    append('retry', attempt('train', 'started', {id:'train-2'}));
+    append('pass', attempt('train', 'passed', {id:'train-2',observationDigest:hash('b')}));
+    append('start-validation', attempt('validation', 'started'));
+    assert.equal(ledger.read(root, manifest.cycleId).records.length,5);
+});

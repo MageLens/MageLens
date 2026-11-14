@@ -1203,3 +1203,10 @@ operation samples changed only the dedicated project's baseline for
 future runs. No source forecast was changed. The observations cover
 two states of this profile and provide no extrapolation to other
 runners or larger stores.
+
+Version 2 campaign journals now reject starts outside the frozen
+first-attempt order and starts that exceed the concurrent-attempt
+budget. An interrupted attempt must be recorded before a new attempt
+can use its slot. All six ledger regressions passed, including replay
+after interruption. Collection still needs to emit these events from
+the real runner and record actual memory and disk usage.

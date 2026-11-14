@@ -125,6 +125,16 @@ function validateEvent(manifest, records, event) {
         requireValue(['started', 'passed', 'failed', 'interrupted', 'quarantined'].includes(attempt.status), 'invalid attempt status');
         requireValue(prior.length === 0 ? attempt.status === 'started' : prior.length === 1 && prior[0].status === 'started' && attempt.status !== 'started', 'attempt already finished or missing start');
         if (prior.length) requireValue(prior[0].caseId === attempt.caseId && prior[0].snapshotDigest === attempt.snapshotDigest, 'attempt identity changed');
+        if (manifest.schemaVersion === 2 && attempt.status === 'started') {
+            const latest = new Map(attempts.map(item => [item.id, item]));
+            const active = [...latest.values()].filter(item => item.status === 'started').length;
+            requireValue(active < manifest.budget.maxParallelRuns, 'concurrent attempt exceeds the frozen budget');
+            const startedCases = new Set(attempts.map(item => item.caseId));
+            if (!startedCases.has(attempt.caseId)) {
+                const next = manifest.runOrder.find(id => !startedCases.has(id));
+                requireValue(attempt.caseId === next, 'attempt is out of the frozen run order');
+            }
+        }
         if (attempt.status === 'passed') {
             requireValue(hash(attempt.observationDigest), 'passed attempt needs an observation digest');
             requireValue(!attempts.some(item => item.observationDigest === attempt.observationDigest), 'observation reused');
