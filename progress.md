@@ -1210,3 +1210,14 @@ budget. An interrupted attempt must be recorded before a new attempt
 can use its slot. All six ledger regressions passed, including replay
 after interruption. Collection still needs to emit these events from
 the real runner and record actual memory and disk usage.
+
+The Playwright campaign collector ran a loopback browser test in a
+network-disabled container with Chrome for Testing 157.0.8103.38
+and Playwright 1.65.0. The server observed the ledger's started
+record before receiving browser traffic. The terminal record bound
+the observation file by SHA-256. The test took 695 ms, against a
+0.927 ms forecast from the bundled candidate with the probe's 100 ms
+normalization baseline. This is a collection check and a diagnostic
+miss. The container recorded a 391 MB memory peak and the probe
+workspace occupied about 52 kB. Full inventory collection, Cypress
+journal integration and independent qualification remain open.
