@@ -1414,3 +1414,15 @@ in the suite result and excluded it from individual-test training
 as a project lifecycle dependency. This is whole-test collection
 with no model loaded, so it supplies development labels and no
 forecast qualification. The run did not collect checkpoint coverage.
+
+Fresh development repetitions on the routed scope checked source
+hashes and bound each timing to the frozen incremental forecast.
+The 160-statement catalog segment took 35.215–35.557 s against a
+3.541 s forecast. The cheaper home and search segments took
+0.339–0.412 s and 0.498–0.757 s. Two of nine forecasts were within
+5%, both for home. A single forecast could fit all three catalog
+repetitions within 5%, but neither short segment had a common
+5% interval. The catalog miss calls for domain-matched prediction
+inputs. The shorter segments also need controlled starting states
+before qualification. These source-slice runs are development
+diagnostics without coverage or retained-provider restoration.
