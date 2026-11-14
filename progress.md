@@ -2713,3 +2713,26 @@ observations at one fixed forecast per test and no per-test disjoint range;
 this is a stability screen only, with independent prediction qualification still
 mandatory. If it fails, stop the affinity approach and inspect the short-test
 execution/timing boundary instead of gathering more repetitions.
+
+The affinity comparison passed all 27 original test executions, source/runtime/
+browser audits, coverage and cleanup in 172.901/171.995/173.147 s. Throttling was
+negligible (the first two runs recorded 31/1005 microseconds total), but readiness
+320/303/282 ms, visible body 1029/931/914 ms and robots 451/366/377 ms still had
+no common 5% range. The retrospective fixed-forecast compatibility bound improved
+to 24/27, below 95%; it is not a measured prediction score. The declared stability
+screen failed. Stop this affinity approach; do not repeat or adopt the setting.
+All three long consumers remained mutually compatible within 5%. Preserve the
+reports/coverage and `catalog-affinity-repeatability-audit.json`. Both three-run
+experiments finished within their separate ten-minute limits, recorded in
+`catalog-repeatability-budgets.json`. No training/qualification observations
+were admitted and no paired branching savings were measured.
+
+Read-only host inspection found CPU12/13 are distinct cores with individual
+frequency policies, both `powersave`, with a 400–3300 MHz configured range.
+CPU pressure was also nonzero. This does not establish a causal explanation or
+prove that a performance policy would meet the target. Changing these host
+policies is outside the dedicated Docker resources used so far; do not make that
+change autonomously. Further static fitting on these repetitions would not
+resolve their incompatible ranges. The useful independent next action is to
+inspect the original short-test timing boundaries and lifecycle evidence while
+preparing a concrete, reversible host-policy diagnostic for a user decision.
