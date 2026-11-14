@@ -1343,3 +1343,14 @@ whole-test measurement therefore cannot supply the profitable shared
 prefix. Playwright also classified its fixture and module lifecycle as
 adapter-required. This workload remains native under the milestone's
 restoration rules.
+
+An expanded Mage-OS candidate retained the five controls and added two
+tests sharing 80 product navigations and heading checks. Rust identified
+seven tests and three automatic prefixes, including the 160-statement
+catalog path. All seven passed in 81.848 s of native runner wall time.
+The catalog tests took 41.2 s and 35.9 s including their distinct
+endings, below the 44.986 s two-consumer break-even. The bundled model
+forecasts 3.541 s for the shared catalog work and remains unqualified.
+A separate source-verified prefix timing run is in progress. Its
+measurements will inform whether a third genuinely distinct consumer
+can make this candidate economical.
