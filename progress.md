@@ -1141,3 +1141,16 @@ after source verification. The observation records failed provider
 cleanup audits as ineligible. All 25 fixture and suite integration
 checks passed. This verifies the collection path with fixture providers;
 an audited Magento suite collection remains pending.
+
+A disposable XFS loop mount propagated to the host and was visible to
+a sibling Docker container through a normal bind mount. The host Node
+process passed the storage probe. The harness unmounted the filesystem
+and detached the loop device before deleting the image. This makes
+shared checkpoint storage available for a dedicated calibration stack.
+
+The stopped Mage-OS campaign installation has an internal network and
+its PHP image reports one effective static FPM worker. Its Compose
+configuration includes an extra local-provider service outside the
+retained backend's supported service set, so these checks did not start
+it or change its volumes. The bundled calibration workload still needs
+a separate, supported Compose configuration.
