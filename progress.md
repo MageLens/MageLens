@@ -1378,3 +1378,11 @@ setup project with a simple dependency graph; the current linear
 probe uses a single default project. Any eventual paired suite must
 exercise the supported startup path in both arms and include its time.
 The retained provider still declares checkpoint coverage unsupported.
+
+A candidate copy adds a native Playwright setup project that checks
+storefront readiness. Its dependent project preserves all eight
+original tests. With pinned Playwright, the existing list-only suite
+reconciliation matched all nine registrations to Rust and partitioned
+one setup test and eight automatically portable test candidates. The
+dependency graph satisfies mixed-suite routing. No application test
+executed during this check, and the forecast remains unqualified.
