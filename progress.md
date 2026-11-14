@@ -2624,3 +2624,60 @@ never combine its timings with the earlier cold-native domain. Cap catalog at
 runtime audit. No model fitting or qualification collection belongs to this
 comparison. Inspect actual per-test residuals and retained prefix hits afterward;
 this does not relax the 95%-within-5% requirement.
+
+The warm-reference pair completed: catalog `b83012b0` passed 9/9 native tests
+and search `34584a9b` passed 6/6, with two successful captures/restores each.
+Source, runtime, report hashes and cleanup passed. Warm-up preserved exactly
+330 files/133,695 bytes for catalog and 254 files/120,565 bytes for search;
+preparation cost 6.914/7.089 s. Catalog prefix work was 41.915/41.952 s against
+41.644 s forecasts; search was 26.827/26.209 s against 30.267 s. Only 2/4 prefix
+and 4/14 eligible whole-test forecasts meet 5%, all development evidence. The
+readiness test passed but remains excluded as a project dependency. Its duration
+changed from 2.971 s cold to 0.309 s warmed; this single comparison does not prove
+repeatability. No qualified prediction model or overall speedup is established.
+The original 90-minute collection ledger now totals 5,265 seconds, leaving 135;
+close this collection approach without another browser attempt or model fit.
+
+**Bounded source-only navigation-context audit.** Hypothesis: the existing
+per-file first-test flag cannot represent the first product navigation introduced
+by the sixth test, after five unrelated journeys. Prior route exposure may help
+explain the first long consumer's extra duration without changing its assertions.
+Inspect the two warmed development groups only, using frozen callback sources,
+ordered literal navigation categories (root, query, extension, plain path) and
+whether each category occurred in earlier tests. Do not infer actual cache hits
+from this metadata or use durations to construct categories. Keep advanced-filter
+and comparison-list qualification groups untouched. Bound this audit to one
+source extraction and residual comparison, at most 60 seconds of host compute,
+no browser collection or model fit. Success means demonstrating missing,
+pre-execution-computable context with consistent direction in existing consumer
+observations; it does not establish prediction accuracy. Stop if source order is
+ambiguous or the timing evidence contradicts the hypothesis. Any implementation
+or further collection needs a separately recorded, evidence-supported bound.
+
+The source-only audit found the expected gap: all three 80-navigation catalog
+consumers have `execution.first=0`; only the first introduces `.html` navigation
+in that file. It took 42.100 s versus 39.351/39.645 s for the subsequent consumers.
+The first search consumer was also slower (28.777 versus 27.395 s), but literal
+`goto` alone cannot identify its press/click navigation exposure. This supports
+investigating ordered exposure, not implementing a cache-hit feature: warm-up
+and helper-induced routes are not captured by the prototype. Retain the audit
+without changing the public feature schema or fitting another model.
+
+**Bounded repeatability check in the corrected runtime.** Before extending the
+representation, test whether identical complete native suites are sufficiently
+repeatable under the now-audited resource and warm-up contract. Hypothesis:
+remaining short-test residuals partly reflect run variability that source-only
+features cannot predict. Run the unchanged nine-test catalog suite three times,
+each after the same owned 120-product database reset, Redis reset, reindex and
+normal coverage preparation. Keep the same pinned driver/browser, 2 CPUs/2 GiB,
+source hashes and order; preserve all hooks, assertions, fixtures and coverage.
+Record complete runtime identity before/after, per-test native durations and
+wall time. These are same-group diagnostics, not independent qualification or
+model labels; the reserved groups remain untouched. Bound the three attempts to
+180 seconds each plus 60 seconds total resets (ten minutes), as a separate
+repeatability diagnostic after closing the original collection campaign. Stop
+on any test, ownership, source, runtime or cleanup failure. Compute per-test
+intersections of the allowable forecast intervals [0.95*actual,1.05*actual] and
+report both short and long consumers. Empty intersections establish a concrete
+representation/noise problem for identical inputs; nonempty intersections do
+not establish qualification. No fitting or retries belong to this check.
