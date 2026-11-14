@@ -1017,3 +1017,11 @@ This recovered three missing hook occurrences and 13 missing helper
 implementations in each of the four affected cases. The planner still
 includes two additional conditional support hooks per case, so exact
 parity remains open.
+
+A hash-verified replay of all 156 third-party native source archives with
+the stricter v5 resolver matched a fresh planner assessment on callback
+ranges, hook occurrences and selected helpers. All 156 whole-test
+forecasts were present. Bare imports now resolve through ancestor package
+directories, and superclass resolution uses lexical bindings and imports.
+Unresolved cases remain inspectable. This replay supplies no execution
+timing or fixture validation.
