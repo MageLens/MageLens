@@ -214,6 +214,15 @@ test('a failed native capture retains its cost and the completed prefix outcome'
     assert.equal(report.cleanup.storageReleased, true);
 });
 
+test('checkpoint selection rejects a spec order that could run outside the selected Cypress tests', async () => {
+    const {run} = require('../branching/runners/cypress/native.cjs');
+    const file = path.join(os.tmpdir(), 'one.cy.js');
+    const other = path.join(os.tmpdir(), 'two.cy.js');
+    await assert.rejects(run('unread-config', os.tmpdir(), {
+        checkpoint: {}, tests: [{id: 'selected', file}], spec: [file, other], expectedSpecOrder: [file, other]
+    }), /Selected Cypress tests do not match the discovered spec order/);
+});
+
 test('native Cypress preserves version 16 durations and failure details', () => {
     const {testResult} = require('../branching/runners/cypress/native.cjs');
     assert.deepEqual(testResult({state:'failed',duration:74785,displayError:'Shipment count mismatch',attempts:[{state:'failed'}]}),

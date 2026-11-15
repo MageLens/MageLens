@@ -5,16 +5,21 @@
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
 async function invoke(configuration, directory, {list = false, tests, spec, expectedSpecOrder, profile, checkpoint, onEvent, observationRun} = {}) {
-    if (checkpoint && (list || tests)) throw new Error('Native checkpoint execution preserves the complete native invocation');
+    if (checkpoint && list) throw new Error('Native checkpoint execution cannot be used for collection');
     if (profile && !list) throw new Error('ML profiling was removed; source discovery is list-only');
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
-    if (spec !== undefined && (tests || !Array.isArray(spec) || !spec.length ||
+    if (spec !== undefined && ((!checkpoint && tests) || !Array.isArray(spec) || !spec.length ||
         spec.some(pattern=>typeof pattern!=='string' || !pattern.trim())))
         throw new Error('Cypress native spec selectors must be a nonempty list and cannot filter individual tests');
     if (expectedSpecOrder !== undefined && (!checkpoint || !Array.isArray(expectedSpecOrder) || !expectedSpecOrder.length ||
         new Set(expectedSpecOrder).size !== expectedSpecOrder.length ||
         expectedSpecOrder.some(file => typeof file !== 'string' || !path.isAbsolute(file))))
         throw new Error('Native Cypress execution requires a unique absolute spec order from discovery');
+    const selectedSpecs = tests && [...new Set(tests.map(test => test.file))];
+    if (checkpoint && tests && (selectedSpecs.some(file => !path.isAbsolute(file)) ||
+        (expectedSpecOrder && JSON.stringify(expectedSpecOrder) !== JSON.stringify(selectedSpecs)) ||
+        (spec && JSON.stringify(spec) !== JSON.stringify(selectedSpecs))))
+        throw new Error('Selected Cypress tests do not match the discovered spec order');
     const config = fs.realpathSync(configuration);
     const configDigest = profile ? fileDigest(config) : null;
     fs.mkdirSync(directory, {recursive: true});
@@ -27,7 +32,7 @@ async function invoke(configuration, directory, {list = false, tests, spec, expe
     fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, ${retryOverride}e2e: {...c.e2e, ${retryOverride}setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
     fs.writeFileSync(input, JSON.stringify({resultFile, options: {project: path.dirname(config), configFile: wrapper, browser: 'chrome-for-testing', headed: true,
-        ...(tests ? {spec: [...new Set(tests.map(test => test.file))]} : spec ? {spec} : {})}}), {mode: 0o600});
+        ...((spec ?? selectedSpecs) ? {spec: spec ?? selectedSpecs} : {})}}), {mode: 0o600});
     const started = performance.now(), env = {...process.env};
     if (env.DISPLAY === ':99' && !fs.existsSync('/tmp/.X11-unix/X99')) delete env.DISPLAY;
     try {

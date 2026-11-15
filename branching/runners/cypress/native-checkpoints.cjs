@@ -12,12 +12,16 @@ const {NativeSession} = require('./native-session.cjs');
 const {verifySources} = require('../../automatic.cjs');
 const domains = ['application', 'browser', 'filesystem', 'cache', 'queues', 'search', 'contracts', 'runner', 'plugins', 'coverage'];
 
-function reportedTests(spec, result) {
+function reportedTests(spec, result, selected) {
     const occurrences = new Map(), identify = require('./native-support.cjs').identity;
     return (result?.tests ?? []).map(test => {
         const key = JSON.stringify(test.title), occurrence = occurrences.get(key) ?? 0;
         occurrences.set(key,occurrence + 1);
-        return {test, node: identify(spec.absolute,test.title,occurrence)};
+        const prefix = identify(spec.absolute,test.title,'');
+        const node = selected ? selected.filter(id=>id.startsWith(prefix))[occurrence]
+            : identify(spec.absolute,test.title,occurrence);
+        if (!node) throw new Error('Cypress reported a test outside the explicit checkpoint selection');
+        return {test,node};
     });
 }
 
@@ -104,7 +108,7 @@ async function install(collect, config, events, tasks, options) {
     // Cypress publishes the last browser-side test event after root after hooks.
     // Reconcile that tail from the actual spec result, without polling or replay.
     collect('after:spec', (spec, result) => {
-        for (const {test,node} of reportedTests(spec,result)) {
+        for (const {test,node} of reportedTests(spec,result,options.selected)) {
             recordFailure(node, test.state);
             const attempt = Math.max(0, (test.attempts?.length ?? 0) - 1);
             // A flushed failure from an earlier attempt does not close the retry.
@@ -166,7 +170,7 @@ async function install(collect, config, events, tasks, options) {
     });
     collect('after:run', async result => {
         try {
-            const tests = (result.runs ?? []).flatMap(run=>reportedTests(run.spec,run));
+            const tests = (result.runs ?? []).flatMap(run=>reportedTests(run.spec,run,options.selected));
             const pending = tests.filter(({test})=>test.state==='pending');
             // Cypress reports static .skip declarations as pending. A
             // runtime skip, missing test or executed retry cannot satisfy the
