@@ -40,6 +40,16 @@ class NativeProvider extends BranchingProvider {
         await this.backend.drain();
         this.saved = await this.browserState.save();
     }
+    async restoreBarrier() {
+        // Cypress delivers the coverage pause through its live command queue.
+        await this.browserState.pauseCoverage();
+        await this.browserState.freeze();
+    }
+    async beginSegment() {
+        // The native Cypress callback owns the existing page after capture.
+        this.browserState.check();
+        await this.browserState.resumeCoverage();
+    }
     normalizedState() {
         return this.browserState.frozen ? this.captureState : this.readState(this);
     }

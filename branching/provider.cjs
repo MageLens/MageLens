@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -117,9 +117,12 @@ class BranchingProvider {
         await this.backend.start();
         await this.browserState.resume();
     }
-    async restore(directory) {
+    async restoreBarrier() {
         if (this.browserState.active) await this.browserState.freeze();
         await this.browserState.pauseCoverage();
+    }
+    async restore(directory) {
+        await this.restoreBarrier();
         await this.backend.drain();
         await this.browserState.closePages();
         await this.backend.stop();
