@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {spawnSync} = require('node:child_process');
 const {prepare} = require('../bin/prepare.cjs');
 const {nginxConfig} = require('../bin/project.cjs');
 const projectRoot = path.resolve(__dirname, '..');
@@ -44,6 +45,27 @@ test('repeated runs reuse browser files while resetting all execution artifacts'
     assert.deepEqual([script, template].map(file => fs.statSync(file, {bigint: true}).mtimeNs), mtimes);
     const baseline = read('.runtime/js-baseline.json');
     assert.ok(Object.values(Object.values(baseline)[0].s).every(hit => hit === 0));
+});
+
+for (const readme of ['<!-- coverage-badges:start -->\nprevious results\n<!-- coverage-badges:end -->', '# Project without badge markers\r\n']) {
+    test('default preparation preserves README bytes', t => {
+        fixture(t);
+        fs.writeFileSync('README.md', readme);
+        prepare({themeRoots: []});
+        assert.equal(fs.readFileSync('README.md', 'utf8'), readme);
+    });
+}
+
+test('README updates require opt-in and full preparation', t => {
+    fixture(t);
+    const before = fs.readFileSync('README.md', 'utf8');
+    prepare({runtimeOnly: true, updateReadme: true, themeRoots: []});
+    assert.equal(fs.readFileSync('README.md', 'utf8'), before);
+    fs.writeFileSync('themes.json', '[]');
+    const result = spawnSync(process.execPath, [path.join(projectRoot, 'bin/prepare.cjs'),
+        '--theme-roots', 'themes.json', '--update-readme'], {encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(fs.readFileSync('README.md', 'utf8'), /Coverage has not completed for the current run\./);
 });
 
 test('source edits update runtime files in place without rewriting unchanged browser instrumentation', t => {

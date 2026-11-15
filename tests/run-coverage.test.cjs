@@ -57,6 +57,16 @@ dc() {
 
 for (const runner of ['cypress', 'playwright']) {
 
+test(`${runner}: README flag reaches preparation and finalization only when requested`, t => {
+    const defaultRun = workflow(t, [], '', false, runner);
+    assert.equal(defaultRun.status, 0, defaultRun.stderr);
+    assert.doesNotMatch(defaultRun.calls, /--update-readme/);
+    const optedIn = workflow(t, ['--update-readme', '--start'], '', false, runner);
+    assert.equal(optedIn.status, 0, optedIn.stderr);
+    assert.match(optedIn.calls, /prepare\.cjs --theme-roots \.runtime\/active-themes\.json --update-readme/);
+    assert.match(optedIn.calls, /finalize\.cjs "\$@".* sh --update-readme/);
+});
+
 test(`${runner}: publishes complete reports after cleanup`, t => {
     const result = workflow(t, [], '', false, runner);
     assert.equal(result.status, 0, result.stderr);
@@ -176,7 +186,9 @@ test('the Cypress cookie update does not require rebuilding an existing Chrome P
 });
 
 test('help and invalid options do not touch the environment', t => {
-    assert.equal(workflow(t, ['--help']).calls, '');
+    const help = workflow(t, ['--help']);
+    assert.equal(help.calls, '');
+    assert.match(help.stdout, /--update-readme/);
     const result = workflow(t, ['--unknown']);
     assert.equal(result.status, 1);
     assert.equal(result.calls, '');
