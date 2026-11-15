@@ -291,14 +291,20 @@ class NativeSession {
         const started = this.now();
         let releaseMs = 0;
         if (!this.bridge.error) this.interruptPrefix();
-        try {
-            for (const candidate of this.candidates.values()) releaseMs += await this.release(candidate);
-        } finally {
-            try { this.store.discardIncomplete(); }
-            finally { await this.provider?.cleanup(); }
-        }
+        const attempt = async (phase, operation, checkpoint) => {
+            try { return await operation(); }
+            catch (error) {
+                this.report.errors.push({phase, ...(checkpoint ? {checkpoint} : {}),
+                    message: error instanceof Error ? error.message : String(error)});
+                return 0;
+            }
+        };
+        for (const candidate of this.candidates.values())
+            releaseMs += await attempt('release', () => this.release(candidate), candidate.id);
+        await attempt('discard', () => this.store.discardIncomplete());
+        await attempt('cleanup', () => this.provider?.cleanup());
         this.report.cleanup = {storageReleased: this.store.available.size === 0 && this.store.incomplete.size === 0};
-        await this.verifySources();
+        await attempt('source-verification', () => this.verifySources());
         this.report.status = passed && !this.report.errors.length && this.finished.size === this.consumers.size ? 'passed' : 'failed';
         this.report.statisticsAfter = this.economics.statistics;
         this.report.baselineAfter = this.economics.baseline;

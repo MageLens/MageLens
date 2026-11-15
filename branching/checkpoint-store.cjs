@@ -53,12 +53,19 @@ class CheckpointStore {
         return ref.id;
     }
     discardIncomplete() {
+        const failures = [];
         for (const directory of this.incomplete) {
-            if (path.dirname(directory) !== this.root || fs.lstatSync(directory).isSymbolicLink())
-                throw new Error(messages.unownedCheckpointDirectory);
-            fs.rmSync(directory, {recursive: true});
-            this.incomplete.delete(directory);
+            try {
+                if (path.dirname(directory) !== this.root || fs.lstatSync(directory).isSymbolicLink())
+                    throw new Error(messages.unownedCheckpointDirectory);
+                fs.rmSync(directory, {recursive: true});
+                this.incomplete.delete(directory);
+            } catch (error) {
+                failures.push(error);
+            }
         }
+        if (failures.length === 1) throw failures[0];
+        if (failures.length > 1) throw new AggregateError(failures, 'Could not discard incomplete checkpoints');
     }
     async capture({key, stage, parent, lineage, ttlMs, provider, measured, assert, fault}) {
         const id = randomUUID(),

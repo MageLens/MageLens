@@ -239,6 +239,50 @@ test('a failed native capture retains its cost and the completed prefix outcome'
     assert.equal(report.cleanup.storageReleased, true);
 });
 
+test('native cleanup releases independent checkpoints and reports retained state after a failure', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-cleanup-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
+    const bindings = {eligible: true, value: []};
+    let time = 0, closing = false, cleaned = false;
+    const plan = ['first', 'second'].map(id => ({id, identity:id, consumers:[id+'-start', id+'-next']}));
+    const session = new NativeSession({directory, run: 'cleanup-regression', now: () => time, plan,
+        verifySources() { if (closing) throw Error('Source verification failed'); },
+        bridge: {continue() {}, call: () => bindings},
+        provider: {identity: {}, entryState: () => ({}), assertBoundary() {}, abandon() {}, captureBarrier() {},
+            capture(payload) { fs.writeFileSync(path.join(payload, 'fixture.json'), '{}'); },
+            normalizedState: () => ({}), resumeCapture() {}, restore() {},
+            cleanup() { cleaned = true; throw Error('Provider cleanup failed'); }}});
+    for (const {id, consumers:[consumer]} of plan) {
+        await session.boundary({phase:'enter', checkpoint:id, consumer, bindings});
+        time += 60000;
+        await session.boundary({phase:'complete', checkpoint:id, consumer, bindings, workMs:60000});
+    }
+    const first = session.store.available.get('first');
+    const second = session.store.available.get('second');
+    fs.writeFileSync(path.join(first.directory, 'manifest.json'), '{}');
+    const incomplete = path.join(directory, 'incomplete.pending');
+    const unowned = path.join(directory, 'unowned.pending');
+    fs.mkdirSync(incomplete);
+    fs.symlinkSync(first.directory, unowned, 'dir');
+    session.store.incomplete.add(unowned);
+    session.store.incomplete.add(incomplete);
+    closing = true;
+
+    const report = await session.close({passed: true});
+
+    assert.equal(report.status, 'failed');
+    assert.deepEqual(report.errors.map(error => error.phase), ['release', 'discard', 'cleanup', 'source-verification']);
+    assert.equal(report.errors[0].checkpoint, 'first');
+    assert.equal(report.errors[2].message, 'Provider cleanup failed');
+    assert.equal(report.cleanup.storageReleased, false);
+    assert.ok(cleaned);
+    assert.ok(fs.existsSync(first.directory));
+    assert.ok(fs.lstatSync(unowned).isSymbolicLink());
+    assert.ok(!fs.existsSync(second.directory));
+    assert.ok(!fs.existsSync(incomplete));
+});
+
 test('checkpoint selection rejects a spec order that could run outside the selected Cypress tests', async () => {
     const {run} = require('../branching/runners/cypress/native.cjs');
     const file = path.join(os.tmpdir(), 'one.cy.js');
