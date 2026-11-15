@@ -17,6 +17,10 @@ class NativeProvider extends BranchingProvider {
             if (typeof this.contract?.[method] !== 'function') throw new Error(`Native lifecycle requires ${method}`);
         for (const method of ['pauseCoverage', 'resumeCoverage'])
             if (typeof this.browserState[method] !== 'function') throw new Error(`Native collection requires ${method}`);
+        const {readContinuation, readFencedState} = this.contract;
+        if ((readContinuation !== undefined || readFencedState !== undefined) &&
+            (typeof readContinuation !== 'function' || typeof readFencedState !== 'function'))
+            throw new Error('Native capture requires both continuation and fenced state readers');
         this.identity.native = implementationDigest([__filename]);
     }
     async attach({run, directory}) {
@@ -32,12 +36,16 @@ class NativeProvider extends BranchingProvider {
     abandon(candidate, consumer) { return this.contract.abandon(this, candidate, consumer); }
     async captureBarrier() {
         await this.browserState.pauseCoverage();
-        // Reading through Cypress's command queue after freezing would deadlock
-        // its test callback. Verify this state again after capture resumes, as
-        // required by CheckpointStore, before publishing any checkpoint.
-        this.captureState = await this.readState(this);
+        // Cypress must read the continuation before its command queue is
+        // frozen. Application readers can then inspect the drained writers.
+        const continuation = this.contract.readContinuation
+            ? await this.contract.readContinuation(this)
+            : await this.readState(this);
         await this.browserState.freeze();
         await this.backend.drain();
+        this.captureState = this.contract.readFencedState
+            ? await this.contract.readFencedState(this, continuation)
+            : continuation;
         this.saved = await this.browserState.save();
     }
     async restoreBarrier() {

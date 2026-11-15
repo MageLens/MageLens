@@ -76,6 +76,37 @@ test('native Cypress publishes the last retry outcome when browser observations 
     assert.ok(report.errors.some(error => error.phase === 'retry'));
 });
 
+test('native capture reads the Cypress continuation before freezing and the application after draining', async () => {
+    const {NativeProvider} = require('../branching/native-provider.cjs');
+    const {provider: {lifecycle}} = require('../branching/configs/runtime.cjs');
+    const order = [];
+    const backend = Object.fromEntries(lifecycle.map(method => [method, () => {}]));
+    backend.drain = () => order.push('drain');
+    const browserState = {
+        pauseCoverage() { order.push('pause'); },
+        resumeCoverage() {},
+        freeze() { order.push('freeze'); this.frozen = true; },
+        save() { order.push('save'); return {url: 'about:blank'}; }
+    };
+    const contract = {
+        entryState() {}, assertBoundary() {}, abandon() {},
+        readContinuation() { order.push('continuation'); return {browser: 'original'}; },
+        readFencedState(_provider, continuation) {
+            order.push('application');
+            return {...continuation, application: 'drained'};
+        }
+    };
+    const options = {browser: {version: () => 'test'}, backend, browserState,
+        state: () => ({browser: 'resumed', application: 'running'})};
+    assert.throws(() => new NativeProvider({...options, contract: {...contract, readFencedState: undefined}}), /both continuation and fenced/);
+    const provider = new NativeProvider({...options, contract});
+    await provider.captureBarrier();
+    assert.deepEqual(order, ['pause', 'continuation', 'freeze', 'drain', 'application', 'save']);
+    assert.deepEqual(await provider.normalizedState(), {browser: 'original', application: 'drained'});
+    browserState.frozen = false;
+    assert.deepEqual(await provider.normalizedState(), {browser: 'resumed', application: 'running'});
+});
+
 test('a failed native capture retains its cost and the completed prefix outcome', async t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-capture-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
