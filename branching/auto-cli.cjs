@@ -63,16 +63,13 @@ async function execute(args, workflowLease, observer) {
             if (manifest.tests.some(adapter.supports)) project.adapter = adapter;
         }
         const store = require('./baseline.cjs').openProject(process.cwd(), {...project.baseline,storage, sourceDigest:manifest.sourceDigest,checkpointContext:{coverage:project.native?.coverage === true,runnerOptions:project.runnerOptions ?? {}}});
-        let used = store.load();
-        let calibration;
-        if (used.source !== 'measured' || require('./configs/baseline.json').metrics.some(metric => !used.samples[metric])) {
-            observer.emit('checkpoint-baseline',{status:fs.existsSync(store.file) ? 'incompatible' : 'missing',reason:'compatible-identity-and-measurements-required'});
-            observer.emit('run-phase',{phase:'calibrating'});
-            calibration = await require('./calibration-cli.cjs').measureProject({manifest, project, storage, workflowLease, store});
-            used = store.load();
-        }
+        const used = store.load();
         project.costBaseline = used.baseline;
-        observer.emit('checkpoint-baseline',{status:'compatible',baseline:used.baseline,calibrationMs:calibration?.totalMs ?? 0});
+        project.costStatistics = used.statistics;
+        project.baselineStatus = used.source === 'measured' ? 'measured' : 'estimated';
+        project.baselineReason = used.source === 'measured' ? null : fs.existsSync(store.file) ? 'incompatible-measurements-ignored' : 'no-prior-measurements';
+        observer.emit('checkpoint-baseline',{status:project.baselineStatus,reason:project.baselineReason,
+            baseline:used.baseline,statistics:used.statistics});
         if (collectCoverage) {
             observer.emit('run-phase',{phase:'preparing coverage'});
             coverageCommand(['coverage_cleanup']);
@@ -83,7 +80,7 @@ async function execute(args, workflowLease, observer) {
         if (collectCoverage && !coverageRunId) throw new Error('Playwright coverage preparation did not activate a run');
         driverTiming.preparationMs = performance.now() - phaseStart;
         phaseStart = performance.now();
-        report = await runSuite({manifest, project, mode: approach, directory, observer, calibrationMs:calibration?.totalMs ?? 0,
+        report = await runSuite({manifest, project, mode: approach, directory, observer,
         ...(collectCoverage ? {coverageRoot: process.cwd()} : {}),
         runner: loadRunner(runnerName).native,
         runCheckpoint: configuration => main({...configuration, workflowLease, coverage}, storage)});
@@ -91,7 +88,7 @@ async function execute(args, workflowLease, observer) {
         phaseStart = performance.now();
         observer.emit('run-phase',{phase:'reporting'});
         const missingMeasurements = require('./configs/baseline.json').metrics.filter(metric => !used.samples[metric]);
-        report.baseline = {used, missingMeasurements, calibrationMs: calibration?.totalMs ?? 0, update: store.update(report)};
+        report.baseline = {used, missingMeasurements, update: store.update(report)};
         if (coverageRunId && report.status === 'passed') {
             if (leases.needsRecovery(workflowLease)) throw new Error('Playwright coverage requires completed application recovery');
             if (activeCoverage(process.cwd()).coverageRunId !== coverageRunId)

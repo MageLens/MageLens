@@ -55,7 +55,7 @@ function observeSuite({eventDirectory, onEvent} = {}) {
                 if (data.spec) data.spec=block.observationId(data.spec);
                 if (data.blockedBy) data.blockedBy=block.observationId(data.blockedBy);
                 if (data.decision) data.decision={...data.decision,stage:block.observationId(data.decision.stage)};
-                if (data.observation) data.observation={...data.observation,stage:block.observationId(data.observation.stage)};
+                if (data.observation?.stage != null) data.observation={...data.observation,stage:block.observationId(data.observation.stage)};
                 emit(type,data);
             };
         },

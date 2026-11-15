@@ -13,6 +13,33 @@ const {Graph, execute} = require('../branching/engine.cjs');
 const {FixtureProvider, fixtureWorkflow} = require('./fixtures/branching/provider.cjs');
 const baseline = {...defaults, captureMs: 1, restoreMs: 1, releaseMs: 1, resetMs: 1, firstResetMs: 1, backendMs: 1};
 
+test('cold-start estimates are not samples; repeated actual restores refine their own running mean', () => {
+    const e=new Economics({...baseline,restoreMs:9000});
+    e.observe('restoreMs',100,'first');
+    assert.equal(e.baseline.restoreMs,100);
+    assert.deepEqual(e.statistics.restoreMs,{count:1,sumMs:100});
+    e.observe('restoreMs',300,'second');
+    assert.equal(e.observations.at(-1).meanMs,200);
+    assert.equal(e.baseline.restoreMs,300,'A new slowdown affects the next decision immediately');
+    e.observe('restoreMs',100,'third');
+    assert.equal(e.baseline.restoreMs,500/3,'A later sample refines the estimate instead of retaining an eternal peak');
+    assert.deepEqual(e.statistics.captureMs,{count:0,sumMs:0});
+    assert.equal(e.baseline.captureMs,baseline.captureMs);
+    assert.throws(()=>e.observe('restoreMs',NaN,'failed'),/Invalid/);
+    assert.deepEqual(e.statistics.restoreMs,{count:3,sumMs:500});
+});
+
+test('compatible sample counts carry across groups and runs without counting estimates as measurements', () => {
+    const statistics={restoreMs:{count:3,sumMs:600}};
+    const first=new Economics({...baseline,restoreMs:200},undefined,statistics);
+    first.observe('restoreMs',400,'group-one');
+    const next=new Economics(first.baseline,undefined,first.statistics);
+    next.observe('restoreMs',100,'group-two');
+    assert.deepEqual(next.statistics.restoreMs,{count:5,sumMs:1100});
+    assert.equal(next.baseline.restoreMs,220);
+    assert.deepEqual(statistics,{restoreMs:{count:3,sumMs:600}},'Caller evidence stays immutable');
+});
+
 test('first use counts only remaining consumers and charges complete costs once', () => {
     const e = new Economics(baseline);
     assert.equal(e.decide('prefix', 1, 8), false);
@@ -33,7 +60,9 @@ test('first restore recalibrates only restore and revisits subsequent decisions'
     assert.equal(e.decide('prefix', 100, 1, {captured: true}), false);
     assert.equal(e.decide('next', 100, 2), false);
     e.observe('restoreMs', 5, 'prefix');
-    assert.equal(e.baseline.restoreMs, 150);
+    assert.equal(e.baseline.restoreMs, 77.5);
+    assert.deepEqual(e.statistics.restoreMs,{count:2,sumMs:155});
+    assert.equal(e.observations.at(-1).meanMs,77.5);
 });
 test('nested candidates cannot spend the same avoided work twice or reorder specs', () => {
     const graph = new Graph(fixtureWorkflow());
@@ -60,6 +89,10 @@ test('cheap first use continues linearly without a separate profiling execution'
     assert.equal(report.results.length, 4);
     assert.equal(report.counts.prefixExecutions, 12);
     assert.equal(report.adaptive.decisions[0].remaining, 3);
+    const lifecycle = report.adaptive.observations.find(o => o.component === 'backendMs');
+    assert.equal(lifecycle.ms, report.phases.prepare + report.phases.cleanup);
+    assert.equal(lifecycle.stage, null);
+    assert.equal(lifecycle.count, 1);
 });
 test('expensive first use captures once; costly first restore abandons safely', async t => {
     const options = setup(t, true);

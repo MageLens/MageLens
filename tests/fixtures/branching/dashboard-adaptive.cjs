@@ -32,12 +32,12 @@ function journey(kind = 'abandoned', run = require('node:crypto').randomUUID()) 
         ordering: {original: schedule, execution: schedule, changed: false},
         excludedCandidates: [{id: 'ancestor', reason: 'overlapping-prefix', selected: 'prefix'}]});
     if (kind === 'discovered') return events;
-    if (kind === 'calibrating') {
-        add('checkpoint-baseline', {status: 'incompatible', reason: 'runtime-resources'});
-        add('run-phase', {phase: 'calibrating'});
+    if (kind === 'bootstrap') {
+        add('checkpoint-baseline', {status: 'estimated', reason: 'incompatible-measurements-ignored', baseline});
+        add('run-phase', {phase: 'preparing'});
         return events;
     }
-    add('checkpoint-baseline', {status: 'compatible', baseline, calibrationMs: 0});
+    add('checkpoint-baseline', {status: 'estimated', baseline});
     add('spec-start', {node: 'setup'});
     add('spec-end', {node: 'setup', status: 'passed'});
     add('spec-start', {node: 'a'});
@@ -63,7 +63,7 @@ function journey(kind = 'abandoned', run = require('node:crypto').randomUUID()) 
     }
     add('node-end', {node: 'prefix', operation: 'restoring', status: 'passed', ms: 1500});
     add('checkpoint-cost-observed', {node: 'prefix', observation: {stage: 'prefix', component: 'restoreMs',
-        ms: 1500, before: 100, after: 1500}});
+        ms: 1500, before: 100, after: 1500, count:1, meanMs:1500}});
     add('consumer-finished', {node: 'prefix', remaining: 1});
     add('spec-end', {node: 'b', status: 'passed'});
     add('checkpoint-decision', {node: 'prefix', decision: decision({remaining: 1, captured: true, restoreMs: 1500})});

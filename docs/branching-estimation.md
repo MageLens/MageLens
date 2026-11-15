@@ -10,8 +10,7 @@ Branching discovers exact shared prefixes, verifies source and restoration
 eligibility, and measures each prefix during its first normal execution.
 
 ```bash
-./bin/plan-branching SOURCE_ROOT
-./bin/run-coverage --branching
+./bin/run-coverage --branching SOURCE_ROOT
 ```
 
 Planning does not execute tests or forecast durations. A failed plan preserves
@@ -28,14 +27,18 @@ Overlapping prefixes cannot claim the same avoided work twice.
 
 Checkpoint operations are measured through application and browser readiness,
 including state verification. The first complete restore updates the restore
-cost before the next decision. Later observations conservatively refine separate
-cost components. Capture is a sunk cost when deciding whether to keep using an
+cost before the next decision. Each successful operation contributes to its own
+running mean and sample count. Decisions use the greater of that mean and the
+latest observation, plus the safety margin, so a new slowdown is not diluted away. Capture is a sunk cost when deciding whether to keep using an
 existing checkpoint. If reuse becomes uneconomical, remaining tests execute
 normally through the verified reset path. A failed restore still fails the run.
 
-Compatible project measurements are reused. When measurements are missing,
-the bounded checkpoint calibration runs first; its one-time elapsed cost is
-reported separately. Successful, clean runs persist operation measurements under
+Compatible project measurements are reused. Missing or incompatible components
+use conservative configured estimates until measured by normal execution.
+Estimates are not counted as samples. Existing warm-up prepares application caches;
+its duration is not a checkpoint restore measurement. There is no separate
+calibration run; the former `--calibrate` option is rejected.
+Successful, clean runs persist operation measurements under
 the workflow lock. Platform, browser, provider, source, service resources and
 database-size identity changes invalidate incompatible measurements.
 

@@ -208,8 +208,8 @@ async function executeSuite(options) {
     const {inventory,groups,checkpoint,decision,browserIneligible,independent,blocks,ordering} = prepared;
     const observer = options.observer;
     observer.discover(prepared);
-    observer.emit('checkpoint-baseline', {status:'compatible',baseline:project.costBaseline ?? require('./baseline.cjs').defaults,
-        calibrationMs:options.calibrationMs ?? 0});
+    observer.emit('checkpoint-baseline', {status:project.baselineStatus ?? 'estimated',reason:project.baselineReason ?? null,
+        baseline:project.costBaseline ?? require('./baseline.cjs').defaults,statistics:project.costStatistics});
     const report = {schemaVersion: 1, kind: 'full-native-suite', run:observer.run, mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
         setupDiagnostics: {nativeCollectionMs: inventory.wallMs},
         diagnostics: manifest.diagnostics, assessment: manifest.assessment, decision, ordering, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
@@ -230,13 +230,14 @@ async function executeSuite(options) {
         if (!groups.setup.length && !independent) throw new Error('A mixed suite requires an explicit native setup project to own global setup before checkpoints');
         const setup = groups.setup.length ? await native(groups.setup, {teardown: false}) : {exitCode: 0, status: 'passed', results: []};
         if (setup.exitCode === 0 && setup.status === 'passed' && setup.results.every(r => r.status === 'passed')) {
-            let baseline = project.costBaseline;
+            let baseline = project.costBaseline, statistics = project.costStatistics;
             for (const block of blocks) {
                 if (block.kind === 'native') { await native(block.tests, {setup:false}); continue; }
                 verifySources(manifest);
                 const selected = block.tests.map(entry => checkpoint.find(test => test.id === entry.id));
                 const built = block.built;
                 built.workflow.costBaseline = baseline ?? built.workflow.costBaseline;
+                built.workflow.costStatistics = statistics;
                 const {plan, decision} = costs.planWorkflow(built.workflow);
                 const byId = new Map(selected.map(test => [test.staticId,test]));
                 const result = await runCheckpoint({...built, specs:built.workflow.select().map(test => test.id), plan,
@@ -251,6 +252,7 @@ async function executeSuite(options) {
                 report.checkpoints += result.checkpoints.length;
                 report.reuseHits += result.counts.reuseHits;
                 baseline = result.adaptive?.baselineAfter ?? baseline;
+                statistics = result.adaptive?.statisticsAfter ?? statistics;
             }
         }
     }

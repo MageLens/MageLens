@@ -217,7 +217,7 @@ function buildWorkflow(manifest, configuration, selected, boundaries) {
         }
     }
     return {
-        workflow: new Graph({nativePageLifecycle:adapter?.nativePageLifecycle === true, runtimeState:fixtureState, costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
+        workflow: new Graph({nativePageLifecycle:adapter?.nativePageLifecycle === true, runtimeState:fixtureState, costBaseline: configuration.costBaseline, costStatistics: configuration.costStatistics, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
             configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
                 runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,

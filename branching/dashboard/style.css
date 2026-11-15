@@ -39,5 +39,5 @@ main {padding:30px;min-width:0}.page-heading {display:flex;align-items:center;ju
 #checkpoint-costs h2 {font-size:14px;margin-top:0}
 #baseline-values {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 20px}
 #baseline-values p {margin:3px 0;color:#476384}
-#calibration-cost {color:#7a8698;font-size:11px}
+#measurement-note {color:#7a8698;font-size:11px}
 @media(max-width:720px) {#baseline-values {grid-template-columns:1fr}}

@@ -185,8 +185,8 @@ duplicate savings credit. Native runner blocks show their outcomes when the
 runner completes.
 
 Saved manifests remain supported: generate one with `./bin/plan-branching SOURCE_ROOT`,
-then use `./bin/run-coverage --branching` or `./bin/run-coverage --branching --calibrate`.
-Those commands read `.runtime/branching-plan.json`; regenerate it after source changes.
+then use `./bin/run-coverage --branching`.
+That command reads `.runtime/branching-plan.json`; regenerate it after source changes.
 Default checkpoint storage is `.runtime/branching-storage` on a reflink-capable filesystem.
 
 Override individual paths with `MAGELENS_BRANCHING_MANIFEST`,
@@ -214,15 +214,16 @@ of tests or the whole suite. Excess candidates produce warnings; their actions
 still execute. AUTO selects disjoint shared-prefix groups and measures their first use;
 overlapping ancestors cannot claim the same avoided work.
 
-Missing or incompatible measurements trigger bounded calibration. The cost policy
-in [`baseline.json`](../branching/planner/src/baseline.json) requires incremental
-costs plus a **1% margin and 50 ms minimum saving**. Actual capture and complete
-restore measurements conservatively update subsequent decisions during the run.
-Successful, fully cleaned runs persist separate operation measurements for later runs.
-Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
-`./bin/run-coverage --branching --calibrate`
-to measure and replace the project baseline. Both modes retain overhead history
-and flag increases before averaging.
+Missing or incompatible measurements use conservative configured estimates until
+normal captures/restores supply actual costs. No separate calibration executes.
+The cost policy in [`baseline.json`](../branching/planner/src/baseline.json) requires
+incremental costs plus a **1% margin and 50 ms minimum saving**. Each successful
+operation updates its own running mean and sample count. Decisions use the greater
+of the mean and latest actual cost; bootstrap estimates never become samples.
+Successful, fully cleaned runs persist compatible measurements for later runs.
+Set `baseline: {updateOnSuccess: false}` to disable persistence while retaining
+online measurement. The obsolete `--calibrate` option is rejected with migration
+instructions. Warm-up remains separate from coverage and checkpoint-cost samples.
 
 ## Dashboard self-tests and self-coverage
 
@@ -244,13 +245,13 @@ measurement, linear decisions, capture, verified restore, recalibration and
 economic abandonment. Graph blocks, counters, details, activity and test progress
 must agree. Show remaining-consumer economics, separate cost components and
 baseline observations; capture is sunk for continued reuse. Incompatible costs
-require visible calibration. Cleanup cannot erase restore failures or complete
+must visibly fall back to conservative estimates until real operations are measured. Cleanup cannot erase restore failures or complete
 unexecuted tests. Reload/reconnect must preserve decisions and cost history, and
 projected avoided work must never be labeled measured net savings.
 
 The deterministic journal fixture specifies the observation contract:
 `discovery-complete` supplies nodes, safe schedule and excluded overlaps;
-`checkpoint-baseline` supplies compatibility and calibration status;
+`checkpoint-baseline` supplies measurement provenance and sample counts;
 `checkpoint-decision` and `checkpoint-cost-observed` carry the engine's existing
 decision/observation records; `checkpoint-reuse-abandoned` confirms verified reset
 after release. Real-engine assertions separately require those economic records

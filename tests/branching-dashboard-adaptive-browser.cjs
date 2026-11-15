@@ -31,10 +31,11 @@ async function acceptance(page, checked = () => {}, output) {
             await expect(page.locator('#metric-tests')).toHaveText('0 / 5');
             await expect(page.locator('#graph-summary')).toContainText('1 overlapping prefixes excluded');
         }],
-        ['calibrating', async () => {
-            await expect(page.locator('#run-status')).toHaveText('calibrating');
+        ['bootstrap', async () => {
+            await expect(page.locator('#run-status')).toHaveText('preparing');
             await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/incompatible/i);
-            await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/runtime.resources/i);
+            await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/estimated/i);
+            await expect(page.locator('#measurement-note')).toContainText('No separate calibration run');
             await expect(page.locator('#metric-reuses')).toHaveText('0');
         }],
         ['measuring', async () => {
@@ -68,6 +69,7 @@ async function acceptance(page, checked = () => {}, output) {
             await expect(block()).toHaveAttribute('data-checkpoint', 'abandoning');
             await expect(page.locator('#metric-cleaned')).toHaveText('0');
             await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/restore/i);
+            await expect(page.locator('#baseline-values')).toContainText('average 1500.0 ms from 1 sample');
             await expect(page.locator('#activity')).toContainText(/recalibrat/i);
         }],
         ['finished', async () => {

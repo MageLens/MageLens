@@ -46,15 +46,8 @@ async function run([manifestFile, configuration, storage, output]) {
     assert.ok(Number.isFinite(discoveryMs) && discoveryMs >= 0, 'Measured discovery duration is required');
     try {
         const store = load('branching/baseline.cjs').openProject(process.cwd(), {...project.baseline,storage,sourceDigest:manifest.sourceDigest,checkpointContext:{coverage:project.native?.coverage === true,runnerOptions:project.runnerOptions ?? {}}});
-        let used = store.load();
+        const used = store.load();
         const baselinePreparationMs = performance.now() - preparationStarted;
-        const preparation = performance.now();
-        let calibration;
-        if (used.source !== 'measured' || load('branching/configs/baseline.json').metrics.some(key => !used.samples[key])) {
-            calibration = await load('branching/calibration-cli.cjs').measureProject({manifest,project,storage,workflowLease:lease,store});
-            used = store.load();
-        }
-        const calibrationMs = calibration ? performance.now() - preparation : 0;
         const runner = load('branching/runners/playwright/native.cjs');
         project.adapter = load('branching/automatic.cjs').playwrightCoverageAdapter(manifest);
         const fixtureStarted = performance.now();
@@ -72,7 +65,7 @@ async function run([manifestFile, configuration, storage, output]) {
                 pairedFixture.reset();
                 coverageCommand(['coverage_prepare','playwright','bin/run-playwright.cjs']);
                 const coverage = load('branching/cli.cjs').activeCoverage(process.cwd());
-                report = await (arm === 'linear' ? linearSuite : load('branching/suite.cjs').runSuite)({...(observer ? {observer,calibrationMs} : {}),manifest,project:{...project,costBaseline:used.baseline},
+                report = await (arm === 'linear' ? linearSuite : load('branching/suite.cjs').runSuite)({...(observer ? {observer} : {}),manifest,project:{...project,costBaseline:used.baseline,costStatistics:used.statistics,baselineStatus:used.source==='measured' ? 'measured' : 'estimated'},
                     directory,runner,coverageRoot:process.cwd(),runCheckpoint:async options => {
                         const {chromium} = require('@playwright/test');
                         const browser = await chromium.launch({channel:'chrome',headless:true});
@@ -97,7 +90,7 @@ async function run([manifestFile, configuration, storage, output]) {
                 const snapshot = load('tests/ci/report-equivalence.cjs').snapshot(path.resolve('coverage'));
                 fs.writeFileSync(path.join(directory,'equivalence.json'),JSON.stringify(snapshot));
                 report.sourceIdentities = JSON.parse(fs.readFileSync('coverage/run.json')).sources;
-                report.baseline = {used,calibrationMs};
+                report.baseline = {used};
                 if (arm === 'adaptive') report.baseline.update = store.update(report);
                 completed=true;
             } finally {
@@ -120,7 +113,7 @@ async function run([manifestFile, configuration, storage, output]) {
         const snapshots = ['linear','adaptive'].map(arm => JSON.parse(fs.readFileSync(path.join(output,arm,'equivalence.json'))));
         const differences = load('tests/ci/report-equivalence.cjs').compareSnapshots(...snapshots);
         const [linear,adaptive] = reports;
-        const comparison = {schemaVersion:1,linearReference:'complete-native-suite-in-shared-safe-order',sourceDigest:manifest.sourceDigest,calibrationMs,discoveryMs,baselinePreparationMs,fixtureCaptureMs,
+        const comparison = {schemaVersion:1,linearReference:'complete-native-suite-in-shared-safe-order',sourceDigest:manifest.sourceDigest,discoveryMs,baselinePreparationMs,fixtureCaptureMs,
             linearMs:linear.totalMs,adaptiveMs:adaptive.totalMs,savedMs:linear.totalMs-adaptive.totalMs,
             savedPercent:100*(linear.totalMs-adaptive.totalMs)/linear.totalMs,coverageDifferences:differences,
             order:reports.map(report => report.results.map(result => result.id)),

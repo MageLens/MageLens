@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 // Checkpoint operation overheads; prefix duration is measured during execution. The Node entry point
 // scales operation defaults using the root checkpoint decision baseline and
-// supplies a complete baseline to the planner. Project calibration replaces the
+// supplies a complete baseline to the planner. Normal checkpoint measurements replace the
 // operation estimates. These desktop-derived bootstrap values are not CI gates.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

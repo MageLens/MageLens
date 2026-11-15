@@ -46,7 +46,7 @@ function applyEvent(state, event) {
             state.baseline = {status: event.status, reason: event.reason ?? null,
                 before: event.baseline ? {...event.baseline} : null,
                 current: event.baseline ? {...event.baseline} : null,
-                observations: [], calibrationMs: event.calibrationMs ?? 0}; break;
+                observations: [], statistics: event.statistics ?? {}}; break;
         case 'checkpoint-decision':
             if (!node) throw new Error('Unknown candidate');
             node.decision = event.decision;
@@ -59,7 +59,10 @@ function applyEvent(state, event) {
         case 'checkpoint-cost-observed':
             if (!state.baseline?.current) throw new Error('Missing compatible baseline');
             state.baseline.current[event.observation.component] = event.observation.after;
-            state.baseline.observations.push(event.observation); break;
+            state.baseline.observations.push(event.observation);
+            if (event.observation.count !== undefined) state.baseline.statistics[event.observation.component] = {
+                count:event.observation.count,sumMs:event.observation.meanMs*event.observation.count};
+            break;
         case 'checkpoint-reuse-abandoned':
             if (!node || !event.resetVerified || node.checkpointState !== 'released') throw new Error('Unverified abandonment');
             node.reuseState = 'abandoned'; break;

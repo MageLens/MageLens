@@ -28,9 +28,15 @@ function candidates(graph, specs) {
 }
 
 class Economics {
-    constructor(baseline, emit = () => {}) {
+    constructor(baseline, emit = () => {}, statistics = {}) {
         this.emit = emit;
         this.baseline = {...validate(baseline)};
+        this.statistics = Object.fromEntries(require('./configs/baseline.json').metrics.map(component=>{
+            const value = statistics[component] ?? {count:0,sumMs:0};
+            if (!Number.isSafeInteger(value.count) || value.count<0 || !Number.isFinite(value.sumMs) || value.sumMs<0 ||
+                value.sumMs>Number.MAX_SAFE_INTEGER || !value.count && value.sumMs!==0) throw new Error('Invalid checkpoint measurement statistics');
+            return [component,{...value}];
+        }));
         this.observations = [];
         this.decisions = [];
         this.lifecycleCharged = false;
@@ -39,10 +45,14 @@ class Economics {
         if (!['captureMs', 'restoreMs', 'releaseMs', 'resetMs', 'firstResetMs', 'backendMs'].includes(component) ||
             !Number.isFinite(ms) || ms < 0) throw new Error('Invalid checkpoint operation measurement');
         const before = this.baseline[component];
-        // A slow first restore must affect the very next decision. Do not dilute
-        // regressions with historical averages or lower costs on a warm sample.
-        this.baseline[component] = Math.max(before, ms);
-        const observation = {component, stage, ms, before, after: this.baseline[component]};
+        const sample = this.statistics[component];
+        if (!Number.isSafeInteger(sample.count+1) || sample.sumMs+ms>Number.MAX_SAFE_INTEGER) throw new Error('Checkpoint measurement overflow');
+        sample.count++; sample.sumMs+=ms;
+        const meanMs=sample.sumMs/sample.count;
+        // Bootstrap estimates are not observations. Use the real sample mean,
+        // but let a newly slow operation affect the next decision immediately.
+        this.baseline[component] = Math.max(meanMs, ms);
+        const observation = {component, stage, ms, before, after: this.baseline[component],count:sample.count,meanMs};
         this.observations.push(observation);
         this.emit('checkpoint-cost-observed', {node: stage, observation});
     }

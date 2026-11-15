@@ -10,7 +10,7 @@ source "$ROOT/branching/configs/entrypoints.conf"
 disposable=0
 if [[ "${1:-}" == --disposable ]]; then disposable=1; shift; fi
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching [--calibrate] [SOURCE_ROOT_OR_MANIFEST [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nPass a source directory to discover prefixes during this run; saved manifests remain supported. Configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching preserves configured Playwright coverage collection.\n' \
+    printf 'Usage: ./bin/run-coverage --branching [SOURCE_ROOT_OR_MANIFEST [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nPass a source directory to discover prefixes during this run; saved manifests remain supported. Configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching preserves configured Playwright coverage collection.\n' \
         "$BRANCHING_DEFAULT_MANIFEST" "$BRANCHING_DEFAULT_CONFIGURATION" "$BRANCHING_DEFAULT_STORAGE" "$BRANCHING_DEFAULT_CONFIGURATION"
     exit 0
 fi
@@ -19,8 +19,9 @@ for obsolete in ${!MAGELENS_PREDICTOR_@} ${!MAGELENS_PREFIX_MODEL@} ${!MAGELENS_
 done
 (( disposable )) || fail 'Use ./bin/run-coverage --branching.'
 [[ "$MAGELENS_RUNNER" == playwright || "$MAGELENS_RUNNER" == cypress ]] || fail "Unknown branching runner: $MAGELENS_RUNNER"
-calibrate=0
-if [[ "${1:-}" == --calibrate ]]; then calibrate=1; shift; fi
+for argument in "$@"; do
+    [[ "$argument" != --calibrate ]] || fail '--calibrate was removed. Checkpoint costs are measured during normal captures and restores; run --branching SOURCE_ROOT.'
+done
 [[ "${1:-}" != --auto ]] || shift
 [[ $# -le 3 || ( $# -eq 4 && "${4:-}" == AUTO ) ]] || fail 'AUTO is the only checkpoint policy. Use optional MANIFEST.json CONFIG.cjs COW_STORAGE paths; configure test selection in the native runner.'
 manifest=${1-${MAGELENS_BRANCHING_MANIFEST:-$BRANCHING_DEFAULT_MANIFEST}}
@@ -43,7 +44,6 @@ fi
 storage=$(realpath -e "$storage")
 entrypoint=node
 driver_command=(branching/auto-cli.cjs "$manifest" "$configuration" "$storage")
-if (( calibrate )); then driver_command=(branching/calibration-cli.cjs "$manifest" "$configuration" "$storage"); fi
 [[ -d "$storage" && "$storage" != *','* && "$ROOT" != *','* ]] || fail 'Use an existing CoW directory; bind mount paths cannot contain commas.'
 runner=$(dc ps -q runner)
 [[ -n "$runner" ]] || fail 'Start this installation with bin/start first.'
@@ -54,7 +54,6 @@ modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/works
 [[ -n "$modules" ]] || fail 'The installed runner has no dependency mount.'
 discovery_mount=()
 if [[ -d "$manifest" ]]; then
-    (( ! calibrate )) || fail 'Explicit calibration requires a saved manifest.'
     [[ ! -L .runtime/branching-discovery ]] || fail 'Discovery output cannot be a symbolic link.'
     mkdir -p .runtime/branching-discovery
     discovery_mount=(--mount "type=bind,source=$ROOT/.runtime/branching-discovery,target=$ROOT/.runtime/branching-discovery")

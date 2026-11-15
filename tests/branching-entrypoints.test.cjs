@@ -80,15 +80,15 @@ test('source-directory execution needs no saved manifest and gives the planner o
     assert.ok(calls.find(args=>args.includes('node')).includes(path.join(directory,'scenarios')));
     assert.equal(fs.existsSync(path.join(directory,'.runtime/branching-plan.json')),false);
 });
-test('branching and calibration use saved project paths and create default storage', t => {
+test('branching uses saved project paths and create default storage', t => {
     const {directory, run} = launchFixture(t);
     defaultProject(directory);
-    for (const options of [[], ['--calibrate']]) {
+    for (const options of [[], ['--auto']]) {
         const result = run(['bin/run-coverage', '--branching', ...options]);
         assert.equal(result.status, 37, result.stderr);
         const worker = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse)
             .find(args => args.includes('node'));
-        assert.deepEqual(worker.slice(-4), [options.length ? 'branching/calibration-cli.cjs' : 'branching/auto-cli.cjs',
+        assert.deepEqual(worker.slice(-4), ['branching/auto-cli.cjs',
             path.join(directory, '.runtime/branching-plan.json'), path.join(directory, 'branching.config.cjs'),
             path.join(directory, '.runtime/branching-storage')]);
         assert.ok(fs.statSync(path.join(directory, '.runtime/branching-storage')).isDirectory());
@@ -98,7 +98,7 @@ test('branching supports partial paths, saved environment overrides and explicit
     const {directory, run} = launchFixture(t);
     defaultProject(directory);
     const env = {MAGELENS_BRANCHING_MANIFEST: 'manifest.json', MAGELENS_BRANCHING_CONFIG: 'workflow file.cjs', MAGELENS_BRANCHING_STORAGE: 'cow storage'};
-    for (const options of [[], ['--calibrate']]) {
+    for (const options of [[], ['--auto']]) {
         const result = run(['bin/run-coverage', '--branching', ...options], env);
         assert.equal(result.status, 37, result.stderr);
         assert.ok(result.calls.includes(JSON.stringify(path.join(directory, 'cow storage'))));
@@ -114,7 +114,7 @@ test('branching supports partial paths, saved environment overrides and explicit
 });
 test('missing default setup and active recovery fail before creating storage or starting containers', t => {
     const {directory, run} = launchFixture(t);
-    let result = run(['bin/run-coverage', '--branching', '--calibrate']);
+    let result = run(['bin/run-coverage', '--branching']);
     assert.equal(result.status, 1); assert.equal(result.calls, '');
     assert.match(result.stderr, /plan-branching SOURCE_ROOT/);
     fs.copyFileSync(path.join(directory, 'manifest.json'), path.join(directory, '.runtime/branching-plan.json'));
@@ -125,7 +125,7 @@ test('missing default setup and active recovery fail before creating storage or 
     for (const marker of ['workflow.lock', 'branching-recovery.json']) {
         const file = path.join(directory, '.runtime', marker);
         fs.writeFileSync(file, '');
-        result = run(['bin/run-coverage', '--branching', '--calibrate']);
+        result = run(['bin/run-coverage', '--branching']);
         assert.equal(result.status, 1); assert.equal(result.calls, ''); assert.match(result.stderr, /recovery first/);
         fs.rmSync(file);
     }
@@ -157,16 +157,12 @@ test('planner shares the default manifest and honors environment and positional 
         assert.deepEqual(call.slice(-3), ['plan', path.join(directory, 'branching'), path.join(directory, output)]);
     }
 });
-test('explicit calibration uses the same isolated launcher without executing tests', t => {
-    const {directory,run}=launchFixture(t);
+test('obsolete calibration is rejected before any application or container work', t => {
+    const {run}=launchFixture(t);
     const result=run(['bin/run-coverage','--branching','--calibrate','manifest.json','workflow file.cjs','cow storage']);
-    assert.equal(result.status,37,result.stderr);
-    const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
-    const worker=calls.find(args=>args.includes('node'));
-    assert.equal(worker[worker.indexOf('--cpus')+1], '2');
-    assert.ok(worker.includes('org.magelens.role=branching-driver'));
-    assert.deepEqual(worker.slice(-4),['branching/calibration-cli.cjs',path.join(directory,'manifest.json'),path.join(directory,'workflow file.cjs'),path.join(directory,'cow storage')]);
-    assert.ok(calls.some(args=>args[0]==='rm'&&args[1]==='--force'));
+    assert.equal(result.status,1); assert.equal(result.calls,'');
+    assert.match(result.stderr,/--calibrate was removed/);
+    assert.match(result.stderr,/normal captures and restores/);
 });
 test('branching opt-in preserves literal arguments, worker status and controller cleanup', t => {
     const {directory, run} = launchFixture(t);
@@ -194,13 +190,13 @@ test('direct entry requires opt-in; help and unsupported adapter do not start co
     const unsupported = run(['bin/run-coverage', '--branching', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'unknown'});
     assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /Unknown branching runner/);
 });
-test('legacy explicit acknowledgment still reaches both branching workers', t => {
+test('legacy explicit acknowledgment still reaches the branching worker', t => {
     const {run} = launchFixture(t);
-    for (const options of [[], ['--calibrate']]) {
+    for (const options of [[], ['--auto']]) {
         const result = run(['bin/run-coverage', '--branching', '--disposable', ...options,
             'manifest.json', 'workflow file.cjs', 'cow storage']);
         assert.equal(result.status, 37, result.stderr);
-        assert.match(result.calls, options.length ? /branching\/calibration-cli.cjs/ : /branching\/auto-cli.cjs/);
+        assert.match(result.calls, /branching\/auto-cli.cjs/);
     }
 });
 test('only AUTO reaches the worker, with default and legacy automatic spellings', t => {

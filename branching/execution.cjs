@@ -37,12 +37,12 @@ function createExecution({
     fault,
     adaptive = false
 }) {
-    const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline, emit) : null;
+    const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline, emit, graph.costStatistics) : null;
     const prefixDurations = new Map();
     const abandoning = new Set();
-    if (economics) emit('checkpoint-baseline', {status:'compatible', baseline:graph.costBaseline, calibrationMs:0});
+    if (economics) emit('checkpoint-baseline', {status:Object.values(economics.statistics).some(value=>value.count) ? 'measured' : 'estimated', baseline:graph.costBaseline,statistics:economics.statistics});
     if (economics) report.adaptive = {baselineBefore: {...economics.baseline},
-        observations: economics.observations, decisions: economics.decisions, baselineAfter: economics.baseline};
+        observations: economics.observations, decisions: economics.decisions, baselineAfter: economics.baseline,statisticsAfter:economics.statistics};
     const remaining = new Map();
     for (const spec of selected) {
         for (const node of graph.chain(spec.parent)) {
@@ -332,6 +332,10 @@ function createExecution({
             }
         }
     }
-    return {runSpec};
+    function observeLifecycle() {
+        if (!report.errors.length)
+            economics?.observe('backendMs', report.phases.prepare + report.phases.cleanup, null);
+    }
+    return {runSpec, observeLifecycle};
 }
 module.exports = {createExecution};

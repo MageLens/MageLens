@@ -89,7 +89,7 @@ test('first complete restore updates only its cost and revises remaining economi
     const state = view(journey('abandoning'));
     assert.deepEqual(state.baseline.before, baseline);
     assert.deepEqual(state.baseline.current, {...baseline, restoreMs: 1500});
-    assert.deepEqual(state.baseline.observations, [{stage: 'prefix', component: 'restoreMs', ms: 1500, before: 100, after: 1500}]);
+    assert.deepEqual(state.baseline.observations, [{stage: 'prefix', component: 'restoreMs', ms: 1500, before: 100, after: 1500, count:1, meanMs:1500}]);
     assert.equal(state.counts.reuseHits, 1);
     const node = prefix(state);
     assert.equal(node.decision.remaining, 1);
@@ -139,18 +139,15 @@ test('failed abandonment reset cannot be presented as a successful economic fall
     assert.notEqual(state.nodes.find(n => n.id === 'c').status, 'passed');
 });
 
-test('incompatible baseline shows bounded calibration instead of zero costs or a stale usable estimate', () => {
-    const events = journey('measuring').slice(0, 3);
-    const append = (type, data) => events.push({...events[0], type, sequence: events.length + 1, ...data});
-    append('checkpoint-baseline', {status: 'incompatible', reason: 'runtime-resources'});
-    let state = reduce(events);
-    assert.equal(state.baseline.status, 'incompatible');
-    assert.equal(state.baseline.current, null);
-    append('run-phase', {phase: 'calibrating'});
-    append('checkpoint-baseline', {status: 'compatible', baseline, calibrationMs: 12000});
-    state = reduce(events);
-    assert.equal(state.baseline.calibrationMs, 12000);
-    assert.deepEqual(state.baseline.current, baseline);
+test('incompatible measurements use conservative bootstrap estimates and learn from actual restoration only', () => {
+    const events = journey('bootstrap');
+    const state = reduce(events);
+    assert.equal(state.baseline.status,'estimated');
+    assert.equal(state.baseline.reason,'incompatible-measurements-ignored');
+    assert.deepEqual(state.baseline.current,baseline);
+    assert.ok(state.baseline.current.restoreMs>0);
+    assert.equal(events.some(event=>event.phase==='calibrating'),false);
+    assert.deepEqual(state.baseline.observations,[]);
 });
 
 test('manifest-free HTTP snapshots and journal replay retain the same evolving economics', async t => {

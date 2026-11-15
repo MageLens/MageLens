@@ -125,6 +125,7 @@ async function executePlan({
     } finally {
         await cleanupRun({provider, report, measured, errorRecord, emit, directory, run, retain});
     }
+    execution.observeLifecycle();
     emit(protocol.event.cleanupEnd, {
         storageReleased: !fs.existsSync(directory),
         retained: retain,

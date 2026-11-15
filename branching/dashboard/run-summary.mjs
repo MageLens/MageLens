@@ -113,14 +113,16 @@ function renderCosts(run) {
     const baseline = run.baseline;
     $('checkpoint-costs').hidden = !baseline;
     if (!baseline) return;
-    $('baseline-status').textContent = `${words(baseline.status)}${baseline.reason ? ' · ' + words(baseline.reason) : ''}`;
+    $('baseline-status').textContent = `Starting baseline: ${words(baseline.status)}${baseline.reason ? ' · ' + words(baseline.reason) : ''}`;
     $('baseline-values').replaceChildren();
     for (const [key, label] of Object.entries({captureMs:'Capture',restoreMs:'Restore including readiness',releaseMs:'Release',resetMs:'Reset',firstResetMs:'First reset',backendMs:'Provider lifecycle'})) {
         const row = document.createElement('p');
         const samples = baseline.observations.filter(item=>item.component===key);
         const observed = samples.at(-1);
-        row.textContent = baseline.current ? `${label}: ${baseline.before[key].toFixed(1)} → ${baseline.current[key].toFixed(1)} ms${observed ? ` · last actual ${observed.ms.toFixed(1)} ms (${samples.length} observations)` : ''}` : `${label}: awaiting compatible measurement`;
+        const statistics=baseline.statistics[key];
+        const average=statistics?.count ? ` · average ${(statistics.sumMs/statistics.count).toFixed(1)} ms from ${statistics.count} ${statistics.count===1 ? 'sample' : 'samples'}` : ' · no measured samples yet';
+        row.textContent = baseline.current ? `${label}: ${baseline.before[key].toFixed(1)} → ${baseline.current[key].toFixed(1)} ms${observed ? ` · last actual ${observed.ms.toFixed(1)} ms (${samples.length} this run)` : ''}${average}` : `${label}: awaiting compatible measurement`;
         $('baseline-values').append(row);
     }
-    $('calibration-cost').textContent = `One-time calibration: ${(baseline.calibrationMs / 1000).toFixed(1)} s · ${baseline.observations.length} operation observations. Costs inform decisions; avoided work is not measured net savings.`;
+    $('measurement-note').textContent = `${baseline.observations.length} actual operation observations this run. No separate calibration run. Unmeasured costs use conservative estimates; decisions use the greater of the sample average and latest observation, plus the safety margin. Avoided work is not measured net savings.`;
 }

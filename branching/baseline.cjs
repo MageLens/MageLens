@@ -62,9 +62,7 @@ function samples(report) {
     )
         return null;
     const phases =
-        report.kind === config.labels.calibration
-            ? [report]
-            : Array.isArray(report.phases)
+        Array.isArray(report.phases)
               ? report.phases
                     .filter((phase) => phase.kind === config.labels.checkpoint)
                     .map((phase) => phase.report)
@@ -166,7 +164,8 @@ class Store {
             key: this.key,
             baseline: validate(baseline),
             decisionBaselineMs: decisionBaselineMs(baseline),
-            samples: Object.freeze(counts)
+            samples: Object.freeze(counts),
+            statistics: Object.fromEntries(metrics.map(key=>[key,record ? {...record.statistics[key]} : {count:0,sumMs:0}]))
         });
     }
     update(report, {explicit = false, replace = false} = {}) {
