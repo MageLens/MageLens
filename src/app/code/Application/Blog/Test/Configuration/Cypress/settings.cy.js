@@ -23,12 +23,28 @@ describe('Blog configuration', () => {
         cy.get('#menu-magento-backend-stores > a').click();
         cy.get('[data-ui-id="menu-magento-config-system-config"] > a').click();
         cy.contains('a', 'Journal settings').click();
-        cy.get('#application_blog_display-head').click();
+        cy.intercept('POST', '**/system_config/state/**').as('saveDisplayState');
+        const toggleDisplayGroup = () => {
+            cy.get('#application_blog_display-head').click();
+            cy.wait('@saveDisplayState').its('response.statusCode').should('equal', 200);
+        };
+        cy.get('#application_blog_display-state').invoke('val').then(state => {
+            if (state === '0') toggleDisplayGroup();
+        });
+        cy.get('#application_blog_display-state').should('have.value', '1');
         cy.get('#application_blog_display_heading').should('be.visible').and('have.value', 'Journal');
-        for (const name of ['alias_one', 'alias_two']) cy.get('#application_blog_display_' + name).should('have.value', 'Read more from our journal');
+        for (const name of ['alias_one', 'alias_two']) cy.get('#application_blog_display_' + name).should('be.visible').and('have.value', 'Read more from our journal');
         cy.get('#application_blog_display_hidden').should('not.exist');
         cy.get('#application_blog_editorial_unused_unused').should('not.exist');
+        // Exercise both states through Magento's real toggle and persist the
+        // reopened group before reloading the page.
+        toggleDisplayGroup();
+        cy.get('#application_blog_display-state').should('have.value', '0');
+        cy.get('#application_blog_display_heading').should('not.be.visible');
+        toggleDisplayGroup();
+        cy.get('#application_blog_display-state').should('have.value', '1');
+        cy.get('#application_blog_display_heading').should('be.visible');
         cy.reload();
-        cy.get('#application_blog_display_heading').should('have.value', 'Journal');
+        cy.get('#application_blog_display_heading').should('be.visible').and('have.value', 'Journal');
     });
 });

@@ -31,3 +31,5 @@ checkXml(count($fields) === 5, 'Inventory hidden and unopened fields as well as 
 checkXml(count(array_unique(array_column($fields, 'id'))) === 5, 'Shared config_path does not collapse fields');
 checkXml(Xml::mask(['a' => ['x' => 'secret', 'y' => null]]) === ['a' => ['x' => '__magelens_external__', 'y' => '__magelens_external__']], 'External overrides retain ownership even for null/equal values');
 echo "XML parsing, source maps, scopes and field identities passed.\n";
+
+require __DIR__ . '/configuration-fixture.test.php';

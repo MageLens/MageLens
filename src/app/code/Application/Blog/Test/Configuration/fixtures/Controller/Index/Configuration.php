@@ -14,6 +14,7 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         private \Magento\Framework\App\Config\ScopeConfigInterface $config,
         private \Magento\Framework\App\RequestInterface $request,
         private \Magento\Framework\Controller\Result\JsonFactory $json,
+        private \Magento\Framework\Controller\Result\RawFactory $raw,
         private \Magento\Store\Model\StoreManagerInterface $stores
     ) {}
     public function execute()
@@ -31,7 +32,12 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         };
         switch ($case) {
             case 'baseline': break;
-            case 'warmup-only': $result['unused'] = $this->config->getValue($path . 'unused'); break;
+            case 'warmup-only':
+                $preview = htmlspecialchars((string) $this->config->getValue($path . 'unused'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                return $this->raw->create()
+                    ->setHeader('Content-Type', 'text/html; charset=UTF-8', true)
+                    ->setHeader('Cache-Control', 'no-store', true)
+                    ->setContents('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Journal preview</title></head><body><p>' . $preview . '</p></body></html>');
             case 'value-reads':
                 $result['empty'] = $this->config->getValue($path . 'empty');
                 $result['enabled'] = $this->config->isSetFlag($path . 'enabled');

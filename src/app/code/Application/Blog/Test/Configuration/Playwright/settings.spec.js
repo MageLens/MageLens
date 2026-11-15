@@ -19,12 +19,31 @@ test('uses inherited journal settings and shows the selected Admin fields', asyn
     await page.locator('#menu-magento-backend-stores > a').click();
     await page.locator('[data-ui-id="menu-magento-config-system-config"] > a').click();
     await page.getByRole('link', {name: 'Journal settings', exact: true}).click();
-    await page.locator('#application_blog_display-head').click();
+    const toggleDisplayGroup = async () => {
+        const saved = page.waitForResponse(response => response.request().method() === 'POST'
+            && response.url().includes('/system_config/state/'));
+        await page.locator('#application_blog_display-head').click();
+        expect((await saved).status()).toBe(200);
+    };
+    if (await page.locator('#application_blog_display-state').inputValue() === '0') {
+        await toggleDisplayGroup();
+    }
+    await expect(page.locator('#application_blog_display-state')).toHaveValue('1');
     await expect(page.locator('#application_blog_display_heading')).toBeVisible();
     await expect(page.locator('#application_blog_display_heading')).toHaveValue('Journal');
-    for (const name of ['alias_one', 'alias_two']) await expect(page.locator('#application_blog_display_' + name)).toHaveValue('Read more from our journal');
+    for (const name of ['alias_one', 'alias_two']) {
+        await expect(page.locator('#application_blog_display_' + name)).toBeVisible();
+        await expect(page.locator('#application_blog_display_' + name)).toHaveValue('Read more from our journal');
+    }
     await expect(page.locator('#application_blog_display_hidden')).toHaveCount(0);
     await expect(page.locator('#application_blog_editorial_unused_unused')).toHaveCount(0);
+    await toggleDisplayGroup();
+    await expect(page.locator('#application_blog_display-state')).toHaveValue('0');
+    await expect(page.locator('#application_blog_display_heading')).toBeHidden();
+    await toggleDisplayGroup();
+    await expect(page.locator('#application_blog_display-state')).toHaveValue('1');
+    await expect(page.locator('#application_blog_display_heading')).toBeVisible();
     await page.reload();
+    await expect(page.locator('#application_blog_display_heading')).toBeVisible();
     await expect(page.locator('#application_blog_display_heading')).toHaveValue('Journal');
 });

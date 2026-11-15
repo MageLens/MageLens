@@ -124,7 +124,7 @@ Modules can provide optional fixture hooks in `Test/MageLens/hooks.php`:
 
 Cypress receives each module's `prepare` result through `Cypress.expose('projectFixtures')[moduleName]`. Playwright tests can read the same data from `coverage/project-fixtures.json`. The [blog hooks](../src/app/code/Application/Blog/Test/MageLens/hooks.php) provide an example of fixture creation and cleanup.
 
-The result may include `warmupPaths`, an array of application paths such as `["/admin/"]`. Both runners visit these pages after the homepage, before coverage collection. Paths must start with a single `/`; external URLs are not accepted.
+The result may include `warmupPaths`, an array of HTML page paths such as `["/admin/"]`. Both runners visit these pages after the homepage, before coverage collection. Paths must start with a single `/`; external URLs are not accepted.
 
 ## Reports and artifacts
 
