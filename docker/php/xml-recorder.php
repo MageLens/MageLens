@@ -12,6 +12,7 @@ final class Recorder
     private static ?array $manifest = null;
     private static array $events = [];
     private static array $errors = [];
+    private static array $fieldSources = [];
     private static bool $busy = false;
     private static bool $readHook = false;
     private static bool $renderHook = false;
@@ -76,6 +77,18 @@ final class Recorder
         } catch (\Throwable $error) { self::$errors[] = 'Cannot attribute configuration read'; }
         finally { self::$busy = false; }
     }
+    public static function fieldData(array $data): void
+    {
+        if (!self::$manifest || self::$busy) return;
+        try {
+            $field = trim(($data['path'] ?? '') . '/' . ($data['id'] ?? ''), '/');
+            if (!isset(self::$manifest['fields'][$field])) return;
+            // This native callback observes Magento's cached source metadata before
+            // interceptor plugins add presentation data such as ScopeHint's path_hint.
+            // Reading it alone grants no coverage; the field must also render.
+            self::$fieldSources[$field] = hash('sha256', Xml::canonical($data));
+        } catch (\Throwable $error) { self::$errors[] = 'Cannot attribute Admin field source metadata'; }
+    }
     public static function render($element): void
     {
         if (!self::$manifest || self::$busy) return;
@@ -85,7 +98,11 @@ final class Recorder
             $field = trim(($config['path'] ?? '') . '/' . ($config['id'] ?? ''), '/');
             $id = self::$manifest['fields'][$field][0] ?? null;
             if ($id) {
-                if (self::$manifest['fieldHashes'][$field] !== hash('sha256', Xml::canonical($config))) {
+                if (!isset(self::$fieldSources[$field])) {
+                    self::$errors[] = 'Admin field source metadata was not observed before rendering';
+                    return;
+                }
+                if (self::$manifest['fieldHashes'][$field] !== self::$fieldSources[$field]) {
                     self::$errors[] = 'Cached Admin structure differs from current XML provenance; use --refresh-cache';
                     return;
                 }

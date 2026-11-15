@@ -20,6 +20,12 @@ function startXmlHooks(string $run): void
             static function ($subject, array $params, $result, ?Throwable $error) {
                 if (!$error) Recorder::read($result, $params[0] ?? null, $params[1] ?? 'default', $params[2] ?? null);
             }],
+        ['Magento\\Config\\Model\\Config\\Structure\\AbstractElement', 'getData', null,
+            static function ($subject, array $params, $result, ?Throwable $error, string $class) {
+                // Hooks also observe overrides. Keep only the native source
+                // method, before an interceptor's afterGetData decorators.
+                if (!$error && $class === 'Magento\\Config\\Model\\Config\\Structure\\AbstractElement' && is_array($result)) Recorder::fieldData($result);
+            }],
         ['Magento\\Config\\Block\\System\\Config\\Form\\Field', 'render', null,
             static function ($subject, array $params, $result, ?Throwable $error) {
                 if (!$error && $result !== '' && isset($params[0])) Recorder::render($params[0]);

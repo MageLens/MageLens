@@ -151,7 +151,9 @@ function xmlManifest($om, array $run): array
     foreach ($stores->getStores(true) as $store) $scopes['stores'][(string) $store->getId()] = $store->getCode();
     ksort($providers); ksort($files);
     // Public method shape guards. Unsupported versions fail preparation explicitly.
-    foreach ([\Magento\Framework\App\Config::class => ['getValue', 'isSetFlag'], \Magento\Config\Block\System\Config\Form\Field::class => ['render']] as $class => $methods) {
+    foreach ([\Magento\Framework\App\Config::class => ['getValue', 'isSetFlag'],
+        \Magento\Config\Model\Config\Structure\AbstractElement::class => ['getData'],
+        \Magento\Config\Block\System\Config\Form\Field::class => ['render']] as $class => $methods) {
         foreach ($methods as $method) if (!(new ReflectionMethod($class, $method))->isPublic()) throw new RuntimeException('Unsupported XML hook method');
     }
     $manifest = ['schemaVersion' => 1, 'run' => $run['id'], 'files' => array_values($files), 'origins' => $origins,

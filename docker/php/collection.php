@@ -14,9 +14,11 @@ function coverageCollectionFailureSummary(array $files): string
     $known = [
         'Cached configuration differs from current provenance; use --refresh-cache',
         'Cached Admin structure differs from current XML provenance; use --refresh-cache',
+        'Admin field source metadata was not observed before rendering',
         'Configuration changed during collection',
         'Cannot attribute configuration read',
         'Cannot attribute Admin field rendering',
+        'Cannot attribute Admin field source metadata',
         'Native PCOV export failed',
         'VitaliyBoyko PCOV native export is unavailable',
     ];
