@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -22,7 +22,12 @@ function fixture(t, files) {
     execFileSync('git', ['add', '.'], {cwd: root});
     // Generated dependencies and runtime files must not expand the tracked lint scope.
     fs.writeFileSync(path.join(root, 'untracked.js'), 'this is not JavaScript');
-    return spawnSync(process.execPath, [script], {cwd: root, encoding: 'utf8'});
+    // The synthetic repository has its own staged changes and no PR history.
+    const env = {...process.env};
+    delete env.COPYRIGHT_BASE;
+    delete env.GITHUB_EVENT_NAME;
+    delete env.GITHUB_EVENT_PATH;
+    return spawnSync(process.execPath, [script], {cwd: root, encoding: 'utf8', env});
 }
 
 test('static checks accept tracked Node, browser, Cypress and AMD sources with notices', t => {
