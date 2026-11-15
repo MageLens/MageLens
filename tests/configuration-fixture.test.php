@@ -26,7 +26,7 @@ namespace Magento\Framework\Controller\Result {
     }
     class RawFactory { public function create() { return new Raw; } }
     class Json {
-        public array $data = [];
+        public object $data;
         public function setData($data) { $this->data = $data; return $this; }
     }
     class JsonFactory { public function create() { return new Json; } }
@@ -60,8 +60,13 @@ namespace {
     }
     $request->scenario = 'default-read';
     $response = $controller->execute();
-    if (!$response instanceof \Magento\Framework\Controller\Result\Json || $response->data !== ['heading' => 'Journal']) {
+    if (!$response instanceof \Magento\Framework\Controller\Result\Json || (array) $response->data !== ['heading' => 'Journal']) {
         throw new \RuntimeException('Config-read acceptance endpoints must retain their JSON responses');
+    }
+    $request->scenario = 'baseline';
+    $response = $controller->execute();
+    if (json_encode($response->data, JSON_THROW_ON_ERROR) !== '{}') {
+        throw new \RuntimeException('The baseline response must be a JSON object for both browser runners');
     }
     echo "Configuration fixture warm-up HTML, escaping and JSON responses passed.\n";
 }

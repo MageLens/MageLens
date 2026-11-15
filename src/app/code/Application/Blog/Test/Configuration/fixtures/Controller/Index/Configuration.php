@@ -61,6 +61,6 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
                 break;
             default: throw new \InvalidArgumentException('Unknown XML acceptance case');
         }
-        return $this->json->create()->setData($result);
+        return $this->json->create()->setData((object) $result);
     }
 }
