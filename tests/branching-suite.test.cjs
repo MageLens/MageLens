@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -56,6 +56,37 @@ test('one suite journal includes native setup, all native tests and real checkpo
     assert.ok(state.baseline.observations.length>0);
     assert.equal(state.counts.reuseHits,0);
 });
+test('scoped Cypress execution keeps the spec order reported by its original selector', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-scoped-cypress-'));
+    t.after(() => fs.rmSync(root,{recursive:true,force:true}));
+    const files = ['second.cy.js','first.cy.js'];
+    for (const file of files) fs.writeFileSync(path.join(root,file),'it("scenario", () => {});');
+    const sources = files.map(file=>({path:file,sha256:fileDigest(path.join(root,file))}));
+    const tests = files.map(file=>({id:file,file,fixture:'cypress:it',title:'scenario',steps:[]}));
+    const manifest = assessed({schemaVersion:1,root,sources,tests,checkpoints:[],diagnostics:[],
+        sourceDigest:require('../branching/identity.cjs').digest(sources)});
+    const spec = ['*.cy.js'];
+    const specOrder = files.map(file=>path.join(root,file));
+    const inventory = {status:'passed',exitCode:0,errors:[],config:{rootDir:root},specOrder,
+        tests:tests.map((test,index)=>({...test,framework:'cypress',project:'cypress',expectedStatus:'passed',file:specOrder[index]}))};
+    const project = {native:{config:'original',checkpoint:'checkpoint',spec}};
+    const runner = {
+        collect(_config,_directory,options) {
+            assert.deepEqual(options.spec,spec);
+            return inventory;
+        },
+        run(_config,_directory,options) {
+            assert.deepEqual(options.spec,specOrder);
+            assert.deepEqual(options.expectedSpecOrder,specOrder);
+            return {...inventory,results:inventory.tests.map(({id})=>({id,status:'passed'})),
+                checkpoints:{checkpoints:[],restores:[],prefixes:[],errors:[]}};
+        }
+    };
+    const report = await runSuite({manifest,project,runner,directory:root});
+    assert.equal(report.status,'passed');
+    assert.deepEqual(report.results.map(test=>test.id),files);
+});
+
 test('native inventory preserves every assessed generated and fixture-based test beyond the old subset',t=>{
     const f=fixture(t),g=partition(f.manifest,f.inventory,f.project);
     assert.equal(g.setup.length,1);assert.equal(g.checkpoint.length,2);assert.equal(g.native.length,100);

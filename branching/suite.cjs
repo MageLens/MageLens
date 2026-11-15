@@ -98,8 +98,10 @@ async function collectAssessed(manifest, project, directory, runner) {
             : await runner.collect(project.native.config, directory, {spec});
     }
     catch (error) { throw new EstimationError([{phase: 'native-collection', message: error.message}]); }
-    if (project.native.spec !== undefined && (!Array.isArray(inventory.specOrder) || !inventory.specOrder.length))
-        throw new EstimationError([{phase: 'native-collection', message: 'Cypress did not report the discovered spec order'}]);
+    if (project.native.spec !== undefined && (!Array.isArray(inventory.specOrder) || !inventory.specOrder.length ||
+        new Set(inventory.specOrder).size !== inventory.specOrder.length ||
+        inventory.specOrder.some(file => typeof file !== 'string' || !path.isAbsolute(file))))
+        throw new EstimationError([{phase: 'native-collection', message: 'Cypress did not report a valid discovered spec order'}]);
     if (inventory.exitCode !== 0 || inventory.errors.length || !inventory.tests.length)
         throw new EstimationError([{phase: 'native-collection', message: 'Native collection failed or returned no tests', reasons: inventory.errors}]);
     if (new Set(inventory.tests.map(t => t.id)).size !== inventory.tests.length)
@@ -257,8 +259,16 @@ async function executeSuite(options) {
     }
     if (!nativeCheckpoints) observer.emit('run-ready');
     if (nativeCheckpoints) {
+        const requested = project.native.spec;
+        const originalOrder = requested === undefined ? undefined : inventory.specOrder;
+        const projectRoot = inventory.config.rootDir ?? manifest.root;
+        // Use Cypress's discovered order directly wherever the paths can be
+        // passed as literals. Pattern syntax in filenames requires the
+        // original selectors and the same fail-closed order check.
+        const executionSpec = originalOrder?.every(file => !/[!*,?()[\]{}]/.test(path.relative(projectRoot,file)))
+            ? originalOrder : requested;
         const result = await native(null, {
-            ...(project.native.spec === undefined ? {} : {spec: project.native.spec, expectedSpecOrder: inventory.specOrder}),
+            ...(originalOrder ? {spec: executionSpec, expectedSpecOrder: originalOrder} : {}),
             checkpoint: {module: project.native.checkpoint, manifest,
             linear: project.native.linear === true,
             selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id),
