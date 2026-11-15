@@ -52,4 +52,5 @@
 /cypress/screenshots/
 /cypress/videos/
 /.idea/
+.DS_Store
 *.log
