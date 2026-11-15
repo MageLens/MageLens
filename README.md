@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+SPDX-FileCopyrightText: Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -21,12 +21,12 @@ Run the installer, run the tests, and open one report to see which parts of your
 The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä. The badges are updated after each successful coverage run.
 
 <!-- coverage-badges:start -->
-[![Playwright: 5/5 passed](coverage/badges/playwright.svg)](coverage/index.html)
+[![Cypress: 5/5 passed](coverage/badges/cypress.svg)](coverage/index.html)
 [![PHP lines: 92.88%](coverage/badges/php.svg)](coverage/php/index.html)
 [![JavaScript statements: 50.32%](coverage/badges/js.svg)](coverage/js/index.html)
 [![Template executable lines: 54.84%](coverage/badges/templates.svg)](coverage/templates/index.html)
 
-Full Playwright run: `a7d6532fa34e40f3950993d285b4db93` · 2026-11-14T16:15:37.775Z
+Full Cypress run: `c856dc8f9106040db2adcdc0fcd37fd6` · 2026-11-15T15:36:30.614Z
 <!-- coverage-badges:end -->
 
 ## Why MageLens?
@@ -245,7 +245,7 @@ The default Docker project name is `magelens`. To name a new installation, run `
 
 The installer selects the name from `--project-name`, then a nonempty `COMPOSE_PROJECT_NAME` environment variable, then the saved `.env` value, then `magelens`. It saves the selection in `.env` for installation reruns, coverage, runner and service commands. Existing installations reject a conflicting name; unset conflicting environment overrides and keep the saved name to reuse the same database volumes. Use a separate directory for another project.
 
-For multiple copies, choose a different project name and domain for each and set non-conflicting `APPLICATION_PORT`, `APPLICATION_HTTPS_PORT` and `RUNNER_VIEW_PORT` values in each `.env` before installing. Project naming does not change the domain or ports. Stopping or removing one project's services and volumes leaves the other projects running.
+For multiple copies, choose a different project name and domain for each and set non-conflicting `APPLICATION_PORT`, `APPLICATION_HTTPS_PORT` and `RUNNER_VIEW_PORT` values in each `.env` before installing. Commands reject application containers belonging to another checkout with the same project name; run commands from the owning checkout. Project naming does not change the domain or ports. Stopping or removing one project's services and volumes leaves the other projects running.
 
 Rerun `./install.sh` with your platform, theme and runner flags to resume interrupted setup or rebuild after Dockerfile changes. Existing database contents, configuration, and media are preserved.
 

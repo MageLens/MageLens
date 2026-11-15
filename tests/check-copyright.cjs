@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-FileCopyrightText: Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -15,14 +15,15 @@ const thirdParty = new Set([
     'assets/badge-icons/LICENSE.md'
 ]);
 
-function notice(file) {
+function notice(file, legacy = false) {
     if (thirdParty.has(file)) {
         return 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko (MageLens packaging)\n' +
             'SPDX-FileCopyrightText: Simple Icons contributors\n' +
             'SPDX-License-Identifier: CC0-1.0\n' +
             'License: see assets/badge-icons/LICENSE.md in the repository root.\n';
     }
-    return 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko\n' +
+    const owner = legacy ? 'Private Entrepreneur Vitalii Boiko' : 'Copyright (c)  MageLens';
+    return `SPDX-FileCopyrightText: ${owner}\n` +
         'SPDX-License-Identifier: Elastic-2.0\n' +
         'License: see LICENSE in the repository root.\n';
 }
@@ -44,8 +45,8 @@ function style(file, content) {
     return 'sidecar';
 }
 
-function header(file, kind) {
-    const lines = notice(file).trimEnd().split('\n');
+function header(file, kind, legacy = false) {
+    const lines = notice(file, legacy).trimEnd().split('\n');
     if (kind === 'php' || kind === 'block') return `/*\n${lines.map(line => ` * ${line}`).join('\n')}\n */\n`;
     if (kind === 'markup') return `<!--\n${lines.join('\n')}\n-->\n`;
     const prefix = {slash: '// ', hash: '# ', semicolon: '; ', plain: ''}[kind];
@@ -82,7 +83,7 @@ function checkCopyright(root) {
                 if (!tracked.has(target)) throw new Error('License sidecar has no tracked target');
                 if (!stat.isFile()) throw new Error('License sidecar must be a regular file');
                 const text = fs.readFileSync(absolute, 'utf8').replace(/\r\n/g, '\n');
-                if (text !== notice(target)) throw new Error('Expected the exact year-free copyright and license notice');
+                if (![notice(target), notice(target, true)].includes(text)) throw new Error('Expected the exact year-free copyright and license notice');
                 continue;
             }
             const content = stat.isFile() ? fs.readFileSync(absolute) : Buffer.alloc(0);
@@ -96,7 +97,7 @@ function checkCopyright(root) {
                     if (!body.startsWith('<?php\n')) throw new Error('Expected a PHP opening tag before the copyright comment');
                     body = body.slice('<?php\n'.length);
                 }
-                if (!body.startsWith(header(file, kind))) {
+                if (![header(file, kind), header(file, kind, true)].some(expected => body.startsWith(expected))) {
                     throw new Error('Missing year-free copyright and license header at the start of the file');
                 }
             }
@@ -116,7 +117,7 @@ if (require.main === module) {
         const result = checkCopyright(root);
         if (result.errors.length) {
             console.error(result.errors.join('\n'));
-            console.error('Use SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko (no year), ' +
+            console.error('Use SPDX-FileCopyrightText: Copyright (c)  MageLens (no year), ' +
                 'SPDX-License-Identifier: Elastic-2.0, and License: see LICENSE in the repository root.');
             process.exitCode = 1;
         } else {

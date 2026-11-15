@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// SPDX-FileCopyrightText: Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -65,6 +65,7 @@ test(`${runner}: publishes complete reports after cleanup`, t => {
     assert.equal(fs.readFileSync(path.join(link, 'index.html'), 'utf8'), '<html>current</html>');
     assert.ok(fs.existsSync(path.join(link, 'summary.json')));
     assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080\/shop\/media\/coverage\/index.html/);
+    assert.doesNotMatch(result.stdout, /Local report:/);
     assert.ok(result.calls.lastIndexOf('project-hooks.php cleanup') < result.calls.indexOf('report-url.php'));
 });
 
@@ -77,6 +78,12 @@ for (const failure of ['mount', 'warmup', 'tests', 'php-report', 'browser-report
         });
         assert.notEqual(result.status, 0, result.stderr);
         assert.equal(fs.existsSync(path.join(result.directory, 'src/pub/media/coverage')), false);
+        if (['cleanup', 'url', 'publish'].includes(failure)) assert.equal(result.status, 1, result.stderr);
+        if (failure === 'cleanup') {
+            assert.ok(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), 'Failed cleanup must retain the recovery marker');
+            assert.doesNotMatch(result.calls, /report-url.php/, 'Failed cleanup must prevent publication');
+        }
+        if (failure === 'url') assert.doesNotMatch(result.calls, /app test -r/, 'Invalid URL must stop publication');
     });
 }
 
