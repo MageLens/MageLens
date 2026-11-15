@@ -4,6 +4,24 @@
 
 function dashboardModel({maxCheckpointsPerTest}) {
 
+function setGraph(state, nodes, schedule) {
+    if (!Array.isArray(nodes) || !Array.isArray(schedule)) throw new Error('Invalid graph');
+    state.schedule = schedule;
+    state.nodes = nodes.map(node => ({...node, status: 'waiting', active: false, operation: null,
+        checkpointState: node.kind === 'checkpoint' ? (state.policy?.basis === 'measured-first-use' ? 'candidate' : 'planned') : 'none',
+        remaining: node.consumers.length, executions: 0, restores: 0, elapsedMs: 0}));
+    const byId = new Map(state.nodes.map(n => [n.id, n]));
+    if (byId.size !== state.nodes.length) throw new Error('Duplicate graph nodes');
+    for (const node of state.nodes) {
+        const seen = new Set([node.id]); let parent = byId.get(node.parent);
+        node.setup = []; node.completedStages = [];
+        while (parent) {
+            if (seen.has(parent.id)) throw new Error('Graph cycle');
+            seen.add(parent.id); node.setup.unshift(parent.id); parent = byId.get(parent.parent);
+        }
+    }
+}
+
 function applyEvent(state, event) {
     if (event.schemaVersion !== 1 || !Number.isSafeInteger(event.sequence) || event.sequence < 1) throw new Error('Invalid event');
     if (event.type === 'run-start') {
@@ -12,27 +30,55 @@ function applyEvent(state, event) {
         state = {id: event.run, startedAt: event.time, updatedAt: event.time, sequence: 0, status: 'running', phase: 'planning',
             approach: event.approach, lifetime: event.checkpointLifetime, policy: event.policy, schedule: event.schedule, warnings: event.checkpointLimit?.warnings ?? [],
             counts: {prefixExecutions: 0, reuseHits: 0, fallbacks: 0, failures: 0, blockedSpecs: 0},
-            nodes: event.nodes.map(node => ({...node, status: 'waiting', active: false, operation: null,
-                checkpointState: node.kind === 'checkpoint' ? 'planned' : 'none', remaining: node.consumers.length,
-                executions: 0, restores: 0, elapsedMs: 0})), activity: [], cleanup: null};
-        if (new Set(state.nodes.map(n => n.id)).size !== state.nodes.length) throw new Error('Duplicate graph nodes');
-        const byId = new Map(state.nodes.map(n => [n.id, n]));
-        for (const test of state.nodes.filter(n => n.kind === 'test')) {
-            test.setup = []; test.completedStages = [];
-            let parent = byId.get(test.parent);
-            while (parent) {
-                if (test.setup.includes(parent.id)) throw new Error('Graph cycle');
-                test.setup.unshift(parent.id); parent = byId.get(parent.parent);
-            }
-        }
+            nodes: [], activity: [], cleanup: null, ready: false};
+        setGraph(state, event.nodes, event.schedule);
+
     }
     if (!state || state.id !== event.run || event.sequence !== state.sequence + 1) throw new Error('Out-of-order journal');
     const node = state.nodes.find(n => n.id === event.node);
     switch (event.type) {
-        case 'run-phase': state.phase = event.phase; break;
+        case 'run-ready': state.ready = true; break;
+        case 'run-phase':
+            state.phase = event.phase; state.phaseTests = event.tests ?? null;
+            // Older native adapters announce their complete execution selection
+            // at the ready boundary, immediately before invoking the runner.
+            if (event.tests?.length && state.schedule.length) state.ready = true;
+            break;
+        case 'discovery-complete':
+            setGraph(state, event.nodes, event.schedule);
+            state.ordering = event.ordering; state.excludedCandidates = event.excludedCandidates ?? [];
+            state.phase = 'discovered'; break;
+        case 'checkpoint-baseline':
+            state.baseline = {status: event.status, reason: event.reason ?? null,
+                before: event.baseline ? {...event.baseline} : null,
+                current: event.baseline ? {...event.baseline} : null,
+                observations: [], statistics: event.statistics ?? {}}; break;
+        case 'checkpoint-decision':
+            if (!node) throw new Error('Unknown candidate');
+            node.decision = event.decision;
+            (node.decisions ??= []).push(event.decision);
+            if (!event.decision.reuse) {
+                node.checkpointState = event.decision.captured ? 'abandoning' : 'linear';
+                if (event.decision.captured) node.reuseState = 'abandoning';
+            }
+            break;
+        case 'checkpoint-cost-observed':
+            if (!state.baseline?.current) throw new Error('Missing compatible baseline');
+            state.baseline.current[event.observation.component] = event.observation.after;
+            state.baseline.observations.push(event.observation);
+            if (event.observation.count !== undefined) state.baseline.statistics[event.observation.component] = {
+                count:event.observation.count,sumMs:event.observation.meanMs*event.observation.count};
+            break;
+        case 'checkpoint-reuse-abandoned':
+            if (!node || !event.resetVerified || node.checkpointState !== 'released') throw new Error('Unverified abandonment');
+            node.reuseState = 'abandoned'; break;
         case 'node-start':
             if (!node) throw new Error('Unknown node');
             node.active = true; node.operation = event.operation;
+            if (node.kind === 'checkpoint' && state.policy?.basis === 'measured-first-use') {
+                if (event.operation === 'executing' && node.checkpointState === 'candidate') node.checkpointState = 'measuring';
+                if (event.operation === 'capturing') node.checkpointState = 'capturing';
+            }
             if (event.operation === 'executing') { node.status = 'running'; node.executions++; }
             if (node.kind !== 'test') {
                 const test = state.nodes.find(n => n.id === state.currentSpec);
@@ -61,16 +107,17 @@ function applyEvent(state, event) {
         case 'checkpoint-invalid':
             node.active = false; node.checkpointState = 'invalid'; state.counts.fallbacks++; break;
         case 'spec-start': state.currentSpec = event.node; node.completedStages = []; node.activeStage = null; break;
-        case 'spec-end': node.active = false; node.status = event.status; node.blockedBy = event.blockedBy; break;
+        case 'spec-end': node.active = false; node.status = event.status; node.blockedBy = event.blockedBy ?? null; break;
         case 'consumer-finished': node.remaining = event.remaining; break;
-        case 'checkpoint-released': node.active = false; node.checkpointState = 'released'; node.releasedAfter = event.after; break;
+        case 'checkpoint-released': node.active = false; node.checkpointState = 'released'; node.releasedAfter = event.after; node.releaseReason = event.reason ?? null; break;
         case 'run-error':
             state.counts.failures++;
             if (node) { node.active = false; node.lastError = event.phase; }
             break;
+        case 'group-cleanup':
         case 'cleanup-end':
-            state.cleanup = {storageReleased: event.storageReleased, retained: event.retained, failed: event.failed};
-            for (const n of state.nodes) {
+            if (event.type === 'cleanup-end') state.cleanup = {storageReleased: event.storageReleased, retained: event.retained, failed: event.failed};
+            for (const n of state.nodes.filter(n=>event.type === 'cleanup-end' || event.nodes.includes(n.id))) {
                 n.active = false;
                 if (n.checkpointState === 'available' || n.checkpointState === 'invalid') {
                     n.checkpointState = event.storageReleased ? 'released' : event.retained ? 'retained' : 'recovery-required';
@@ -84,7 +131,8 @@ function applyEvent(state, event) {
     }
     state.updatedAt = event.time; state.sequence = event.sequence;
     state.activity.push({sequence: event.sequence, time: event.time, type: event.type, node: event.node ?? null,
-        operation: event.operation ?? null, status: event.status ?? null, phase: event.phase ?? null});
+        operation: event.operation ?? null, status: event.status ?? null, phase: event.phase ?? null,
+        decision: event.decision ?? null, observation: event.observation ?? null, reason: event.reason ?? null});
     if (state.activity.length > 100) state.activity.shift();
     return state;
 }
@@ -92,7 +140,7 @@ function applyEvent(state, event) {
 // A source plan is a preview. It never claims a checkpoint was selected by the
 // cost planner or that any source test has executed successfully.
 function manifestView(manifest) {
-    if (manifest.schemaVersion !== 1 || !['rust-prefix-v1', 'rust-prefix-v2'].includes(manifest.implementation)) throw new Error('Unsupported manifest');
+    if (manifest.schemaVersion !== 1 || manifest.implementation !== 'rust-prefix-v3') throw new Error('Unsupported manifest');
     const tests = new Map(manifest.tests.map(test => [test.id, test]));
     const nodes = manifest.checkpoints.map(cp => {
         const representative = tests.get(cp.representative);

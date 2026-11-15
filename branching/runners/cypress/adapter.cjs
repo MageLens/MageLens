@@ -63,10 +63,7 @@ async function open(environment = process.env, {nativeConfig, config = {e2e: {su
             return instance;
         };
         return {description, state, close,
-            run: options => require('../../engine.cjs').execute({...options, provider: provider(options.backend, options.state)}),
-            calibrate: ({backend, root, samples}) => require('../../calibration.cjs').measure({root, samples,
-                provider: provider(backend, runtime => ({url: runtime.page.url(), database: runtime.sql('SELECT 1')})),
-                warmup: async () => { await state.execute(`cy.visit(${JSON.stringify(config.e2e?.baseUrl ?? environment.CYPRESS_BASE_URL)}); cy.get('body').should('exist');`); }})};
+            run: options => require('../../engine.cjs').execute({...options, provider: provider(options.backend, options.state)})};
     } catch (error) { worker.kill('SIGTERM'); try { await close(); } catch { /* Preserve the startup failure. */ } throw error; }
 }
 module.exports = {open, native: require('./native.cjs')};

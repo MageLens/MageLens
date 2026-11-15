@@ -1,0 +1,477 @@
+{
+  "schemaVersion": 1,
+  "implementationCommit": "c114e1dea43a4f39cc805cc03423c5f9e98e10f6",
+  "measuredAt": "20261115T080234",
+  "installation": {
+    "platform": "Mage-OS",
+    "theme": "Luma",
+    "runner": "Playwright",
+    "browser": "Chrome for Testing",
+    "browserVersion": "157.0.8103.38",
+    "driverCpuLimit": 2,
+    "driverMemoryGiB": 2,
+    "storage": "owned XFS reflink"
+  },
+  "policy": "Normal first-use measurement; no separate calibration; each actual operation contributes to its own running mean. Online decisions use max(mean, latest observation) plus the existing margin.",
+  "accounting": "Totals include preparation, equivalent fixture resets, existing warm-up, execution, checkpoint lifecycle, online cost updates, reporting and cleanup. Adaptive total additionally includes discovery and baseline loading. The shared fixture snapshot is benchmark setup, disclosed separately.",
+  "status": "passed",
+  "tests": 9,
+  "counts": {
+    "tests": 9,
+    "nativeTests": 4,
+    "checkpointTests": 5,
+    "candidates": 2,
+    "prefixExecutions": 6,
+    "candidateExecutions": 3,
+    "captures": 1,
+    "restores": 2
+  },
+  "sourceDigest": "f25ddcc1facad2416319dfd30ed316c7f48ae09dd581c5c83df5ce83e7427788",
+  "applicationSourceIdentitySha256": "5b253ce0874358b9117eb8b4effe579d4d1df65adf77e02138638b8dc3438708",
+  "sameOriginalTests": true,
+  "sameSourceIdentities": true,
+  "sameTestOrder": true,
+  "ordering": {
+    "basis": "independent-page-project",
+    "scheduled": [
+      "ba8aaee530009151185b-9492867c02b6fdaf102d",
+      "4dd348867dca05a9bddf-abf6a03c43296650db57",
+      "4dd348867dca05a9bddf-9edb9ee9cc5509c8f7f0",
+      "4dd348867dca05a9bddf-10bb5c07198707610d42",
+      "4dd348867dca05a9bddf-41987103b2695873a0e8",
+      "4dd348867dca05a9bddf-6d10d6272631ae97a531",
+      "4dd348867dca05a9bddf-f8038859f1cae1ba95b7",
+      "4dd348867dca05a9bddf-295483314c22acfb37ec",
+      "4dd348867dca05a9bddf-d1eb9dc8b7739d21efa5"
+    ],
+    "changed": true
+  },
+  "coverageComparison": "Complete PHP lines; JavaScript statements/functions/branches; template execution and DOM; inventories, source fingerprints and measurement warnings. Existing CI normalization only.",
+  "coverageDifferences": [],
+  "linearMs": 211035.61722400002,
+  "adaptiveMs": 185691.21617199708,
+  "savedMs": 25344.40105200294,
+  "savedPercent": 12.009537245602278,
+  "separateCalibrationMs": 0,
+  "sharedBenchmarkFixtureCaptureMs": 7412.138389,
+  "discoveryMs": 16363.303111997084,
+  "baselinePreparationMs": 322.57588400000003,
+  "baselineAtStart": {
+    "source": "default",
+    "key": "7944426bf51f847ee912ae725563a0ad681ad1093f414e6fa20abf38e382f127",
+    "baseline": {
+      "version": "checkpoint-cost-policy-v8",
+      "captureMs": 3000,
+      "restoreMs": 8200,
+      "releaseMs": 12,
+      "resetMs": 11700,
+      "firstResetMs": 16600,
+      "backendMs": 16600,
+      "overheadMultiplier": 1,
+      "overheadMargin": 0.01,
+      "minSavingMs": 50
+    },
+    "decisionBaselineMs": 44906.12,
+    "samples": {},
+    "statistics": {
+      "captureMs": {
+        "count": 0,
+        "sumMs": 0
+      },
+      "restoreMs": {
+        "count": 0,
+        "sumMs": 0
+      },
+      "releaseMs": {
+        "count": 0,
+        "sumMs": 0
+      },
+      "resetMs": {
+        "count": 0,
+        "sumMs": 0
+      },
+      "firstResetMs": {
+        "count": 0,
+        "sumMs": 0
+      },
+      "backendMs": {
+        "count": 0,
+        "sumMs": 0
+      }
+    }
+  },
+  "baselinePersisted": {
+    "updated": true,
+    "regressions": [
+      {
+        "metric": "captureMs",
+        "referenceMs": 3000,
+        "previousMs": 3000,
+        "observedMs": 4258.775156999996,
+        "samples": 1,
+        "increase": 0.4195917189999987
+      },
+      {
+        "metric": "restoreMs",
+        "referenceMs": 8200,
+        "previousMs": 8200,
+        "observedMs": 10476.680447499995,
+        "samples": 2,
+        "increase": 0.27764395701219446
+      },
+      {
+        "metric": "backendMs",
+        "referenceMs": 16600,
+        "previousMs": 16600,
+        "observedMs": 18543.16521200005,
+        "samples": 1,
+        "increase": 0.11705814530120784
+      }
+    ],
+    "source": "measured",
+    "key": "7944426bf51f847ee912ae725563a0ad681ad1093f414e6fa20abf38e382f127",
+    "baseline": {
+      "version": "checkpoint-cost-policy-v8",
+      "captureMs": 4258.775156999996,
+      "restoreMs": 10476.680447499995,
+      "releaseMs": 1.9257299999590032,
+      "resetMs": 11700,
+      "firstResetMs": 14331.986721999972,
+      "backendMs": 18543.16521200005,
+      "overheadMultiplier": 1,
+      "overheadMargin": 0.01,
+      "minSavingMs": 50
+    },
+    "decisionBaselineMs": 48138.65860118497,
+    "samples": {
+      "captureMs": 1,
+      "restoreMs": 2,
+      "releaseMs": 1,
+      "resetMs": 0,
+      "firstResetMs": 1,
+      "backendMs": 1
+    },
+    "statistics": {
+      "captureMs": {
+        "count": 1,
+        "sumMs": 4258.775156999996
+      },
+      "restoreMs": {
+        "count": 2,
+        "sumMs": 20953.36089499999
+      },
+      "releaseMs": {
+        "count": 1,
+        "sumMs": 1.9257299999590032
+      },
+      "resetMs": {
+        "count": 0,
+        "sumMs": 0
+      },
+      "firstResetMs": {
+        "count": 1,
+        "sumMs": 14331.986721999972
+      },
+      "backendMs": {
+        "count": 1,
+        "sumMs": 18543.16521200005
+      }
+    }
+  },
+  "checkpointPhases": [
+    {
+      "counts": {
+        "prefixExecutions": 6,
+        "reuseHits": 2,
+        "fallbacks": 0,
+        "failures": 0,
+        "blockedSpecs": 0,
+        "firstReuseValidations": 1
+      },
+      "costs": {
+        "schemaVersion": 1,
+        "resets": [
+          14331.986721999972
+        ],
+        "captures": [
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 4258.775156999996
+          }
+        ],
+        "restores": [
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 9560.846582999977
+          },
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 11392.514312000014
+          }
+        ],
+        "releases": [
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 1.9257299999590032
+          }
+        ],
+        "linearStarts": [
+          307.45570900000166,
+          298.229972000001
+        ]
+      },
+      "phases": {
+        "prepare": 5462.906163000007,
+        "reset": 14332.131509000028,
+        "prefix": 53111.011913000024,
+        "suffix": 3822.934193000023,
+        "terminalState": 527.2980470000184,
+        "linearStart": 605.7543230000301,
+        "checkpointRelease": 2.0151370000094175,
+        "barrier": 1580.2022029999644,
+        "capture": 1549.3810599999852,
+        "hashingDurability": 19.57127000001492,
+        "resumeOriginal": 936.9946739999577,
+        "publication": 11.026758999971207,
+        "reuseValidation": 16.944962000008672,
+        "restore": 20799.81908499991,
+        "readiness": 44.80618399998639,
+        "firstReuseValidation": 77.44075900001917,
+        "cleanup": 13080.259049000044,
+        "storageAccounting": 1.5613149999990128
+      },
+      "adaptive": {
+        "baselineBefore": {
+          "version": "checkpoint-cost-policy-v8",
+          "captureMs": 3000,
+          "restoreMs": 8200,
+          "releaseMs": 12,
+          "resetMs": 11700,
+          "firstResetMs": 16600,
+          "backendMs": 16600,
+          "overheadMultiplier": 1,
+          "overheadMargin": 0.01,
+          "minSavingMs": 50
+        },
+        "observations": [
+          {
+            "component": "firstResetMs",
+            "stage": "root-e0b70a75b6d44dd6c47c",
+            "ms": 14331.986721999972,
+            "before": 16600,
+            "after": 14331.986721999972,
+            "count": 1,
+            "meanMs": 14331.986721999972
+          },
+          {
+            "component": "captureMs",
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 4258.775156999996,
+            "before": 3000,
+            "after": 4258.775156999996,
+            "count": 1,
+            "meanMs": 4258.775156999996
+          },
+          {
+            "component": "restoreMs",
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 9560.846582999977,
+            "before": 8200,
+            "after": 9560.846582999977,
+            "count": 1,
+            "meanMs": 9560.846582999977
+          },
+          {
+            "component": "restoreMs",
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 11392.514312000014,
+            "before": 9560.846582999977,
+            "after": 11392.514312000014,
+            "count": 2,
+            "meanMs": 10476.680447499995
+          },
+          {
+            "component": "releaseMs",
+            "stage": "cp-b6136c9b664ff071f33f",
+            "ms": 1.9257299999590032,
+            "before": 12,
+            "after": 1.9257299999590032,
+            "count": 1,
+            "meanMs": 1.9257299999590032
+          },
+          {
+            "component": "backendMs",
+            "stage": null,
+            "ms": 18543.16521200005,
+            "before": 16600,
+            "after": 18543.16521200005,
+            "count": 1,
+            "meanMs": 18543.16521200005
+          }
+        ],
+        "decisions": [
+          {
+            "stage": "cp-5842b1c2238bf0564297",
+            "prefixMs": 1422.6950929999584,
+            "remaining": 1,
+            "captured": false,
+            "components": {
+              "capture": 3000,
+              "restore": 8200,
+              "release": 12,
+              "lifecycle": 30931.986721999972
+            },
+            "baseline": {
+              "version": "checkpoint-cost-policy-v8",
+              "captureMs": 3000,
+              "restoreMs": 8200,
+              "releaseMs": 12,
+              "resetMs": 11700,
+              "firstResetMs": 14331.986721999972,
+              "backendMs": 16600,
+              "overheadMultiplier": 1,
+              "overheadMargin": 0.01,
+              "minSavingMs": 50
+            },
+            "avoidedMs": 1422.6950929999584,
+            "costMs": 42143.98672199997,
+            "requiredMs": 42615.42658921997,
+            "reuse": false
+          },
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "prefixMs": 50637.299046,
+            "remaining": 2,
+            "captured": false,
+            "components": {
+              "capture": 3000,
+              "restore": 16400,
+              "release": 12,
+              "lifecycle": 30931.986721999972
+            },
+            "baseline": {
+              "version": "checkpoint-cost-policy-v8",
+              "captureMs": 3000,
+              "restoreMs": 8200,
+              "releaseMs": 12,
+              "resetMs": 11700,
+              "firstResetMs": 14331.986721999972,
+              "backendMs": 16600,
+              "overheadMultiplier": 1,
+              "overheadMargin": 0.01,
+              "minSavingMs": 50
+            },
+            "avoidedMs": 101274.598092,
+            "costMs": 50343.98672199997,
+            "requiredMs": 50897.42658921997,
+            "reuse": true
+          },
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "prefixMs": 50637.299046,
+            "remaining": 2,
+            "captured": true,
+            "components": {
+              "capture": 0,
+              "restore": 16400,
+              "release": 0,
+              "lifecycle": 0
+            },
+            "baseline": {
+              "version": "checkpoint-cost-policy-v8",
+              "captureMs": 4258.775156999996,
+              "restoreMs": 8200,
+              "releaseMs": 12,
+              "resetMs": 11700,
+              "firstResetMs": 14331.986721999972,
+              "backendMs": 16600,
+              "overheadMultiplier": 1,
+              "overheadMargin": 0.01,
+              "minSavingMs": 50
+            },
+            "avoidedMs": 101274.598092,
+            "costMs": 16400,
+            "requiredMs": 16614,
+            "reuse": true
+          },
+          {
+            "stage": "cp-b6136c9b664ff071f33f",
+            "prefixMs": 50637.299046,
+            "remaining": 1,
+            "captured": true,
+            "components": {
+              "capture": 0,
+              "restore": 9560.846582999977,
+              "release": 0,
+              "lifecycle": 0
+            },
+            "baseline": {
+              "version": "checkpoint-cost-policy-v8",
+              "captureMs": 4258.775156999996,
+              "restoreMs": 9560.846582999977,
+              "releaseMs": 12,
+              "resetMs": 11700,
+              "firstResetMs": 14331.986721999972,
+              "backendMs": 16600,
+              "overheadMultiplier": 1,
+              "overheadMargin": 0.01,
+              "minSavingMs": 50
+            },
+            "avoidedMs": 50637.299046,
+            "costMs": 9560.846582999977,
+            "requiredMs": 9706.455048829977,
+            "reuse": true
+          }
+        ],
+        "baselineAfter": {
+          "version": "checkpoint-cost-policy-v8",
+          "captureMs": 4258.775156999996,
+          "restoreMs": 11392.514312000014,
+          "releaseMs": 1.9257299999590032,
+          "resetMs": 11700,
+          "firstResetMs": 14331.986721999972,
+          "backendMs": 18543.16521200005,
+          "overheadMultiplier": 1,
+          "overheadMargin": 0.01,
+          "minSavingMs": 50
+        },
+        "statisticsAfter": {
+          "captureMs": {
+            "count": 1,
+            "sumMs": 4258.775156999996
+          },
+          "restoreMs": {
+            "count": 2,
+            "sumMs": 20953.36089499999
+          },
+          "releaseMs": {
+            "count": 1,
+            "sumMs": 1.9257299999590032
+          },
+          "resetMs": {
+            "count": 0,
+            "sumMs": 0
+          },
+          "firstResetMs": {
+            "count": 1,
+            "sumMs": 14331.986721999972
+          },
+          "backendMs": {
+            "count": 1,
+            "sumMs": 18543.16521200005
+          }
+        }
+      }
+    }
+  ],
+  "validation": {
+    "integrationTests": 437,
+    "dashboardBrowserChecks": 31,
+    "staticFiles": 515,
+    "liveDashboard": {
+      "tests": 9,
+      "uncaughtBrowserErrors": 0
+    },
+    "githubQualification": "Required on the final candidate; local checks do not qualify the nine-case matrix."
+  }
+}

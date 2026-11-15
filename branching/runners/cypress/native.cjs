@@ -3,13 +3,16 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
+const {fileDigest} = require('../../identity.cjs');
 async function invoke(configuration, directory, {list = false, tests, profile} = {}) {
+    if (profile && !list) throw new Error('ML profiling was removed; source discovery is list-only');
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
     const config = fs.realpathSync(configuration);
+    const configDigest = profile ? fileDigest(config) : null;
     fs.mkdirSync(directory, {recursive: true});
     const run = fs.mkdtempSync(path.join(directory, 'cypress-'));
     const wrapper = path.join(path.dirname(config), `.magelens-native-${path.basename(run)}.cjs`);
-    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, selected: tests?.map(test => test.id)};
+    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, originalConfig: config, configDigest, selected: tests?.map(test => test.id)};
     fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, retries: 0, e2e: {...c.e2e, retries: 0, setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
     fs.writeFileSync(input, JSON.stringify({resultFile, options: {project: path.dirname(config), configFile: wrapper, browser: 'chrome-for-testing', headed: true,
@@ -42,15 +45,24 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
                 results.push({id, ...testResult(test)});
             }
         }
-        const errors = inventories.flatMap(item => item.errors.map(message => ({message})));
-        if (result.failures) errors.push({message: result.message ?? 'Cypress failed before test completion'});
+        const errors = reportErrors(result, inventories);
         const status = exitCode === 0 && !errors.length && results.length === selected.length && results.every(test => ['passed', 'skipped'].includes(test.status)) ? 'passed' : 'failed';
         const report = {schemaVersion: 1, config: JSON.parse(fs.readFileSync(files.metadata)), tests: tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory,
             results: list ? [] : results, status, errors, exitCode, wallMs: performance.now() - started, reportFile: resultFile,
             browser: {name: result.browserName, version: result.browserVersion}};
-        if (profile && !list) report.prediction = require('../../predictor/native.cjs').finish(run,report);
+        if (profile && fileDigest(config) !== configDigest) throw new Error('Cypress configuration changed during collection');
+        if (profile && list) report.profileDiscovery = {directory:run, configDigest};
         return report;
     } finally { fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }
+}
+function reportErrors(result, inventories) {
+    const errors = inventories.flatMap(item => item.errors.map(message => ({message})));
+    if (result.failures) errors.push({message: result.message ?? 'Cypress failed before test completion'});
+    for (const run of result.runs ?? []) {
+        if (run.error) errors.push({file: run.spec?.absolute,
+            message: typeof run.error === 'string' ? run.error : run.error.message ?? 'Cypress spec preparation failed'});
+    }
+    return errors;
 }
 function testResult(test) {
     const errors = test.attempts.flatMap(attempt => attempt.error ? [attempt.error] : []);
@@ -59,4 +71,4 @@ function testResult(test) {
         durationMs: test.duration ?? test.attempts.reduce((sum, attempt) => sum + (attempt.wallClockDuration ?? attempt.duration ?? 0), 0),
         attempts: test.attempts.length, errors};
 }
-module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke, testResult};
+module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke, testResult, reportErrors};

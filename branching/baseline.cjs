@@ -10,9 +10,10 @@ const {execFileSync} = require('node:child_process');
 const config = require('./configs/baseline.json');
 const projectRoot = path.resolve(__dirname, '..');
 const operationDefaults = Object.freeze(require(path.join(projectRoot, config.paths.operationDefaults)));
-const {metrics} = config;
+const measurement = require('./operation-statistics.cjs');
+const {metrics} = measurement;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const valid = (value) => Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
+const valid = measurement.validMeasurement;
 // Equivalent break-even for one checkpoint shared by exactly two tests.
 // Fanout and nested checkpoints still use the full operation model.
 function decisionBaselineMs(baseline) {
@@ -46,7 +47,6 @@ function validate(value) {
         !value ||
         Object.keys(value).sort().join() !== Object.keys(defaults).sort().join() ||
         value.version !== defaults.version ||
-        value.unitMs !== defaults.unitMs ||
         value.overheadMultiplier !== defaults.overheadMultiplier ||
         value.overheadMargin !== defaults.overheadMargin ||
         value.minSavingMs !== defaults.minSavingMs ||
@@ -63,9 +63,7 @@ function samples(report) {
     )
         return null;
     const phases =
-        report.kind === config.labels.calibration
-            ? [report]
-            : Array.isArray(report.phases)
+        Array.isArray(report.phases)
               ? report.phases
                     .filter((phase) => phase.kind === config.labels.checkpoint)
                     .map((phase) => phase.report)
@@ -79,7 +77,7 @@ function samples(report) {
             phase.counts?.fallbacks !== 0 ||
             phase.counts?.failures ||
             phase.counts?.blockedSpecs ||
-            !phase.checkpoints?.length ||
+            !Array.isArray(phase.checkpoints) ||
             phase.checkpoints.length !== phase.releases?.length ||
             !phase.providerDiagnostics?.retainedServices?.schemasRemoved ||
             !phase.providerDiagnostics?.retainedServices?.grantsRestored
@@ -136,14 +134,7 @@ class Store {
                 return null;
             for (const key of metrics) {
                 const item = record.statistics[key];
-                if (
-                    !item ||
-                    !Number.isSafeInteger(item.count) ||
-                    item.count < 0 ||
-                    !valid(item.sumMs) ||
-                    (!item.count && item.sumMs !== 0)
-                )
-                    return null;
+                if (!measurement.validStatistic(item)) return null;
                 if (item.count && !valid(record.reference?.[key])) return null;
             }
             return record;
@@ -160,14 +151,15 @@ class Store {
             for (const key of metrics) {
                 const item = record.statistics[key];
                 counts[key] = item.count;
-                if (item.count) baseline[key] = item.sumMs / item.count;
+                if (item.count) baseline[key] = measurement.mean(item);
             }
         return Object.freeze({
             source: record ? config.labels.measured : config.labels.default,
             key: this.key,
             baseline: validate(baseline),
             decisionBaselineMs: decisionBaselineMs(baseline),
-            samples: Object.freeze(counts)
+            samples: Object.freeze(counts),
+            statistics: measurement.statistics(record?.statistics)
         });
     }
     update(report, {explicit = false, replace = false} = {}) {
@@ -183,19 +175,16 @@ class Store {
         const previousBaseline = this.load().baseline,
             existing = this.read();
         const previous = replace ? null : existing;
-        const statistics =
-            previous?.statistics ?? Object.fromEntries(metrics.map((key) => [key, {count: 0, sumMs: 0}]));
+        const statistics = measurement.statistics(previous?.statistics);
+        const observed = {};
         for (const key of metrics) {
-            statistics[key].count += values[key].length;
-            statistics[key].sumMs += values[key].reduce((sum, value) => sum + value, 0);
-            if (!Number.isSafeInteger(statistics[key].count) || !valid(statistics[key].sumMs))
-                throw new Error(config.messages.overflow);
+            let batch = {count:0,sumMs:0};
+            for (const value of values[key]) {
+                statistics[key] = measurement.add(statistics[key],value);
+                batch = measurement.add(batch,value);
+            }
+            if (batch.count) observed[key] = measurement.mean(batch);
         }
-        const observed = Object.fromEntries(
-            metrics
-                .filter((key) => values[key].length)
-                .map((key) => [key, values[key].reduce((sum, value) => sum + value, 0) / values[key].length])
-        );
         const reference = {...(previous?.reference ?? observed)};
         for (const [key, value] of Object.entries(observed))
             if (reference[key] === undefined) reference[key] = value;
@@ -294,7 +283,7 @@ function openProject(workspace, configuration = {}) {
         .trim()
         .split(/\s+/)
         .filter(Boolean);
-    if (ids.length !== 2) throw new Error(config.messages.missingServices);
+    if (ids.length !== 4) throw new Error(config.messages.missingServices);
     const containers = JSON.parse(
         execFileSync('docker', [...config.commands.inspect, ...ids], {
             encoding: 'utf8',
@@ -309,6 +298,10 @@ function openProject(workspace, configuration = {}) {
             memory: container.HostConfig.Memory,
             cpuQuota: container.HostConfig.CpuQuota,
             nanoCpus: container.HostConfig.NanoCpus,
+            cpuPeriod: container.HostConfig.CpuPeriod,
+            cpusetCpus: container.HostConfig.CpusetCpus,
+            memorySwap: container.HostConfig.MemorySwap,
+            shmSize: container.HostConfig.ShmSize,
             configuration: container.Mounts.filter(
                 (mount) =>
                     /\.(ini|conf)$/.test(mount.Destination) &&
@@ -321,7 +314,19 @@ function openProject(workspace, configuration = {}) {
         .sort((a, b) => a.service.localeCompare(b.service));
     const identity = {
         version: defaults.version,
+        provider: require('./identity.cjs').implementationDigest(['provider.cjs', 'retained-provider.cjs',
+            'checkpoint-store.cjs', 'coverage-gate.cjs', 'browser.cjs', 'browser-context.cjs', 'code-cache.cjs', 'runtime-state.cjs',
+            'retained-magento.cjs', 'retained-workspace.cjs', 'retained-database.cjs', 'redis-state.cjs', 'magento.cjs',
+            'configs/retained-env.php', 'configs/retained-validate.php', 'configs/retained-probe.php',
+            'configs/retained-queues.php', 'configs/fastcgi.php', '../bin/browser-navigation.cjs'].map(file => path.join(__dirname, file))),
+        sourceDigest: configuration.sourceDigest ?? null,
+        checkpointContext: configuration.checkpointContext ?? null,
         architecture: process.arch,
+        runtimeResources: Object.fromEntries(['cpu.max','memory.max','memory.swap.max','cpuset.cpus.effective'].map(file=>{
+            const target = path.join('/sys/fs/cgroup',file);
+            return [file,fs.existsSync(target) ? fs.readFileSync(target,'utf8').trim() : null];
+        })),
+        storage: configuration.storage ? ((stat)=>({type:stat.type,blockSize:stat.bsize}))(fs.statfsSync(configuration.storage)) : null,
         cpu: os.cpus()[0]?.model,
         // Reuse averages only within a database-size cohort. Small fixtures share
         // a 16 MiB floor; doubling a larger database starts from defaults again.

@@ -14,7 +14,8 @@ output=${2:-"$root/.runtime/branching-dashboard-self-test/$(date -u +%Y%m%dT%H%M
 [[ ! -e "$output" ]] || { echo 'Dashboard output must be fresh.' >&2; exit 1; }
 output=$(realpath -m "$output")
 mkdir -p "$output/workspace"
-rust_image=$(docker build --quiet --file tests/branching-rust-coverage.Dockerfile .)
+orchestrator=$(./bin/branching-image orchestrator --build-from-source)
+rust_image=$(docker build --quiet --build-arg "ORCHESTRATOR_IMAGE=$orchestrator" --file tests/branching-rust-coverage.Dockerfile .)
 controller=$(docker run --detach --rm --init --network none --memory 1g --memory-swap 1g --user "$(id -u):$(id -g)" \
     --mount "type=bind,source=$root,target=/driver,readonly" \
     --mount "type=bind,source=$output,target=/artifacts" \

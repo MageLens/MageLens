@@ -82,18 +82,26 @@ test('Rust AUTO restores real fixture frames through checkpoint inventory and la
         test('one',async({cart})=>{if(cart.items.length!==1)throw new Error('leaked');cart.items.push('one');await cart.button.click();});
         test('two',async({cart})=>{if(cart.items.length!==1)throw new Error('leaked');cart.items.push('two');await cart.button.click();});
         test('empty',async({cart})=>{});`);
-    const manifestFile=path.join(root,'manifest.json');planner(['plan',source,manifestFile],{stdio:'pipe'});
+    const manifestFile=path.join(root,'manifest.json');
+    planner(['plan',source,manifestFile],{stdio:'pipe'});
     const manifest=JSON.parse(fs.readFileSync(manifestFile));assert.ok(manifest.tests.every(t=>t.restoration));
     class Provider extends FixtureProvider {
         constructor(){super();this.calls=[];this.pageSerial=0;}
-        replace(){const serial=++this.pageSerial;this.page={goto:async url=>{this.state.browser.url=url;this.calls.push(url);},locator:selector=>({click:async()=>this.calls.push(`click:${serial}:${selector}`)})};this.context={};}
+        replace(){const serial=++this.pageSerial;this.page={goto:async url=>{if(url==='/prepare')await new Promise(resolve=>setTimeout(resolve,1));this.state.browser.url=url;this.calls.push(url);},locator:selector=>({click:async()=>this.calls.push(`click:${serial}:${selector}`)})};this.context={};}
         async reset(){await super.reset();this.replace();}
         async restore(directory){await super.restore(directory);this.replace();}
     }
     const provider=new Provider();
-    const built=buildWorkflow(manifest,{identity:'fixture-frame-integration',expect:assert,state:async p=>p.normalizedState(),assertCheckpoint:async p=>assert.equal(p.state.browser.url,'/prepare')});
+    const built=buildWorkflow(manifest,{costBaseline:{...require('../branching/baseline.cjs').defaults,captureMs:1,restoreMs:1,releaseMs:1,backendMs:1,firstResetMs:1,resetMs:1},identity:'fixture-frame-integration',expect:assert,state:async p=>p.normalizedState(),assertCheckpoint:async p=>assert.equal(p.state.browser.url,'/prepare')});
     const report=await execute({...built,root,provider});
     assert.equal(report.status,'passed',JSON.stringify(report.errors));assert.equal(report.checkpoints.length,1);
+    const [fixtureSegment] = report.segments.filter(segment=>segment.prefixTiming);
+    const fixtureTiming = fixtureSegment.prefixTiming;
+    assert.equal(fixtureTiming.timingBoundary,'checkpoint-segment-run-duration/v1');
+    assert.equal(fixtureTiming.kind,'fixture');
+    assert.equal(fixtureTiming.workCompleted,true);
+    assert.ok(Number.isFinite(fixtureTiming.workMs) && fixtureTiming.workMs >= 0);
+    require('../branching/automatic.cjs').verifySources(manifest);
     assert.equal(report.counts.reuseHits,2);assert.equal(report.counts.fallbacks,0);
     assert.equal(provider.calls.filter(c=>c==='/prepare').length,500,'Setup executes once across both siblings');
     assert.equal(provider.calls.filter(c=>c==='/cleanup/2').length,2,'Teardown executes for each consumer');

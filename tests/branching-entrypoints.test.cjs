@@ -66,15 +66,29 @@ function defaultProject(directory) {
     fs.copyFileSync(path.join(directory, 'manifest.json'), path.join(directory, '.runtime/branching-plan.json'));
     fs.copyFileSync(path.join(directory, 'workflow file.cjs'), path.join(directory, 'branching.config.cjs'));
 }
-test('branching and calibration use saved project paths and create default storage', t => {
+test('source-directory execution needs no saved manifest and gives the planner only owned output writes', t => {
+    const {directory,run}=launchFixture(t);
+    fs.mkdirSync(path.join(directory,'scenarios'));
+    fs.copyFileSync(path.join(directory,'workflow file.cjs'),path.join(directory,'branching.config.cjs'));
+    const result=run(['bin/run-coverage','--branching','scenarios']);
+    assert.equal(result.status,37,result.stderr);
+    const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
+    assert.equal(calls.some(args=>args[0]==='exec' && args.includes('verify')),false);
+    const controller=calls.find(args=>args.includes('--detach'));
+    assert.ok(controller.includes(`type=bind,source=${directory},target=${directory},readonly`));
+    assert.ok(controller.includes(`type=bind,source=${directory}/.runtime/branching-discovery,target=${directory}/.runtime/branching-discovery`));
+    assert.ok(calls.find(args=>args.includes('node')).includes(path.join(directory,'scenarios')));
+    assert.equal(fs.existsSync(path.join(directory,'.runtime/branching-plan.json')),false);
+});
+test('branching uses saved project paths and create default storage', t => {
     const {directory, run} = launchFixture(t);
     defaultProject(directory);
-    for (const options of [[], ['--calibrate']]) {
+    for (const options of [[], ['--auto']]) {
         const result = run(['bin/run-coverage', '--branching', ...options]);
         assert.equal(result.status, 37, result.stderr);
         const worker = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse)
             .find(args => args.includes('node'));
-        assert.deepEqual(worker.slice(-4), [options.length ? 'branching/calibration-cli.cjs' : 'branching/auto-cli.cjs',
+        assert.deepEqual(worker.slice(-4), ['branching/auto-cli.cjs',
             path.join(directory, '.runtime/branching-plan.json'), path.join(directory, 'branching.config.cjs'),
             path.join(directory, '.runtime/branching-storage')]);
         assert.ok(fs.statSync(path.join(directory, '.runtime/branching-storage')).isDirectory());
@@ -84,7 +98,7 @@ test('branching supports partial paths, saved environment overrides and explicit
     const {directory, run} = launchFixture(t);
     defaultProject(directory);
     const env = {MAGELENS_BRANCHING_MANIFEST: 'manifest.json', MAGELENS_BRANCHING_CONFIG: 'workflow file.cjs', MAGELENS_BRANCHING_STORAGE: 'cow storage'};
-    for (const options of [[], ['--calibrate']]) {
+    for (const options of [[], ['--auto']]) {
         const result = run(['bin/run-coverage', '--branching', ...options], env);
         assert.equal(result.status, 37, result.stderr);
         assert.ok(result.calls.includes(JSON.stringify(path.join(directory, 'cow storage'))));
@@ -100,7 +114,7 @@ test('branching supports partial paths, saved environment overrides and explicit
 });
 test('missing default setup and active recovery fail before creating storage or starting containers', t => {
     const {directory, run} = launchFixture(t);
-    let result = run(['bin/run-coverage', '--branching', '--calibrate']);
+    let result = run(['bin/run-coverage', '--branching']);
     assert.equal(result.status, 1); assert.equal(result.calls, '');
     assert.match(result.stderr, /plan-branching SOURCE_ROOT/);
     fs.copyFileSync(path.join(directory, 'manifest.json'), path.join(directory, '.runtime/branching-plan.json'));
@@ -111,7 +125,7 @@ test('missing default setup and active recovery fail before creating storage or 
     for (const marker of ['workflow.lock', 'branching-recovery.json']) {
         const file = path.join(directory, '.runtime', marker);
         fs.writeFileSync(file, '');
-        result = run(['bin/run-coverage', '--branching', '--calibrate']);
+        result = run(['bin/run-coverage', '--branching']);
         assert.equal(result.status, 1); assert.equal(result.calls, ''); assert.match(result.stderr, /recovery first/);
         fs.rmSync(file);
     }
@@ -143,14 +157,12 @@ test('planner shares the default manifest and honors environment and positional 
         assert.deepEqual(call.slice(-3), ['plan', path.join(directory, 'branching'), path.join(directory, output)]);
     }
 });
-test('explicit calibration uses the same isolated launcher without executing tests', t => {
-    const {directory,run}=launchFixture(t);
+test('obsolete calibration is rejected before any application or container work', t => {
+    const {run}=launchFixture(t);
     const result=run(['bin/run-coverage','--branching','--calibrate','manifest.json','workflow file.cjs','cow storage']);
-    assert.equal(result.status,37,result.stderr);
-    const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
-    const worker=calls.find(args=>args.includes('node'));
-    assert.deepEqual(worker.slice(-4),['branching/calibration-cli.cjs',path.join(directory,'manifest.json'),path.join(directory,'workflow file.cjs'),path.join(directory,'cow storage')]);
-    assert.ok(calls.some(args=>args[0]==='rm'&&args[1]==='--force'));
+    assert.equal(result.status,1); assert.equal(result.calls,'');
+    assert.match(result.stderr,/--calibrate was removed/);
+    assert.match(result.stderr,/normal captures and restores/);
 });
 test('branching opt-in preserves literal arguments, worker status and controller cleanup', t => {
     const {directory, run} = launchFixture(t);
@@ -158,6 +170,8 @@ test('branching opt-in preserves literal arguments, worker status and controller
     assert.equal(result.status, 37, result.stderr);
     const calls = result.calls.split('\n').filter(line => line.startsWith('[')).map(JSON.parse);
     const worker = calls.find(args => args.includes('node'));
+    assert.equal(worker[worker.indexOf('--cpus')+1], '2');
+    assert.ok(worker.includes('org.magelens.workspace=' + directory));
     assert.deepEqual(worker.slice(-4), ['branching/auto-cli.cjs', path.join(directory, 'manifest.json'), path.join(directory, 'workflow file.cjs'), path.join(directory, 'cow storage')]);
     assert.ok(worker.includes('MAGELENS_ORCHESTRATOR_CONTAINER=' + 'a'.repeat(64)));
     assert.ok(worker.includes('type=volume,source=modules,target=/workspace/node_modules,readonly'));
@@ -171,18 +185,18 @@ test('direct entry requires opt-in; help and unsupported adapter do not start co
     assert.equal(unacknowledged.status, 1); assert.equal(unacknowledged.calls, '');
     assert.match(unacknowledged.stderr, /Use .*run-coverage --branching/);
     const help = run(['bin/run-coverage', '--branching', '--help']);
-    assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /coverage collection is not supported yet/);
+    assert.equal(help.status, 0); assert.equal(help.calls, ''); assert.match(help.stdout, /preserves configured Playwright coverage/);
     assert.doesNotMatch(help.stdout, /--disposable/);
     const unsupported = run(['bin/run-coverage', '--branching', 'workflow file.cjs', 'cow storage'], {TEST_RUNNER: 'unknown'});
     assert.equal(unsupported.status, 1); assert.equal(unsupported.calls, ''); assert.match(unsupported.stderr, /Unknown branching runner/);
 });
-test('legacy explicit acknowledgment still reaches both branching workers', t => {
+test('legacy explicit acknowledgment still reaches the branching worker', t => {
     const {run} = launchFixture(t);
-    for (const options of [[], ['--calibrate']]) {
+    for (const options of [[], ['--auto']]) {
         const result = run(['bin/run-coverage', '--branching', '--disposable', ...options,
             'manifest.json', 'workflow file.cjs', 'cow storage']);
         assert.equal(result.status, 37, result.stderr);
-        assert.match(result.calls, options.length ? /branching\/calibration-cli.cjs/ : /branching\/auto-cli.cjs/);
+        assert.match(result.calls, /branching\/auto-cli.cjs/);
     }
 });
 test('only AUTO reaches the worker, with default and legacy automatic spellings', t => {
@@ -235,7 +249,7 @@ test('image inputs separate Rust from browser dependencies and track their own s
     const directory = temporary(t);
     const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
     for (const file of new Set(files)) {
-        if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'bin/sync-dependencies.cjs', 'bin/sync-runner-dependencies', 'dependencies.yaml', '.dockerignore', 'package.json'].includes(file))) copy(directory, file);
+        if (fs.existsSync(path.join(root, file)) && (file.startsWith('branching/') || file.startsWith('docker/runner/') || ['bin/image-inputs.cjs', 'bin/sync-dependencies.cjs', 'bin/sync-runner-dependencies', 'dependencies.yaml', '.dockerignore', 'package.json', 'package-lock.json', 'branching-baseline.json'].includes(file))) copy(directory, file);
     }
     const before = {core: describe(directory, 'orchestrator').fingerprint, browser: describe(directory, 'playwright').fingerprint, cypress: describe(directory, 'cypress').fingerprint};
     fs.appendFileSync(path.join(directory, 'branching/runners/cypress/Dockerfile'), '\n');
@@ -259,6 +273,13 @@ function imageFixture(t, kind = 'orchestrator') {
     for (const file of ['bin/branching-image', 'bin/common', 'bin/dependencies', 'bin/sync-dependencies.cjs',
         'bin/sync-runner-dependencies', 'branching/build-runner.sh', 'docker/runner/Dockerfile',
         'dependencies.yaml', 'package.json', 'package-lock.json', '.dockerignore']) copy(directory, file);
+    if(kind === 'orchestrator') {
+        for(const file of ['branching/build-orchestrator.sh','branching-baseline.json','branching/estimation.cjs',
+            'branching/identity.cjs','branching/configs/messages.cjs','branching/planning-cli.cjs','branching/discovery-context.cjs',
+            'branching/planner/Dockerfile','branching/planner/Cargo.toml','branching/planner/Cargo.lock']) copy(directory,file);
+        for(const folder of ['branching/planner/src','branching/planner/tests'])
+            fs.cpSync(path.join(root,folder),path.join(directory,folder),{recursive:true});
+    }
     fs.mkdirSync(path.join(directory, 'commands'));
     command(directory, 'commands/docker', `#!${process.execPath}
 const fs = require('node:fs'), args = process.argv.slice(2), fingerprint = 'c'.repeat(64);
@@ -272,6 +293,7 @@ if (args[0] === 'image' && args[1] === 'inspect') {
     console.log('linux/amd64 ' + (process.env.TEST_BAD_LABEL === '1' ? 'bad' : fingerprint));
 }
 if (args[0] === 'pull' && process.env.TEST_PULL_FAIL === '1') process.exit(1);
+if (args[0] === 'build' && args.at(-1) === '-') fs.readFileSync(0);
 if (args[0] === 'build' && args.includes('--target') && process.env.TEST_BASE_BUILD_FAIL === '1') process.exit(29);
 `);
     const log = path.join(directory, 'calls');
@@ -317,4 +339,23 @@ test('explicit browser builds compile the product runner without release lookup 
     assert.equal(failed.status, 29, failed.stderr);
     assert.equal(failed.calls.trim().split('\n').map(JSON.parse).filter(args => args[0] === 'build').length, 1);
     }
+});
+
+test('checkpoint coverage uses only the matching active Playwright run', t => {
+    const {activeCoverage} = require('../branching/cli.cjs');
+    const workspace = temporary(t);
+    const directory = path.join(workspace, 'coverage');
+    fs.mkdirSync(directory);
+    const id = 'a'.repeat(32);
+    fs.writeFileSync(path.join(directory, 'run.json'), JSON.stringify({id}));
+    assert.deepEqual(activeCoverage(workspace), {});
+    const marker = path.join(directory, '.active-run');
+    fs.writeFileSync(marker, 'b'.repeat(32));
+    assert.throws(() => activeCoverage(workspace), /does not match/);
+    fs.writeFileSync(marker, id);
+    assert.deepEqual(activeCoverage(workspace), {
+        coverageRunId:id,
+        javascriptCoverageDirectory:path.join(workspace, '.nyc_output'),
+        templateCoverageDirectory:path.join(directory, 'raw', 'templates')
+    });
 });

@@ -5,15 +5,14 @@
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-// Internal operation proportions and source-work weights. The Node entry point
+// Checkpoint operation overheads; prefix duration is measured during execution. The Node entry point
 // scales operation defaults using the root checkpoint decision baseline and
-// supplies a complete baseline to the planner. Project calibration replaces the
+// supplies a complete baseline to the planner. Normal checkpoint measurements replace the
 // operation estimates. These desktop-derived bootstrap values are not CI gates.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Baseline {
     pub version: String,
-    pub unit_ms: f64,
     pub capture_ms: f64,
     pub restore_ms: f64,
     pub release_ms: f64,
@@ -36,7 +35,6 @@ impl Baseline {
     pub fn validate(&self) -> Result<(), String> {
         let defaults = &*PLAYWRIGHT_BRANCHING;
         if self.version != defaults.version
-            || self.unit_ms != defaults.unit_ms
             || self.overhead_multiplier != defaults.overhead_multiplier
             || self.overhead_margin != defaults.overhead_margin
             || self.min_saving_ms != defaults.min_saving_ms

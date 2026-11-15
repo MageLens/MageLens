@@ -72,7 +72,7 @@ function describeGraph(graph, selected, {approach, checkpointLifetime, retain, c
         const depth = test ? null : graph.chain(node.id).filter(eligible).length;
         return {id: node.id, label: node.label ?? node.id, parent: node.parent ?? null,
             kind: test ? 'test' : checkpoint ? 'checkpoint' : 'step', depth,
-            source: node.source ?? null, actionUnits: node.actionUnits ?? null,
+            source: node.source ?? null, estimatedMs: node.estimatedMs ?? null,
             consumers, lastConsumer: consumers.at(-1) ?? null,
             releasePolicy: !checkpoint ? 'none' : retain ? 'retained' : checkpointLifetime};
     });

@@ -22,10 +22,14 @@ function join(lock, lease) {
     if (lease) verify(lock, lease);
     else fs.mkdirSync(lock);
 }
-function release(lease) {
+function needsRecovery(lease) {
     verify(lease.lock, lease);
+    return fs.existsSync(path.join(lease.lock, 'branching.json')) ||
+        fs.existsSync(path.join(path.dirname(lease.lock), 'branching-recovery.json'));
+}
+function release(lease) {
     // Recovery owns the lock until the application's original state is verified.
-    if (fs.existsSync(path.join(lease.lock, 'branching.json')) || fs.existsSync(path.join(path.dirname(lease.lock), 'branching-recovery.json'))) return false;
+    if (needsRecovery(lease)) return false;
     fs.unlinkSync(path.join(lease.lock, 'native-suite.json')); fs.rmdirSync(lease.lock); return true;
 }
-module.exports = {acquire, join, release};
+module.exports = {acquire, join, release, needsRecovery};

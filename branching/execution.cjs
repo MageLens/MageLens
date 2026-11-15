@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const SEGMENT_TIMING_BOUNDARY = 'checkpoint-segment-run-duration/v1';
 const protocol = require('./configs/protocol.cjs');
 
 const messages = require('./configs/messages.cjs');
@@ -33,8 +34,16 @@ function createExecution({
     checkpointLifetime,
     retain,
     ttlMs,
-    fault
+    fault,
+    adaptive = false
 }) {
+    const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline, emit, graph.costStatistics) : null;
+    const prefixDurations = new Map();
+    let needsVerifiedReset = true;
+    const abandoning = new Set();
+    if (economics) emit('checkpoint-baseline', {status:Object.values(economics.statistics).some(value=>value.count) ? 'measured' : 'estimated', baseline:graph.costBaseline,statistics:economics.statistics});
+    if (economics) report.adaptive = {baselineBefore: {...economics.baseline},
+        observations: economics.observations, decisions: economics.decisions, baselineAfter: economics.baseline,statisticsAfter:economics.statistics};
     const remaining = new Map();
     for (const spec of selected) {
         for (const node of graph.chain(spec.parent)) {
@@ -52,15 +61,34 @@ function createExecution({
             observed: true,
             variant: 'recipe'
         };
+        if (kind === 'Stage' && Number.isInteger(node.inputs?.fromDepth) &&
+            Number.isInteger(node.inputs.checkpoint?.depth)) {
+            entry.prefixTiming = {
+                timingBoundary:SEGMENT_TIMING_BOUNDARY,
+                kind:node.inputs.checkpoint.depth === 0 ? 'fixture' : 'steps',
+                fromDepth:node.inputs.fromDepth,
+                toDepth:node.inputs.checkpoint.depth,
+                workMs:null,
+                workCompleted:false
+            };
+        }
         report.segments.push(entry);
         if (kind === 'Stage') report.counts.prefixExecutions++;
         const time = performance.now();
         emit(protocol.event.nodeStart, {node: node.id, operation: protocol.operation.execute});
         try {
             await provider.beginSegment?.(entry.id);
-            await node.run(provider, node.inputs);
-            await node.assert(provider, node.inputs);
-            entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
+            const workStarted = performance.now();
+            try {
+                await node.run(provider, node.inputs);
+                if (entry.prefixTiming) entry.prefixTiming.workCompleted = true;
+            } finally {
+                if (entry.prefixTiming) entry.prefixTiming.workMs = performance.now()-workStarted;
+            }
+            if (!(adaptive && graph.nativePageLifecycle && kind === 'Stage')) {
+                entry.coverage = (await provider.endSegment?.(entry.id, {terminal:kind === 'Spec'})) ?? null;
+                await node.assert(provider, node.inputs);
+            }
             entry.status = protocol.status.passed;
         } catch (error) {
             entry.status = protocol.status.failed;
@@ -73,6 +101,8 @@ function createExecution({
             throw error;
         } finally {
             entry.wallMs = performance.now() - time;
+            if (kind === 'Stage' && entry.status === protocol.status.passed && !prefixDurations.has(node.id))
+                prefixDurations.set(node.id, entry.prefixTiming?.workMs ?? entry.wallMs);
             emit(protocol.event.nodeEnd, {
                 node: node.id,
                 operation: protocol.operation.execute,
@@ -83,6 +113,7 @@ function createExecution({
         return entry.id;
     };
     function invalidate(id, phase, operation, error) {
+        needsVerifiedReset = true;
         errorRecord(phase, error, id);
         report.counts.fallbacks++;
         disabled.add(id);
@@ -92,7 +123,7 @@ function createExecution({
 
     const reuse = approach === config.APPROACH.branching;
     function nextPrefetch(next) {
-        if (!next || !provider.prefetch || graph.chain(next.parent).some(node => failed.has(node.id))) return null;
+        if (economics || !next || !provider.prefetch || graph.chain(next.parent).some(node => failed.has(node.id))) return null;
         for (const node of graph.chain(next.parent).reverse()) {
             const ref = reuse && store.available.get(node.id);
             if (!ref) continue;
@@ -104,6 +135,7 @@ function createExecution({
     }
     async function restoreCheckpoint(node, ref, next) {
         const id = node.id;
+        needsVerifiedReset = true;
         const restoreStart = performance.now();
         emit(protocol.event.nodeStart, {node: id, operation: protocol.operation.restore});
         try {
@@ -126,7 +158,9 @@ function createExecution({
                 report.counts.firstReuseValidations = (report.counts.firstReuseValidations ?? 0) + 1;
             }
             report.counts.reuseHits++;
-            report.costs.restores.push({stage: id, ms: performance.now() - restoreStart});
+            const restoreMs = performance.now() - restoreStart;
+            report.costs.restores.push({stage: id, ms: restoreMs});
+            economics?.observe('restoreMs', restoreMs, id);
             emit(protocol.event.nodeEnd, {
                 node: id,
                 operation: protocol.operation.restore,
@@ -145,29 +179,56 @@ function createExecution({
         for (const ancestor of graph.chain(id))
             if (failed.has(ancestor.id)) throw new ParentFailure(ancestor.id, failed.get(ancestor.id));
         const ref = reuse && store.available.get(id);
-        if (ref) {
+        if (ref && economics && !economics.decide(id, measuredPrefix(id), remaining.get(id), {captured: true})) {
+            // Release only owned, verified snapshot data; resolution below resets
+            // through the same path as ordinary linear execution.
+            await releaseCheckpoint(id, null, 'uneconomic');
+            disabled.add(id);
+            abandoning.add(id);
+        }
+        if (ref && !disabled.has(id)) {
             const restored = await restoreCheckpoint(node, ref, next);
             if (restored) return restored;
         }
         const prior = node.parent
             ? await resolve(node.parent, next)
-            : await measured('reset', async () => {
+            : graph.nativePageLifecycle && provider.nextLinear && !needsVerifiedReset
+              ? await measured('linearStart', async () => {
+                  const time = performance.now();
+                  await provider.nextLinear();
+                  (report.costs.linearStarts ??= []).push(performance.now()-time);
+                  return {parent:null,lineage:[]};
+              })
+              : await measured('reset', async () => {
                   const time = performance.now();
                   await provider.reset();
-                  report.costs.resets.push(performance.now() - time);
+                  needsVerifiedReset = false;
+                  const resetMs = performance.now() - time;
+                  economics?.observe(report.costs.resets.length ? 'resetMs' : 'firstResetMs', resetMs, id);
+                  report.costs.resets.push(resetMs);
                   return {parent: null, lineage: []};
               });
+        if (abandoning.delete(id)) emit('checkpoint-reuse-abandoned', {node:id, remaining:remaining.get(id), resetVerified:true});
         prior.lineage.push(await measured('prefix', () => segment(node, 'Stage')));
         if (
             reuse &&
             node.checkpoint !== false &&
             (!chosen || chosen.has(id)) &&
             !disabled.has(id) &&
-            (checkpointLifetime === config.checkpoint.lifetime || remaining.get(id) > 1)
+            (checkpointLifetime === config.checkpoint.lifetime || remaining.get(id) > 1) &&
+            (!economics || economics.decide(id, measuredPrefix(id), remaining.get(id) - 1, {
+                transitionReset: Boolean(graph.nativePageLifecycle && provider.nextLinear &&
+                    selected.findLastIndex(spec=>graph.chain(spec.parent).some(stage=>stage.id===id)) < selected.length-1)
+            }))
         ) {
             try {
                 const time = performance.now();
                 emit(protocol.event.nodeStart, {node: id, operation: protocol.operation.capture});
+                if (adaptive && graph.nativePageLifecycle) {
+                    const entry = report.segments.at(-1);
+                    entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
+                }
+                needsVerifiedReset = true;
                 const ref = await store.capture({
                     key: graph.key(id),
                     stage: id,
@@ -180,7 +241,12 @@ function createExecution({
                     fault
                 });
                 const manifest = store.verify(ref, graph.key(id));
-                report.costs.captures.push({stage: id, ms: performance.now() - time});
+                const captureMs = performance.now() - time;
+                report.costs.captures.push({stage: id, ms: captureMs});
+                if (economics) {
+                    economics.observe('captureMs', captureMs, id);
+                    economics.lifecycleCharged = true;
+                }
                 report.checkpoints.push(manifest);
                 prior.parent = ref.id;
                 emit(protocol.event.checkpointReady, {
@@ -236,6 +302,26 @@ function createExecution({
         await releaseConsumed(spec);
     }
 
+    function measuredPrefix(id) {
+        return graph.chain(id).reduce((sum, node) => sum + (prefixDurations.get(node.id) ?? 0), 0);
+    }
+    async function releaseCheckpoint(id, after = null, reason = 'last-consumer') {
+        try {
+            const time = performance.now();
+            const checkpoint = await measured('checkpointRelease', async () => store.release(id));
+            if (checkpoint) {
+                const ms = performance.now() - time;
+                report.releases.push({stage: id, checkpoint, after});
+                report.costs.releases.push({stage: id, ms});
+                economics?.observe('releaseMs', ms, id);
+                emit(protocol.event.checkpointReleased, {node: id, after, reason, ms});
+            }
+        } catch (error) {
+            errorRecord('checkpointRelease', error, id);
+            throw error;
+        }
+    }
+
     async function releaseConsumed(spec) {
         for (const node of graph.chain(spec.parent).reverse()) {
             remaining.set(node.id, remaining.get(node.id) - 1);
@@ -249,27 +335,14 @@ function createExecution({
                 !retain &&
                 remaining.get(node.id) === 0
             ) {
-                try {
-                    const time = performance.now();
-                    if (store.available.has(node.id))
-                        emit(protocol.event.nodeStart, {
-                            node: node.id,
-                            operation: protocol.operation.release
-                        });
-                    const checkpoint = await measured('checkpointRelease', async () =>
-                        store.release(node.id)
-                    );
-                    if (checkpoint) {
-                        report.releases.push({stage: node.id, checkpoint, after: spec.id});
-                        report.costs.releases.push({stage: node.id, ms: performance.now() - time});
-                        emit(protocol.event.checkpointReleased, {node: node.id, after: spec.id});
-                    }
-                } catch (error) {
-                    errorRecord('checkpointRelease', error, node.id);
-                }
+                await releaseCheckpoint(node.id, spec.id);
             }
         }
     }
-    return {runSpec};
+    function observeLifecycle() {
+        if (!report.errors.length)
+            economics?.observe('backendMs', report.phases.prepare + report.phases.cleanup, null);
+    }
+    return {runSpec, observeLifecycle};
 }
 module.exports = {createExecution};

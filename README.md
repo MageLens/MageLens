@@ -32,20 +32,16 @@ and use fixtures to create only the data your tests need. Keep Magento's require
 setup and configuration data. Smaller databases reduce checkpoint storage and
 the time needed to save and restore state.
 
-The [default baseline](branching-baseline.json) starts conservatively at about
-107 seconds of shared steps for two tests. Calibrate it for your project's
-database and machine, especially before running branching in CI:
+The [default baseline](branching-baseline.json) supplies conservative cost estimates
+until actual checkpoint measurements are available. Normal captures and restores
+update separate running averages and sample counts; no separate calibration run
+is needed. Existing warm-up still prepares the application and caches.
 
-```bash
-./bin/run-coverage --branching --calibrate
-```
-
-Calibration measures your environment and adjusts future checkpoint decisions.
-Run `./bin/run-coverage --branching` to execute the suite and
+Run `./bin/run-coverage --branching SOURCE_ROOT` to discover prefixes and execute the suite, and
 `./bin/branching-dashboard` to follow its progress. Project paths have defaults;
 use `--branching --help` for setup and overrides. Branching currently requires
 an isolated Linux test installation with Cypress or Playwright and reflink
-storage; application coverage collection is not yet supported. Cypress checkpoints
+storage. Playwright branching preserves configured application coverage. Cypress checkpoints
 currently require independent command chains without support hooks, plugin state,
 aliases or module state. Fully assessed tests that cannot restore state retain
 their native lifecycle.

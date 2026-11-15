@@ -9,7 +9,6 @@ const {applyEvent, manifestView} = require('./model.cjs');
 const {assertAssessed, readFailure, EstimationError} = require('../estimation.cjs');
 const limits = require('../planner/src/limits.json');
 const {dashboard, warnings: messages} = require('../configs/dashboard.cjs');
-const MAX_JOURNAL_BYTES = dashboard.maxJournalBytes;
 function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
     const journals = new Map();
     const warnings = new Map();
@@ -133,15 +132,28 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
             const previous = journals.get(name),
                 stamp = `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
             if (previous?.stamp === stamp) continue;
-            if (stat.size > MAX_JOURNAL_BYTES) {
-                warnings.set(name, messages.journalTooLarge);
-                continue;
-            }
             try {
-                const text = await fs.promises.readFile(path.join(directory, name), 'utf8');
-                const contents = text.slice(0, text.lastIndexOf('\n') + 1),
+                // Read appended bytes only. A long run is not an invalid run;
+                // incomplete lines (including split UTF-8 characters) wait for
+                // the next write. Replacement/truncation starts a fresh replay.
+                const append = previous?.ino === stat.ino && stat.size > previous.size;
+                const start = append ? previous.bytes : 0;
+                const handle = await fs.promises.open(path.join(directory, name), 'r');
+                let tail;
+                try {
+                    const chunks = []; let position = start;
+                    while (position < stat.size) {
+                        const buffer = Buffer.alloc(Math.min(64 * 1024, stat.size - position));
+                        const {bytesRead} = await handle.read(buffer, 0, buffer.length, position);
+                        if (!bytesRead) break;
+                        chunks.push(buffer.subarray(0, bytesRead)); position += bytesRead;
+                    }
+                    tail = Buffer.concat(chunks);
+                } finally { await handle.close(); }
+                const completeBytes = tail.lastIndexOf(10) + 1;
+                const contents = (append ? previous.contents : '') + tail.subarray(0, completeBytes).toString('utf8'),
                     id = name.slice(0, -7);
-                journals.set(name, {id, stamp, contents});
+                journals.set(name, {id, stamp, contents, ino:stat.ino, size:stat.size, bytes:start + completeBytes});
                 warnings.delete(name);
                 if (contents === previous?.contents) continue;
                 const from =
@@ -157,7 +169,7 @@ function createJournalReader({directory, manifest, revisionFiles, onUpdate}) {
             assessmentError = null;
             try {
                 const stat = await fs.promises.lstat(manifest);
-                if (!stat.isFile() || stat.size > MAX_JOURNAL_BYTES) throw new Error('Invalid manifest file');
+                if (!stat.isFile()) throw new Error('Invalid manifest file');
                 const stamp = `${stat.mtimeMs}:${stat.size}`;
                 if (stamp !== manifestStamp) {
                     manifestText = await fs.promises.readFile(manifest, 'utf8');

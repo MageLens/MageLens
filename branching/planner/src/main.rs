@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-use magelens_plan::{Manifest, estimation, plan, write_json, write_manifest};
+use magelens_plan::{Manifest, estimation, write_json};
 use std::{env, fs, path::Path, time::Instant};
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -12,7 +12,7 @@ fn run() -> Result<(), String> {
             let plan=magelens_plan::cost::select(input)?;
             println!("{}",serde_json::to_string(&plan).map_err(|e|e.to_string())?);
         },
-        Some("plan") if args.len()==3 => {
+        Some("scan") if args.len()==3 => {
             let start=Instant::now();
             let output=Path::new(&args[2]);
             // Validate the destination before either a plan or its error record is written.
@@ -23,19 +23,16 @@ fn run() -> Result<(), String> {
             if parent.starts_with(&root) && !parent.strip_prefix(&root).unwrap().components().any(|c|c.as_os_str().to_string_lossy().starts_with('.')) {
                 return Err("Write the manifest outside the source root or inside an ignored dot directory".into());
             }
-            let manifest=record_result(output, plan(&root).and_then(|manifest| {
-                write_manifest(output,&manifest)?;
+            let manifest=record_result(output, magelens_plan::assess(&root).and_then(|manifest| {
+                write_json(output,&serde_json::to_value(&manifest).map_err(|e|e.to_string())?)?;
                 Ok(manifest)
             }))?;
             println!("{} tests, {} repeated prefixes ({} automatic), {} diagnostics; {:.2} ms",
                 manifest.tests.len(),manifest.checkpoints.len(),manifest.checkpoints.iter().filter(|c|c.automatic).count(),manifest.diagnostics.len(),start.elapsed().as_secs_f64()*1000.0);
-            let analysis=&manifest.assessment["analysis"];
-            println!("Cost analysis: {}/{} statements analyzed, {} exact; {} fixture gaps, {} worker gaps",
-                analysis["analyzedStatements"],analysis["totalStatements"],analysis["exactStatements"],
-                analysis["fixturesWithGaps"],analysis["workersWithGaps"]);
+
         },
-        Some("verify") if args.len()==2 => {verify(&args[1])?; println!("Manifest matches source and planner");},
-        _ => return Err("Usage: magelens-plan plan SOURCE_ROOT MANIFEST | verify MANIFEST | cost-plan < UNITS.json. Execute tests with bin/run-coverage --branching.".into())
+        Some("verify-source") if args.len()==2 => {verify(&args[1])?; println!("Manifest matches source and planner");},
+        _ => return Err("Usage: magelens-plan scan SOURCE_ROOT MANIFEST | verify-source MANIFEST | cost-plan < UNITS.json. Execute tests with bin/run-coverage --branching.".into())
     }
     Ok(())
 }
@@ -94,7 +91,7 @@ fn verify(file: &str) -> Result<(), String> {
     }
     let data = fs::read(file).map_err(|e| e.to_string())?;
     let saved: Manifest = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
-    let fresh = plan(Path::new(&saved.root))?;
+    let fresh = magelens_plan::assess(Path::new(&saved.root))?;
     if serde_json::from_slice::<serde_json::Value>(&data).map_err(|e| e.to_string())?
         != serde_json::to_value(&fresh).unwrap()
     {
@@ -104,7 +101,10 @@ fn verify(file: &str) -> Result<(), String> {
 }
 fn main() {
     if let Err(error) = run() {
-        let error = if matches!(env::args().nth(1).as_deref(), Some("plan" | "verify")) {
+        let error = if matches!(
+            env::args().nth(1).as_deref(),
+            Some("scan" | "verify-source")
+        ) {
             serde_json::from_str::<serde_json::Value>(&error)
                 .ok()
                 .filter(|value| value["code"] == "ESTIMATION_FAILED")

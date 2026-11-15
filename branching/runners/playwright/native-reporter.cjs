@@ -4,23 +4,37 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {digest} = require('../../identity.cjs');
+function browserProfile(use = {}) {
+    const {browserName = 'chromium', channel = null, headless = true, baseURL = null,
+        ignoreHTTPSErrors = false, viewport = {width: 1280, height: 720}, serviceWorkers = 'allow'} = use;
+    const supported = new Set(['browserName', 'channel', 'headless', 'baseURL', 'ignoreHTTPSErrors', 'viewport',
+        'serviceWorkers', 'trace', 'screenshot', 'video']);
+    return {digest: digest({browserName, channel, headless, baseURL, ignoreHTTPSErrors, viewport, serviceWorkers}),
+        portable: Object.keys(use).every(key => supported.has(key)) && browserName === 'chromium' && channel === 'chrome' && headless};
+}
 class NativeReporter {
-    constructor() { this.results = new Map(); this.errors = []; }
+    constructor({projects = []} = {}) { this.projects = projects; this.results = new Map(); this.errors = []; }
     onBegin(config, suite) {
         this.config = {rootDir: config.rootDir, globalSetup: !!config.globalSetup, globalTeardown: !!config.globalTeardown, webServer: !!config.webServer,
-            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown}))};
+            projects: config.projects.map(p => ({name: p.name, dependencies: p.dependencies, teardown: p.teardown,
+                fullyParallel: this.projects.find(project=>project.name===p.name)?.fullyParallel === true,
+                browserProfile: browserProfile(p.use)}))};
         this.tests = suite.allTests().map(test => {
             const project = test.parent.project();
+            let serial = false;
+            for (let scope = test.parent; scope; scope = scope.parent)
+                if (scope._parallelMode === 'serial') serial = true;
             return {id: test.id, project: project.name, file: test.location.file, line: test.location.line,
                 column: test.location.column, title: test.titlePath().slice(3).join(' › '),
                 selector: `[${project.name}] › ${path.relative(config.rootDir, test.location.file).replaceAll(path.sep, '/')} › ${test.titlePath().slice(3).join(' › ')}`,
-                expectedStatus: test.expectedStatus, annotations: test.annotations};
+                serial, expectedStatus: test.expectedStatus, annotations: test.annotations};
         });
-        if(process.env.MAGELENS_NATIVE_PROFILE) {
-            this.profile=JSON.parse(process.env.MAGELENS_NATIVE_PROFILE);
+        if(process.env.MAGELENS_NATIVE_PROFILE) this.profile=JSON.parse(process.env.MAGELENS_NATIVE_PROFILE);
+        if(this.profile && process.env.MAGELENS_NATIVE_PREPARE !== '0') {
             fs.mkdirSync(this.profile.directory,{recursive:true});
-            const timing=require('../../predictor/native.cjs');
-            const lifecycle=require('../../predictor/playwright.cjs');
+            const timing=require('../../source-discovery.cjs');
+            const lifecycle=require('../../playwright-discovery.cjs');
             const loaded=new Map(suite.allTests().filter(test=>test.expectedStatus!=='skipped').map(test=>[test.id,lifecycle.describe(test)]));
             const collect=timing.collector(this.profile,this.profile.directory,config.rootDir);
             for(const file of new Set(this.tests.map(test=>test.file)))collect({file,hooks:[],lifecycle:'playwright-loaded-fixtures/v1',
@@ -40,8 +54,12 @@ class NativeReporter {
     onEnd(result) {
         const report = {schemaVersion: 1, config: this.config, tests: this.tests ?? [], results: [...this.results.values()],
             status: result.status, durationMs: result.duration, errors: this.errors};
-        if(this.profile)report.prediction=require('../../predictor/native.cjs').finish(this.profile.directory,report);
+        if(this.profile && !this.errors.length) {
+            if(this.profile.discoveryOnly) report.profileDiscovery={directory:this.profile.directory,configDigest:this.profile.configDigest};
+
+        }
         fs.writeFileSync(process.env.MAGELENS_NATIVE_REPORT, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
     }
 }
 module.exports = NativeReporter;
+module.exports.browserProfile = browserProfile;

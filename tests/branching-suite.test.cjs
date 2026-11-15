@@ -10,13 +10,13 @@ const os = require('node:os');
 const path = require('node:path');
 const {fileDigest} = require('../branching/engine.cjs');
 const costs = require('../branching/costs.cjs');
-const {partition, validateNative, runSuite} = require('../branching/suite.cjs');
+const {partition, validateNative, collectAssessed, runSuite, playwrightCoverageResult} = require('../branching/suite.cjs');
 function fixture(t) {
     t.mock.method(costs, 'solveCosts', () => ({selected:['shared']}));
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-suite-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const file = path.join(root, 'flow.spec.ts'); fs.writeFileSync(file, 'await page.goto("/");');
-    const tests = ['first', 'second'].map(id => ({id, file:'flow.spec.ts',line:1,title:id,scope:'same',disposition:'automatic',reasons:[],steps:[{start:0,end:21,kind:'statement',portable:true,actionUnits:1}]}));
+    const tests = ['first', 'second'].map(id => ({id, file:'flow.spec.ts',line:1,title:id,scope:'same',disposition:'automatic',reasons:[],steps:[{start:0,end:21,kind:'statement',portable:true,estimatedMs:1}]}));
     const manifest = {schemaVersion:1,implementation:'rust-prefix-v1',root,sourceDigest:'test',sources:[{path:'flow.spec.ts',sha256:fileDigest(file)}],tests,schedule:tests.map(t=>t.id),
         diagnostics:[],checkpoints:[{id:'shared',depth:1,representative:'first',consumers:['first','second'],automatic:true}]};
     const setup = {id:'setup',project:'setup',file,line:2,title:'seed',expectedStatus:'passed'};
@@ -37,10 +37,89 @@ function fixture(t) {
     const runCheckpoint = async ({specs: ids, workflow, plan}) => {costs.resolvePlan(workflow, ids, plan);calls.push({checkpoint:ids});return {status:'passed',results:ids.map(spec=>({spec,status:'passed'})),checkpoints:[{id:'shared'}],counts:{reuseHits:1}};};
     return {root,manifest,inventory,project,runner,calls,runCheckpoint};
 }
+test('one suite journal includes native setup, all native tests and real checkpoint execution', async t => {
+    const f=fixture(t), events=[];
+    f.project.expect=assert;
+    const {FixtureProvider}=require('./fixtures/branching/provider.cjs');
+    class Provider extends FixtureProvider { get page() { return {goto:async url=>{this.state.browser.url=url;}}; } }
+    const report=await runSuite({...f,directory:f.root,onEvent:event=>events.push(event),
+        runCheckpoint:options=>require('../branching/engine.cjs').execute({...options,root:path.join(f.root,'storage'),provider:new Provider()})});
+    const state=events.reduce(require('../branching/dashboard/model.cjs').applyEvent,null);
+    assert.equal(report.status,'passed',JSON.stringify(report.phases.filter(p=>p.kind==='checkpoint').map(p=>p.report.errors))); assert.equal(state.status,'passed');
+    assert.equal(events.filter(e=>e.type==='run-start').length,1);
+    assert.equal(events.filter(e=>e.type==='run-end').length,1);
+    assert.equal(events[0].nodes.length,0);
+    assert.equal(state.nodes.filter(n=>n.kind==='test' && n.status==='passed').length,103);
+    assert.deepEqual(state.schedule,report.ordering.scheduled);
+    assert.equal(state.counts.prefixExecutions,4);
+    assert.equal(state.nodes.filter(n=>n.kind==='checkpoint').length,1);
+    assert.ok(state.baseline.observations.length>0);
+    assert.equal(state.counts.reuseHits,0);
+});
 test('native inventory preserves every assessed generated and fixture-based test beyond the old subset',t=>{
     const f=fixture(t),g=partition(f.manifest,f.inventory,f.project);
     assert.equal(g.setup.length,1);assert.equal(g.checkpoint.length,2);assert.equal(g.native.length,100);
     assert.equal(new Set([...g.setup,...g.checkpoint,...g.native].map(t=>t.id)).size,103);
+});
+test('mixed Playwright coverage reports the original inventory and rejects incomplete or mismatched evidence', async t => {
+    const f = fixture(t);
+    const version = '157.0.8103.38';
+    const {browserProfile} = require('../branching/runners/playwright/native-reporter.cjs');
+    const use = {channel: 'chrome', baseURL: process.env.PLAYWRIGHT_BASE_URL, ignoreHTTPSErrors: true, serviceWorkers: 'block'};
+    f.inventory.config.projects[1].browserProfile = browserProfile(use);
+    assert.notEqual(browserProfile({...use, viewport: {width: 900, height: 700}}).digest, browserProfile(use).digest);
+    assert.notEqual(browserProfile({...use, serviceWorkers: 'allow'}).digest, browserProfile(use).digest);
+    assert.equal(browserProfile({...use, proxy: {server: 'http://localhost:8080'}}).portable, false);
+    const annotation = {type: 'magelens-browser', description: JSON.stringify({name: 'chrome', version})};
+    const run = f.runner.run;
+    f.runner.run = async (...args) => {
+        const phase = await run(...args);
+        for (const result of phase.results) Object.assign(result, {attempts: 1, annotations: [annotation]});
+        return phase;
+    };
+    const report = await runSuite({...f, directory: f.root, coverageRoot: f.root, runCheckpoint: async options => {
+        const phase = await f.runCheckpoint(options);
+        phase.browser = {name: 'Chrome for Testing', version};
+        phase.counts.fallbacks = 0;
+        return phase;
+    }});
+    const runId = 'a'.repeat(32);
+    const coverage = playwrightCoverageResult(report, runId, version);
+    assert.equal(coverage.run, runId);
+    assert.equal(coverage.totalPassed, 103);
+    assert.equal(f.calls.filter(call => call.options?.coverageRoot === f.root).length, 2);
+    assert.deepEqual(coverage.tests.map(test => test.title), report.inventory.map(test => test.title));
+    assert.throws(() => playwrightCoverageResult(report, runId, 'other'), /browser/);
+    assert.throws(() => playwrightCoverageResult({...report, results: report.results.slice(1)}, runId, version), /complete/);
+    report.phases.find(phase => phase.kind === 'checkpoint').report.counts.fallbacks = 1;
+    assert.throws(() => playwrightCoverageResult(report, runId, version), /restore evidence/);
+});
+test('incompatible browser settings keep the complete suite native and report the rejected routes', async t => {
+    const f = fixture(t);
+    const coverageRoot = f.root;
+    const {browserProfile} = require('../branching/runners/playwright/native-reporter.cjs');
+    f.inventory.config.projects[1].browserProfile = browserProfile({channel: 'chrome', viewport: {width: 900, height: 700}});
+    const report = await runSuite({...f, directory: f.root, coverageRoot});
+    assert.equal(report.status, 'passed');
+    assert.equal(report.routing.checkpoint.length, 0);
+    assert.equal(report.routing.native.length, 103);
+    assert.deepEqual(report.routing.browserIneligible, ['native-first', 'native-second'].map(id =>
+        ({id, reason: 'incompatible-playwright-browser-settings'})));
+});
+test('discovery does not require timing estimates but rejects changed source', async t => {
+    const f = fixture(t);
+    const inventory = await collectAssessed(f.manifest,f.project,f.root,f.runner);
+    assert.equal(inventory.tests.length,103);
+    fs.appendFileSync(path.join(f.root,'flow.spec.ts'),'\n');
+    await assert.rejects(collectAssessed(f.manifest,f.project,f.root,f.runner), /Stale source/);
+});
+test('old ML manifests fail before loading the project with a migration message', async t => {
+    const f = fixture(t);
+    f.manifest.assessment.version = 'ml-duration-v1';
+    const file = path.join(f.root, 'manifest.json');
+    fs.writeFileSync(file, JSON.stringify(f.manifest));
+    await assert.rejects(require('../branching/auto-cli.cjs').run([file, 'missing.cjs', f.root]),
+        error => error.issues?.some(issue => /ML manifests are no longer supported/.test(issue.message)));
 });
 test('mixed suite runs native setup once, checkpoints, then every remaining native test',async t=>{
     const f=fixture(t); const report=await runSuite({...f,mode:'AUTO',directory:f.root});
@@ -49,13 +128,13 @@ test('mixed suite runs native setup once, checkpoints, then every remaining nati
     assert.deepEqual(f.calls[1].checkpoint,['first','second']);assert.equal(f.calls[2].options.setup,false);
     assert.deepEqual(report.missing,[]);assert.deepEqual(report.duplicates,[]);
 });
-test('checkpoint execution preserves the order costed by Rust when native inventory differs',async t=>{
+test('checkpoint routing never crosses native tests when collection order differs',async t=>{
     const f=fixture(t);f.inventory.tests.reverse();
     const report=await runSuite({...f,directory:f.root});
-    assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
+    assert.equal(report.status,'passed');assert.equal(f.calls.length,3);assert.equal(f.calls[1].tests.length,100);assert.deepEqual(f.calls[2].checkpoint,['second','first']);
 });
 test('unprofitable AUTO retains one complete original native invocation',async t=>{
-    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));
+    const f=fixture(t);f.manifest.checkpoints=[];
     const report=await runSuite({...f,directory:f.root});
     assert.equal(report.mode,'AUTO');assert.equal(report.status,'passed');assert.equal(report.checkpoints,0);assert.equal(f.calls.length,1);
     assert.equal(f.calls[0].options.tests,undefined);assert.equal(report.results.length,103);
@@ -73,20 +152,11 @@ test('a project checkpoint budget is validated even if every test would remain n
     f.runner.collect=()=>assert.fail('invalid budget must fail before discovery');
     await assert.rejects(runSuite({...f,directory:f.root}),/Checkpoint limit/);
 });
-test('AUTO leaves unrelated cheap candidates native while branching profitable shared work', async t => {
-    const f=fixture(t);
-    for(const id of ['cheap-first','cheap-second']) {
-        const item={...f.manifest.tests[0],id,title:id,scope:'cheap'};
-        f.manifest.tests.push(item);f.manifest.schedule.push(id);
-        f.inventory.tests.push({...item,id:'native-'+id,project:'browser',file:path.join(f.root,item.file),expectedStatus:'passed'});
-    }
-    assessed(f.manifest);
-    f.manifest.checkpoints.push({id:'cheap',depth:1,representative:'cheap-first',consumers:['cheap-first','cheap-second'],automatic:true});
-    const report=await runSuite({...f,mode:'AUTO',directory:f.root});
-    assert.equal(report.status,'passed');assert.deepEqual(f.calls[1].checkpoint,['first','second']);
-    assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-first'));
-    assert.ok(f.calls[2].tests.some(test=>test.id==='native-cheap-second'));
-    assert.equal(report.results.length,105);
+test('serial groups remain in one untouched native invocation', async t => {
+    const f=fixture(t); f.inventory.tests[1].serial=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed'); assert.equal(report.checkpoints,0);
+    assert.equal(f.calls.length,1); assert.equal(f.calls[0].options.tests,undefined);
 });
 test('a fully checkpoint-eligible suite needs no artificial native remainder', async t => {
     const f=fixture(t);f.inventory.tests=f.inventory.tests.slice(0,3);
@@ -131,7 +201,7 @@ test('setup failure prevents checkpoints and records the blocked remainder',asyn
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'failed');assert.equal(report.missing.length,102);
 });
 test('native skips remain visible and never become a fully passed qualification',async t=>{
-    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
+    const f=fixture(t);f.manifest.checkpoints=[];f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'skipped'})),status:'passed',exitCode:0,errors:[]});
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'completed-with-skips');assert.equal(report.skipped.length,102);
 });
 test('assessed teardown projects and unsplittable suites keep the complete native invocation',async t=>{
@@ -153,7 +223,7 @@ test('unassessed external runner lifecycle stops before native or checkpoint exe
     }
 });
 test('expected failures remain visible instead of qualifying as passed',async t=>{
-    const f=fixture(t);t.mock.method(costs,'solveCosts',()=>({selected:[]}));f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'failed',expectedStatus:'failed'})),status:'passed',exitCode:0,errors:[]});
+    const f=fixture(t);f.manifest.checkpoints=[];f.runner.run=async()=>({tests:f.inventory.tests,results:f.inventory.tests.map(t=>({id:t.id,status:t.id==='setup'?'passed':'failed',expectedStatus:'failed'})),status:'passed',exitCode:0,errors:[]});
     const report=await runSuite({...f,mode:'AUTO',directory:f.root});assert.equal(report.status,'failed');
 });
 test('one suite lease fences native collection, checkpoint transitions and recovery',t=>{
@@ -171,4 +241,96 @@ test('one suite lease fences native collection, checkpoint transitions and recov
     fs.unlinkSync(path.join(f.root,'.runtime/branching-recovery.json'));
     assert.equal(leases.release(lease),true);
     assert.equal(fs.existsSync(lease.lock),false);
+});
+
+test('independent single-project Playwright suite uses measured candidates without synthetic setup', async t => {
+    const f = fixture(t);
+    f.inventory.tests = f.inventory.tests.slice(1,3);
+    f.inventory.config.projects = [{name:'browser', dependencies:[]}];
+    const report = await runSuite({...f, directory:f.root});
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(f.calls, [{checkpoint:['first','second']}]);
+    assert.equal(report.results.length,2);
+});
+
+test('declared parallel page tests group consumers without crossing setup or rerunning hooks', async t => {
+    const f=fixture(t);
+    f.inventory.tests=f.inventory.tests.slice(0,3);
+    const source={...f.manifest.tests[0],id:'middle',title:'middle',fixtureSetup:[]};
+    f.manifest.tests.push(source);
+    f.inventory.tests.splice(2,0,{...f.inventory.tests[1],id:'native-middle',title:'middle'});
+    f.inventory.config.projects[1].fullyParallel=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.deepEqual(report.ordering.scheduled,['setup','native-middle','native-first','native-second']);
+    assert.equal(report.ordering.changed,true);
+    assert.deepEqual(f.calls.map(call=>call.checkpoint??call.tests.map(test=>test.id)),[['setup'],['native-middle'],['first','second']]);
+    assert.deepEqual(report.results.map(result=>result.id),report.ordering.scheduled);
+});
+test('independent interleaved prefix groups become contiguous while setup stays first', async t => {
+    const f=fixture(t);
+    const extra=['third','fourth'].map(id=>({...f.manifest.tests[0],id,title:id,scope:'another'}));
+    f.manifest.tests.push(...extra);
+    f.manifest.checkpoints.push({...f.manifest.checkpoints[0],id:'another-shared',representative:'third',consumers:['third','fourth']});
+    f.manifest.schedule.push('third','fourth');
+    const native=extra.map(source=>({...f.inventory.tests[1],id:'native-'+source.id,title:source.title}));
+    f.inventory.tests=[f.inventory.tests[0],f.inventory.tests[1],native[0],f.inventory.tests[2],native[1]];
+    f.inventory.config.projects[1].fullyParallel=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.deepEqual(report.ordering.scheduled,['setup','native-first','native-second','native-third','native-fourth']);
+    assert.equal(report.counts.candidates,2);
+    assert.deepEqual(report.results.map(result=>result.id),report.ordering.scheduled);
+    assert.deepEqual(f.calls.map(call=>call.checkpoint??call.tests.map(test=>test.id)),[['setup'],['first','second','third','fourth']]);
+});
+test('parallel configuration cannot reorder fixture setup or native-only lifecycle work', async t => {
+    const f=fixture(t); f.inventory.config.projects[1].fullyParallel=true;
+    f.inventory.tests.splice(2,0,f.inventory.tests.pop());
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.ordering.changed,false);
+    assert.deepEqual(report.results.map(result=>result.id),f.inventory.tests.map(test=>test.id));
+});
+
+test('declared parallel fixture consumers retain source order', async t => {
+    const f=fixture(t);
+    f.inventory.tests=f.inventory.tests.slice(0,3);
+    const source={...f.manifest.tests[0],id:'middle',title:'middle',fixtureSetup:[]};
+    f.manifest.tests.push(source);
+    f.manifest.tests[0].fixtureSetup=[{name:'shared-resource'}];
+    f.inventory.tests.splice(2,0,{...f.inventory.tests[1],id:'native-middle',title:'middle'});
+    f.inventory.config.projects[1].fullyParallel=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.equal(report.ordering.changed,false);
+    assert.deepEqual(report.results.map(result=>result.id),f.inventory.tests.map(test=>test.id));
+});
+
+test('verified independent native locals can move as a whole test without becoming checkpoint consumers', async t => {
+    const f=fixture(t);
+    f.inventory.tests=f.inventory.tests.slice(0,3);
+    const source={...f.manifest.tests[0],id:'middle',title:'middle',disposition:'adapter-required',fixtureSetup:[]};
+    f.manifest.tests.push(source);
+    f.inventory.tests.splice(2,0,{...f.inventory.tests[1],id:'native-middle',title:'middle'});
+    f.inventory.config.projects[1].fullyParallel=true;
+    f.project.adapter={identity:'verified-page-lifecycle',supports:test=>test.id!=='middle',supportsOrdering:()=>true,
+        supportsCheckpoint:()=>true,execute:()=>{}};
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.equal(report.ordering.changed,true);
+    assert.deepEqual(report.routing.native,['setup','native-middle']);
+    assert.deepEqual(report.results.map(result=>result.id),['setup','native-middle','native-first','native-second']);
+});
+test('conflicting context and environment base URLs cannot qualify a different native store',async t=>{
+    const f=fixture(t),previous=process.env.PLAYWRIGHT_BASE_URL;
+    process.env.PLAYWRIGHT_BASE_URL='https://store-a.test';
+    t.after(()=>{if(previous===undefined)delete process.env.PLAYWRIGHT_BASE_URL;else process.env.PLAYWRIGHT_BASE_URL=previous;});
+    const {browserProfile}=require('../branching/runners/playwright/native-reporter.cjs');
+    const {PlaywrightState}=require('../branching/browser.cjs');
+    f.project.runnerOptions={contextOptions:{baseURL:'https://store-b.test',ignoreHTTPSErrors:true}};
+    f.inventory.config.projects[1].browserProfile=browserProfile({channel:'chrome',...f.project.runnerOptions.contextOptions,serviceWorkers:'block'});
+    const browser=new PlaywrightState({}, {baseURL:process.env.PLAYWRIGHT_BASE_URL,contextOptions:f.project.runnerOptions.contextOptions});
+    assert.equal(browser.options.baseURL,'https://store-a.test');
+    const report=await runSuite({...f,directory:f.root,coverageRoot:f.root});
+    assert.equal(report.status,'passed');assert.equal(report.routing.checkpoint.length,0);
+    assert.equal(report.routing.browserIneligible.length,2);
 });

@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {snapshot, validateSnapshot, compareThemes} = require('./ci/report-equivalence.cjs');
+const {snapshot, validateSnapshot, compareSnapshots, compareThemes} = require('./ci/report-equivalence.cjs');
 const {writeCoverage} = require('./ci-coverage-fixture.cjs');
 const {cases} = require('./ci/cases.cjs');
 function fixture(t) {
@@ -17,6 +17,16 @@ function fixture(t) {
     return {directory, ...writeCoverage(directory)};
 }
 function reports(value) { return cases.map(entry => ({...entry, snapshot: structuredClone(value)})); }
+test('paired snapshots ignore run IDs and identify changed file outcomes', t => {
+    const {directory} = fixture(t);
+    const baseline = snapshot(directory);
+    const candidate = {...structuredClone(baseline), run: 'paired-run'};
+    assert.deepEqual(compareSnapshots(baseline, candidate), []);
+    const file = Object.keys(candidate.php.files)[0];
+    const line = Object.keys(candidate.php.files[file])[0];
+    candidate.php.files[file][line] = !candidate.php.files[file][line];
+    assert.deepEqual(compareSnapshots(baseline, candidate).map(difference => [difference.section, difference.file]), [['php', file]]);
+});
 test('complete snapshots preserve all measured sources without exposing private contents', t => {
     const {directory} = fixture(t);
     const value = snapshot(directory);

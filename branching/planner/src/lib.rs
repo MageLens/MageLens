@@ -10,15 +10,14 @@ use std::{
     path::{Path, PathBuf},
 };
 use tree_sitter::{Node, Parser};
-mod assessment;
 pub mod baseline;
 pub mod cost;
 mod cypress;
 pub mod estimation;
-mod models;
 mod normalize;
-pub mod points;
 mod project;
+mod restoration;
+mod structure;
 
 type Result<T> = std::result::Result<T, String>;
 pub fn hash(bytes: impl AsRef<[u8]>) -> String {
@@ -44,10 +43,6 @@ pub struct Step {
     pub portable: bool,
     pub asynchronous: bool,
     #[serde(default)]
-    pub action_units: Option<u64>,
-    #[serde(default)]
-    pub estimate: Option<points::Estimate>,
-    #[serde(default)]
     pub label: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -62,25 +57,23 @@ pub struct Test {
     pub scope: String,
     pub steps: Vec<Step>,
     pub reasons: Vec<String>,
+    #[serde(default)]
+    pub reason_codes: Vec<String>,
     pub disposition: String,
-    #[serde(default)]
-    pub fixture_estimate: Option<points::Estimate>,
-    #[serde(default)]
-    pub worker_estimate: Option<points::Estimate>,
-    #[serde(default)]
-    pub lifecycle_estimate: Option<points::Estimate>,
-    #[serde(default)]
-    pub estimate: Option<points::Estimate>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub statically_skipped: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub opaque_fixture_provider: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restoration: Option<serde_json::Value>,
     #[serde(skip)]
     context_identity: String,
-    #[serde(skip)]
-    collection_bindings: assessment::Bindings,
-    #[serde(skip)]
-    callback_start: usize,
-    #[serde(skip)]
-    callback_end: usize,
+    #[serde(default)]
+    pub context_files: Vec<String>,
+    #[serde(default)]
+    pub fixture_setup: Vec<String>,
+    pub callback_start: usize,
+    pub callback_end: usize,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +97,8 @@ pub struct Manifest {
     pub root: String,
     pub source_digest: String,
     pub sources: Vec<Source>,
+    #[serde(default)]
+    pub source_dependencies: BTreeMap<String, Vec<String>>,
     pub tests: Vec<Test>,
     pub checkpoints: Vec<Checkpoint>,
     pub schedule: Vec<String>,
@@ -227,8 +222,6 @@ fn step(n: Node, s: &str, kind: &str, portable: bool) -> Step {
         minified,
         portable,
         asynchronous: contains(n, &|n| n.kind() == "await_expression"),
-        action_units: None,
-        estimate: None,
         label: if kind == "beforeEach" {
             Some("beforeEach()".into())
         } else {
@@ -288,13 +281,18 @@ fn boundary_label(n: Node, s: &str) -> Option<String> {
     Some(format!("After {name}()"))
 }
 
+fn reason(code: &str, message: impl Into<String>) -> (String, String) {
+    (code.into(), message.into())
+}
+
 #[derive(Clone, Default)]
 struct Scope {
     names: Vec<String>,
     hooks: Vec<Step>,
-    reasons: Vec<String>,
+    reasons: Vec<(String, String)>,
     identity: Vec<String>,
-    bindings: assessment::Bindings,
+    bindings: structure::Bindings,
+    skipped: bool,
 }
 
 #[cfg(test)]
@@ -326,6 +324,27 @@ fn parse_file_with_aliases(
     }
     let mut aliases = extra_aliases;
     let cypress = cypress::is_spec(file);
+    // Node unit tests can share the .test.js suffix with browser specs. An
+    // explicit node:test dependency identifies a different runner, not a
+    // browser declaration that failed static collection.
+    if !cypress
+        && contains(tree.root_node(), &|n| {
+            (n.kind() == "import_statement"
+                && field(n, "source")
+                    .and_then(|n| literal(n, source))
+                    .as_deref()
+                    == Some("node:test"))
+                || (n.kind() == "call_expression"
+                    && function_name(n, source) == "require"
+                    && field(n, "arguments")
+                        .and_then(|n| n.named_child(0))
+                        .and_then(|n| literal(n, source))
+                        .as_deref()
+                        == Some("node:test"))
+        })
+    {
+        return Ok((vec![], vec![]));
+    }
     if cypress {
         aliases.insert("it".into(), "cypress:it".into());
     }
@@ -373,7 +392,7 @@ fn parse_file_with_aliases(
     if !native_imports {
         scope
             .reasons
-            .push("Project imports or custom fixtures require an execution adapter".into());
+            .push(reason("project-imports", "Project imports or custom fixtures require an execution adapter"));
     }
     walk_scope(
         tree.root_node(),
@@ -442,7 +461,7 @@ fn walk_scope(
                     }
                     scope
                         .reasons
-                        .push("beforeEach hooks require an execution adapter".into());
+                        .push(reason("before-each-hook", "beforeEach hooks require an execution adapter"));
                     continue;
                 }
                 if [
@@ -455,16 +474,16 @@ fn walk_scope(
                 .contains(&method)
                 {
                     scope.identity.push(normalize::canonical(c, s));
-                    scope.reasons.push(format!(
+                    scope.reasons.push(reason("runner-lifecycle", format!(
                         "{method} requires native runner lifecycle handling"
-                    ));
+                    )));
                     continue;
                 }
                 if ["skip", "fixme", "fail", "slow"].contains(&method) && callback(c).is_none() {
                     scope.identity.push(normalize::canonical(c, s));
-                    scope.reasons.push(format!(
+                    scope.reasons.push(reason("test-modifier", format!(
                         "test.{method} requires native runner lifecycle handling"
-                    ));
+                    )));
                     continue;
                 }
                 if method.is_empty()
@@ -477,7 +496,7 @@ fn walk_scope(
         }
         scope.identity.push(normalize::canonical(node, s));
         scope.reasons.push(
-            "Module/suite setup or dynamic registration requires an execution adapter".into(),
+            reason("module-setup", "Module/suite setup or dynamic registration requires an execution adapter"),
         );
     }
     let runner = if cypress { "Cypress" } else { "Playwright" };
@@ -510,6 +529,23 @@ fn walk_scope(
                     && aliases.keys().any(|a| collection_name(n, s, cypress) == *a)
             })
         {
+            if cypress && node.kind() == "if_statement" {
+                // Native discovery owns predicate evaluation and test selection.
+                // Assess both branches so their callback sources are available.
+                let mut child = scope.clone();
+                child.reasons.push(reason("conditional-registration", "Conditional Cypress registration requires native selection"));
+                if let Some(body) = field(node, "consequence").filter(|body| body.kind() == "statement_block") {
+                    walk_scope(body, context, child.clone(), tests, diagnostics);
+                    if let Some(alternative) = field(node, "alternative") {
+                        if let Some(body) = children(alternative).into_iter().find(|body| body.kind() == "statement_block") {
+                            walk_scope(body, context, child, tests, diagnostics);
+                        } else {
+                            diagnostics.push(format!("{file}:{}: conditional alternative requires native collection", node.start_position().row + 1));
+                        }
+                    }
+                    continue;
+                }
+            }
             if let Some(expanded) =
                 project.and_then(|p| p.collection_expand(file, node, &scope.bindings))
             {
@@ -549,8 +585,11 @@ fn walk_scope(
             continue;
         };
         let args = children(field(c, "arguments").unwrap());
+        let tagged = cypress && args.len() >= 3 && args.first().is_some_and(|arg| {
+            arg.kind() == "array" || (literal(*arg, s).is_some() && literal(args[1], s).is_some())
+        });
         let title = args
-            .first()
+            .get(usize::from(tagged))
             .and_then(|n| {
                 literal(*n, s)
                     .or_else(|| project.and_then(|p| p.collection_title(file, *n, &scope.bindings)))
@@ -567,13 +606,17 @@ fn walk_scope(
         };
         if method.starts_with("describe") {
             let mut child = scope.clone();
+            child.skipped |= matches!(method, "describe.skip" | "describe.fixme");
+            if tagged {
+                child.reasons.push(reason("tagged-registration", "Tagged Cypress registration requires native selection"));
+            }
             if !title.is_empty() {
                 child.names.push(title);
             }
             if method != "describe" {
                 child
                     .reasons
-                    .push(format!("{method} scheduling must be preserved"));
+                    .push(reason("suite-scheduling", format!("{method} scheduling must be preserved")));
             }
             walk_scope(body, context, child, tests, diagnostics);
             continue;
@@ -582,15 +625,18 @@ fn walk_scope(
             continue;
         }
         let mut reasons = scope.reasons.clone();
+        if tagged {
+            reasons.push(reason("tagged-registration", "Tagged Cypress registration requires native selection"));
+        }
         let parameters = params(cb, s);
         if !cypress && parameters != "( { page } )" {
-            reasons.push("Fixture parameters beyond { page } require an execution adapter".into());
+            reasons.push(reason("fixture-parameters", "Fixture parameters beyond { page } require an execution adapter"));
         }
         if cypress && parameters != "( )" {
-            reasons.push("Cypress callback parameters require native lifecycle handling".into());
+            reasons.push(reason("cypress-parameters", "Cypress callback parameters require native lifecycle handling"));
         }
         if body.kind() != "statement_block" {
-            reasons.push("Expression test callback requires native execution".into());
+            reasons.push(reason("expression-callback", "Expression test callback requires native execution"));
         }
         if contains(body, &|n| {
             n.kind() == "this"
@@ -608,23 +654,22 @@ fn walk_scope(
                             | "globalThis"
                     ))
         }) {
-            reasons.push("Module/process bindings require an execution adapter".into());
+            reasons.push(reason("module-bindings", "Module/process bindings require an execution adapter"));
         }
         if contains(body, &|n| {
             n.kind() == "identifier" && aliases.contains_key(text(n, s))
         }) {
             reasons.push(
-                "Test metadata, modifiers or steps require native Playwright lifecycle handling"
-                    .into(),
+                reason("test-metadata", "Test metadata, modifiers or steps require native Playwright lifecycle handling"),
             );
         }
         if !method.is_empty() {
-            reasons.push(format!(
+            reasons.push(reason("test-modifier", format!(
                 "test.{method} must be honored by native Playwright"
-            ));
+            )));
         }
         if !cypress && fixture != "@playwright/test:test" {
-            reasons.push("Custom fixture lifecycle is not equivalent to a bare page".into());
+            reasons.push(reason("custom-fixture", "Custom fixture lifecycle is not equivalent to a bare page"));
         }
         let mut steps = scope.hooks.clone();
         let mut prefix_portable = true;
@@ -658,6 +703,7 @@ fn walk_scope(
                 )
             });
             prefix_portable &= !has_host_callback(statement, s);
+            prefix_portable &= restoration::supported(statement, s);
             prefix_portable &= !contains(statement, &|n| {
                 n.kind() == "identifier"
                     && matches!(text(n, s), "Math" | "Date" | "crypto" | "performance")
@@ -666,8 +712,7 @@ fn walk_scope(
         }
         if cypress && !prefix_portable {
             reasons.push(
-                "Cypress lexical state, callbacks or unsupported commands require native execution"
-                    .into(),
+                reason("cypress-state", "Cypress lexical state, callbacks or unsupported commands require native execution"),
             );
         }
         reasons.sort();
@@ -696,11 +741,10 @@ fn walk_scope(
                 "adapter-required"
             }
             .into(),
-            reasons,
-            fixture_estimate: None,
-            worker_estimate: None,
-            lifecycle_estimate: None,
-            estimate: None,
+            reason_codes: reasons.iter().map(|(code, _)| code.clone()).collect(),
+            reasons: reasons.into_iter().map(|(_, message)| message).collect(),
+            statically_skipped: scope.skipped || matches!(method, "skip" | "fixme"),
+            opaque_fixture_provider: false,
             restoration: None,
             context_identity: serde_json::to_string(&(
                 fixture,
@@ -709,7 +753,8 @@ fn walk_scope(
                 scope.bindings.identity(),
             ))
             .unwrap(),
-            collection_bindings: scope.bindings.clone(),
+            context_files: vec![],
+            fixture_setup: vec![],
             callback_start: cb.start_byte(),
             callback_end: cb.end_byte(),
         });
@@ -849,26 +894,23 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     if tests.is_empty() {
         return Err("No statically declared Playwright or Cypress tests found".into());
     }
-    // Module state can survive between tests. Propagate injected capabilities
-    // to a fixed point so estimates do not depend on discovery/execution order.
-    let mut tainted_libraries = BTreeSet::new();
-    loop {
-        let prior = tainted_libraries.len();
-        for test in &mut tests {
-            project.assess(test, &mut tainted_libraries);
-        }
-        if tainted_libraries.len() == prior {
-            break;
-        }
-    }
     // Each entry is a prefix-trie node identified by its complete ancestry.
     for test in &mut tests {
+        test.context_files = project.dependency_closure(&test.file).into_iter().collect();
+        test.fixture_setup = project.fixture_setup_sources(test);
+        test.opaque_fixture_provider = !test.fixture.starts_with("cypress:")
+            && test.fixture != "@playwright/test:test"
+            && !project.fixture_provider_known(test);
+        test.scope = hash(
+            serde_json::to_vec(&(&test.context_identity, project.context(&test.file))).unwrap(),
+        );
         if !test.fixture.starts_with("cypress:")
             && let Ok(recipe) = project.restoration(test)
         {
             test.restoration = Some(recipe);
             test.disposition = "automatic".into();
             test.reasons.clear();
+            test.reason_codes.clear();
             // Fixture frames are restored at use(), not midway through a test's
             // local JavaScript stack. Body prefixes remain cost-only candidates.
             for step in &mut test.steps {
@@ -956,11 +998,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     // bodies diverge immediately. Worker setup and teardown are excluded.
     let mut fixture_groups: BTreeMap<String, Vec<&Test>> = BTreeMap::new();
     for test in &tests {
-        if test
-            .fixture_estimate
-            .as_ref()
-            .is_some_and(|e| e.estimated_points > 0)
-        {
+        if !test.fixture_setup.is_empty() {
             fixture_groups
                 .entry(test.scope.clone())
                 .or_default()
@@ -997,9 +1035,10 @@ fn plan_project(root: &Path) -> Result<Manifest> {
     checkpoints.sort_by(|a, b| (a.depth, &a.id).cmp(&(b.depth, &b.id)));
     let mut manifest = Manifest {
         schema_version: 1,
-        implementation: "rust-prefix-v2".into(),
+        implementation: "rust-prefix-v3".into(),
         root: root.to_string_lossy().into_owned(),
         source_digest,
+        source_dependencies: project.source_dependencies(),
         sources,
         tests,
         checkpoints,
@@ -1007,9 +1046,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
         diagnostics,
         assessment: serde_json::Value::Null,
     };
-    manifest.assessment = assessment::summary(&manifest)?;
-    manifest.assessment["dependencyAnalysis"] =
-        serde_json::to_value(&project.dependency_effects).unwrap();
+    manifest.assessment = serde_json::json!({"version":"measured-first-use-v1","analysis":{"status":if manifest.diagnostics.is_empty(){"complete"}else{"partial"},"collectionComplete":manifest.diagnostics.is_empty(),"collectionDiagnostics":manifest.diagnostics.len()},"status":"complete"});
     Ok(manifest)
 }
 
@@ -1089,6 +1126,24 @@ mod tests {
             Some("beforeEach()")
         );
     }
+    #[test]
+    fn browser_mutations_cannot_be_checkpoint_prefixes() {
+        for mutation in [
+            "page.setViewportSize({width:375,height:812})",
+            "page.emulateMedia({colorScheme:'dark'})",
+            "page.setExtraHTTPHeaders({'X-Test':'mobile'})",
+            "page.context().setGeolocation({latitude:1,longitude:2})",
+            "page.keyboard.down('Shift')",
+        ] {
+            let source = format!("import {{test,expect}} from '@playwright/test';
+                test('one',async({{page}})=>{{await {mutation};await page.goto('/cart');await expect(page).toHaveURL('/cart');}});
+                test('two',async({{page}})=>{{await {mutation};await page.goto('/cart');await expect(page).toHaveURL('/checkout');}});");
+            let manifest = Fixture::new(&source).plan();
+            assert_eq!(manifest.tests.len(), 2);
+            assert!(manifest.tests.iter().all(|test| test.steps.iter().all(|step| !step.portable)));
+            assert!(manifest.checkpoints.iter().all(|checkpoint| !checkpoint.automatic));
+        }
+    }
     struct Fixture(PathBuf);
     impl Fixture {
         fn new(source: &str) -> Self {
@@ -1144,33 +1199,6 @@ mod tests {
         )
         .unwrap();
         assert!(warnings[0].contains("native Playwright collection"));
-    }
-    #[test]
-    fn assigns_static_weights_and_preserves_unknown_helper_costs() {
-        let f = Fixture::new(&format!(
-            "{IMPORT} test('units',async ({{page}})=>{{await page.goto('/');await page.getByRole('button').click();await expect(page.locator('h1')).toBeVisible();await expect(page).toHaveURL('/');await helper(page);await page.waitForTimeout(500);await Promise.all([page.click('a'),page.click('b')]);}});"
-        ));
-        let p = f.plan();
-        assert_eq!(
-            p.tests[0]
-                .steps
-                .iter()
-                .map(|s| s.action_units)
-                .collect::<Vec<_>>(),
-            vec![
-                Some(8),
-                Some(1),
-                Some(1),
-                Some(1),
-                Some(0),
-                Some(10),
-                Some(1)
-            ]
-        );
-        let unknown = p.tests[0].steps[4].estimate.as_ref().unwrap();
-        assert!(!unknown.complete);
-        assert_eq!(unknown.upper_bound_points, None);
-        assert!(!unknown.reasons.is_empty());
     }
     #[test]
     fn detects_prefixes_and_only_captures_branch_points() {

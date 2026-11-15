@@ -140,6 +140,22 @@ function validateSnapshot(value, run, summary) {
         for (const key of ['lineSummary', 'statementSummary', 'functionSummary', 'branchSummary']) totals(file.totals[key]);
     }
 }
+function compareSnapshots(baseline, candidate) {
+    const differences = [];
+    for (const section of ['metrics', 'php', 'js', 'templates']) {
+        const left = baseline[section], right = candidate[section];
+        if (isDeepStrictEqual(left, right)) continue;
+        if (section === 'metrics') differences.push({section});
+        else {
+            if (!isDeepStrictEqual({...left, files: null}, {...right, files: null})) differences.push({section, totals: true});
+            for (const file of [...new Set([...Object.keys(left.files), ...Object.keys(right.files)])].sort()) {
+                if (!isDeepStrictEqual(left.files[file], right.files[file])) differences.push({section, file,
+                    ...details(left.files[file], right.files[file])});
+            }
+        }
+    }
+    return differences;
+}
 function compareThemes(reports, expected) {
     const errors = [];
     const expectedIds = expected.map(entry => entry.id).sort();
@@ -151,18 +167,8 @@ function compareThemes(reports, expected) {
         const differences = [];
         const baseline = entries[0];
         for (const report of entries.slice(1)) {
-            for (const section of ['metrics', 'php', 'js', 'templates']) {
-                const left = baseline.snapshot[section], right = report.snapshot[section];
-                if (isDeepStrictEqual(left, right)) continue;
-                if (section === 'metrics') differences.push({case: report.id, section});
-                else {
-                    if (!isDeepStrictEqual({...left, files: null}, {...right, files: null})) differences.push({case: report.id, section, totals: true});
-                    for (const file of [...new Set([...Object.keys(left.files), ...Object.keys(right.files)])].sort()) {
-                        if (!isDeepStrictEqual(left.files[file], right.files[file])) differences.push({case: report.id, section, file,
-                            ...details(left.files[file], right.files[file])});
-                    }
-                }
-            }
+            for (const difference of compareSnapshots(baseline.snapshot, report.snapshot))
+                differences.push({case: report.id, ...difference});
         }
         themes[theme] = {baseline: baseline?.id, expectedCases: required.length, completedCases: entries.length, differences};
         if (entries.length !== required.length || differences.length) errors.push(`${theme}: ${entries.length}/${required.length} reports, ${differences.length} coverage differences`);
@@ -187,4 +193,4 @@ function details(left, right) {
     visit(left, right, '');
     return {totalDifferences: total, changes};
 }
-module.exports = {snapshot, validateSnapshot, compareThemes};
+module.exports = {snapshot, validateSnapshot, compareSnapshots, compareThemes};

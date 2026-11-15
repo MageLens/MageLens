@@ -18,14 +18,14 @@ const {implementationDigest} = require('./identity.cjs');
 // browser and backend are fenced together; a filesystem clone alone is not a
 // valid application checkpoint.
 class BranchingProvider {
-    constructor({browser, backend, baseURL, state, contextOptions, browserState}) {
+    constructor({browser, backend, baseURL, state, contextOptions, browserState, javascriptCoverageDirectory, templateCoverageDirectory, coverageRunId}) {
         if (typeof state !== 'function') throw new Error(messages.missingStateReader);
         for (const name of config.provider.lifecycle) {
             if (typeof backend[name] !== 'function') throw new Error(messages.missingBackendLifecycle(name));
         }
         this.backend = backend;
         this.readState = state;
-        this.browserState = browserState ?? new PlaywrightState(browser, {baseURL, contextOptions});
+        this.browserState = browserState ?? new PlaywrightState(browser, {baseURL, contextOptions, javascriptCoverageDirectory, templateCoverageDirectory, coverageRunId});
         this.approaches = config.executionApproaches;
         this.workload = config.provider.workload;
         this.capability = config.provider.capability;
@@ -37,13 +37,19 @@ class BranchingProvider {
                     './snapshot-state.cjs',
                     './storage.cjs',
                     './browser.cjs',
+                    './browser-options.cjs',
+                    './coverage-gate.cjs',
                     './browser-context.cjs',
                     './code-cache.cjs',
+                    '../playwright/coverage-cookie.cjs',
+                    '../bin/browser-navigation.cjs',
+                    ...(javascriptCoverageDirectory ? ['../playwright/javascript-coverage.cjs'] : []),
                     './configs/runtime.cjs'
                 ].map((file) => require.resolve(file))
             ),
             backend: backend.identity,
-            browser: browser.version()
+            browser: browser.version(),
+            ...(coverageRunId ? {coverageRunId} : {})
         };
         this.serial = 0;
         this.paused = false;
@@ -82,7 +88,17 @@ class BranchingProvider {
     async reset() {
         await this.restore(this.base);
     }
+    async nextLinear() {
+        // Native page-only fixtures isolate browser storage, while application
+        // and cache state continue normally until a checkpoint is introduced.
+        await this.browserState.pauseCoverage();
+        await this.browserState.closePages();
+        await this.browserState.open();
+    }
     async captureBarrier() {
+        // Expected and restored application state both exclude collection state.
+        // Collection resumes at beginSegment, after validation/reconstruction.
+        await this.browserState.pauseCoverage();
         await this.browserState.freeze();
         await this.backend.drain();
         this.saved = await this.browserState.save();
@@ -103,6 +119,7 @@ class BranchingProvider {
     }
     async restore(directory) {
         if (this.browserState.active) await this.browserState.freeze();
+        await this.browserState.pauseCoverage();
         await this.backend.drain();
         await this.browserState.closePages();
         await this.backend.stop();
@@ -112,9 +129,11 @@ class BranchingProvider {
         await this.browserState.open(browser);
     }
     async beginSegment() {
-        if (this.browserState.active) this.browserState.check();
+        if (this.browserState.active) { this.browserState.check(); await this.browserState.resumeCoverage?.(); }
     }
-    async endSegment() {
+    async endSegment(_id, {terminal = false} = {}) {
+        if (terminal && (this.browserState.javascriptCoverageDirectory || this.browserState.templateCoverageDirectory))
+            await require('../bin/browser-navigation.cjs').waitForPageCompletion(this.context);
         this.browserState.check();
     }
     async cleanup() {

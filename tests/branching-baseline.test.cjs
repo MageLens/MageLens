@@ -16,23 +16,27 @@ function report(restores=[100,200,300]) {
         costs:{captures:[{ms:50}],restores:restores.map(ms=>({ms})),releases:[{ms:2}],resets:[80]},
         phases:{prepare:30,cleanup:40},providerDiagnostics:{retainedServices:{schemasRemoved:true,grantsRestored:true}}}}]};
 }
-test('fresh projects use fixed defaults with double overhead and an added twenty percent margin',t=>{
+test('fresh projects use fixed defaults with operation costs once and a one percent margin',t=>{
     const {store}=fixture(t),loaded=store.load();
-    assert.equal(loaded.source,'default');assert.equal(loaded.baseline.overheadMultiplier,2);
-    assert.equal(loaded.baseline.overheadMargin,.2);
-    assert.ok(loaded.baseline.unitMs>0);assert.equal(fs.existsSync(store.file),false);
+    assert.equal(loaded.source,'default');assert.equal(loaded.baseline.overheadMultiplier,1);
+    assert.equal(loaded.baseline.overheadMargin,.01);
+    assert.equal(loaded.baseline.restoreMs,8200);
+    assert.ok(Math.abs(loaded.decisionBaselineMs-44906.12)<1e-8);
+    assert.ok(loaded.baseline.captureMs>0);assert.equal(fs.existsSync(store.file),false);
 });
-test('successful runs learn weighted operation averages for subsequent runs without changing the current plan',t=>{
+test('successful runs learn weighted operation averages for subsequent runs independently of the current run',t=>{
     const {store}=fixture(t),before=store.load();
     const first=store.update(report());assert.equal(first.updated,true);
     assert.equal(store.load().baseline.restoreMs,200);
     store.update(report([400]));
     const learned=store.load();assert.equal(learned.source,'measured');assert.equal(learned.baseline.restoreMs,250);
     assert.equal(learned.samples.restoreMs,4);assert.equal(learned.baseline.backendMs,70);
+    assert.deepEqual(learned.statistics.restoreMs,{count:4,sumMs:1000});
+    assert.deepEqual(learned.statistics.resetMs,{count:0,sumMs:0});
     assert.equal(before.source,'default');assert.equal(before.baseline.restoreMs,baseline.defaults.restoreMs);
     assert.equal(learned.baseline.resetMs,baseline.defaults.resetMs,'unobserved resets retain defaults');
 });
-test('test work and environment setup never train checkpoint overhead',t=>{
+test('test work and warm-up never become checkpoint operation samples',t=>{
     const {store}=fixture(t),short=report(),long=report();
     const expected=baseline.samples(short);
     long.wallMs=900000;
@@ -46,11 +50,9 @@ test('test work and environment setup never train checkpoint overhead',t=>{
     store.update(long);
     assert.deepEqual(store.load().baseline,before.baseline);
     assert.equal(store.load().decisionBaselineMs,before.decisionBaselineMs);
-    const calibration={...long.phases[1].report,kind:'baseline-calibration',wallMs:900000};
-    calibration.phases={...calibration.phases,warmup:500000};
-    assert.deepEqual(baseline.samples(calibration),expected);
+
 });
-test('restore calibration uses per-operation cost and keeps one-time lifecycle costs separate',t=>{
+test('restore measurements use per-operation cost and keeps one-time lifecycle costs separate',t=>{
     const {store}=fixture(t),input=report(Array(8).fill(7500));
     const phase=input.phases[0].report;
     phase.costs.captures=[{ms:3000}];
@@ -64,7 +66,7 @@ test('restore calibration uses per-operation cost and keeps one-time lifecycle c
     assert.equal(learned.baseline.captureMs,3000);
     assert.equal(learned.baseline.firstResetMs,16500);
     assert.equal(learned.baseline.backendMs,16500);
-    assert.equal(learned.decisionBaselineMs,(33000+3000+7500+8)*2*1.2+50);
+    assert.equal(learned.decisionBaselineMs,(33000+3000+7500+8)*1.01+50);
 });
 test('failed runs, fallback, missing releases and incomplete cleanup cannot train the baseline',t=>{
     const {store}=fixture(t);store.update(report());const saved=fs.readFileSync(store.file,'utf8');
@@ -76,7 +78,7 @@ test('failed runs, fallback, missing releases and incomplete cleanup cannot trai
     }
     assert.equal(store.update({status:'passed',results:[{status:'passed'}],phases:[]}).updated,false);
 });
-test('explicit calibration can replace measurements while automatic updates can be disabled',t=>{
+test('explicit measurement replacement can replace measurements while automatic updates can be disabled',t=>{
     const {root,store}=fixture(t);store.update(report());
     const manual=new baseline.Store({workspace:root,key:'fixture-hardware-and-database',updateOnSuccess:false});
     assert.equal(manual.update(report([900])).updated,false);
@@ -106,13 +108,12 @@ test('overhead history detects a regression before averaging and retains the ori
     assert.equal(history[1].observed.restoreMs,150);assert.equal(history[1].nextBaseline.restoreMs,125);
 });
 
-test('the root decision baseline controls bootstrap costs and calibration reports its adjusted value', t => {
+test('the root decision baseline controls bootstrap costs and measured updates report its adjusted value', t => {
     const root = require('../branching-baseline.json');
     assert.ok(Math.abs(baseline.decisionBaselineMs(baseline.defaults) - root.checkpointDecisionBaselineMs) < 0.001);
     const target = root.checkpointDecisionBaselineMs * 2;
     const scaled = baseline.withDecisionBaseline(target);
     assert.ok(Math.abs(baseline.decisionBaselineMs(scaled) - target) < 0.001);
-    assert.equal(scaled.unitMs, baseline.defaults.unitMs);
     for (const value of [NaN, Infinity, -1, 0, '125000', baseline.defaults.minSavingMs])
         assert.throws(() => baseline.withDecisionBaseline(value), /decision baseline/);
     const {store} = fixture(t);
@@ -121,4 +122,38 @@ test('the root decision baseline controls bootstrap costs and calibration report
     assert.equal(after.decisionBaselineMs, baseline.decisionBaselineMs(after.baseline));
     assert.notEqual(after.decisionBaselineMs, before.decisionBaselineMs);
     assert.equal(require('../branching-baseline.json').checkpointDecisionBaselineMs, root.checkpointDecisionBaselineMs);
+});
+
+test('successful measured groups persist costs even when a preceding group stayed linear', t => {
+    const {store} = fixture(t), input = report();
+    const linear = structuredClone(input.phases[0]);
+    linear.report.checkpoints = [];
+    linear.report.releases = [];
+    linear.report.costs.captures = [];
+    linear.report.costs.restores = [];
+    linear.report.costs.releases = [];
+    input.phases.unshift(linear);
+    assert.equal(store.update(input).updated, true);
+    assert.equal(store.load().samples.restoreMs, input.phases[1].report.costs.restores.length);
+    linear.report.status = 'failed';
+    assert.equal(store.update(input).updated, false);
+});
+
+test('online and persisted statistics share validation and reject overflow without changing evidence',t=>{
+    const {Economics}=require('../branching/adaptive.cjs');
+    const {store}=fixture(t);store.update(report());
+    const record=JSON.parse(fs.readFileSync(store.file));
+    for(const value of [{count:-1,sumMs:0},{count:0,sumMs:1},{count:1.5,sumMs:1},{count:1,sumMs:-1}]){
+        assert.throws(()=>new Economics(baseline.defaults,undefined,{restoreMs:value}),/Invalid/);
+        record.statistics.restoreMs=value;fs.writeFileSync(store.file,JSON.stringify(record));
+        assert.equal(store.read(),null);
+    }
+    const full={count:Number.MAX_SAFE_INTEGER,sumMs:1};
+    const economics=new Economics(baseline.defaults,undefined,{restoreMs:full});
+    assert.throws(()=>economics.observe('restoreMs',1,'prefix'),/overflow/);
+    assert.deepEqual(economics.statistics.restoreMs,full);
+    record.statistics.restoreMs=full;fs.writeFileSync(store.file,JSON.stringify(record));
+    const before=fs.readFileSync(store.file,'utf8');
+    assert.throws(()=>store.update(report([1])),/overflow/);
+    assert.equal(fs.readFileSync(store.file,'utf8'),before);
 });

@@ -7,7 +7,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 [[ $# == 1 ]] || { echo 'Usage: tests/ci/orchestrator-image.sh IMAGE' >&2; exit 1; }
 image=$1
-bash tests/ci/predictor-image.sh "$image"
 root=$(pwd -P)
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
@@ -23,4 +22,4 @@ for operation in plan verify; do
 done
 node tests/branching-plan-smoke.cjs "$output/manifest.json"
 docker run --rm --network none --entrypoint sh "$image" -c \
-    'test -x /usr/local/bin/magelens-plan && ! command -v cargo && ! command -v node && ! command -v google-chrome-stable'
+    'test -x /usr/local/bin/magelens-plan && ! command -v cargo && test -x /usr/local/bin/magelens-source && command -v node && ! command -v google-chrome-stable'

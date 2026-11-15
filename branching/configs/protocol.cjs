@@ -19,6 +19,7 @@ const operation = Object.freeze({
 });
 const event = Object.freeze({
     runStart: 'run-start',
+    runReady: 'run-ready',
     runPhase: 'run-phase',
     runEnd: 'run-end',
     runError: 'run-error',

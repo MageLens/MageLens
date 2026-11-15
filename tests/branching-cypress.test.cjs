@@ -99,6 +99,9 @@ test('Cypress native plugin composes hooks and suppresses execution hooks during
             on('task', {read: () => 'fixture'});
         }, options);
         assert.equal(configured.baseUrl, list ? null : 'https://store.test');
+        const support = fs.readFileSync(options.support, 'utf8');
+        if (list) assert.match(support, /"discoveryBaseUrl":"https:\/\/store\.test"/);
+        else assert.doesNotMatch(support, /discoveryBaseUrl/);
         const metadata = JSON.parse(fs.readFileSync(options.metadata));
         assert.equal(metadata.checkpointLifecycle, 'native-cypress');
         assert.deepEqual(metadata.unassessedLifecycle, ['Cypress setupNodeEvents and plugin lifecycle']);
@@ -108,13 +111,16 @@ test('Cypress native plugin composes hooks and suppresses execution hooks during
     }
 });
 
-for (const selectedOnly of [false,true]) test(`Cypress profiling preserves native registrations and snapshots before project hooks (selection: ${selectedOnly})`, () => {
+for (const {selectedOnly,list} of [{selectedOnly:false},{selectedOnly:true},{selectedOnly:false,list:true}]) test(`Cypress profiling snapshots before project hooks (selection: ${selectedOnly}, discovery: ${!!list})`, () => {
     const vm = require('node:vm'), before = [], after = [], registrations = [], tasks = [];
     const context = {module:{exports:{}}, Cypress:{spec:{absolute:'/suite/example.cy.js'}},
         cy:{task(name, value) { tasks.push({name,value:structuredClone(value)}); return Promise.resolve(null); }}};
     for (const name of ['describe','context']) context[name] = (_,callback) => callback();
     for (const name of ['it','specify']) {
-        context[name] = (...args) => registrations.push(args);
+        context[name] = (...args) => {
+            registrations.push(args);
+            return {invocationDetails:{absoluteFile:'/suite/example.cy.js',line:12,column:4}};
+        };
         context[name].skip = context[name];
     }
     context.before = callback => before.push(callback);
@@ -122,23 +128,70 @@ for (const selectedOnly of [false,true]) test(`Cypress profiling preserves nativ
     context.beforeEach = context.afterEach = callback => registrations.push(callback);
     vm.runInNewContext(fs.readFileSync(require.resolve('../branching/runners/cypress/native-support.cjs'),'utf8'),context);
     const selected=selectedOnly?[context.module.exports.identity('/suite/example.cy.js',['suite','journey'],0)]:undefined;
-    context.module.exports.install({profile:true,selected});
+    context.module.exports.install({profile:true,selected,list});
     const hook = () => { throw Error('Must not execute project code while registering'); };
     context.describe('suite', () => {
         context.before(hook);
         if(selectedOnly) context.it('unselected',()=>{});
         context.it('journey',hook);
     });
-    assert.equal(before[1],hook);
-    assert.equal(registrations[0][1],hook);
+    if (list) {
+        assert.equal(before.length,2);
+        assert.doesNotThrow(before[1]);
+        assert.doesNotThrow(registrations[0][1]);
+    } else {
+        assert.equal(before[1],hook);
+        assert.equal(registrations[0][1],hook);
+    }
     return before[0]().then(() => {
         assert.equal(tasks[0].name,'magelens:timing:prepare');
         assert.equal(tasks[0].value.tests.length,1);
         assert.match(tasks[0].value.tests[0].timingSource,/Must not execute/);
+        assert.deepEqual(tasks[0].value.tests[0].timingLocation,{line:12,column:5});
         assert.deepEqual(tasks[0].value.hooks[0].scope,['suite']);
         return after[0]();
     }).then(() => {
         assert.equal(tasks[1].name,'magelens:inventory');
         assert.equal(tasks[1].value.tests[0].timingSource,undefined);
+        assert.equal(tasks[1].value.tests[0].timingLocation,undefined);
     });
+});
+
+
+test('Cypress discovery preserves base URL reads before support files and test declarations', () => {
+    const vm = require('node:vm');
+    for (const list of [false, true]) {
+        let baseUrl = null;
+        const registrations = [];
+        const context = {module: {exports: {}}, URL, Cypress: {spec: {absolute: '/suite/urls.cy.js'},
+            config(key, value) {assert.equal(key, 'baseUrl'); if (arguments.length === 2) baseUrl = value; return baseUrl;}}};
+        for (const name of ['describe', 'context']) context[name] = (_, callback) => callback();
+        for (const name of ['it', 'specify']) {
+            context[name] = (...args) => registrations.push(args);
+            context[name].skip = context[name];
+        }
+        for (const name of ['before', 'after', 'beforeEach', 'afterEach']) context[name] = () => {};
+        vm.runInNewContext(fs.readFileSync(require.resolve('../branching/runners/cypress/native-support.cjs'), 'utf8'), context);
+        context.module.exports.install({list, discoveryBaseUrl: 'https://store.test/catalog/'});
+        if (list) {
+            vm.runInNewContext("describe('URL registration', () => {const target = new URL('/recommendations', Cypress.config('baseUrl')); it(target.pathname, () => {throw new Error('Discovery must not execute the body');});});", context);
+            assert.equal(baseUrl, 'https://store.test/catalog/');
+            assert.equal(registrations[0][0], '/recommendations');
+            assert.doesNotThrow(() => registrations[0][1]());
+        } else assert.equal(baseUrl, null, 'Normal execution must retain its native configuration');
+    }
+});
+
+
+test('native Cypress retains compilation failures even when a spec registered no tests', () => {
+    const {reportErrors} = require('../branching/runners/cypress/native.cjs');
+    const errors = reportErrors({totalFailed:1,runs:[
+        {spec:{absolute:'/suite/imports.cy.js'},tests:[],error:'Webpack Compilation Error: missing imported module'},
+        {spec:{absolute:'/suite/valid.cy.js'},tests:[{}],error:null}
+    ]},[{errors:['Focused Cypress tests are forbidden']}]);
+    assert.deepEqual(errors,[{message:'Focused Cypress tests are forbidden'},
+        {file:'/suite/imports.cy.js',message:'Webpack Compilation Error: missing imported module'}]);
+    assert.deepEqual(reportErrors({failures:1,message:'Config load failed'},[]),[{message:'Config load failed'}]);
+    assert.deepEqual(reportErrors({runs:[{spec:{absolute:'/suite/config.cy.js'},error:{message:'Preprocessor failed'}}]},[]),
+        [{file:'/suite/config.cy.js',message:'Preprocessor failed'}]);
 });

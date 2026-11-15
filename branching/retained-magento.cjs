@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {setTimeout: delay} = require('node:timers/promises');
 const {MagentoBackend} = require('./magento.cjs');
 const {SchemaDatabase, foreignTransactions} = require('./retained-database.cjs');
+const {RedisState} = require('./redis-state.cjs');
 const {prepareRetained} = require('./retained-workspace.cjs');
 const {implementationDigest} = require('./identity.cjs');
 const {settings} = require('./configs/magento.cjs');
@@ -18,10 +19,11 @@ class RetainedMagentoBackend extends MagentoBackend {
         super(options);
         this.retainsServices = true;
         this.identity = {kind: 'magento-retained-two-schema-v1', base: this.identity, implementation: implementationDigest([
-            __filename, ...['retained-workspace.cjs', 'retained-database.cjs', 'configs/retained-env.php',
+            __filename, ...['retained-workspace.cjs', 'retained-database.cjs', 'redis-state.cjs', 'configs/retained-env.php',
                 'configs/retained-validate.php', 'configs/retained-probe.php', 'configs/retained-queues.php', 'configs/fastcgi.php'].map(file => require.resolve('./' + file))
         ])};
         this.database = new SchemaDatabase(this);
+        this.redisState = new RedisState(this);
         this.ownedSchemas = []; this.activeSchema = 'magento';
         this.warmReady = false; this.ingressPaused = false;
         this.containers = new Map();
@@ -91,21 +93,45 @@ class RetainedMagentoBackend extends MagentoBackend {
         const drained = JSON.parse(this.dc(['exec', '-T', 'phpfpm', 'php', '/branching-control/retained-queues.php']));
         this.diagnostics.queueDrains.push(...drained);
     }
+    async databaseIdle(timeoutMs = settings.healthTimeoutMs) {
+        const started = Date.now(), deadline = started + timeoutMs;
+        let wait;
+        while (true) {
+            const transactions = JSON.parse(this.sql("SELECT COALESCE(JSON_ARRAYAGG(JSON_OBJECT('schema',p.DB,'user',p.USER,'host',p.HOST)),JSON_ARRAY()) FROM information_schema.INNODB_TRX t LEFT JOIN information_schema.PROCESSLIST p ON p.ID=t.trx_mysql_thread_id"));
+            const connections = this.sql("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE USER='magento'");
+            const foreign = foreignTransactions(transactions, {activeSchema:this.activeSchema,
+                target:this.database.job?.target,ownedSchemas:this.ownedSchemas});
+            if (!foreign.length && connections === '0') {
+                if (wait) wait.ms = Date.now()-started;
+                return;
+            }
+            if (Date.now() >= deadline) {
+                if (foreign.length) throw new Error('Unfinished database transactions at checkpoint');
+                assert.equal(connections, '0', 'Application DB connection crossed a checkpoint boundary');
+            }
+            if (!wait) {
+                wait = {connections,foreignTransactions:foreign.length,ms:0};
+                (this.diagnostics.databaseDrainWaits ??= []).push(wait);
+            }
+            wait.ms = Date.now()-started;
+            await delay(50);
+        }
+    }
     async drain() {
         if (!this.warmReady) return super.drain();
         this.assertWriters();
         if (!this.ingressPaused) { this.dc(['pause', 'app']); this.ingressPaused = true; }
         await this.idle(); await this.drainQueues();
-        const deadline = Date.now() + settings.healthTimeoutMs;
-        while (true) {
-            const transactions = JSON.parse(this.sql("SELECT COALESCE(JSON_ARRAYAGG(JSON_OBJECT('schema',p.DB,'user',p.USER,'host',p.HOST)),JSON_ARRAY()) FROM information_schema.INNODB_TRX t LEFT JOIN information_schema.PROCESSLIST p ON p.ID=t.trx_mysql_thread_id"));
-            if (!foreignTransactions(transactions, {activeSchema: this.activeSchema, target: this.database.job?.target, ownedSchemas: this.ownedSchemas}).length) break;
-            if (Date.now() >= deadline) throw new Error('Unfinished database transactions at checkpoint');
-            await delay(50);
-        }
-        assert.equal(this.sql("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE USER='magento'"), '0', 'Application DB connection crossed a checkpoint boundary');
+        // An idle PHP worker and a completed queue process do not prove that
+        // MariaDB has processed their connection teardown yet. Drain both
+        // transactions and connections before allowing a snapshot or switch.
+        await this.databaseIdle();
     }
-    async pause() { this.database.dump(path.join(this.paths.database, 'snapshot.sql')); }
+    async pause() {
+        this.database.dump(path.join(this.paths.database, 'snapshot.sql'));
+        this.redisState.save(path.join(this.paths.redis, 'snapshot.json'));
+    }
+    async resetCaches() { this.redisState.restore(path.join(this.paths.redis, 'snapshot.json')); }
     async unpause() {} // MariaDB is never frozen in this backend.
     async stop() { this.needsImport = true; }
     prefetch(file) { return this.database.prepare(file); }
@@ -144,8 +170,8 @@ class RetainedMagentoBackend extends MagentoBackend {
             for (const service of settings.recoveryServices) {
                 assert.ok(!this.inspect(service).Mounts.some(m => m.Source.startsWith(this.directory + path.sep)), 'Private mount remained after cleanup');
             }
-            // Redis may contain entries generated against the discarded schema.
-            await this.resetCaches();
+            // Restore the original cache contents, including expiration deadlines.
+            if (this.originalRedisCaptured) this.redisState.restore(path.join(this.control, 'original-redis.json'));
             this.diagnostics.schemasRemoved = true; this.diagnostics.grantsRestored = true;
         }
         if (this.recovery) fs.rmSync(this.recovery);

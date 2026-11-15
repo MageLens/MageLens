@@ -72,53 +72,24 @@ if [[ "$runner" == playwright ]]; then
         || fail 'Playwright coverage requires template coverage 1.2 or newer. Update dependencies.yaml and rerun ./install.sh --playwright.'
 fi
 dc exec -T phpfpm php /application/docker/php/collection.php stop || fail 'Cannot prepare PHP collection. If services are stopped, use --start.'
-cleanup_hooks() {
-    if [[ -f .runtime/hooks-active ]]; then
-        dc exec -T phpfpm php /application/docker/php/project-hooks.php cleanup || return
-        rm -f .runtime/hooks-active
-    fi
-}
+source "$ROOT/bin/coverage-lifecycle"
 cleanup() {
     local result=$?
     trap - EXIT
-    if [[ -f coverage/.active-run ]]; then
-        dc exec -T phpfpm php /application/docker/php/collection.php stop || result=1
-    fi
-    cleanup_hooks || result=1
+    coverage_cleanup || result=1
     rmdir "$ROOT/.runtime/workflow.lock"
     exit "$result"
 }
 trap cleanup EXIT
-cleanup_hooks
+coverage_cleanup_hooks
 if (( refresh_assets )); then
     dc exec -T phpfpm bash /application/docker/php/refresh-assets.sh
 elif (( refresh_cache )); then
     dc exec -T phpfpm php bin/magento cache:clean
 fi
-say 'Preparing fresh coverage'
-dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
-dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json
-touch .runtime/hooks-active
-dc exec -T phpfpm php /application/docker/php/project-hooks.php before
-dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
-say 'Warming the storefront and fixture pages in a separate browser (up to 10 minutes)'
 browser_script=bin/run-browser.cjs
 [[ "$runner" == playwright ]] && browser_script=bin/run-playwright.cjs
-if dc exec -T runner timeout --signal=TERM --kill-after=10s 600s node "$browser_script" --warmup; then
-    say 'Browser warm-up completed; starting fresh coverage collection'
-else
-    result=$?
-    if [[ "$result" == 124 || "$result" == 137 ]]; then
-        printf 'Browser warm-up exceeded its 10-minute limit.\n' >&2
-    fi
-    printf 'Warm-up failed. Inspect coverage/warmup-results.json, coverage/warmup-diagnostics.json and coverage/warmup-screenshots/.\n' >&2
-    exit "$result"
-fi
-dc exec -T phpfpm php /application/docker/php/manifest.php
-dc exec -T phpfpm php /application/docker/php/collection.php start
+coverage_prepare "$runner" "$browser_script"
 say "Running the full $runner suite (preparation: ${SECONDS}s)"
 dc exec -T runner node "$browser_script"
-say 'Generating coverage reports'
-dc exec -T phpfpm php /application/docker/php/report.php
-dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/finalize.cjs'
-say 'Open coverage/index.html for the combined report'
+coverage_finalize

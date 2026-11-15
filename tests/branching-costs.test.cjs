@@ -55,32 +55,14 @@ function setup(t) {
     const run=async(approach,options={})=>{const result=await execute({root,workflow,provider:new FixtureProvider(),approach,checkpointLifetime:'last-consumer',...options});calls.push({approach,options,result});return result;};
     return {root,workflow,run,calls};
 }
-const linear=()=>({schemaVersion:1,selected:[],basis:'static-benchmark-estimate',reason:'linear-estimated-cheaper'});
-test('AUTO is the default, plans once and does not create a calibration cache',async t=>{
-    const input=setup(t);let solves=0;
-    t.mock.method(costs,'solveCosts',units=>{solves++;assert.deepEqual(units,costInput(input.workflow));return linear();});
-    for(let i=0;i<2;i++) {
-        const report=await autoExecute({...input,provider:new FixtureProvider()});
-        assert.equal(report.approach,'L0');assert.equal(report.checkpoints.length,0);
-        assert.equal(report.checkpointPolicy.basis,'static-benchmark-estimate');
-    }
-    assert.equal(solves,2);assert.deepEqual(fs.readdirSync(input.root),[]);
-});
-test('static graph carries fixture and incremental units, and unknown is not zero',t=>{
-    const {workflow}=setup(t);workflow.stages.get('baseline').actionUnits=2;workflow.stages.get('cart-ready').actionUnits=5;
-    const input=costInput(workflow);assert.deepEqual(Object.keys(input).sort(),['baseline','maxCheckpointsPerTest','parents','stages']);
-    assert.equal(input.maxCheckpointsPerTest,9);
-    assert.equal(input.stages[0].units,2);assert.equal(input.stages[1].units,null);assert.equal(input.stages[2].units,5);
-    assert.equal(input.stages[2].parent,'customer-ready');assert.equal(input.parents.length,3);
-});
-test('AUTO selected composite preserves fixtures, intermediate work and results',async t=>{
-    const input=setup(t);const baseline=await input.run('L0');
-    t.mock.method(costs,'solveCosts',()=>({selected:['cart-ready'],reason:'static-estimated-saving'}));
-    const report=await autoExecute({...input,provider:new FixtureProvider(),checkpointLifetime:'last-consumer'});
-    assert.equal(report.status,'passed');assert.equal(report.checkpoints.length,1);assert.equal(report.checkpoints[0].stage,'cart-ready');
-    assert.equal(report.counts.reuseHits,2);assert.equal(report.releases[0].after,'coupon-1');
-    assert.ok(report.segments.some(s=>s.node==='customer-ready' && s.status==='passed'));
-    assert.deepEqual(report.results.map(r=>r.state),baseline.results.map(r=>r.state));
+test('AUTO discovers candidates without a duration solver and measures normal execution',async t=>{
+    const input=setup(t);
+    t.mock.method(costs,'solveCosts',()=>assert.fail('A forecast solver must not run'));
+    const report=await autoExecute({...input,provider:new FixtureProvider()});
+    assert.equal(report.status,'passed'); assert.equal(report.checkpoints.length,0);
+    assert.equal(report.checkpointPolicy.basis,'measured-first-use');
+    assert.ok(report.adaptive.decisions.length > 0);
+    assert.deepEqual(fs.readdirSync(input.root),[]);
 });
 test('public engine, Playwright library and CLI reject overrides before application access',async t=>{
     const {workflow,root}=setup(t), {main}=require('../branching/cli.cjs');
@@ -104,15 +86,9 @@ test('opaque AUTO plans cannot be forged, mutated, reordered or lose consumers',
     await assert.rejects(run({plan:{decision}}),/Invalid or stale/);
     await assert.rejects(run({plan,specs:[...workflow.specs.keys()].reverse()}),/order changed/);
     await assert.rejects(run({plan,specs:[...workflow.specs.keys()].slice(1)}),/consumers/);
-    workflow.stages.get('cart-ready').actionUnits=100;
+    workflow.stages.get('cart-ready').estimatedMs=100;
     await assert.rejects(run({plan}),/Invalid or stale/);
     assert.deepEqual(fs.readdirSync(root),[]);
-});
-test('failed selector does not launch a run or silently switch modes',async t=>{
-    const input=setup(t);
-    t.mock.method(costs,'solveCosts',()=>{throw new Error('invalid graph');});
-    await assert.rejects(autoExecute({...input,provider:new FixtureProvider()}),/invalid graph/);
-    assert.deepEqual(fs.readdirSync(input.root),[]);
 });
 test('automatic CLI accepts a prevalidated Graph before application checks',async t=>{
     const {workflow}=setup(t);const {main}=require('../branching/cli.cjs');

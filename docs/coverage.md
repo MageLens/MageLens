@@ -56,7 +56,7 @@ Use your configured `APPLICATION_DOMAIN` and `RUNNER_VIEW_PORT` if they differ f
 
 Failure screenshots are saved under `cypress/screenshots/` for Cypress. Playwright saves failure screenshots and traces under `coverage/playwright-artifacts/`. Use `./bin/runner COMMAND` to run tools in either selected runner's container; see [everyday commands](../README.md#everyday-commands).
 
-Both runners fail tests on uncaught application errors. Cypress disables cross-document view-transition animations inside its test frame so navigation between Hyvä and Admin remains reliable. This does not change normal storefront browsing; animation behavior is outside the bundled acceptance checks.
+Both runners fail tests on uncaught application errors. Playwright waits for pending page requests to settle before final coverage collection; failure to settle within 30 seconds fails the run. Cypress disables cross-document view-transition animations inside its test frame so navigation between Hyvä and Admin remains reliable. This does not change normal storefront browsing; animation behavior is outside the bundled acceptance checks.
 
 ## PHP coverage
 

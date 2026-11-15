@@ -18,30 +18,11 @@ class EstimationError extends Error {
     }
 }
 function assertAssessed(manifest) {
-    const issues = [], assessment = manifest?.assessment, analysis = assessment?.analysis;
-    if (manifest?.schemaVersion !== 1 || manifest?.implementation !== 'rust-prefix-v2' ||
-        assessment?.version !== 'js-ts-points-v4' || assessment?.boundsVersion !== 1)
-        throw new EstimationError([{phase: 'manifest', message: 'Outdated source cost model; replan before execution'}], 'Outdated source cost model; replan before execution');
-    if (!Array.isArray(manifest.diagnostics) || manifest.diagnostics.length)
-        issues.push({phase: 'collection', reasons: manifest.diagnostics ?? ['Missing collection diagnostics']});
-    if (!Array.isArray(manifest.tests) || !manifest.tests.length) issues.push({phase: 'collection', message: 'Missing assessed test inventory'});
-    let total = 0;
-    for (const test of Array.isArray(manifest.tests) ? manifest.tests : []) {
-        if (!test || typeof test !== 'object') { issues.push({phase: 'collection', message: 'Invalid assessed test'}); continue; }
-        const check = (phase, line, estimate) => {
-            if (estimate?.analysisComplete !== true || !Number.isSafeInteger(estimate.estimatedPoints) || estimate.estimatedPoints < 0 ||
-                !Array.isArray(estimate.issues) || estimate.issues.some(i => !['runtime-input', 'concurrency', 'mutation'].includes(i?.kind)))
-                issues.push({test: test.id, file: test.file, line, phase, reasons: estimate?.reasons ?? ['Missing or invalid estimate']});
-        };
-        for (const phase of ['fixture', 'worker', 'lifecycle', 'test']) check(phase, test.line, test[phase === 'test' ? 'estimate' : phase + 'Estimate']);
-        if (!Array.isArray(test.steps)) issues.push({test: test.id, phase: 'test', message: 'Missing statements'});
-        for (const step of Array.isArray(test.steps) ? test.steps : []) { total++; check(step?.kind ?? 'statement', step?.line ?? test.line, step?.estimate); }
-    }
-    if (analysis?.status !== 'complete' || analysis?.collectionComplete !== true || analysis?.collectionDiagnostics !== 0 ||
-        analysis?.totalStatements !== total || analysis?.analyzedStatements !== total ||
-        ['fixturesWithGaps', 'workersWithGaps', 'lifecycleWithGaps'].some(key => analysis?.[key] !== 0))
-        issues.push({phase: 'summary', message: 'Incomplete or inconsistent assessment summary'});
-    if (issues.length) throw new EstimationError(issues);
+    const a = manifest?.assessment;
+    if (manifest?.schemaVersion !== 1 || manifest?.implementation !== 'rust-prefix-v3' || a?.version !== 'measured-first-use-v1')
+        throw new EstimationError([{phase: 'manifest', message: 'Replan for measured-first-use checkpoint reuse; ML manifests are no longer supported'}]);
+    if (!manifest.tests?.length || manifest.diagnostics?.length || a.analysis?.collectionComplete !== true || a.status !== 'complete')
+        throw new EstimationError([{phase: 'collection', message: 'Incomplete source inventory'}]);
 }
 function readManifest(file) {
     try {

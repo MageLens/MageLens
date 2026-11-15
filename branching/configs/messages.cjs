@@ -61,8 +61,8 @@ module.exports = Object.freeze({
     databaseHealthProbeFailedAfterUnpause: 'Database health probe failed after unpause',
     timedOutWaitingForDatabaseHealthAfterUnpause: 'Timed out waiting for database health after unpause',
     commandFailed: (command, status, stderr) => `${command} failed (status ${status}): ${stderr}`,
-    workflowUsage: 'Use an automatic source manifest and native runner configuration',
+    workflowUsage: 'Use a source directory or assessed manifest and native runner configuration',
     workflowModuleMustExportStateRuntime: 'Workflow module must export state(runtime)',
-    automaticUsage: 'Expected manifest, native runner configuration and CoW storage; AUTO is the only policy',
+    automaticUsage: 'Expected source directory or manifest, native runner configuration and CoW storage; AUTO is the only policy',
     unknownCostExecutionMode: 'Unknown cost execution mode'
 });

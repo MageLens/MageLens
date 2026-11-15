@@ -5,6 +5,8 @@
 import {$, words} from './dom.mjs';
 
 function checkpointLifetime(node, run) {
+    if (node.releaseReason === 'uneconomic') return node.reuseState === 'abandoned' ? 'Reuse abandoned after verified reset. Remaining tests execute normally.' : 'Storage released; verified reset has not completed.';
+    if (['candidate', 'measuring', 'linear'].includes(node.checkpointState)) return 'No checkpoint storage has been captured.';
     if (node.checkpointState === 'released') {
         return 'Checkpoint storage has been cleaned. Its execution history stays in this graph.';
     }
@@ -51,6 +53,20 @@ export function createDetails({getElement}) {
                 ['Last consumer', run.nodes.find((n) => n.id === node.lastConsumer)?.label ?? 'None'],
                 ['Release policy', words(node.releasePolicy)]
             );
+        if (node.decision) {
+            const d = node.decision;
+            fields.push(['Measured prefix', `${d.prefixMs.toFixed(1)} ms`],
+                ['Remaining consumers at decision', String(d.remaining)],
+                ['Potential avoided work', `${d.avoidedMs.toFixed(1)} ms`],
+                ['Incremental checkpoint cost', `${d.costMs.toFixed(1)} ms`],
+                ['Required saving threshold', `${d.requiredMs.toFixed(1)} ms`],
+                ['Decision', d.reuse ? 'Reuse economical' : 'Continue linearly'],
+                ['Capture cost', d.captured ? 'Sunk; included in total elapsed time' : `${d.components.capture.toFixed(1)} ms`],
+                ['Remaining restores', `${d.components.restore.toFixed(1)} ms`],
+                ['Incremental release / lifecycle', `${d.components.release.toFixed(1)} / ${d.components.lifecycle.toFixed(1)} ms`],
+                ['Decision history', (node.decisions ?? []).map(item => `${item.remaining} remaining: ${item.reuse ? 'reuse' : 'linear'}`).join(' → ')]);
+        }
+        if (node.releaseReason) fields.push(['Release reason', words(node.releaseReason)]);
         if (node.blockedBy) fields.push(['Blocked by', node.blockedBy]);
         if (node.lastError) fields.push(['Failure phase', words(node.lastError)]);
         for (const [title, value] of fields) {

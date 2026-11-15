@@ -120,10 +120,11 @@ test('retained restore starts next preparation after the schema switch and befor
     fs.writeFileSync(path.join(directory,'browser.json'),'{}');
     const provider=Object.create(RetainedProvider.prototype);
     provider.backend={paths:{},drain:async()=>{},stop:async()=>{},resetCaches:async()=>{},start:async()=>events.push('switch')};
-    provider.browserState={closePages:async()=>events.push('close'),open:async()=>events.push('browser')};
+    provider.browserState={active:true,freeze:async()=>events.push('fence'),pauseCoverage:async()=>events.push('pause-coverage'),
+        closePages:async()=>events.push('close'),open:async()=>events.push('browser')};
     provider.prefetch=async options=>{assert.equal(options.next,'next');events.push('prefetch');};
     await provider.restore(directory,{prefetch:{directory,next:'next'}});
-    assert.deepEqual(events,['close','switch','prefetch','browser']);
+    assert.deepEqual(events,['fence','pause-coverage','close','switch','prefetch','browser']);
     events.length=0;await provider.restore(directory);
-    assert.deepEqual(events,['close','switch','browser']);
+    assert.deepEqual(events,['fence','pause-coverage','close','switch','browser']);
 });

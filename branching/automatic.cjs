@@ -4,41 +4,33 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const {stripTypeScriptTypes} = require('node:module');
 const {digest, fileDigest, Graph} = require('./engine.cjs');
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-function compileFragment(parameters, code) {
-    const strict = '"use strict";\n';
-    try { return new AsyncFunction(...parameters, strict + code); }
-    catch (original) {
-        if (!(original instanceof SyntaxError)) throw original;
-        try { return new AsyncFunction(...parameters, strict + stripTypeScriptTypes(code, {mode: 'transform'})); }
-        catch (error) {
-            if (error.code === 'ERR_NO_TYPESCRIPT') {
-                original.message += '; TypeScript syntax requires the pinned runner Node build'; throw original;
-            }
-            throw error;
-        }
-    }
-}
+const {compileFragment, fragments} = require('./fragments.cjs');
+const {playwrightCoverageAdapter} = require('./runners/playwright/coverage-adapter.cjs');
 
 function verifySources(manifest) {
     require('./estimation.cjs').assertAssessed(manifest);
     try {
-        if (manifest.assessment?.weights && manifest.assessment.weights.millisecondsPerPoint !== require('./baseline.cjs').defaults.unitMs)
-            throw new Error('Outdated source point scale; replan before execution');
         const root = fs.realpathSync(manifest.root);
         for (const source of manifest.sources) {
             const file = path.resolve(root, source.path);
             if (!file.startsWith(root + path.sep) || fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('Source escapes the manifest root');
             if (fileDigest(file) !== source.sha256) throw new Error(`Stale source: ${source.path}; generate the manifest again`);
         }
+        const discovery = manifest.assessment.discovery;
+        if (discovery) {
+            for (const {row} of discovery.tests) {
+                if (row.files) require('./discovery-context.cjs').discoveryContext(row,
+                    {root,dependencyRoots:discovery.dependencyRoots});
+            }
+        }
     } catch (error) {
         throw new (require('./estimation.cjs').EstimationError)([{phase: 'source', message: error.message}], error.message);
     }
 }
 
-function buildWorkflow(manifest, configuration, selected) {
+
+function buildWorkflow(manifest, configuration, selected, boundaries) {
     verifySources(manifest);
     if (!configuration.identity || typeof configuration.state !== 'function' || typeof configuration.assertCheckpoint !== 'function') {
         throw new Error('Automatic runs require identity, state(runtime) and assertCheckpoint(runtime, checkpoint) in the project configuration');
@@ -56,11 +48,16 @@ function buildWorkflow(manifest, configuration, selected) {
             throw new Error(`${t.file}:${t.line} ${t.title}: ${t.reasons.join('; ')}. No test was launched.`);
         }
     }
-    const usable = manifest.checkpoints.filter(c => c.consumers.filter(id => selection.has(id)).length >= 2 &&
+    let usable = manifest.checkpoints.filter(c => c.consumers.filter(id => selection.has(id)).length >= 2 &&
         (c.automatic || (adapter?.supportsCheckpoint?.(c, byId.get(c.representative)) === true)));
+    if (boundaries) {
+        const known = new Set(usable.map(checkpoint=>checkpoint.id));
+        if (boundaries.some(id=>!known.has(id))) throw new Error('Unknown measured checkpoint boundary');
+        usable = usable.filter(checkpoint=>boundaries.includes(checkpoint.id));
+    }
     const fixtureState = !adapter && [...selection].some(id=>byId.get(id).restoration)
         ? new (require('./runners/playwright/fixture-state.cjs').FixtureState)(manifest, configuration) : undefined;
-    const source = new Map(), compiled = new Map();
+    const prepared = fragments(manifest);
     const cypress = test => test.fixture?.startsWith('cypress:');
     const execute = (test, from, to, runtime, terminal = false) => {
         if (adapter) return adapter.execute(test, from, to, runtime);
@@ -69,79 +66,67 @@ function buildWorkflow(manifest, configuration, selected) {
             if (!terminal || from!==0 || to!==test.steps.length) throw new Error('Fixture continuation requires a complete test body');
             return fixtureState.run(test,runtime);
         }
-        const key = `${test.id}:${from}:${to}`;
-        if (cypress(test)) {
-            if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
-            const original = source.get(test.file);
-            return runtime.executeCypress(test.steps.slice(from, to).map(s => original.subarray(s.start, s.end).toString('utf8')).join('\n'));
-        }
-        if (!compiled.has(key)) {
-            if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
-            // Rust offsets are UTF-8 byte offsets, not JavaScript string indexes.
-            const original = source.get(test.file);
-            const code = test.steps.slice(from, to).map(s => original.subarray(s.start, s.end).toString('utf8')).join('\n');
-            compiled.set(key, compileFragment(['page', 'expect'], code));
-        }
-        return compiled.get(key)(runtime.page, configuration.expect ?? require('@playwright/test').expect);
+        if (cypress(test)) return runtime.executeCypress(prepared.source(test, from, to));
+        return prepared.execute(test, from, to, runtime, configuration.expect);
+
     };
     const roots = new Map();
     const stages = [];
-    const units = value => {
-        if (value == null) return null;
-        if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid static action units');
-        return value;
-    };
-    const prefixUnits = (test, from, to) => {
-        const counts = test.steps.slice(from, to).map(s => manifest.implementation === 'rust-prefix-v2'
-            ? units(s.estimate?.estimatedPoints) : units(s.actionUnits));
-        return counts.some(n=>n === null) ? null : units(counts.reduce((a,b)=>a+b, 0));
-    };
+    const fixtureCheckpointFor = test => manifest.checkpoints.find(checkpoint => checkpoint.depth === 0 && checkpoint.consumers.includes(test.id));
+    const usableIds = new Set(usable.map(checkpoint => checkpoint.id));
     const rootFor = test => {
-        if (!roots.has(test.scope)) {
-            const id = `root-${test.scope.slice(0, 20)}`; roots.set(test.scope, id);
-            stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope},
-                actionUnits: manifest.implementation === 'rust-prefix-v2'
-                    ? units(test.fixtureEstimate?.estimatedPoints)
-                    : adapter?.prepare ? null : 0,
-                run: async runtime => { if(test.restoration&&!adapter)await fixtureState.prepare(test,runtime);else await adapter?.prepare?.(test, runtime); }, assert: async () => {}});
+        // A fixture moved into a checkpoint must not share its empty root
+        // with a test that still prepares its fixture in the root.
+        const fixtureCheckpoint = !adapter && test.restoration ? fixtureCheckpointFor(test) : undefined;
+        const checkpointOwnsSetup = usableIds.has(fixtureCheckpoint?.id);
+        const key = `${test.scope}:${checkpointOwnsSetup}`;
+        if (!roots.has(key)) {
+            const rootId = `root-${test.scope.slice(0, 20)}`;
+            const id = checkpointOwnsSetup ? `${rootId}-checkpoint` : rootId;
+            roots.set(key, id);
+            stages.push({id, label: `Fixture · ${test.fixture}`, source: {file: test.file, line: test.line}, checkpoint: false, inputs: {scope: test.scope, rootId},
+                run: async runtime => {
+                    if (checkpointOwnsSetup) return;
+                    if (test.restoration && !adapter) await fixtureState.prepare(test,runtime);
+                    else await adapter?.prepare?.(test, runtime);
+                }, assert: async () => {}});
         }
-        return roots.get(test.scope);
+        return roots.get(key);
     };
     const parentFor = (test, depth) => usable.filter(c => c.depth < depth && c.consumers.includes(test.id)).sort((a,b) => b.depth-a.depth)[0];
     for (const checkpoint of usable) {
         const test = byId.get(checkpoint.consumers.find(id => selection.has(id)));
         const parent = parentFor(test, checkpoint.depth);
         const boundary = test.steps[checkpoint.depth - 1];
+        const fromDepth = parent?.depth ?? 0;
         stages.push({id: checkpoint.id, label: checkpoint.label ?? `Shared prefix · ${checkpoint.depth} steps`,
             source: {file: test.file, line: boundary?.line ?? test.line}, parent: parent?.id ?? rootFor(test),
-            actionUnits: prefixUnits(test, parent?.depth ?? 0, checkpoint.depth),
-            inputs: {checkpoint, source: manifest.sourceDigest},
-            run: runtime => execute(test, parent?.depth ?? 0, checkpoint.depth, runtime),
+            inputs: {checkpoint, source: manifest.sourceDigest, fromDepth},
+            run: runtime => checkpoint.depth === 0 && test.restoration && !adapter
+                ? fixtureState.prepare(test, runtime) : execute(test, fromDepth, checkpoint.depth, runtime),
             assert: runtime => configuration.assertCheckpoint(runtime, checkpoint)});
     }
-    const specs = manifest.schedule.filter(id => selection.has(id)).map(id => {
+    const specs = (selected ?? manifest.schedule).filter(id => selection.has(id)).map(id => {
         const test = byId.get(id), parent = parentFor(test, Infinity);
         return {id, label: test.title, source: {file: test.file, line: test.line}, parent: parent?.id ?? rootFor(test), inputs: {test: id, source: manifest.sourceDigest},
             run: runtime => execute(test, parent?.depth ?? 0, test.steps.length, runtime, true), assert: async () => {}};
     });
-    // Compile all native fragments now: syntax failures must precede backend setup.
-    if (!adapter) for (const test of manifest.tests.filter(t => selection.has(t.id))) {
-        if(test.restoration)continue;
+    // Both built-in paths compile before any backend preparation or test execution.
+    for (const test of manifest.tests.filter(t => selection.has(t.id))) {
+        if (test.restoration && !adapter) continue;
         const cuts = [0, ...usable.filter(c => c.consumers.includes(test.id)).map(c => c.depth).sort((a,b)=>a-b), test.steps.length];
-        const original = fs.readFileSync(path.join(manifest.root, test.file));
-        for (let i=1;i<cuts.length;i++) {
-            const code = test.steps.slice(cuts[i-1], cuts[i]).map(s=>original.subarray(s.start,s.end).toString('utf8')).join('\n');
-            compiled.set(`${test.id}:${cuts[i-1]}:${cuts[i]}`, compileFragment(cypress(test) ? ['cy','Cypress','expect'] : ['page','expect'],code));
-        }
+        if (adapter) adapter.prepareFragments?.(test, cuts);
+        else prepared.prepare(test, cuts, cypress(test) ? ['cy','Cypress','expect'] : ['page','expect']);
     }
+
     return {
-        workflow: new Graph({runtimeState:fixtureState, costBaseline: configuration.costBaseline, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
+        workflow: new Graph({nativePageLifecycle:adapter?.nativePageLifecycle === true, runtimeState:fixtureState, costBaseline: configuration.costBaseline, costStatistics: configuration.costStatistics, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
             configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
                 runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,
-            implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./engine.cjs')), manifest.implementation,
+            implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./fragments.cjs')), fileDigest(require.resolve('./engine.cjs')), manifest.implementation,
                 ...(fixtureState?['./runtime-state.cjs','./runners/playwright/fixture-state.cjs','./runners/playwright/fixture-values.cjs'].map(file=>fileDigest(require.resolve(file))):[])])}, stages, specs}),
         state: configuration.state, checkpointLifetime: 'last-consumer', runnerOptions: configuration.runnerOptions
     };
 }
-module.exports = {buildWorkflow, verifySources, compileFragment};
+module.exports = {buildWorkflow, verifySources, compileFragment, playwrightCoverageAdapter};

@@ -10,6 +10,7 @@ const {chromium, expect} = require('@playwright/test');
 const {selfCoverage} = require('./branching-self-coverage.cjs');
 const {rustCoverage} = require('./branching-rust-coverage.cjs');
 const {assets} = require('../branching/configs/dashboard-assets.cjs');
+const pinned = require('./dependency-pins.cjs');
 
 async function main() {
     const output = path.resolve(process.argv[2] ?? '.runtime/branching-dashboard-self-test'); fs.mkdirSync(output, {recursive: true});
@@ -38,8 +39,8 @@ async function main() {
     const base = {root: path.join(root, 'storage'), eventDirectory: directory, checkpointLifetime: 'last-consumer'};
     async function select(report) { await expect(page.locator(`#run-select option[value="${report.run}"]`)).toHaveCount(1); await page.locator('#run-select').selectOption(report.run); }
     try {
-        assert.equal(browser.version(), '156.0.8078.80'); assert.equal(require('@playwright/test/package.json').version, '1.65.0');
-        await page.goto(app.url); await expect(page.getByText('Your execution map will appear here')).toBeVisible();
+        assert.equal(browser.version(), pinned('CHROME_VERSION')); assert.equal(require('@playwright/test/package.json').version, pinned('PLAYWRIGHT_VERSION'));
+        await page.goto(app.url); await expect(page.getByText('Waiting for a ready run.')).toBeVisible();
         checked('empty dashboard connects without requiring a Magento installation');
 
         const workflow = fixtureWorkflow(), login = Promise.withResolvers(), last = Promise.withResolvers(); releases.push(login.resolve, last.resolve);
@@ -57,7 +58,7 @@ async function main() {
         await expect(block('coupon-1')).toHaveAttribute('data-kind', 'test');
         assert.equal(await block('baseline').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(45, 103, 203)');
         assert.equal(await block('cart-ready').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(27, 136, 102)');
-        assert.equal(await block('coupon-1').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(198, 75, 89)');
+        assert.equal(await block('coupon-1').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(128, 84, 184)');
         const pulse = block('customer-ready').locator('.working-dot'), initialOpacity = await pulse.evaluate(el => getComputedStyle(el).opacity);
         await expect.poll(() => pulse.evaluate(el => getComputedStyle(el).opacity)).not.toBe(initialOpacity);
         await block('cart-ready').hover(); await expect(page.getByRole('tooltip')).toBeVisible();
@@ -172,19 +173,21 @@ async function main() {
         await expect(page.locator('#run-status')).toHaveText('passed'); assert.ok(automatic.counts.reuseHits > 0);
         checked('Rust-derived graph executes through the real engine and reports checkpoint reuse');
         const decision = {report: await autoExecute({...base, ...built, provider: new AutomaticProvider()})};
-        assert.equal(decision.report.approach, 'L0'); await select(decision.report);
-        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(0);
-        await expect(page.locator('#metric-reuses')).toHaveText('0'); checked('static Rust cost decision shows tiny repeated prefixes as linear execution');
+        assert.equal(decision.report.checkpoints.length, 0);
+        assert.ok(decision.report.adaptive.decisions.every(item => !item.reuse)); await select(decision.report);
+        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(decision.report.checkpointPolicy.selected.length);
+        await expect(page.locator('#metric-reuses')).toHaveText('0'); checked('first-use measurement keeps tiny repeated prefixes linear');
 
         const large = new Graph(deepWorkflow());
         const boundedReport = await autoExecute({...base, workflow: large, provider: new FixtureProvider()});
         const bounded = {report: boundedReport, decision: boundedReport.checkpointPolicy};
-        assert.equal(bounded.decision.maxCheckpointsPerTest, 9); assert.equal(bounded.decision.selected.length, 9);
+        assert.equal(bounded.report.checkpointLimit.maxCheckpointsPerTest, 9);
+        assert.equal(bounded.decision.selected.length, 1);
         assert.equal(bounded.report.status, 'passed'); await select(bounded.report);
-        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(9);
+        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(1);
         await expect(page.locator('#warnings')).toContainText('at most 9');
-        assert.ok(bounded.decision.decisions.some(item => item.reason === 'checkpoint-limit'));
-        checked('native Rust cost selection caps each path at nine and executes the constrained plan');
+        assert.ok(bounded.report.adaptive.decisions.every(item => !item.reuse));
+        checked('adaptive selection avoids overlapping prefixes and preserves checkpoint-limit warnings');
 
         const groups = ['simple', 'configurable', 'bundle'], grouped = fixtureWorkflow();
         grouped.stages = groups.map(id => ({id, run: async p => p.hit(id), assert: async p => assert.deepEqual(p.state.db.cart, [])})).reverse();
@@ -234,6 +237,7 @@ async function main() {
         })).toBe(true);
         await page.screenshot({path: path.join(output, 'graph-mobile.png'), fullPage: true});
         checked('labels stay inert, keyboard selection works, and the mobile layout avoids page overflow');
+        await require('./branching-dashboard-adaptive-browser.cjs').acceptance(page, checked, output);
         assert.deepEqual(errors, []); checked('no uncaught browser errors');
     } catch (error) { failure = error; await page.screenshot({path: path.join(output, 'failure.png'), fullPage: true}).catch(() => {}); }
     finally {
@@ -245,7 +249,7 @@ async function main() {
         let rust = null;
         try { rust = nativeCoverage?.finish() ?? null; } catch (error) { failure ??= error; }
         coverage.finish({status: failure ? 'failed' : 'passed', checks, nativeRustCoverage: rust ? 'rust-coverage/summary.json' : null,
-            browser: 'Chrome for Testing 156.0.8078.80', playwright: '1.65.0',
+            browser: `Chrome for Testing ${browser.version()}`, playwright: require('@playwright/test/package.json').version,
             ...(failure ? {error: failure.message} : {})});
     }
     if (failure) throw failure;

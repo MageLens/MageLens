@@ -34,6 +34,7 @@ async function executePlan({
     checkpointLifetime = config.checkpoint.lifetime,
     checkpointSelection,
     checkpointPolicy,
+    adaptive = false,
     eventDirectory = process.env.MAGELENS_BRANCHING_EVENTS,
     onEvent
 }) {
@@ -86,7 +87,7 @@ async function executePlan({
             schedule: selected.map((spec) => spec.id),
             nodes: describeGraph(graph, selected, {approach, checkpointLifetime, retain, chosen}),
             policy: checkpointPolicy
-                ? {reason: checkpointPolicy.reason, selected: checkpointPolicy.selected}
+                ? {basis: checkpointPolicy.basis, reason: checkpointPolicy.reason, selected: checkpointPolicy.selected}
                 : null,
             checkpointLimit: limited.report
         });
@@ -111,11 +112,13 @@ async function executePlan({
         checkpointLifetime,
         retain,
         ttlMs,
-        fault
+        fault,
+        adaptive
     });
     try {
         emit(protocol.event.runPhase, {phase: 'preparing'});
         await measured('prepare', () => provider.prepare({run, directory, approach}));
+        emit(protocol.event.runReady);
         emit(protocol.event.runPhase, {phase: protocol.status.running});
         for (const [index, spec] of selected.entries()) await execution.runSpec(spec, index);
     } catch (error) {
@@ -123,6 +126,7 @@ async function executePlan({
     } finally {
         await cleanupRun({provider, report, measured, errorRecord, emit, directory, run, retain});
     }
+    execution.observeLifecycle();
     emit(protocol.event.cleanupEnd, {
         storageReleased: !fs.existsSync(directory),
         retained: retain,
