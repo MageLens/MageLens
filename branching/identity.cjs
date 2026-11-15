@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -24,14 +24,15 @@ function canonical(value) {
     throw new Error(messages.identityValuesMustBeFiniteJsonData);
 }
 const digest = (value) => createHash('sha256').update(canonical(value)).digest('hex');
+// Reads and hash updates are synchronous, so a complete file digest owns
+// the scratch buffer until it returns.
+const fileBuffer = Buffer.allocUnsafe(1024 * 1024);
 function fileDigest(file) {
-    const hash = createHash('sha256'),
-        buffer = Buffer.alloc(1024 * 1024),
-        fd = fs.openSync(file, 'r');
+    const hash = createHash('sha256'), fd = fs.openSync(file, 'r');
     try {
         let size;
-        while ((size = fs.readSync(fd, buffer, 0, buffer.length, null)))
-            hash.update(buffer.subarray(0, size));
+        while ((size = fs.readSync(fd, fileBuffer, 0, fileBuffer.length, null)))
+            hash.update(fileBuffer.subarray(0, size));
     } finally {
         fs.closeSync(fd);
     }
