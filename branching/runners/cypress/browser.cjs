@@ -6,12 +6,29 @@ const {setTimeout: delay} = require('node:timers/promises');
 const cookieFields = ['name', 'value', 'domain', 'path', 'secure', 'httpOnly', 'sameSite', 'expires', 'priority', 'sameParty', 'sourceScheme', 'sourcePort', 'partitionKey'];
 class CypressState {
     constructor(bridge, cdp) {
-        this.bridge = bridge; this.cdp = cdp; this.origins = new Set(); this.requests = new Map();
+        this.bridge = bridge; this.origins = new Set(); this.requests = new Map();
         this.cache = {stats: {mode: 'browser-per-branch', clears: 0}};
         this.page = {url: () => this.url, evaluate: code => this.evaluate(code)};
-        cdp.on('Network.requestWillBeSent', event => this.requests.set(event.requestId, event.frameId));
-        cdp.on('Network.loadingFinished', event => this.requests.delete(event.requestId));
-        cdp.on('Network.loadingFailed', event => this.requests.delete(event.requestId));
+        this.attachDebugger(cdp);
+    }
+    attachDebugger(cdp) {
+        this.cdp = cdp;
+        cdp.on('Network.requestWillBeSent', event => {
+            if (this.cdp === cdp) this.requests.set(event.requestId, event.frameId);
+        });
+        const finished = event => {
+            if (this.cdp === cdp) this.requests.delete(event.requestId);
+        };
+        cdp.on('Network.loadingFinished', finished);
+        cdp.on('Network.loadingFailed', finished);
+    }
+    async reconnect(cdp) {
+        if (this.frozen) throw new Error('Cypress relaunched Chrome while its checkpoint page was frozen');
+        this.cdp.close();
+        this.origins.clear(); this.requests.clear();
+        this.aut = null; this.url = undefined; this.saved = null; this.opened = false;
+        this.attachDebugger(cdp);
+        await this.initialize();
     }
     get active() { return this.opened; }
     async initialize() {

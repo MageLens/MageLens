@@ -115,12 +115,15 @@ async function install(collect, config, events, tasks, options) {
             observedEnds.delete(node);
         }
     });
-    let preparationMs;
+    let preparationMs, latestLaunch, connectedLaunch, connectedSpec;
+    let currentSpec = 0;
+    if (candidates.length) collect('before:spec', () => { currentSpec++; });
     const bridge = candidates.length ? await new Bridge({onBoundary: async message => {
         initialized ??= (async () => {
             const started = performance.now();
-            const launched = await bridge.browser;
-            cdp = await Cdp.connect(launched.port);
+            connectedLaunch = latestLaunch ?? await bridge.browser;
+            connectedSpec = currentSpec;
+            cdp = await Cdp.connect(connectedLaunch.port);
             state = new CypressState(bridge, cdp); await state.initialize();
             const provider = await extension.createProvider({config, state, tasks, directory, assessment});
             startupMs = preparationMs + performance.now() - started;
@@ -134,6 +137,18 @@ async function install(collect, config, events, tasks, options) {
                 emit: journal.emit, baseline: extension.baseline, statistics: extension.statistics, linear});
         })();
         await initialized;
+        if (currentSpec !== connectedSpec || (latestLaunch && latestLaunch !== connectedLaunch)) {
+            const started = performance.now();
+            const launch = latestLaunch ?? connectedLaunch;
+            const spec = currentSpec;
+            const next = await Cdp.connect(launch.port);
+            try { await state.reconnect(next); }
+            catch (error) { next.close(); throw error; }
+            cdp = next;
+            connectedLaunch = launch;
+            connectedSpec = spec;
+            session.lifecycleMs += performance.now() - started;
+        }
         await session.boundary(message);
     }}).listen() : null;
     if (bridge) collect('task', {'magelens:next': async message => {
@@ -146,7 +161,8 @@ async function install(collect, config, events, tasks, options) {
         const port = Number(launch.args.find(argument => argument.startsWith('--remote-debugging-port='))?.split('=')[1]);
         if (browser.name !== 'chrome-for-testing' || browser.version !== process.env.CHROME_VERSION || !Number.isInteger(port) || port < 1)
             throw new Error('Native checkpoints require pinned Chrome for Testing and its debugging port');
-        bridge.resolveBrowser({port, version: browser.version}); return launch;
+        latestLaunch = {port, version: browser.version};
+        bridge.resolveBrowser(latestLaunch); return launch;
     });
     collect('after:run', async result => {
         try {

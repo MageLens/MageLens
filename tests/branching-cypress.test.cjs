@@ -107,6 +107,81 @@ test('native capture reads the Cypress continuation before freezing and the appl
     assert.deepEqual(await provider.normalizedState(), {browser: 'resumed', application: 'running'});
 });
 
+test('a Cypress browser relaunch keeps the provider state object and replaces browser-local observations', async () => {
+    const {EventEmitter} = require('node:events');
+    class Debugger extends EventEmitter {
+        send() { return {targetInfos: []}; }
+        close() { this.closed = true; }
+    }
+    const original = new Debugger(), next = new Debugger();
+    const state = new CypressState({}, original);
+    state.url = 'https://example.test';
+    state.origins.add(state.url);
+    state.opened = true;
+    original.emit('Network.requestWillBeSent', {requestId: 'old', frameId: 'before'});
+    await state.reconnect(next);
+    assert.equal(original.closed, true);
+    assert.equal(state.cdp, next);
+    assert.equal(state.active, false);
+    assert.equal(state.origins.size, 0);
+    original.emit('Network.requestWillBeSent', {requestId: 'stale', frameId: 'before'});
+    next.emit('Network.requestWillBeSent', {requestId: 'current', frameId: 'after'});
+    assert.deepEqual([...state.requests], [['current', 'after']]);
+    state.frozen = true;
+    await assert.rejects(state.reconnect(new Debugger()), /relaunched Chrome while its checkpoint page was frozen/);
+    assert.equal(state.cdp, next);
+});
+
+test('native prefetch overlaps the original suffix and is discarded before an incompatible checkpoint is released', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-prefetch-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
+    const bindings = {eligible: true, value: ['original']};
+    const calls = [];
+    let time = 0, fixture = 'original', finishPreparation;
+    const session = new NativeSession({directory, run: 'native-prefetch-test', now: () => time, verifySources() {},
+        plan: [{id: 'prefix', identity: 'checked-prefix', consumers: ['first', 'second', 'third']}],
+        bridge: {continue: ({restored}) => calls.push(restored ? 'reuse' : 'run'), call: () => bindings},
+        provider: {identity: {}, entryState: () => ({fixture}), assertBoundary() {}, captureBarrier() {},
+            capture(payload) { fs.writeFileSync(path.join(payload, 'state.json'), '{}'); },
+            normalizedState: () => ({}), resumeCapture() {}, cleanup() {},
+            prefetch({directory: payload}) {
+                assert.ok(fs.existsSync(path.join(payload, 'state.json')));
+                calls.push('prepare');
+                return new Promise(resolve => { finishPreparation = resolve; });
+            },
+            restore() { calls.push('restore'); },
+            discardPrefetch({directory: payload}) {
+                assert.ok(fs.existsSync(path.join(payload, 'state.json')));
+                calls.push('discard');
+            },
+            abandon() { calls.push('abandon'); }
+        }});
+    const enter = consumer => session.boundary({phase: 'enter', checkpoint: 'prefix', consumer, bindings});
+    const complete = consumer => session.boundary({phase: 'complete', checkpoint: 'prefix', consumer, bindings, workMs: 60000});
+    await enter('first');
+    time += 60000;
+    await complete('first');
+    assert.deepEqual(calls, ['run', 'prepare', 'run']);
+    time += 23000;
+    finishPreparation();
+    await enter('second');
+    assert.deepEqual(calls.slice(3), ['restore', 'prepare', 'reuse']);
+    time += 25000;
+    finishPreparation();
+    fixture = 'changed by the original suffix';
+    await enter('third');
+    assert.deepEqual(calls.slice(6), ['discard', 'abandon', 'run']);
+    time += 60000;
+    await complete('third');
+    const report = await session.close({passed: true});
+    assert.equal(report.status, 'passed');
+    assert.equal(report.restores.length, 1);
+    assert.equal(report.cleanup.storageReleased, true);
+    assert.deepEqual(report.prefetches.map(({status, workMs, waitMs}) => [status, workMs, waitMs]),
+        [['used', 23000, 0], ['discarded', 25000, 0]]);
+});
+
 test('a failed native capture retains its cost and the completed prefix outcome', async t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-capture-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));

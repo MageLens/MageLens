@@ -17,6 +17,9 @@ class NativeSession {
             'resumeCapture', 'restore', 'normalizedState', 'cleanup']) {
             if (typeof provider[name] !== 'function') throw new Error(`Native checkpoint provider requires ${name}`);
         }
+        if (provider.discardPrefetch !== undefined &&
+            (typeof provider.prefetch !== 'function' || typeof provider.discardPrefetch !== 'function'))
+            throw new Error('Native checkpoint prefetch requires preparation and cleanup');
         if (typeof verifySources !== 'function') throw new Error('Native checkpoints require source verification');
         this.verifySources = verifySources; this.provider = provider; this.bridge = bridge;
         this.emit = emit; this.now = now; this.linear = linear;
@@ -104,7 +107,9 @@ class NativeSession {
                 this.emit('node-start', {node: candidate.id, operation: 'restore'});
                 try {
                     const manifest = this.store.verify(ref, this.key(candidate));
+                    const preparation = await this.waitForPrefetch(ref);
                     await this.provider.restore(path.join(ref.directory, 'payload'));
+                    if (preparation) this.prefetch = null;
                     await this.provider.assertBoundary(candidate);
                     if (digest(await this.provider.normalizedState()) !== manifest.expectedStateDigest)
                         throw new Error('Native checkpoint restored state mismatch');
@@ -115,6 +120,7 @@ class NativeSession {
                     this.economics.observe('restoreMs', ms, candidate.id);
                     this.report.restores.push({checkpoint: ref.id, consumer, ms});
                     this.emit('node-end', {node: candidate.id, checkpoint: ref.id, operation: 'restore', status: 'passed', ms});
+                    if (candidate.remaining > 1) this.startPrefetch(candidate, ref);
                     await this.consumed(candidate, consumer);
                     this.bridge.continue({restored: true});
                     return;
@@ -143,6 +149,7 @@ class NativeSession {
     }
     async abandon(candidate, consumer, entry, bindings) {
         const time = this.now();
+        await this.discardPrefetch(this.store.available.get(candidate.id)?.id);
         await this.provider.abandon(candidate, consumer);
         if (digest(await this.provider.entryState(candidate, consumer)) !== entry ||
             digest(await this.bridge.call('bindings')) !== digest(bindings))
@@ -191,6 +198,7 @@ class NativeSession {
             this.emit('node-start', {node: candidate.id, operation: 'capture'});
             let ref;
             try {
+                await this.discardPrefetch(this.prefetch?.input.checkpoint);
                 await this.provider.assertBoundary(candidate);
                 ref = await this.store.capture({key: this.key(candidate), stage: candidate.id, parent: null,
                     lineage: [consumer], ttlMs: 24 * 60 * 60 * 1000, provider: this.provider,
@@ -209,6 +217,7 @@ class NativeSession {
             this.economics.lifecycleCharged = true;
             this.report.checkpoints.push({id: ref.id, stage: candidate.id, ms});
             this.emit('checkpoint-ready', {node: candidate.id, checkpoint: ref.id, ms});
+            this.startPrefetch(candidate, ref);
         } else this.lifecycleMs += this.now() - started;
         await this.consumed(candidate, consumer);
         this.bridge.continue({restored: false});
@@ -223,8 +232,50 @@ class NativeSession {
         if (actual?.eligible !== true || digest(actual) !== digest(expected))
             throw new Error('Native checkpoint changed the original closure state');
     }
+    startPrefetch(candidate, ref) {
+        if (!this.provider.discardPrefetch || this.prefetch) return;
+        const input = {checkpoint: ref.id, stage: candidate.id, directory: path.join(ref.directory, 'payload')};
+        const started = this.now();
+        const record = {checkpoint: ref.id, stage: candidate.id, status: 'running', workMs: null, waitMs: 0};
+        (this.report.prefetches ??= []).push(record);
+        const finish = (status, error) => {
+            record.status = status;
+            record.workMs = this.now() - started;
+            return error;
+        };
+        const settled = Promise.resolve().then(() => this.provider.prefetch(input)).then(
+            () => finish('prepared', null),
+            error => finish('failed', error instanceof Error ? error : new Error('Checkpoint preparation failed'))
+        );
+        this.prefetch = {input, settled, record};
+    }
+    async waitForPrefetch(ref) {
+        const operation = this.prefetch;
+        if (operation?.input.checkpoint !== ref.id) {
+            await this.discardPrefetch(operation?.input.checkpoint);
+            return null;
+        }
+        const started = this.now();
+        const error = await operation.settled;
+        operation.record.waitMs += this.now() - started;
+        if (error) throw error;
+        operation.record.status = 'used';
+        return operation;
+    }
+    async discardPrefetch(checkpoint) {
+        const operation = this.prefetch;
+        if (!checkpoint || operation?.input.checkpoint !== checkpoint) return;
+        const error = await operation.settled;
+        await this.provider.discardPrefetch(operation.input);
+        this.prefetch = null;
+        if (error) {
+            this.report.errors.push({phase: 'prefetch', checkpoint, message: error.message});
+        } else operation.record.status = 'discarded';
+    }
     async release(candidate) {
-        const time = this.now(), checkpoint = this.store.release(candidate.id);
+        const time = this.now();
+        await this.discardPrefetch(this.store.available.get(candidate.id)?.id);
+        const checkpoint = this.store.release(candidate.id);
         if (checkpoint) {
             const ms = this.now() - time;
             this.economics.observe('releaseMs', ms, candidate.id);
