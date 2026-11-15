@@ -81,6 +81,20 @@ test('equal-valued DB override does not execute its XML fallback', () => {
     assert.deepEqual(request(result, 'database-override').events, []);
     assert.equal(declaration(result, config, prefix + 'overridden').state, 'uncovered');
 });
+test('Backend-only value and flag reads execute their XML defaults', () => {
+    const result = report();
+    const events = request(result, 'backend-reads').events;
+    for (const leaf of ['heading', 'enabled']) {
+        const item = declaration(result, config, 'application_blog/backend/' + leaf);
+        assert.ok(events.some(event => event.id === item.id && event.type === 'config-read'));
+    }
+});
+test('mixed-case store codes and their lowercase aliases select the same website origin', () => {
+    const result = report();
+    const item = declaration(result, config, prefix + 'heading', 'websites', 'journal_website');
+    const events = request(result, 'store-alias-read').events.filter(event => event.id === item.id);
+    assert.deepEqual(events.map(event => event.requestedScope.code).sort(), ['Journal_Mixed', 'journal_mixed'].sort());
+});
 test('false, multiline, subtree and missing reads retain precise leaf attribution', () => {
     const result = report();
     const events = request(result, 'value-reads').events;
@@ -108,7 +122,7 @@ test('repeated requests on warmed configuration preserve declaration and scope o
     const result = report();
     const normalize = entry => entry.events.map(event => ({id: event.id, type: event.type, requestedScope: event.requestedScope}))
         .sort((a, b) => a.id.localeCompare(b.id));
-    for (const name of [...scopeCases.map(([name]) => name), 'value-reads', 'subtree-read', 'database-override', 'missing-read']) {
+    for (const name of [...scopeCases.map(([name]) => name), 'backend-reads', 'store-alias-read', 'value-reads', 'subtree-read', 'database-override', 'missing-read']) {
         const first = request(result, name), warm = request(result, name + '-warm');
         assert.notEqual(first.id, warm.id);
         assert.deepEqual(normalize(first), normalize(warm), name);

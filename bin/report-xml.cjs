@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const {createHash} = require('node:crypto');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const escape = text => String(text).replace(/[&<>"']/g, value => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[value]));
-const cases = new Set(['baseline', 'default-read', 'website-read', 'store-read', 'store-inherits-website',
+const cases = new Set(['baseline', 'default-read', 'backend-reads', 'store-alias-read', 'website-read', 'store-read', 'store-inherits-website',
     'store-inherits-default', 'website-inherits-default', 'database-override', 'value-reads', 'subtree-read',
     'missing-read', 'warmup-only']);
 function merge(manifest, records, sources) {

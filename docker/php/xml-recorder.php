@@ -33,7 +33,8 @@ final class Recorder
         if (is_object($code)) $code = $code->getCode();
         elseif ($code === null) $code = \Magento\Framework\App\ObjectManager::getInstance()->get(\Magento\Framework\App\Config\ScopeCodeResolver::class)->resolve($scope, $code);
         elseif (is_numeric($code)) $code = self::$manifest['scopes'][$scope][(string) $code] ?? null;
-        if ($code === null || !in_array($code, self::$manifest['scopes'][$scope] ?? [], true)) throw new \RuntimeException('Unknown XML request scope');
+        if ($code === null || (!isset(self::$manifest['scopeCodes'][$scope][(string) $code])
+            && !in_array($code, self::$manifest['scopes'][$scope] ?? [], true))) throw new \RuntimeException('Unknown XML request scope');
         return ['type' => $scope, 'code' => (string) $code];
     }
     private static function event(string $id, string $type, array $scope): void
@@ -50,6 +51,29 @@ final class Recorder
             return;
         }
         self::event($id, 'config-read', $scope);
+    }
+    public static function systemRead($result, $path): void
+    {
+        if (!self::$manifest || self::$busy) return;
+        self::$readHook = true;
+        $path = trim((string) $path, '/');
+        // Whole-system and scope-group reads return every contained leaf.
+        if ($path === '' || $path === 'stores' || $path === 'websites') {
+            if (!is_array($result)) return;
+            foreach (self::$manifest['originScopes'] as $prefix => $origins) {
+                $parts = explode('/', $prefix, 2);
+                if ($path !== '' && $parts[0] !== $path) continue;
+                $value = $path === '' ? ($result[$parts[0]] ?? null) : $result;
+                if (isset($parts[1])) $value = $value[$parts[1]] ?? null;
+                if (is_array($value)) self::read($value, '', $parts[0], $parts[1] ?? '');
+            }
+            return;
+        }
+        $parts = explode('/', $path, 3);
+        if ($parts[0] === 'default') self::read($result, substr($path, 8), 'default', '');
+        elseif (in_array($parts[0], ['stores', 'websites'], true) && isset($parts[1])) {
+            self::read($result, $parts[2] ?? '', $parts[0], $parts[1]);
+        }
     }
     public static function read($result, $path, $scope, $code): void
     {

@@ -6,7 +6,14 @@
  */
 declare(strict_types=1);
 namespace Magento\Framework\App {
-    class Config { public function getValue($path = null, $scope = 'default', $code = null) { return 'original'; } }
+    class Config {
+        private $system;
+        public function __construct() { $this->system = new \Magento\Config\App\Config\Type\System; }
+        public function getValue($path = null, $scope = 'default', $code = null) { return $this->system->get('default/' . $path); }
+    }
+}
+namespace Magento\Config\App\Config\Type {
+    class System { public function get($path = '') { return 'original'; } }
 }
 namespace {
     require __DIR__ . '/../docker/php/xml-hooks.php';
@@ -26,6 +33,10 @@ namespace {
         $samples[] = (hrtime(true) - $start) / $iterations;
     }
     sort($samples);
+    if ($mode !== 'unhooked') {
+        $record = Recorder::finish();
+        if (!$record['readHook'] || ($mode === 'tracked' && count($record['events']) !== 1)) throw new \RuntimeException('Benchmark did not exercise the native read hook');
+    }
     echo json_encode(['php' => PHP_VERSION, 'opentelemetry' => phpversion('opentelemetry'), 'pcov' => phpversion('pcov'),
         'mode' => $mode, 'iterations' => $iterations, 'medianNanosecondsPerCall' => $samples[3], 'peakMemoryBytes' => memory_get_peak_usage(true)], JSON_THROW_ON_ERROR), "\n";
 }

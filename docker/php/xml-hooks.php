@@ -16,9 +16,12 @@ function startXmlHooks(string $run): void
     // Register before bootstrap/autoload. No application arguments, exceptions or
     // return values are changed. No spans, SDK, exporters or network calls exist.
     $hooks = [
-        ['Magento\\Framework\\App\\Config', 'getValue', null,
-            static function ($subject, array $params, $result, ?Throwable $error) {
-                if (!$error) Recorder::read($result, $params[0] ?? null, $params[1] ?? 'default', $params[2] ?? null);
+        ['Magento\\Config\\App\\Config\\Type\\System', 'get', null,
+            static function ($subject, array $params, $result, ?Throwable $error, string $class) {
+                // Framework and Backend accessors share this native getter.
+                // Observe its source value before defaults, flags or plugins
+                // decorate it, excluding callbacks for overriding methods.
+                if (!$error && $class === 'Magento\\Config\\App\\Config\\Type\\System') Recorder::systemRead($result, $params[0] ?? '');
             }],
         ['Magento\\Config\\Model\\Config\\Structure\\AbstractElement', 'getData', null,
             static function ($subject, array $params, $result, ?Throwable $error, string $class) {

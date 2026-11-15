@@ -71,6 +71,63 @@ final class Xml
         return $data;
     }
 
+    public static function symbolicSources(array $sources, array $known): array
+    {
+        $documents = []; $counts = []; $occurrences = []; $firstEmpty = []; $nullText = []; $unmeasured = [];
+        $query = '/config/default//*[not(*)] | /config/websites/*//*[not(*)] | /config/stores/*//*[not(*)]';
+        foreach ($sources as $file => $source) {
+            $dom = self::document($source);
+            $documents[$file] = $dom;
+            foreach ((new \DOMXPath($dom))->query('//*') as $element) {
+                $key = $element->getNodePath();
+                $occurrences[$key] = ($occurrences[$key] ?? 0) + 1;
+            }
+            foreach ((new \DOMXPath($dom))->query($query) as $node) {
+                $key = $node->getNodePath();
+                if (!isset($counts[$key])) $firstEmpty[$key] = !$node->hasChildNodes();
+                $counts[$key] = ($counts[$key] ?? 0) + 1;
+                if ($node->childNodes->length === 1 && $node->firstChild instanceof \DOMText
+                    && !$node->firstChild instanceof \DOMCdataSection && trim($node->firstChild->nodeValue) === '') $nullText[$key] = true;
+                $scalar = !$node->hasChildNodes();
+                foreach ($node->childNodes as $child) if ($child instanceof \DOMCdataSection
+                    || $child instanceof \DOMText && (trim($child->nodeValue) !== '' || $node->childNodes->length === 1)) $scalar = true;
+                if (!$scalar) $unmeasured[$key] = 'A node without a substitutable scalar value has unmeasured provenance';
+                foreach ($node->childNodes as $child) if ($child instanceof \DOMCdataSection && $child->nodeValue === '') {
+                    $unmeasured[$key] = 'Empty CDATA provenance cannot be represented without changing conversion semantics';
+                }
+            }
+        }
+        foreach ($counts as $key => $count) {
+            if ($firstEmpty[$key] && $occurrences[$key] > 1
+                || isset($nullText[$key]) && $occurrences[$key] > $count) {
+                $unmeasured[$key] = 'An empty node has competing scalar or subtree declarations: exact provenance is unmeasured';
+            }
+        }
+        foreach ($documents as $file => $dom) {
+            foreach ((new \DOMXPath($dom))->query($query) as $node) {
+                $key = $node->getNodePath();
+                if (isset($unmeasured[$key])) continue;
+                $id = $known[$file][$key] ?? hash('sha256', "$file\0$key");
+                if (!$node->hasChildNodes()) {
+                    // Only a unique empty declaration needs a token. Empty
+                    // overrides must retain their zero-child merge behavior.
+                    if ($occurrences[$key] === 1) $node->appendChild($dom->createTextNode($id));
+                    continue;
+                }
+                foreach ($node->childNodes as $child) {
+                    if ($child instanceof \DOMCdataSection
+                        || $child instanceof \DOMText && (trim($child->nodeValue) !== '' || $node->childNodes->length === 1)) {
+                        $child->nodeValue = $id;
+                    }
+                }
+            }
+            // Keep comments, CDATA, whitespace and child counts: Magento uses
+            // that structure to choose its merge branch, not just node values.
+            $sources[$file] = $dom->saveXML();
+        }
+        return ['sources' => $sources, 'unmeasured' => $unmeasured];
+    }
+
     public static function declarations(string $path, string $source, string $family): array
     {
         $dom = self::document($source);

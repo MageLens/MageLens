@@ -11,7 +11,7 @@ function checkXml(bool $condition, string $message): void { if (!$condition) thr
 $config = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/etc/config.xml';
 $source = file_get_contents($config);
 $items = Xml::declarations('app/code/Application/Blog/etc/config.xml', $source, 'config');
-checkXml(count($items) === 11, 'Inventory all default, website and store leaves');
+checkXml(count($items) === 13, 'Inventory all default, website and store leaves');
 $headings = array_values(array_filter($items, static fn($item) => $item['path'] === 'application_blog/display/heading'));
 checkXml(count($headings) === 3, 'Scoped paths remain distinct');
 checkXml(count(array_unique(array_column($headings, 'id'))) === 3, 'Stable IDs include declared scope');

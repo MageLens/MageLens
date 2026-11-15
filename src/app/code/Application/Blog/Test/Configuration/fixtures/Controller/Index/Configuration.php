@@ -15,7 +15,8 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         private \Magento\Framework\App\RequestInterface $request,
         private \Magento\Framework\Controller\Result\JsonFactory $json,
         private \Magento\Framework\Controller\Result\RawFactory $raw,
-        private \Magento\Store\Model\StoreManagerInterface $stores
+        private \Magento\Store\Model\StoreManagerInterface $stores,
+        private \Magento\Backend\App\ConfigInterface $backend
     ) {}
     public function execute()
     {
@@ -32,6 +33,14 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         };
         switch ($case) {
             case 'baseline': break;
+            case 'backend-reads':
+                $result['heading'] = $this->backend->getValue('application_blog/backend/heading');
+                $result['enabled'] = $this->backend->isSetFlag('application_blog/backend/enabled');
+                break;
+            case 'store-alias-read':
+                $result['heading'] = $this->config->getValue($path . 'heading', 'store', 'Journal_Mixed');
+                $result['lowercase'] = $this->config->getValue($path . 'heading', 'store', 'journal_mixed');
+                break;
             case 'warmup-only':
                 $preview = htmlspecialchars((string) $this->config->getValue($path . 'unused'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 return $this->raw->create()

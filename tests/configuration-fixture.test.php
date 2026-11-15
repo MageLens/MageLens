@@ -17,6 +17,7 @@ namespace Magento\Framework\App\Config {
 }
 namespace Magento\Framework\App { interface RequestInterface { public function getParam($name, $default = null); } }
 namespace Magento\Store\Model { interface StoreManagerInterface {} }
+namespace Magento\Backend\App { interface ConfigInterface {} }
 namespace Magento\Framework\Controller\Result {
     class Raw {
         public array $headers = [];
@@ -46,8 +47,12 @@ namespace {
         public function isSetFlag($path, $scope = 'default', $code = null) { return false; }
     };
     $stores = new class implements \Magento\Store\Model\StoreManagerInterface {};
+    $backend = new class implements \Magento\Backend\App\ConfigInterface {
+        public function getValue($path) { return 'Backend journal'; }
+        public function isSetFlag($path) { return true; }
+    };
     $controller = new \Application\Blog\Controller\Index\Configuration($config, $request,
-        new \Magento\Framework\Controller\Result\JsonFactory, new \Magento\Framework\Controller\Result\RawFactory, $stores);
+        new \Magento\Framework\Controller\Result\JsonFactory, new \Magento\Framework\Controller\Result\RawFactory, $stores, $backend);
     $response = $controller->execute();
     if (!$response instanceof \Magento\Framework\Controller\Result\Raw
         || $response->headers['Content-Type'] !== 'text/html; charset=UTF-8'
@@ -67,6 +72,10 @@ namespace {
     $response = $controller->execute();
     if (json_encode($response->data, JSON_THROW_ON_ERROR) !== '{}') {
         throw new \RuntimeException('The baseline response must be a JSON object for both browser runners');
+    }
+    $request->scenario = 'backend-reads';
+    if ((array) $controller->execute()->data !== ['heading' => 'Backend journal', 'enabled' => true]) {
+        throw new \RuntimeException('Backend value and flag fixture must exercise the Backend accessor');
     }
     echo "Configuration fixture warm-up HTML, escaping and JSON responses passed.\n";
 }

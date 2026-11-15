@@ -23,6 +23,10 @@ Second line
                 <first>First returned leaf</first>
                 <second>Second returned leaf</second>
             </subtree>
+            <backend>
+                <heading>Backend journal</heading>
+                <enabled>1</enabled>
+            </backend>
         </application_blog>
     </default>
     <websites>

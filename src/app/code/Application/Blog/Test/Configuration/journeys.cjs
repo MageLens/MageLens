@@ -6,6 +6,8 @@
 const journeys = [
     ['baseline', {}],
     ['default-read', {heading: 'Journal'}],
+    ['backend-reads', {heading: 'Backend journal', enabled: true}],
+    ['store-alias-read', {heading: 'Website journal', lowercase: 'Website journal'}],
     ['website-read', {heading: 'Website journal'}],
     ['store-read', {heading: 'Store journal'}],
     ['store-inherits-website', {heading: 'Website journal'}],

@@ -42,32 +42,30 @@ function xmlManifest($om, array $run): array
     $reader = clone $om->get(\Magento\Framework\App\Config\Initial\Reader::class);
     $property = new ReflectionProperty($reader, '_fileResolver');
     $originalResolver = $property->getValue($reader);
-    $resolver = new class($originalResolver, $files) implements \Magento\Framework\Config\FileResolverInterface {
+    $sources = []; $known = [];
+    $filename = (new ReflectionProperty($reader, '_fileName'))->getValue($reader);
+    foreach ((new ReflectionProperty($reader, '_scopePriorityScheme'))->getValue($reader) as $scope) {
+        foreach ($originalResolver->get($filename, $scope) as $file => $source) $sources[$file] = $source;
+    }
+    foreach ($files as $path => $file) foreach ($file['declarations'] as $item) $known[BP . '/' . $path][$item['node']] = $item['id'];
+    $substitution = Xml::symbolicSources($sources, $known);
+    foreach ($files as &$file) if ($file['family'] === 'config') foreach ($file['declarations'] as &$item) {
+        if (isset($substitution['unmeasured'][$item['node']])) {
+            $item['supported'] = false; $item['reason'] = $substitution['unmeasured'][$item['node']];
+            unset($ids[$item['id']]);
+        }
+    }
+    unset($file, $item);
+    $resolver = new class($originalResolver, $sources, $substitution['sources']) implements \Magento\Framework\Config\FileResolverInterface {
         public array $providers = [];
-        private array $seen = [];
-        public function __construct(private $resolver, private array $files) {}
+        public function __construct(private $resolver, private array $originals, private array $symbolic) {}
         public function get($filename, $scope = null)
         {
             $result = [];
             foreach ($this->resolver->get($filename, $scope) as $file => $source) {
                 $this->providers[$file] = hash('sha256', $source);
-                $path = str_starts_with($file, BP . '/') ? substr($file, strlen(BP) + 1) : $file;
-                $dom = Xml::document($source);
-                $known = [];
-                foreach ($this->files[$path]['declarations'] ?? [] as $item) $known[$item['node']] = $item['id'];
-                foreach ((new DOMXPath($dom))->query('/config/default//*[not(*)] | /config/websites/*//*[not(*)] | /config/stores/*//*[not(*)]') as $node) {
-                    $empty = true;
-                    foreach ($node->childNodes as $child) if ($child instanceof DOMCdataSection || trim($child->textContent) !== '') $empty = false;
-                    $nodeKey = $node->getNodePath();
-                    // Magento's DOM merge retains an existing value for an empty
-                    // overriding node. Keep that behavior in the symbolic input.
-                    if ($empty && isset($this->seen[$nodeKey])) continue;
-                    $this->seen[$nodeKey] = true;
-                    $id = $known[$node->getNodePath()] ?? hash('sha256', "$path\0" . $node->getNodePath());
-                    while ($node->firstChild) $node->removeChild($node->firstChild);
-                    $node->appendChild($dom->createTextNode($id));
-                }
-                $result[$file] = $dom->saveXML();
+                if (($this->originals[$file] ?? null) !== $source) throw new RuntimeException('XML providers changed during provenance preparation');
+                $result[$file] = $this->symbolic[$file];
             }
             return $result;
         }
@@ -149,15 +147,18 @@ function xmlManifest($om, array $run): array
     $stores = $om->get(\Magento\Store\Model\StoreManagerInterface::class);
     foreach ($stores->getWebsites(true) as $website) $scopes['websites'][(string) $website->getId()] = $website->getCode();
     foreach ($stores->getStores(true) as $store) $scopes['stores'][(string) $store->getId()] = $store->getCode();
+    $scopeCodes = [];
+    foreach (['websites', 'stores'] as $type) $scopeCodes[$type] = array_fill_keys(array_keys($fresh[$type] ?? []), true);
     ksort($providers); ksort($files);
     // Public method shape guards. Unsupported versions fail preparation explicitly.
     foreach ([\Magento\Framework\App\Config::class => ['getValue', 'isSetFlag'],
+        \Magento\Config\App\Config\Type\System::class => ['get'],
         \Magento\Config\Model\Config\Structure\AbstractElement::class => ['getData'],
         \Magento\Config\Block\System\Config\Form\Field::class => ['render']] as $class => $methods) {
         foreach ($methods as $method) if (!(new ReflectionMethod($class, $method))->isPublic()) throw new RuntimeException('Unsupported XML hook method');
     }
     $manifest = ['schemaVersion' => 1, 'run' => $run['id'], 'files' => array_values($files), 'origins' => $origins,
-        'fields' => array_filter($fields, static fn($items) => count($items) === 1), 'scopes' => $scopes,
+        'fields' => array_filter($fields, static fn($items) => count($items) === 1), 'scopes' => $scopes, 'scopeCodes' => $scopeCodes,
         'runtime' => ['php' => PHP_VERSION, 'opentelemetry' => phpversion('opentelemetry')],
         'providers' => $providers, 'fieldHashes' => $fieldHashes, 'valueHashes' => $valueHashes, 'configuration' => xmlFingerprint($om)];
     $manifest['id'] = hash('sha256', json_encode($manifest, JSON_THROW_ON_ERROR));
@@ -183,7 +184,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
                 while ($parts) { $paths[implode('/', $parts)] = true; array_pop($parts); }
             } else $fields[$item['path']] = [$item['id']];
         }
-        $compact = array_intersect_key($manifest, array_flip(['run', 'id', 'origins', 'scopes', 'fieldHashes']));
+        $compact = array_intersect_key($manifest, array_flip(['run', 'id', 'origins', 'scopes', 'scopeCodes', 'fieldHashes']));
         $compact['paths'] = $paths; $compact['fields'] = $fields;
         $compact['originScopes'] = [];
         $compact['valueHashes'] = [];

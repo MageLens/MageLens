@@ -9,7 +9,7 @@ declare(strict_types=1);
 $fixture['configuration'] = ['websites' => [], 'groups' => [], 'stores' => [], 'config' => [],
     'configHash' => hash_file('sha256', BP . '/app/etc/config.php')];
 $persist();
-foreach (['journal_website' => ['journal_store', 'journal_inherited_store'], 'journal_other_website' => ['journal_other_store']] as $code => $codes) {
+foreach (['journal_website' => ['journal_store', 'journal_inherited_store', 'Journal_Mixed'], 'journal_other_website' => ['journal_other_store']] as $code => $codes) {
     if ($db->fetchOne($db->select()->from($resource->getTableName('store_website'), ['website_id'])->where('code = ?', $code))) throw new RuntimeException('XML fixture scope already exists');
     $website = $om->create(\Magento\Store\Model\Website::class)->setCode($code)->setName($fixture['prefix'] . $code)->save();
     $fixture['configuration']['websites'][] = (int) $website->getId(); $persist();

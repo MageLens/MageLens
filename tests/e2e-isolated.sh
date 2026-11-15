@@ -160,6 +160,7 @@ fi
     ./bin/runner node tests/dependencies.test.cjs
     ./bin/application-compose exec -T -e MAGELENS_REPORT_DATA=/application/docker/php/report-data.php phpfpm \
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
+    ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/Application/Blog/Test/Configuration/merge.test.php
     ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
