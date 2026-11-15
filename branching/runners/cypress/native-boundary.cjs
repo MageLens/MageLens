@@ -70,7 +70,9 @@ function dispatch(result) {
 }
 function bindingsSnapshot(read) {
     try {
-        const seen = new Set();
+        const objects = new Map();
+        const visiting = new Set();
+        const closures = new Set();
         const encode = value => {
             const type = typeof value;
             if (value === null) return ['null'];
@@ -78,15 +80,19 @@ function bindingsSnapshot(read) {
             if (type === 'string' || type === 'boolean') return [type, value];
             if (type === 'number' && Number.isFinite(value)) return [type, Object.is(value, -0) ? '-0' : value];
             if (value && ['function', 'object'].includes(type) && bindingReaders.has(value)) {
-                if (seen.has(value)) throw new Error('Aliased closure input');
-                seen.add(value);
+                if (closures.has(value)) throw new Error('Aliased closure input');
+                closures.add(value);
                 const {id, read} = bindingReaders.get(value);
                 return ['closure', id, encode(read())];
             }
-            if (type !== 'object' || seen.has(value)) throw new Error('Opaque or aliased fixture input');
-            seen.add(value);
+            if (type !== 'object') throw new Error('Opaque fixture input');
+            if (visiting.has(value)) throw new Error('Cyclic fixture input');
+            if (objects.has(value)) return ['reference', objects.get(value)];
             if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
                 throw new Error('Opaque fixture input');
+            const id = objects.size;
+            objects.set(value, id);
+            visiting.add(value);
             const entries = [];
             for (const key of Reflect.ownKeys(value).sort()) {
                 const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -95,7 +101,8 @@ function bindingsSnapshot(read) {
                 if (typeof key !== 'string' || !Object.hasOwn(descriptor, 'value')) throw new Error('Opaque fixture property');
                 entries.push([key, descriptor.enumerable, descriptor.configurable, descriptor.writable, encode(descriptor.value)]);
             }
-            return [Array.isArray(value) ? 'array' : 'object', entries];
+            visiting.delete(value);
+            return [Array.isArray(value) ? 'array' : 'object', id, entries];
         };
         return {eligible: true, value: encode(read())};
     } catch { return {eligible: false}; }

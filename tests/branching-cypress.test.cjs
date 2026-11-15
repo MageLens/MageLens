@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -8,9 +8,32 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {Bridge} = require('../branching/runners/cypress/bridge.cjs');
+const {bindingsSnapshot} = require('../branching/runners/cypress/native-boundary.cjs');
 const {install} = require('../branching/runners/cypress/native-plugin.cjs');
 const {open} = require('../branching/runners/cypress/adapter.cjs');
 const {CypressState} = require('../branching/runners/cypress/browser.cjs');
+
+test('native Cypress snapshots shared fixture references and detects changes to them', () => {
+    const customer = {region: 'west'};
+    const snapshot = bindingsSnapshot(() => ({customer, config: {customers: [customer]}}));
+    assert.equal(snapshot.eligible, true);
+    const equivalent = {region: 'west'};
+    assert.deepEqual(bindingsSnapshot(() => ({config: {customers: [equivalent]}, customer: equivalent})), snapshot);
+    assert.notDeepEqual(bindingsSnapshot(() => ({customer, config: {customers: [{region: 'west'}]}})), snapshot);
+    customer.region = 'east';
+    assert.notDeepEqual(bindingsSnapshot(() => ({customer, config: {customers: [customer]}})), snapshot);
+});
+
+test('native Cypress still rejects cyclic fixtures and opaque values without invoking accessors', () => {
+    const circular = {};
+    circular.self = circular;
+    assert.deepEqual(bindingsSnapshot(() => ({circular})), {eligible: false});
+    assert.deepEqual(bindingsSnapshot(() => ({opaque() {}})), {eligible: false});
+    let accessed = false;
+    const fixture = {get computed() { accessed = true; return 1; }};
+    assert.deepEqual(bindingsSnapshot(() => ({fixture, shared: fixture})), {eligible: false});
+    assert.equal(accessed, false);
+});
 
 test('native Cypress preserves version 16 durations and failure details', () => {
     const {testResult} = require('../branching/runners/cypress/native.cjs');
