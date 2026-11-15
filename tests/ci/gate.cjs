@@ -79,15 +79,15 @@ function gate() {
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
             themeReports.push({...entry, snapshot: read(path.join(directory, 'equivalence.json'))});
-            if (entry.os === 'ubuntu-latest') reports.push(directory);
+            reports.push(directory);
         } catch (error) { errors.push(`${entry.id}: ${error.message}`); }
     }
-    if (reports.length === 8) {
+    if (reports.length === cases.length) {
         try {
             execFileSync(process.execPath, ['tests/compare-matrix.cjs', ...reports], {stdio: 'inherit',
-                env: {...process.env, MAGELENS_MATRIX_REPORT: 'ci-gate/linux-matrix-comparison.json'}});
-        } catch { errors.push('Eight-way Linux coverage comparison failed'); }
-    } else errors.push(`Linux comparison incomplete: ${reports.length}/8 reports`);
+                env: {...process.env, MAGELENS_MATRIX_REPORT: 'ci-gate/matrix-comparison.json'}});
+        } catch { errors.push('Complete matrix coverage comparison failed'); }
+    } else errors.push(`Matrix comparison incomplete: ${reports.length}/${cases.length} reports`);
     fs.mkdirSync('ci-gate', {recursive: true});
     const themes = compareThemes(themeReports, cases);
     fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');

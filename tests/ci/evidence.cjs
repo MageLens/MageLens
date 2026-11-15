@@ -113,7 +113,7 @@ function writeEvidence() {
         throw new Error(report.incomplete);
     }
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        `## ${entry.id}\n\n${report.passed ? 'PASS: 7/7 acceptance scenarios and all harness checks.' : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
+        `## ${entry.id}\n\n${report.passed ? `PASS: ${report.counts.totalPassed}/${report.counts.totalTests} acceptance scenarios and all harness checks.` : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
     if (report.steps.e2e?.outcome === 'success' && !report.passed) process.exitCode = 1;
 }
 module.exports = {sanitizedCoverage, testResults};
