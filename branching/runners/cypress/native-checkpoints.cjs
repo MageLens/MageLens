@@ -12,9 +12,18 @@ const {NativeSession} = require('./native-session.cjs');
 const {verifySources} = require('../../automatic.cjs');
 const domains = ['application', 'browser', 'filesystem', 'cache', 'queues', 'search', 'contracts', 'runner', 'plugins', 'coverage'];
 
+function reportedTests(spec, result) {
+    const occurrences = new Map(), identify = require('./native-support.cjs').identity;
+    return (result?.tests ?? []).map(test => {
+        const key = JSON.stringify(test.title), occurrence = occurrences.get(key) ?? 0;
+        occurrences.set(key,occurrence + 1);
+        return {test, node: identify(spec.absolute,test.title,occurrence)};
+    });
+}
+
 async function install(collect, config, events, tasks, options) {
     const preparationStarted = performance.now();
-    const {manifest, module: modulePath, selected, consumers, identities = {}, linear = false} = options.checkpoint;
+    const {manifest, module: modulePath, selected, consumers, identities = {}, declaredSkips = [], linear = false} = options.checkpoint;
     const extensionFile = path.resolve(modulePath);
     const extensionDigest = require('../../identity.cjs').fileDigest(extensionFile);
     const extension = require(extensionFile);
@@ -95,11 +104,7 @@ async function install(collect, config, events, tasks, options) {
     // Cypress publishes the last browser-side test event after root after hooks.
     // Reconcile that tail from the actual spec result, without polling or replay.
     collect('after:spec', (spec, result) => {
-        const occurrences = new Map();
-        for (const test of result?.tests ?? []) {
-            const key = JSON.stringify(test.title), occurrence = occurrences.get(key) ?? 0;
-            occurrences.set(key, occurrence + 1);
-            const node = require('./native-support.cjs').identity(spec.absolute, test.title, occurrence);
+        for (const {test,node} of reportedTests(spec,result)) {
             recordFailure(node, test.state);
             if (!observedEnds.has(node)) {
                 observedEnds.add(node);
@@ -143,8 +148,17 @@ async function install(collect, config, events, tasks, options) {
     });
     collect('after:run', async result => {
         try {
-            const retried = (result.runs ?? []).flatMap(run => run.tests ?? []).filter(test => test.attempts?.length > 1).length;
-            const passed = !result.totalFailed && !result.totalSkipped && !result.totalPending && !retried && !retryFailures.size;
+            const tests = (result.runs ?? []).flatMap(run=>reportedTests(run.spec,run));
+            const pending = tests.filter(({test})=>test.state==='pending');
+            // Cypress reports static .skip declarations as pending. A
+            // runtime skip, missing test or executed retry cannot satisfy the
+            // exact declaration identities captured before execution.
+            const expected = new Set(declaredSkips);
+            const declared = pending.length === expected.size && pending.every(({node,test})=>
+                expected.delete(node) && !test.attempts?.some(attempt=>attempt.state!=='pending'||attempt.error)) &&
+                !expected.size && (result.totalPending ?? 0)===pending.length;
+            const retried = tests.filter(({test})=>test.attempts?.length>1).length;
+            const passed = !result.totalFailed && !result.totalSkipped && declared && !retried && !retryFailures.size;
             let report;
             if (session) {
                 report = await session.close({passed});
@@ -155,6 +169,9 @@ async function install(collect, config, events, tasks, options) {
                 report = {run, checkpoints: [], restores: [], prefixes: [], decisions: [], observations: [], errors,
                     cleanup: {storageReleased: true}, status: passed && !errors.length ? 'passed' : 'failed'};
             }
+            if (declared && declaredSkips.length) report.declaredSkips = pending.map(({node})=>node);
+            if (!declared || result.totalSkipped) report.errors.push({phase:'skips',
+                message:'Original Cypress pending or skipped tests changed from the verified declarations'});
             if (retryFailures.size) report.retries = [...retryFailures.values()];
             if (retried) report.errors.push({phase: 'retry', message: 'Original Cypress run contains retried tests', tests: retried});
             fs.writeFileSync(path.join(options.directory, 'checkpoints.json'), JSON.stringify(report), {mode: 0o600});

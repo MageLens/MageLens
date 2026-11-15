@@ -114,11 +114,18 @@ async function prepareSuite(options) {
     const inventory = await collectAssessed(manifest, project, directory, runner);
     if (project.native.checkpoint) {
         if (!inventory.tests.every(test => test.framework === 'cypress')) throw new Error('Native checkpoint lifecycle requires Cypress');
-        const identities = new Map();
+        const identities = new Map(), declaredSkips = [];
+        const keepDeclaredSkips = project.native.preserveDeclaredSkips === true;
         for (const source of manifest.tests) {
             const matches = inventory.tests.filter(test => testKey(test) === testKey({...source, file: path.join(manifest.root, source.file)}));
-            if (matches.length === 1) identities.set(source.id, matches[0].id);
+            if (matches.length === 1) {
+                identities.set(source.id, matches[0].id);
+                if (keepDeclaredSkips && source.staticallySkipped === true && matches[0].expectedStatus === 'skipped')
+                    declaredSkips.push(matches[0].id);
+            }
         }
+        if (keepDeclaredSkips && declaredSkips.length !== inventory.tests.filter(test=>test.expectedStatus==='skipped').length)
+            throw new Error('A declared Cypress skip lacks exact original source evidence');
         const plan = require('./runners/cypress/native-plan.cjs').prepare(manifest, project.native.checkpoints, [...identities.keys()]);
         if (plan.candidates.some(candidate => candidate.consumers.some(id => !identities.has(id))))
             throw new Error('Native checkpoint consumers must have unique original test identities');
@@ -126,7 +133,7 @@ async function prepareSuite(options) {
         return {inventory, groups: {setup: [], native: inventory.tests, checkpoint: []},
             checkpoint: inventory.tests.filter(test => consumers.has(test.id)), blocks: [], browserIneligible: [],
             ordering: {basis: 'native-order', scheduled: inventory.tests.map(test => test.id), changed: false},
-            nativeCheckpoints: {plan, identities}};
+            nativeCheckpoints: {plan, identities, declaredSkips}};
     }
     const groups = partition(manifest, inventory, project);
     let decision, built, checkpoint = groups.checkpoint;
@@ -253,7 +260,8 @@ async function executeSuite(options) {
             checkpoint: {module: project.native.checkpoint, manifest,
             linear: project.native.linear === true,
             selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id),
-            consumers: [...nativeCheckpoints.identities.keys()], identities: Object.fromEntries(nativeCheckpoints.identities)}, observationRun: observer.run,
+            consumers: [...nativeCheckpoints.identities.keys()], identities: Object.fromEntries(nativeCheckpoints.identities),
+            declaredSkips: nativeCheckpoints.declaredSkips}, observationRun: observer.run,
             onEvent: event => {
                 const {type, schemaVersion: _schema, run: _run, sequence: _sequence, time: _time, ...data} = event;
                 if (data.spec) data.spec = nativeCheckpoints.identities.get(data.spec) ?? data.spec;
