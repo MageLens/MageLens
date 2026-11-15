@@ -54,6 +54,7 @@ fi
 source "$ROOT/bin/compose-project"
 resolve_compose_project "$requested_project"
 preflight
+verify_compose_project_checkout
 command -v git >/dev/null || fail 'Install Git, then rerun ./install.sh.'
 lock_workflow
 if [[ ! -f .env ]]; then

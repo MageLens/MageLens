@@ -55,7 +55,7 @@ jobs:
           grep -qx '# todo 0' "$RUNNER_TEMP/integration.tap"
       - name: PHP unit checks
         run: |
-          for file in tests/env.test.php tests/theme.test.php tests/source.test.php; do php "$file"; done
+          for file in tests/env.test.php tests/theme.test.php tests/source.test.php tests/report-url.test.php; do php "$file"; done
           # Collection test uses fixed container paths; this runner is disposable.
           sudo mkdir /coverage /pcov-state
           sudo chown "$(id -u):$(id -g)" /coverage /pcov-state

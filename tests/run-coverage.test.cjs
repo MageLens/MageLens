@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '6') {
+function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '6', setup = () => {}) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-workflow-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const name of ['bin', '.runtime', 'coverage']) fs.mkdirSync(path.join(directory, name));
@@ -21,31 +21,96 @@ set -euo pipefail
 ROOT=$PWD
 MAGELENS_RUNNER=${runner}
 preflight() { :; }
-say() { :; }
+say() { printf '%s\\n' \"$*\"; }
 fail() { echo "$*" >&2; exit 1; }
 lock_workflow() { mkdir .runtime/workflow.lock; }
 dc() {
     printf '%s\\n' "$*" >> calls
     case "$*" in
+        *report-url.php) [[ "$TEST_FAILURE" != url ]] || return 1; echo 'http://custom.test:8080/shop/media/coverage/index.html' ;;
+        *project-hooks.php\\ cleanup) [[ "$TEST_FAILURE" != cleanup ]] || return 1 ;;
+        *prepare.cjs*) rm -rf coverage; mkdir coverage; test ! -L src/pub/media/coverage ;;
+        *report-browser.cjs*) [[ "$TEST_FAILURE" != browser-report && "$TEST_FAILURE" != xml-report && "$TEST_FAILURE" != finalize ]] || return 1
+            printf '<html>current</html>' > coverage/index.html; echo '{}' > coverage/summary.json ;;
         *theme-scope.php) echo '[]' ;;
         *project-hooks.php\\ prepare) echo '{}' ;;
         *collection.php\\ start) touch coverage/.active-run ;;
-        *collection.php\\ stop|*report.php) rm -f coverage/.active-run ;;
+        *collection.php\\ stop) rm -f coverage/.active-run ;;
+        *report.php) [[ "$TEST_FAILURE" != php-report ]] || return 1 ;;
+        *xml-manifest.php\\ check) [[ "$TEST_FAILURE" != xml-provenance ]] || return 1 ;;
+        *app\\ test*) [[ "$TEST_FAILURE" != publish ]] || return 1 ;;
+        *app\\ sh*) [[ "$TEST_FAILURE" != mount ]] || return 1 ;;
         *run-browser.cjs\\ --warmup|*run-playwright.cjs\\ --warmup) [[ "$TEST_FAILURE" != warmup ]] || return 124 ;;
         *run-browser.cjs|*run-playwright.cjs) [[ "$TEST_FAILURE" != tests ]] || return 23 ;;
     esac
 }
 `);
+    setup(directory);
     const result = spawnSync('bash', ['bin/run-coverage', ...args], {
         cwd: directory, encoding: 'utf8', env: {...process.env, TEST_FAILURE: failure},
     });
     const calls = fs.existsSync(path.join(directory, 'calls')) ? fs.readFileSync(path.join(directory, 'calls'), 'utf8') : '';
     assert.equal(fs.existsSync(path.join(directory, '.runtime/workflow.lock')), false);
     assert.equal(fs.existsSync(path.join(directory, 'coverage/.active-run')), false);
+    if (result.status !== 0) assert.doesNotMatch(result.stdout, /Open the combined coverage report:|http:\/\/custom/);
     return {...result, calls, directory};
 }
 
 for (const runner of ['cypress', 'playwright']) {
+
+test(`${runner}: publishes complete reports after cleanup`, t => {
+    const result = workflow(t, [], '', false, runner);
+    assert.equal(result.status, 0, result.stderr);
+    const link = path.join(result.directory, 'src/pub/media/coverage');
+    assert.equal(fs.readlinkSync(link), '../../../coverage');
+    assert.equal(fs.readFileSync(path.join(link, 'index.html'), 'utf8'), '<html>current</html>');
+    assert.ok(fs.existsSync(path.join(link, 'summary.json')));
+    assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080\/shop\/media\/coverage\/index.html/);
+    assert.doesNotMatch(result.stdout, /Local report:/);
+    assert.ok(result.calls.lastIndexOf('project-hooks.php cleanup') < result.calls.indexOf('report-url.php'));
+});
+
+for (const failure of ['mount', 'warmup', 'tests', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'publish']) {
+    test(`${runner}: ${failure} failure leaves no public report or success URL`, t => {
+        const result = workflow(t, [], failure, false, runner, '6', directory => {
+            fs.mkdirSync(path.join(directory, 'src/pub/media'), {recursive: true});
+            fs.writeFileSync(path.join(directory, 'coverage/index.html'), 'old report');
+            fs.symlinkSync('../../../coverage', path.join(directory, 'src/pub/media/coverage'));
+        });
+        assert.notEqual(result.status, 0, result.stderr);
+        assert.equal(fs.existsSync(path.join(result.directory, 'src/pub/media/coverage')), false);
+        if (['cleanup', 'url', 'publish'].includes(failure)) assert.equal(result.status, 1, result.stderr);
+        if (failure === 'cleanup') {
+            assert.ok(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), 'Failed cleanup must retain the recovery marker');
+            assert.doesNotMatch(result.calls, /report-url.php/, 'Failed cleanup must prevent publication');
+        }
+        if (failure === 'url') assert.doesNotMatch(result.calls, /app test -r/, 'Invalid URL must stop publication');
+    });
+}
+
+test(`${runner}: a repeated run removes obsolete report files`, t => {
+    const result = workflow(t, [], '', false, runner, '6', directory => {
+        fs.mkdirSync(path.join(directory, 'src/pub/media'), {recursive: true});
+        fs.symlinkSync('../../../coverage', path.join(directory, 'src/pub/media/coverage'));
+        fs.writeFileSync(path.join(directory, 'coverage/obsolete.html'), 'old');
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.existsSync(path.join(result.directory, 'src/pub/media/coverage/obsolete.html')), false);
+});
+
+for (const kind of ['file', 'directory', 'symlink']) test(`${runner}: preserves conflicting ${kind}`, t => {
+    const result = workflow(t, [], '', false, runner, '6', directory => {
+        const destination = path.join(directory, 'src/pub/media/coverage');
+        fs.mkdirSync(path.dirname(destination), {recursive: true});
+        if (kind === 'file') fs.writeFileSync(destination, 'keep');
+        else if (kind === 'directory') fs.mkdirSync(destination);
+        else fs.symlinkSync('unrelated', destination);
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Move it aside first/);
+    assert.ok(fs.lstatSync(path.join(result.directory, 'src/pub/media/coverage')));
+});
+
 const browserScript = runner === 'cypress' ? 'run-browser.cjs' : 'run-playwright.cjs';
 test(`${runner}: default run preserves running services, configuration and caches`, t => {
     const result = workflow(t, [], '', false, runner);
@@ -54,9 +119,10 @@ test(`${runner}: default run preserves running services, configuration and cache
     assert.equal((result.calls.match(/project-hooks.php cleanup/g) || []).length, 1);
     assert.match(result.calls, /report.php/);
     assert.match(result.calls, /finalize.cjs/);
-    const ordered = ['prepare.cjs', 'project-hooks.php before', 'project-hooks.php prepare',
+    const ordered = ['prepare.cjs', 'project-hooks.php before', 'project-hooks.php prepare', 'xml-manifest.php\n',
         `timeout --signal=TERM --kill-after=10s 600s node bin/${browserScript} --warmup`,
-        '/php/manifest.php', 'collection.php start', `runner node bin/${browserScript}\n`, 'report.php'];
+        '/php/manifest.php', 'collection.php start', `runner node bin/${browserScript}\n`, 'report.php',
+        'xml-manifest.php check', 'report-xml.cjs', 'finalize.cjs', 'project-hooks.php cleanup', 'report-url.php'];
     for (const command of ordered) assert.ok(result.calls.includes(command), `Missing command: ${command}`);
     for (let index = 1; index < ordered.length; index++) {
         assert.ok(result.calls.indexOf(ordered[index - 1]) < result.calls.indexOf(ordered[index]), `${ordered[index - 1]} must precede ${ordered[index]}`);

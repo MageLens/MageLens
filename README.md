@@ -21,7 +21,12 @@ Run the installer, run the tests, and open one report to see which parts of your
 The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä. The badges are updated after each successful coverage run.
 
 <!-- coverage-badges:start -->
-Run `./bin/run-coverage` to generate coverage reports and badges for your project.
+[![Cypress: 5/5 passed](coverage/badges/cypress.svg)](coverage/index.html)
+[![PHP lines: 92.88%](coverage/badges/php.svg)](coverage/php/index.html)
+[![JavaScript statements: 50.32%](coverage/badges/js.svg)](coverage/js/index.html)
+[![Template executable lines: 54.84%](coverage/badges/templates.svg)](coverage/templates/index.html)
+
+Full Cypress run: `c856dc8f9106040db2adcdc0fcd37fd6` · 2026-11-15T15:36:30.614Z
 <!-- coverage-badges:end -->
 
 ## Why MageLens?
@@ -97,7 +102,7 @@ With the default domain and ports:
 | Magento Admin | https://magelens.test/admin/ |
 | Demonstration blog | https://magelens.test/blog/ |
 | Live test runner (Cypress or Playwright) | https://magelens.test:6080/ |
-| Combined coverage report, after a successful test run | `coverage/index.html` on your machine |
+| Combined coverage report, after a successful test run | https://magelens.test/media/coverage/index.html |
 
 Fresh installations create the Admin account `application` / `ApplicationOnly123456!`. Demo features and usage are documented in the [blog README](src/app/code/Application/Blog/README.md).
 
@@ -128,7 +133,7 @@ By default, the installer adds the domain to your hosts file and uses Mark Shust
 
 PHP coverage excludes emitted HTML and inline JavaScript. Template warnings identify unsupported directives, scripts or PHP-generated output. When a warning is present, the template percentage covers only the parts MageLens can measure.
 
-Open `coverage/index.html` directly in your browser for the combined view. Each successful full run also refreshes the four SVG badges in `coverage/badges/` and the managed badge section in this README. Reports are generated locally and are ignored by Git; the badges can be committed. Archive `coverage/` to share the browsable reports.
+After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. Each successful full run also refreshes the four SVG badges in `coverage/badges/` and the managed badge section in this README. Reports are generated locally and are ignored by Git; the badges can be committed. Archive `coverage/` to share the browsable reports.
 
 Coverage includes PHP executable lines, whole JavaScript files, and HTML/PHTML templates with their bindings and inline scripts under `src/app/code/`, plus selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. JavaScript badges measure statements in whole `.js` files, with separate application/library reports. Inline scripts belong to template coverage, which also lists unsupported and PHP-generated script fragments. See [JavaScript coverage configuration](docs/coverage.md#javascript-coverage).
 
@@ -240,7 +245,7 @@ The default Docker project name is `magelens`. To name a new installation, run `
 
 The installer selects the name from `--project-name`, then a nonempty `COMPOSE_PROJECT_NAME` environment variable, then the saved `.env` value, then `magelens`. It saves the selection in `.env` for installation reruns, coverage, runner and service commands. Existing installations reject a conflicting name; unset conflicting environment overrides and keep the saved name to reuse the same database volumes. Use a separate directory for another project.
 
-For multiple copies, choose a different project name and domain for each and set non-conflicting `APPLICATION_PORT`, `APPLICATION_HTTPS_PORT` and `RUNNER_VIEW_PORT` values in each `.env` before installing. Project naming does not change the domain or ports. Stopping or removing one project's services and volumes leaves the other projects running.
+For multiple copies, choose a different project name and domain for each and set non-conflicting `APPLICATION_PORT`, `APPLICATION_HTTPS_PORT` and `RUNNER_VIEW_PORT` values in each `.env` before installing. Commands reject application containers belonging to another checkout with the same project name; run commands from the owning checkout. Project naming does not change the domain or ports. Stopping or removing one project's services and volumes leaves the other projects running.
 
 Rerun `./install.sh` with your platform, theme and runner flags to resume interrupted setup or rebuild after Dockerfile changes. Existing database contents, configuration, and media are preserved.
 

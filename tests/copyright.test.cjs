@@ -37,8 +37,9 @@ function fixture(t) {
     return {root, write, git, run};
 }
 
-test('checks every tracked format while preserving language preambles and opaque files', t => {
-    const {write, run, root} = fixture(t);
+for (const owner of ['Private Entrepreneur Vitalii Boiko', 'Copyright (c)  MageLens']) {
+test(`checks every tracked format for ${owner} while preserving preambles and opaque files`, t => {
+    const {write, run, root, git} = fixture(t);
     const sources = {
         'bin/tool': `#!/usr/bin/env bash\n${hash}exit 0\n`,
         'script.cjs': `${slash}module.exports = 42;\n`,
@@ -53,19 +54,36 @@ test('checks every tracked format while preserving language preambles and opaque
         'fix.patch': `${notice}\nSubject: Fixture\n`,
         'windows.js': `\uFEFF${slash}console.log(1);\n`.replace(/\n/g, '\r\n')
     };
-    for (const [file, source] of Object.entries(sources)) write(file, source);
+    for (const file of Object.keys(sources)) {
+        sources[file] = sources[file].replaceAll('Copyright (c)  MageLens', owner === 'Private Entrepreneur Vitalii Boiko' ? 'SPDX-FileCopyrightText: ' + owner : owner);
+        write(file, sources[file]);
+    }
     for (const [file, source] of Object.entries({'package.json': '{}', 'composer.lock': '{}',
         'picture.png': Buffer.from([0x89, 0x50, 0, 0x01]), 'new-format.xyz': 'opaque payload'})) {
         write(file, source);
-        write(`${file}.license`, notice);
+        write(`${file}.license`, notice.replace('Copyright (c)  MageLens', owner === 'Private Entrepreneur Vitalii Boiko' ? 'SPDX-FileCopyrightText: ' + owner : owner));
     }
     write('generated/scratch.js', 'Untracked files are outside this check.', false);
+    if (owner === 'Private Entrepreneur Vitalii Boiko') commit(git);
     const result = run(path.join(root, '.github'));
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /all 22 tracked files/);
     for (const [file, source] of Object.entries(sources)) {
         assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), source, 'The check is read-only');
     }
+});
+}
+
+for (const [name, replacement] of [
+    ['copyright year', 'Copyright (c) 2026 MageLens'],
+    ['wrong owner', 'Copyright (c)  Someone Else'],
+    ['wrong license', 'Copyright (c)  MageLens']
+]) test(`rejects invalid MageLens notice: ${name}`, t => {
+    const {write, run} = fixture(t);
+    let source = slash.replace('Copyright (c)  MageLens', replacement);
+    if (name === 'wrong license') source = source.replace('Elastic-2.0', 'MIT');
+    write('bad.js', source);
+    assert.equal(run().status, 1);
 });
 
 for (const [name, source] of [

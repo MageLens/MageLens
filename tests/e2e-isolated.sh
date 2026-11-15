@@ -162,7 +162,10 @@ fi
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
     ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     # The installer selection must drive coverage without an extra runner flag.
-    ./bin/run-coverage
+    mkdir -p coverage
+    printf 'obsolete report content\n' > coverage/obsolete-publication.txt
+    ./bin/run-coverage | tee .runtime/coverage-run.log
+    ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs

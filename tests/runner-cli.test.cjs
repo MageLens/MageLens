@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -26,6 +26,7 @@ for (const runner of ['cypress', 'playwright']) {
         fs.writeFileSync(path.join(root, '.runtime/install-profile'), `luma ${runner}\n`);
         fs.writeFileSync(path.join(root, 'bin/docker'), `#!${process.execPath}
 const args = process.argv.slice(2);
+if (args[0] === 'ps') process.exit(0);
 if (args.includes('--images')) console.log('fixture/php');
 else {
     console.log(JSON.stringify({args, cwd: process.cwd(), runner: process.env.MAGELENS_RUNNER}));

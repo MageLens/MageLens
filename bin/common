@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -37,7 +37,7 @@ export MAGELENS_THEME MAGELENS_RUNNER
 APPLICATION_PHP_IMAGE="magelens-php-base:${PHP_VERSION}-markshust${MARKSHUST_DOCKER_MAGENTO_VERSION}"
 dc() {
     source "$ROOT/bin/compose-project"
-    resolve_compose_command_project "$@" || return
+    resolve_compose_command_project "$@" || return 1
     # PHP is rebuilt from the upstream recipe on the pinned official security
     # release. Other service images are inherited directly by Compose.
     local sources=() images=()

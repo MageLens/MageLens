@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -6,13 +6,14 @@ const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const {chromium} = require('@playwright/test');
 const {warmupPaths} = require('./project.cjs');
-const {disablePageTransitions} = require('./browser-navigation.cjs');
+const {disablePageTransitions, installPlaywrightAdminDependencies} = require('./browser-navigation.cjs');
 
 async function main() {
     if (process.argv.includes('--warmup')) {
         const browser = await chromium.launch({channel: 'chrome', headless: false});
         try {
             const page = await browser.newPage({ignoreHTTPSErrors: true});
+            const checkAdminDependencies = await installPlaywrightAdminDependencies(page.context());
             await page.context().addInitScript(disablePageTransitions);
             await require('@vitaliiboiko/magento-template-coverage/playwright').installTemplateRuntime(page.context());
             const paths = warmupPaths(JSON.parse(fs.readFileSync('coverage/project-fixtures.json')));
@@ -22,6 +23,7 @@ async function main() {
                 if (!response?.ok()) throw new Error(`Warm-up ${path} HTTP ${response?.status()}`);
                 await page.waitForLoadState('networkidle', {timeout: 180000});
             }
+            checkAdminDependencies();
             fs.writeFileSync('coverage/warmup-results.json', JSON.stringify({runner: 'playwright', status: 'passed',
                 browser: {name: 'chrome-for-testing', version: browser.version()}}));
         } finally { await browser.close(); }

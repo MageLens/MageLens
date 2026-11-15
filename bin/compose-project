@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -56,7 +56,29 @@ resolve_compose_command_project() {
         esac
         shift
     done
-    resolve_compose_project "$requested"
+    resolve_compose_project "$requested" || return 1
+    # Rendering configuration does not access the project's containers.
+    case "${1:-}" in config|version) return 0 ;; esac
+    verify_compose_project_checkout
+}
+
+verify_compose_project_checkout() {
+    local containers service directory checkout
+    checkout=$(cd "$ROOT" && pwd -P) || return 1
+    containers=$(docker ps -a --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+        --format '{{.Label "com.docker.compose.service"}}\t{{.Label "com.docker.compose.project.working_dir"}}') || return 1
+    while IFS=$'\t' read -r service directory; do
+        # Data-only services can survive an application container recreation.
+        case "$service" in app|phpfpm|runner|workspace) ;; *) continue ;; esac
+        if [[ -d "$directory" ]]; then
+            directory=$(cd "$directory" && pwd -P) || return 1
+        fi
+        if [[ "$directory" != "$checkout" ]]; then
+            printf 'Compose project "%s" has %s containers from another checkout: %s\nCurrent checkout: %s\nRun commands from the owning checkout. Use a separate Docker project, domain and ports for a separate installation; do not change the project name of an existing database.\n' \
+                "$COMPOSE_PROJECT_NAME" "$service" "${directory:-unknown directory}" "$checkout" >&2
+            return 1
+        fi
+    done <<< "$containers"
 }
 
 save_compose_project() {

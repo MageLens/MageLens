@@ -6,7 +6,9 @@ License: see LICENSE in the repository root.
 
 # MageLens coverage
 
-Run `./bin/run-coverage` from the repository root, then open `coverage/index.html`. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, and HTML template reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
+Run `./bin/run-coverage` from the repository root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, and HTML template reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
+
+The public report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous public link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
 
 ## Coverage scope
 
@@ -57,6 +59,8 @@ Use your configured `APPLICATION_DOMAIN` and `RUNNER_VIEW_PORT` if they differ f
 Failure screenshots are saved under `cypress/screenshots/` for Cypress. Playwright saves failure screenshots and traces under `coverage/playwright-artifacts/`. Use `./bin/runner COMMAND` to run tools in either selected runner's container; see [everyday commands](../README.md#everyday-commands).
 
 Both runners fail tests on uncaught application errors. Cypress disables cross-document view-transition animations inside its test frame so navigation between Hyvä and Admin remains reliable. This does not change normal storefront browsing; animation behavior is outside the bundled acceptance checks.
+
+Both runners supply the missing Prototype dependency in Braintree 4.8's Admin settings script during warm-up and scenarios. This adjusts only the browser response, preserving original files and normal browser caching.
 
 ## PHP coverage
 

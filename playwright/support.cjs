@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -7,7 +7,7 @@ const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {withTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
-const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
+const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         browserIdentity: [async ({browser}, use, testInfo) => {
@@ -30,6 +30,7 @@ function withCoverage(base = playwright.test) {
             }
         }, {auto: true}],
         context: async ({context, baseURL}, use) => {
+            const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
             await context.addCookies([{name: 'application_coverage', value: run.id,
@@ -67,6 +68,7 @@ function withCoverage(base = playwright.test) {
                 for (const snapshot of snapshots.values()) coverage.merge(snapshot);
                 fs.mkdirSync('.nyc_output', {recursive: true});
                 fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
+                checkAdminDependencies();
             }
         }
     });

@@ -25,6 +25,10 @@ function workspace(t, content = '') {
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args[0] === 'info') process.exit(0);
+if (args[0] === 'ps') {
+    if (process.env.TEST_CHECKOUT) console.log('runner\\t' + process.env.TEST_CHECKOUT);
+    process.exit(Number(process.env.TEST_INSPECT_EXIT || 0));
+}
 if (args.includes('version')) {console.log('2.24.4'); process.exit(0);}
 fs.appendFileSync('calls.jsonl', JSON.stringify({args, project: process.env.COMPOSE_PROJECT_NAME}) + '\\n');
 process.exit(Number(process.env.TEST_DOCKER_EXIT || 0));
@@ -174,4 +178,54 @@ test('installer help documents project-name input and precedence without Docker'
     assert.match(result.stdout, /--project-name NAME/);
     assert.match(result.stdout, /environment > saved .env > magelens/);
     assert.equal(fs.existsSync(path.join(f.root, '.env')), false);
+});
+
+test('another checkout using the same project is rejected before coverage, service or installation changes', t => {
+    const f = workspace(t, 'COMPOSE_PROJECT_NAME=client-shop\n');
+    const other = workspace(t);
+    f.write('.runtime/installed', '6\n');
+    f.write('.runtime/install-profile', 'luma cypress magento\n');
+    f.write('.runtime/compose-project-name', 'client-shop\n');
+    fs.mkdirSync(path.join(f.root, 'coverage'));
+    f.write('coverage/project-fixtures.json', '{"preserve":true}');
+    for (const [script, args] of [['bin/run-coverage', []], ['bin/application-compose', ['stop']],
+        ['bin/application-compose', ['up', '-d']], ['install.sh', ['--container-only']]]) {
+        f.write('calls.jsonl', '');
+        const result = f.run(script, args, {TEST_CHECKOUT: other.root});
+        assert.notEqual(result.status, 0, result.stderr);
+        assert.match(result.stderr, /another checkout/);
+        assert.ok(result.stderr.includes(other.root));
+        assert.equal(f.read('calls.jsonl'), '', 'No Compose action may reach the other application');
+        assert.equal(f.read('coverage/project-fixtures.json'), '{"preserve":true}');
+        assert.equal(f.read('.runtime/installed'), '6\n');
+        assert.equal(f.read('.runtime/install-profile'), 'luma cypress magento\n');
+        assert.equal(f.read('.env'), 'COMPOSE_PROJECT_NAME=client-shop\n');
+        assert.equal(fs.existsSync(path.join(f.root, '.runtime/workflow.lock')), false);
+    }
+});
+
+test('matching checkout labels and filesystem aliases still allow Compose commands', t => {
+    const f = workspace(t, 'COMPOSE_PROJECT_NAME=client-shop\n');
+    const alias = path.join(f.root, 'checkout-alias');
+    fs.symlinkSync(f.root, alias, 'dir');
+    for (const directory of [f.root, alias]) {
+        const result = f.run('bin/application-compose', ['ps'], {TEST_CHECKOUT: directory});
+        assert.equal(result.status, 0, result.stderr);
+    }
+});
+
+test('container lookup failure prevents Compose actions', t => {
+    const f = workspace(t, 'COMPOSE_PROJECT_NAME=client-shop\n');
+    const result = f.run('bin/application-compose', ['stop'], {TEST_INSPECT_EXIT: '23'});
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.existsSync(path.join(f.root, 'calls.jsonl')), false);
+});
+
+test('configuration rendering does not require ownership of running containers', t => {
+    const f = workspace(t, 'COMPOSE_PROJECT_NAME=client-shop\n');
+    const result = f.run('bin/application-compose', ['config'], {TEST_CHECKOUT: '/another/checkout'});
+    assert.equal(result.status, 0, result.stderr);
+    const calls = f.read('calls.jsonl').trim().split('\n').map(JSON.parse);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].args.at(-1), 'config');
 });
