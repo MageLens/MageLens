@@ -17,13 +17,28 @@ function install({list, selected, profile = false, inventory = true, discoveryBa
         return cy.task('magelens:observations', observations.splice(0), {log: false});
     };
     if (observe && !list) {
+        let previous;
         const report = (type, attributes, runnable) => {
-            if (!runnable.magelensIdentity) throw new Error('Native Cypress observation identity is missing');
-            observations.push({type, node: runnable.magelensIdentity,
-                ...(type === 'spec-end' ? {status: attributes.state === 'pending' ? 'skipped' : attributes.state, ms: attributes.duration} : {})});
+            const attempt = runnable.currentRetry();
+            const title = JSON.stringify(runnable.titlePath());
+            // Cypress clones Mocha's runnable for a retry without our
+            // registration field. Use the original occurrence only for a
+            // retry of the same title in this spec's event stream.
+            if (runnable.magelensIdentity) previous = {node: runnable.magelensIdentity, title, runner: runnable.id, attempt};
+            else if (!attempt || previous?.title !== title || previous.runner !== runnable.id)
+                throw new Error('Native Cypress observation identity is missing');
+            previous = {...previous, runner: runnable.id, attempt};
+            const status = attributes.state === 'pending' ? 'skipped' : attempt ? 'failed' : attributes.state;
+            observations.push({type, node: previous.node,
+                ...(type === 'spec-end' ? {status, ms: attributes.duration} : {})});
         };
         Cypress.on('test:before:run', (attributes, runnable) => report('spec-start', attributes, runnable));
         Cypress.on('test:after:run', (attributes, runnable) => report('spec-end', attributes, runnable));
+        Cypress.on('mocha', (event, test, error) => {
+            if (event === 'retry' && previous && test?.id === previous.runner && typeof error?.message === 'string') {
+                observations.push({type: 'test-retry', node: previous.node, attempt: previous.attempt, message: error.message});
+            }
+        });
         original.before(() => cy.task('magelens:observations', [{type: 'run-ready'}], {log: false}));
         original.beforeEach(flush);
         original.after(flush);

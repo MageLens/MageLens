@@ -14,7 +14,7 @@ const domains = ['application', 'browser', 'filesystem', 'cache', 'queues', 'sea
 
 async function install(collect, config, events, tasks, options) {
     const preparationStarted = performance.now();
-    const {manifest, module: modulePath, selected, consumers, linear = false} = options.checkpoint;
+    const {manifest, module: modulePath, selected, consumers, identities = {}, linear = false} = options.checkpoint;
     const extensionFile = path.resolve(modulePath);
     const extensionDigest = require('../../identity.cjs').fileDigest(extensionFile);
     const extension = require(extensionFile);
@@ -59,18 +59,35 @@ async function install(collect, config, events, tasks, options) {
                 body: JSON.stringify(event), signal: AbortSignal.timeout(10000)});
             if (!response.ok) throw new Error('Native observation delivery failed');
         } : extension.emit ? event => extension.emit(event.type, event) : undefined});
-    const observedEnds = new Set();
+    const observedEnds = new Set(), retryFailures = new Map();
+    const consumerByNode = new Map(Object.entries(identities).map(([consumer,node]) => [node,consumer]));
+    let session, cdp, state, initialized, startupMs = 0;
+    function recordFailure(node, status) {
+        const consumer = consumerByNode.get(node);
+        if (status === 'failed' && consumer && session?.active?.consumer === consumer) session.interruptPrefix();
+    }
     let ready = false;
     collect('task', {'magelens:observations': batch => {
-        if (!Array.isArray(batch) || batch.some(event => !['run-ready', 'spec-start', 'spec-end'].includes(event.type)))
+        if (!Array.isArray(batch) || batch.some(event => !['run-ready', 'spec-start', 'spec-end', 'test-retry'].includes(event.type)))
             throw new Error('Invalid native observation batch');
         for (const {type, ...data} of batch) {
+            if (type === 'test-retry') {
+                const {node,attempt,message} = data;
+                if (typeof node !== 'string' || !Number.isSafeInteger(attempt) || attempt < 0 || typeof message !== 'string')
+                    throw new Error('Invalid Cypress retry observation');
+                retryFailures.set(JSON.stringify([node,attempt]), {node,attempt,message});
+                recordFailure(node, 'failed');
+                continue;
+            }
             if (type === 'run-ready') {
                 if (ready) continue;
                 ready = true;
                 for (const node of unverified) journal.emit('checkpoint-ineligible', {node, reason:'unverified-restoration'});
             }
-            if (type === 'spec-end') observedEnds.add(data.node);
+            if (type === 'spec-end') {
+                observedEnds.add(data.node);
+                recordFailure(data.node, data.status);
+            }
             journal.emit(type, data);
         }
         return null;
@@ -83,13 +100,14 @@ async function install(collect, config, events, tasks, options) {
             const key = JSON.stringify(test.title), occurrence = occurrences.get(key) ?? 0;
             occurrences.set(key, occurrence + 1);
             const node = require('./native-support.cjs').identity(spec.absolute, test.title, occurrence);
+            recordFailure(node, test.state);
             if (!observedEnds.has(node)) {
                 observedEnds.add(node);
-                journal.emit('spec-end', {node, status: test.state === 'pending' ? 'skipped' : test.state, ms: test.duration});
+                const status = test.state === 'pending' ? 'skipped' : test.attempts?.length > 1 ? 'failed' : test.state;
+                journal.emit('spec-end', {node, status, ms: test.duration});
             }
         }
     });
-    let session, cdp, state, initialized, startupMs = 0;
     let preparationMs;
     const bridge = candidates.length ? await new Bridge({onBoundary: async message => {
         initialized ??= (async () => {
@@ -125,7 +143,8 @@ async function install(collect, config, events, tasks, options) {
     });
     collect('after:run', async result => {
         try {
-            const passed = !result.totalFailed && !result.totalSkipped && !result.totalPending;
+            const retried = (result.runs ?? []).flatMap(run => run.tests ?? []).filter(test => test.attempts?.length > 1).length;
+            const passed = !result.totalFailed && !result.totalSkipped && !result.totalPending && !retried && !retryFailures.size;
             let report;
             if (session) {
                 report = await session.close({passed});
@@ -136,6 +155,8 @@ async function install(collect, config, events, tasks, options) {
                 report = {run, checkpoints: [], restores: [], prefixes: [], decisions: [], observations: [], errors,
                     cleanup: {storageReleased: true}, status: passed && !errors.length ? 'passed' : 'failed'};
             }
+            if (retryFailures.size) report.retries = [...retryFailures.values()];
+            if (retried) report.errors.push({phase: 'retry', message: 'Original Cypress run contains retried tests', tests: retried});
             fs.writeFileSync(path.join(options.directory, 'checkpoints.json'), JSON.stringify(report), {mode: 0o600});
         } finally { cdp?.close(); await bridge?.close(); await journal.close(); }
     });

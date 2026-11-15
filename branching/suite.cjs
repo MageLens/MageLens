@@ -244,7 +244,8 @@ async function executeSuite(options) {
     if (nativeCheckpoints) {
         const result = await native(null, {checkpoint: {module: project.native.checkpoint, manifest,
             linear: project.native.linear === true,
-            selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id), consumers: [...nativeCheckpoints.identities.keys()]}, observationRun: observer.run,
+            selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id),
+            consumers: [...nativeCheckpoints.identities.keys()], identities: Object.fromEntries(nativeCheckpoints.identities)}, observationRun: observer.run,
             onEvent: event => {
                 const {type, schemaVersion: _schema, run: _run, sequence: _sequence, time: _time, ...data} = event;
                 if (data.spec) data.spec = nativeCheckpoints.identities.get(data.spec) ?? data.spec;

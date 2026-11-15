@@ -41,7 +41,7 @@ class NativeSession {
             await this.verifySources();
             const candidate = this.candidates.get(message.checkpoint);
             if (!candidate || !candidate.consumers.includes(message.consumer)) throw new Error('Unknown native checkpoint consumer');
-            if (message.phase === 'enter') await this.enter(candidate, message.consumer, message.bindings, started);
+            if (message.phase === 'enter') await this.enter(candidate, message.consumer, message.bindings, started, message.attempt ?? 0);
             else if (message.phase === 'complete') await this.complete(candidate, message.consumer, message.workMs, message.unsupportedRunnerState, started, message.bindings);
             else throw new Error('Unknown native checkpoint phase');
         } catch (error) {
@@ -50,8 +50,23 @@ class NativeSession {
             throw error;
         }
     }
-    async enter(candidate, consumer, bindings, started = this.now()) {
-        if (this.active || candidate.started.has(consumer)) throw new Error('Native checkpoint callback repeated or reordered');
+    async enter(candidate, consumer, bindings, started, attempt) {
+        if (!Number.isSafeInteger(attempt) || attempt < 0 ||
+            (!attempt && candidate.started.has(consumer)) ||
+            (this.active && !(attempt && this.active.consumer === consumer)))
+            throw new Error('Native checkpoint callback repeated or reordered');
+        if (attempt) {
+            this.interruptPrefix();
+            this.report.errors.push({phase: 'retry', checkpoint: candidate.id, consumer, attempt,
+                message: 'Original Cypress test retried'});
+            if (this.store.available.has(candidate.id)) {
+                const entry = digest(await this.provider.entryState(candidate, consumer));
+                await this.abandon(candidate, consumer, entry, bindings);
+            }
+            candidate.disabled = true;
+            this.bridge.continue({restored: false});
+            return;
+        }
         candidate.started.add(consumer);
         // Runs after the original beforeEach hooks, including their awaited work.
         // The provider must compare all fixture, runner/plugin and application
@@ -110,21 +125,34 @@ class NativeSession {
                     throw error;
                 }
             }
-            const time = this.now();
-            await this.provider.abandon(candidate, consumer);
-            if (digest(await this.provider.entryState(candidate, consumer)) !== entry ||
-                digest(await this.bridge.call('bindings')) !== digest(bindings))
-                throw new Error('Native checkpoint abandonment changed the original fixture state');
-            const resetMs = this.now() - time;
-            this.economics.observe('resetMs', resetMs, candidate.id);
-            abandonedMs = resetMs + await this.release(candidate);
-            candidate.disabled = true;
-            this.emit('checkpoint-reuse-abandoned', {node: candidate.id, remaining: candidate.remaining, resetVerified: true});
+            abandonedMs = await this.abandon(candidate, consumer, entry, bindings);
         }
         this.active.started = this.now();
         this.lifecycleMs += this.active.started - started - abandonedMs;
         this.emit('node-start', {node: candidate.id, operation: 'execute'});
         this.bridge.continue({restored: false});
+    }
+    interruptPrefix() {
+        if (!this.active) return;
+        const {candidate, consumer} = this.active;
+        candidate.disabled = true;
+        this.active = null;
+        this.report.errors.push({phase: 'prefix', checkpoint: candidate.id, consumer,
+            message: 'Original callback did not reach its checkpoint boundary'});
+        this.emit('node-end', {node: candidate.id, operation: 'execute', status: 'failed'});
+    }
+    async abandon(candidate, consumer, entry, bindings) {
+        const time = this.now();
+        await this.provider.abandon(candidate, consumer);
+        if (digest(await this.provider.entryState(candidate, consumer)) !== entry ||
+            digest(await this.bridge.call('bindings')) !== digest(bindings))
+            throw new Error('Native checkpoint abandonment changed the original fixture state');
+        const resetMs = this.now() - time;
+        this.economics.observe('resetMs', resetMs, candidate.id);
+        const releaseMs = await this.release(candidate);
+        candidate.disabled = true;
+        this.emit('checkpoint-reuse-abandoned', {node: candidate.id, remaining: candidate.remaining, resetVerified: true});
+        return resetMs + releaseMs;
     }
     key(candidate) { return digest({id: candidate.id, entry: candidate.entry, bindings: candidate.bindings, identity: candidate.identity}); }
     async complete(candidate, consumer, workMs, unsupportedRunnerState = [], started = this.now(), bindings) {
@@ -200,11 +228,7 @@ class NativeSession {
     async close({passed = false} = {}) {
         const started = this.now();
         let releaseMs = 0;
-        if (this.active && !this.report.errors.length) {
-            const node = this.active.candidate.id;
-            this.report.errors.push({phase: 'prefix', checkpoint: node, message: 'Original callback did not reach its checkpoint boundary'});
-            this.emit('node-end', {node, operation: 'execute', status: 'failed'});
-        }
+        if (!this.bridge.error) this.interruptPrefix();
         try {
             for (const candidate of this.candidates.values()) releaseMs += await this.release(candidate);
         } finally {

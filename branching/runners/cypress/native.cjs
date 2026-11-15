@@ -15,7 +15,8 @@ async function invoke(configuration, directory, {list = false, tests, profile, c
     const wrapper = path.join(path.dirname(config), `.magelens-native-${path.basename(run)}.cjs`);
     const observation = onEvent ? await require('./native-observation.cjs').listen(onEvent, observationRun) : null;
     const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, checkpoint, observation: observation?.endpoint, originalConfig: config, configDigest, selected: tests?.map(test => test.id)};
-    fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, retries: 0, e2e: {...c.e2e, retries: 0, setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
+    const retryOverride = checkpoint || list ? '' : 'retries: 0, ';
+    fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, ${retryOverride}e2e: {...c.e2e, ${retryOverride}setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
     fs.writeFileSync(input, JSON.stringify({resultFile, options: {project: path.dirname(config), configFile: wrapper, browser: 'chrome-for-testing', headed: true,
         ...(tests ? {spec: [...new Set(tests.map(test => test.file))]} : {})}}), {mode: 0o600});
@@ -59,7 +60,16 @@ async function invoke(configuration, directory, {list = false, tests, profile, c
             const evidence = path.join(run, 'checkpoints.json');
             if (!fs.existsSync(evidence)) throw new Error('Native checkpoint report is missing');
             report.checkpoints = JSON.parse(fs.readFileSync(evidence));
-            if (report.checkpoints.status !== 'passed') report.status = 'failed';
+            const byId = new Map(results.map(result => [result.id,result]));
+            for (const {node,attempt,message} of report.checkpoints.retries ?? []) {
+                const result = byId.get(node);
+                if (result && !result.errors.some(error => error.message === message))
+                    result.errors.push({attempt,message});
+            }
+            if (report.checkpoints.status !== 'passed') {
+                report.status = 'failed';
+                report.exitCode ||= 1;
+            }
         }
         return report;
     } finally { await observation?.close(); fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }

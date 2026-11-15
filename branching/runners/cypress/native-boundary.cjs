@@ -109,6 +109,10 @@ function commands() {
 function begin(checkpoint, consumer, inputs) {
     const token = {checkpoint, consumer, inputs, restored:false};
     cy.then(() => {
+        const test = cy.state('test');
+        const attempt = test?.currentRetry();
+        if (!Number.isSafeInteger(attempt) || attempt < 0) throw new Error('Invalid Cypress test attempt');
+        token.retry = attempt > 0;
         activeInputs = inputs;
         prepareBindings();
         const queue = commands(), endIndex = queue.indexOf(token.end);
@@ -118,10 +122,13 @@ function begin(checkpoint, consumer, inputs) {
         const sharedSubject = queue.slice(endIndex+1).some(command=>chainers.has(command.get('chainerId')));
         const bindings = bindingsSnapshot(inputs);
         if (sharedSubject) bindings.eligible = false;
-        return dispatch({boundary:{phase:'enter',checkpoint,consumer,bindings}}).then(action=>{
+        return dispatch({boundary:{phase:'enter',checkpoint,consumer,bindings,attempt}}).then(action=>{
+            if (token.retry && action.restored) throw new Error('Native Cypress retries must execute the original prefix');
             token.restored = action.restored;
             if (action.restored) for (const command of token.commands) command.skip();
-            token.started = performance.now(); prefixActive = !action.restored; runnerState = new Set();
+            token.started = performance.now();
+            prefixActive = !action.restored && !token.retry;
+            runnerState = new Set();
             return null;
         });
     });
@@ -134,7 +141,7 @@ function end(token) {
     token.commands = queue.slice(index+1);
     cy.then(() => {
         prefixActive = false;
-        if (token.restored) return null;
+        if (token.restored || token.retry) return null;
         return dispatch({boundary:{phase:'complete',checkpoint:token.checkpoint,consumer:token.consumer,
             workMs:performance.now()-token.started,bindings:bindingsSnapshot(token.inputs),unsupportedRunnerState:[...runnerState]}});
     });
