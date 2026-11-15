@@ -82,6 +82,7 @@ class NativeSession {
         }
         if (!candidate.disabled && !this.linear) await this.provider.beginPrefix?.(candidate, consumer);
         this.active = {candidate, consumer, compatible, bindings};
+        let abandonedMs = 0;
         if (ref) {
             if (!candidate.disabled && this.economics.decide(candidate.id, candidate.prefixMs, candidate.remaining, {captured: true})) {
                 const time = started;
@@ -114,13 +115,14 @@ class NativeSession {
             if (digest(await this.provider.entryState(candidate, consumer)) !== entry ||
                 digest(await this.bridge.call('bindings')) !== digest(bindings))
                 throw new Error('Native checkpoint abandonment changed the original fixture state');
-            this.economics.observe('resetMs', this.now() - time, candidate.id);
-            await this.release(candidate);
+            const resetMs = this.now() - time;
+            this.economics.observe('resetMs', resetMs, candidate.id);
+            abandonedMs = resetMs + await this.release(candidate);
             candidate.disabled = true;
             this.emit('checkpoint-reuse-abandoned', {node: candidate.id, remaining: candidate.remaining, resetVerified: true});
         }
         this.active.started = this.now();
-        this.lifecycleMs += this.now() - started;
+        this.lifecycleMs += this.active.started - started - abandonedMs;
         this.emit('node-start', {node: candidate.id, operation: 'execute'});
         this.bridge.continue({restored: false});
     }
@@ -191,16 +193,20 @@ class NativeSession {
             const ms = this.now() - time;
             this.economics.observe('releaseMs', ms, candidate.id);
             this.emit('checkpoint-released', {node: candidate.id, checkpoint, ms});
+            return ms;
         }
+        return 0;
     }
     async close({passed = false} = {}) {
+        const started = this.now();
+        let releaseMs = 0;
         if (this.active && !this.report.errors.length) {
             const node = this.active.candidate.id;
             this.report.errors.push({phase: 'prefix', checkpoint: node, message: 'Original callback did not reach its checkpoint boundary'});
             this.emit('node-end', {node, operation: 'execute', status: 'failed'});
         }
         try {
-            for (const candidate of this.candidates.values()) await this.release(candidate);
+            for (const candidate of this.candidates.values()) releaseMs += await this.release(candidate);
         } finally {
             try { this.store.discardIncomplete(); }
             finally { await this.provider.cleanup(); }
@@ -210,6 +216,7 @@ class NativeSession {
         this.report.status = passed && !this.report.errors.length && this.finished.size === this.consumers.size ? 'passed' : 'failed';
         this.report.statisticsAfter = this.economics.statistics;
         this.report.baselineAfter = this.economics.baseline;
+        this.lifecycleMs += this.now() - started - releaseMs;
         return this.report;
     }
 }
