@@ -1,10 +1,10 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
 ARG RUNNER_IMAGE
 ARG PLAYWRIGHT_RUNNER_IMAGE
-FROM node:24.15.0-bookworm AS cypress-source
+FROM node:24.22.3-bookworm AS cypress-source
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git python3 make g++ libgtk-3-0 libgbm1 libasound2 libnss3 libatk-bridge2.0-0 \
     libxss1 libxtst6 xvfb xauth zip unzip \
@@ -43,7 +43,8 @@ ARG CHROME_VERSION
 ARG CHROME_LINUX_X64_SHA256
 ARG CHROME_LINUX_ARM64_SHA256
 COPY docker/runner/ /opt/magelens/
-RUN bash /opt/magelens/install-desktop.sh curl unzip \
+RUN bash /opt/magelens/install-desktop.sh curl unzip ca-certificates \
+    libgtk-3-0 libgbm1 libasound2 libnss3 libatk-bridge2.0-0 libxss1 libxtst6 libnotify4 \
     && bash /opt/magelens/install-chrome.sh \
     && bash /opt/magelens/install-cypress-dictionary.sh
 ENV CYPRESS_CACHE_FOLDER=/opt/cypress DISPLAY=:99 MAGELENS_RUNNER=cypress

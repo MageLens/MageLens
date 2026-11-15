@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c)  MageLens
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
 const script = path.resolve(__dirname, 'check-copyright.cjs');
-const notice = 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko\n' +
+const notice = 'Copyright (c)  MageLens\n' +
     'SPDX-License-Identifier: Elastic-2.0\n' +
     'License: see LICENSE in the repository root.\n';
 const slash = notice.trimEnd().split('\n').map(line => `// ${line}`).join('\n') + '\n';
@@ -29,13 +29,17 @@ function fixture(t) {
     };
     write('LICENSE', 'Elastic License 2.0\n');
     write('LICENSE.license', notice);
-    const run = (directory = root) => spawnSync(process.execPath, [script], {cwd: directory, encoding: 'utf8'});
+    const run = (directory = root, overrides = {}) => {
+        const env = {...process.env};
+        for (const key of ['COPYRIGHT_BASE', 'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH']) delete env[key];
+        return spawnSync(process.execPath, [script], {cwd: directory, encoding: 'utf8', env: {...env, ...overrides}});
+    };
     return {root, write, git, run};
 }
 
 for (const owner of ['Private Entrepreneur Vitalii Boiko', 'Copyright (c)  MageLens']) {
 test(`checks every tracked format for ${owner} while preserving preambles and opaque files`, t => {
-    const {write, run, root} = fixture(t);
+    const {write, run, root, git} = fixture(t);
     const sources = {
         'bin/tool': `#!/usr/bin/env bash\n${hash}exit 0\n`,
         'script.cjs': `${slash}module.exports = 42;\n`,
@@ -51,15 +55,16 @@ test(`checks every tracked format for ${owner} while preserving preambles and op
         'windows.js': `\uFEFF${slash}console.log(1);\n`.replace(/\n/g, '\r\n')
     };
     for (const file of Object.keys(sources)) {
-        sources[file] = sources[file].replaceAll('Private Entrepreneur Vitalii Boiko', owner);
+        sources[file] = sources[file].replaceAll('Copyright (c)  MageLens', owner === 'Private Entrepreneur Vitalii Boiko' ? 'SPDX-FileCopyrightText: ' + owner : owner);
         write(file, sources[file]);
     }
     for (const [file, source] of Object.entries({'package.json': '{}', 'composer.lock': '{}',
         'picture.png': Buffer.from([0x89, 0x50, 0, 0x01]), 'new-format.xyz': 'opaque payload'})) {
         write(file, source);
-        write(`${file}.license`, notice.replace('Private Entrepreneur Vitalii Boiko', owner));
+        write(`${file}.license`, notice.replace('Copyright (c)  MageLens', owner === 'Private Entrepreneur Vitalii Boiko' ? 'SPDX-FileCopyrightText: ' + owner : owner));
     }
     write('generated/scratch.js', 'Untracked files are outside this check.', false);
+    if (owner === 'Private Entrepreneur Vitalii Boiko') commit(git);
     const result = run(path.join(root, '.github'));
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /all 22 tracked files/);
@@ -75,7 +80,7 @@ for (const [name, replacement] of [
     ['wrong license', 'Copyright (c)  MageLens']
 ]) test(`rejects invalid MageLens notice: ${name}`, t => {
     const {write, run} = fixture(t);
-    let source = slash.replace('Private Entrepreneur Vitalii Boiko', replacement);
+    let source = slash.replace('Copyright (c)  MageLens', replacement);
     if (name === 'wrong license') source = source.replace('Elastic-2.0', 'MIT');
     write('bad.js', source);
     assert.equal(run().status, 1);
@@ -83,8 +88,8 @@ for (const [name, replacement] of [
 
 for (const [name, source] of [
     ['missing notice', 'module.exports = 1;\n'],
-    ['copyright year', slash.replace('Private Entrepreneur', '2026 Private Entrepreneur')],
-    ['wrong owner', slash.replace('Vitalii Boiko', 'Someone Else')],
+    ['copyright year', slash.replace('Copyright (c)  ', 'Copyright (c)  2026 ')],
+    ['wrong owner', slash.replace('MageLens', 'Someone Else')],
     ['wrong license', slash.replace('Elastic-2.0', 'MIT')],
     ['missing license reference', slash.replace('// License: see LICENSE in the repository root.\n', '')],
     ['notice embedded in code', `const fixture = ${JSON.stringify(slash)};\n`],
@@ -118,7 +123,7 @@ test('sidecars must be tracked, valid and attached to a tracked file', t => {
     assert.match(run().stderr, /Missing tracked sidecar: data\.json\.license/);
     git('add', 'data.json.license');
     assert.equal(run().status, 0);
-    write('data.json.license', notice.replace('Boiko', 'Other'));
+    write('data.json.license', notice.replace('MageLens', 'Other'));
     assert.match(run().stderr, /Expected the exact year-free copyright and license notice/);
     git('rm', '-f', 'data.json');
     assert.match(run().stderr, /License sidecar has no tracked target/);
@@ -162,16 +167,112 @@ test('vendored icons retain CC0 attribution and the referenced license', t => {
     assert.match(run().stderr, /referenced CC0 license must be tracked/);
 });
 
-test('missing license text, unreadable tracked files and non-repositories fail', t => {
+test('missing license text and non-repositories fail', t => {
     const {run, git, root} = fixture(t);
     git('rm', '-f', 'LICENSE');
     fs.rmSync(path.join(root, 'LICENSE.license'));
     const result = run();
     assert.equal(result.status, 1);
     assert.match(result.stderr, /LICENSE: the referenced license must be tracked/);
-    assert.match(result.stderr, /ENOENT/);
     fs.rmSync(path.join(root, '.git'), {recursive: true});
     const outside = run();
     assert.notEqual(outside.status, 0);
     assert.match(outside.stderr, /Copyright check failed/);
+});
+
+const legacy = notice.replace('Copyright (c)  MageLens', 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko');
+const legacySlash = slash.replace('Copyright (c)  MageLens', 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko');
+const commit = git => git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'Fixture');
+
+test('untouched legacy files and sidecars remain valid; unavailable history reports a detection error', t => {
+    const {write, git, run} = fixture(t);
+    write('old.js', legacySlash + 'const old = 1;\n');
+    write('old.json', '{}');
+    write('old.json.license', legacy);
+    write('LICENSE.license', legacy);
+    commit(git);
+    assert.equal(run().status, 0);
+    write('new.js', slash + 'const added = 1;\n');
+    assert.equal(run().status, 0);
+    const unavailable = run(undefined, {COPYRIGHT_BASE: 'missing-target-branch'});
+    assert.equal(unavailable.status, 1);
+    assert.match(unavailable.stderr, /Copyright check failed/);
+    assert.doesNotMatch(unavailable.stderr, /old\.js.*Missing year-free/);
+});
+
+for (const staged of [false, true]) {
+    test(`content edits require the new format (${staged ? 'staged' : 'working tree'})`, t => {
+        const {write, git, run} = fixture(t);
+        write('old.js', legacySlash + 'const old = 1;\n');
+        commit(git);
+        write('old.js', legacySlash + 'const old = 2;\n', staged);
+        assert.match(run().stderr, /old\.js.*Missing year-free/);
+        write('old.js', slash + 'const old = 2;\n', staged);
+        assert.equal(run().status, 0);
+    });
+}
+
+test('new legacy notices fail while mode-only edits and deletions do not require migration', t => {
+    const {write, git, run, root} = fixture(t);
+    write('old.js', legacySlash);
+    commit(git);
+    git('update-index', '--chmod=+x', 'old.js');
+    assert.equal(run().status, 0);
+    write('new.js', legacySlash);
+    assert.match(run().stderr, /new\.js.*Missing year-free/);
+    git('rm', '-f', 'new.js');
+    fs.rmSync(path.join(root, 'old.js'));
+    assert.equal(run().status, 0);
+    write('empty.js', '');
+    assert.match(run().stderr, /empty\.js.*Missing year-free/);
+});
+
+test('content-modified opaque files require new sidecars without changing their bytes', t => {
+    const {write, git, run, root} = fixture(t);
+    write('old.json', '{}');
+    write('old.json.license', legacy);
+    commit(git);
+    write('old.json', '{"modified": true}', false);
+    assert.match(run().stderr, /old\.json\.license.*Expected the exact year-free/);
+    write('old.json.license', notice, false);
+    assert.equal(run().status, 0);
+    assert.equal(fs.readFileSync(path.join(root, 'old.json'), 'utf8'), '{"modified": true}');
+});
+
+test('PR checks use the merge base and cover earlier commits, excluding target-only edits', t => {
+    const {write, git, run, root} = fixture(t);
+    write('old.js', legacySlash + 'const old = 1;\n');
+    write('target.js', legacySlash + 'const target = 1;\n');
+    commit(git);
+    const common = git('rev-parse', 'HEAD').toString().trim();
+    git('checkout', '-qb', 'target');
+    write('target.js', legacySlash + 'const target = 2;\n');
+    commit(git);
+    const target = git('rev-parse', 'HEAD').toString().trim();
+    git('checkout', '-qb', 'feature', common);
+    write('old.js', legacySlash + 'const old = 2;\n');
+    commit(git);
+    write('new.js', slash);
+    commit(git);
+    assert.equal(run().status, 0, 'Local clean commits are outside local change scope');
+    const event = path.join(root, '.git', 'event.json');
+    fs.writeFileSync(event, JSON.stringify({pull_request: {base: {sha: target}}}));
+    for (const env of [{COPYRIGHT_BASE: target}, {GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event}]) {
+        const result = run(root, env);
+        assert.match(result.stderr, /old\.js.*Missing year-free/);
+        assert.doesNotMatch(result.stderr, /target\.js/);
+    }
+    write('old.js', slash + 'const old = 2;\n');
+    commit(git);
+    assert.equal(run(root, {COPYRIGHT_BASE: target}).status, 0);
+});
+
+test('renaming a legacy file without changing its contents does not require migration', t => {
+    const {write, git, run} = fixture(t);
+    write('old.js', legacySlash + 'const old = 1;\n');
+    commit(git);
+    git('mv', 'old.js', 'renamed.js');
+    assert.equal(run().status, 0);
+    write('renamed.js', legacySlash + 'const old = 2;\n');
+    assert.match(run().stderr, /renamed\.js.*Missing year-free/);
 });

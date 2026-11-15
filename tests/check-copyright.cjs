@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c)  MageLens
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -22,8 +22,7 @@ function notice(file, legacy = false) {
             'SPDX-License-Identifier: CC0-1.0\n' +
             'License: see assets/badge-icons/LICENSE.md in the repository root.\n';
     }
-    const owner = legacy ? 'Private Entrepreneur Vitalii Boiko' : 'Copyright (c)  MageLens';
-    return `SPDX-FileCopyrightText: ${owner}\n` +
+    return (legacy ? 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko\n' : 'Copyright (c)  MageLens\n') +
         'SPDX-License-Identifier: Elastic-2.0\n' +
         'License: see LICENSE in the repository root.\n';
 }
@@ -68,10 +67,54 @@ function preamble(file, text) {
     return offset;
 }
 
+// A missing base/history is an actionable detection error, never a reason to migrate all files.
+function changedFiles(root, env = process.env) {
+    const git = args => execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
+    let base = env.COPYRIGHT_BASE;
+    if (!base && env.GITHUB_EVENT_NAME?.startsWith('pull_request')) {
+        base = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, 'utf8')).pull_request?.base?.sha;
+        if (!base) throw new Error('PR target base SHA is unavailable');
+    }
+    let ranges;
+    if (base) {
+        const mergeBase = git(['merge-base', base, 'HEAD']).trim();
+        ranges = [[mergeBase, 'HEAD']];
+    } else {
+        // An unborn local branch has only newly staged files.
+        const head = git(['rev-parse', '--revs-only', 'HEAD']).trim();
+        ranges = head ? [['--cached', 'HEAD'], []] : [['--cached'], []];
+    }
+    const changed = new Set();
+    for (const range of ranges) {
+        const args = ['diff', ...range, '--no-renames'];
+        const contentUnchangedRenames = new Set();
+        const names = git(['diff', ...range, '--find-renames', '--name-status', '-z']).split('\0').filter(Boolean);
+        for (let i = 0; i < names.length;) {
+            const status = names[i++];
+            i++; // Source path (or the only path for a non-rename).
+            if (status.startsWith('R') || status.startsWith('C')) {
+                const destination = names[i++];
+                if (status === 'R100') contentUnchangedRenames.add(destination);
+            }
+        }
+        for (const file of git([...args, '--name-only', '-z', '--diff-filter=A']).split('\0').filter(Boolean)) {
+            if (!contentUnchangedRenames.has(file)) changed.add(file);
+        }
+        for (const record of git([...args, '--numstat', '-z', '--diff-filter=ACMT']).split('\0').filter(Boolean)) {
+            const [, added, removed, file] = record.match(/^([^\t]+)\t([^\t]+)\t([\s\S]*)$/);
+            // Mode-only changes do not make a legacy file eligible.
+            if ((added !== '0' || removed !== '0') && !contentUnchangedRenames.has(file)) changed.add(file);
+        }
+    }
+    return changed;
+}
+
 function checkCopyright(root) {
     const files = execFileSync('git', ['ls-files', '--cached', '-z'], {cwd: root, maxBuffer: 16 * 1024 * 1024})
         .toString('utf8').split('\0').filter(Boolean);
-    const tracked = new Set(files);
+    const deleted = execFileSync('git', ['ls-files', '--deleted', '-z'], {cwd: root}).toString('utf8').split('\0');
+    const tracked = new Set(files.filter(file => !deleted.includes(file)));
+    const changed = changedFiles(root);
     const errors = [];
     if (!tracked.has('LICENSE')) errors.push('LICENSE: the referenced license must be tracked');
     for (const file of tracked) {
@@ -83,7 +126,10 @@ function checkCopyright(root) {
                 if (!tracked.has(target)) throw new Error('License sidecar has no tracked target');
                 if (!stat.isFile()) throw new Error('License sidecar must be a regular file');
                 const text = fs.readFileSync(absolute, 'utf8').replace(/\r\n/g, '\n');
-                if (![notice(target), notice(target, true)].includes(text)) throw new Error('Expected the exact year-free copyright and license notice');
+                const requiresNew = changed.has(file) || changed.has(target);
+                if (text !== notice(target) && (requiresNew || text !== notice(target, true))) {
+                    throw new Error('Expected the exact year-free copyright and license notice');
+                }
                 continue;
             }
             const content = stat.isFile() ? fs.readFileSync(absolute) : Buffer.alloc(0);
@@ -97,7 +143,7 @@ function checkCopyright(root) {
                     if (!body.startsWith('<?php\n')) throw new Error('Expected a PHP opening tag before the copyright comment');
                     body = body.slice('<?php\n'.length);
                 }
-                if (![header(file, kind), header(file, kind, true)].some(expected => body.startsWith(expected))) {
+                if (!body.startsWith(header(file, kind)) && (changed.has(file) || !body.startsWith(header(file, kind, true)))) {
                     throw new Error('Missing year-free copyright and license header at the start of the file');
                 }
             }
@@ -117,11 +163,11 @@ if (require.main === module) {
         const result = checkCopyright(root);
         if (result.errors.length) {
             console.error(result.errors.join('\n'));
-            console.error('Use SPDX-FileCopyrightText: Copyright (c)  MageLens (no year), ' +
+            console.error('Use Copyright (c)  MageLens (no year) for added or content-modified first-party files, ' +
                 'SPDX-License-Identifier: Elastic-2.0, and License: see LICENSE in the repository root.');
             process.exitCode = 1;
         } else {
-            console.log(`Copyright and license notices verified for all ${result.count} tracked files.`);
+            console.log(`Copyright and license notices verified for all ${result.count} tracked files (new format required only for added or content-modified first-party files).`);
         }
     } catch (error) {
         console.error(`Copyright check failed: ${error.message}`);
@@ -129,4 +175,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = {checkCopyright, header, notice, preamble, style};
+module.exports = {changedFiles, checkCopyright, header, notice, preamble, style};

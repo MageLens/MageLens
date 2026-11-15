@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -9,6 +9,12 @@ License: see LICENSE in the repository root.
 MageLens provides a local Magento Open Source or Mage-OS environment with Cypress or Playwright and PHP, JavaScript and template coverage. Use [README.md](README.md) for installation and daily commands, [docs/coverage.md](docs/coverage.md) for scenarios and coverage configuration, and [tests/README.md](tests/README.md) for isolated validation.
 
 Follow the [engineering-discipline skill](.agents/skills/engineering-discipline/SKILL.md) for implementation, documentation updates, testing and releases.
+
+## Copyright notices
+
+For first-party files owned by Vitalii Boiko, use `Copyright (c)  MageLens` (two spaces before `MageLens`, no years). Keep the existing license identifier and license reference. Apply this format to newly created files and files whose contents are already being changed for the task; leave untouched legacy notices valid. Never modify a file solely to replace its notice or introduce unrelated edits to make it eligible. Preserve third-party copyright notices, contributor credits, author metadata and license text. This attribution wording does not change ownership or licensing terms.
+
+`npm run check:copyright` accepts legacy notices in untouched files and requires the new format for added or content-modified first-party files, including their notice sidecars. Local checks inspect staged and working-tree changes to tracked files; add new files to Git before checking. PR checks compare the full candidate against the target branch's merge base. If change detection fails, restore the required Git history or base reference; never replace notices repository-wide to pass a check.
 
 ## Choose an installation
 
@@ -92,7 +98,7 @@ The CI workflow checks all eight Linux combinations (two platforms, two storefro
 
 Compare complete coverage outcomes within each theme across platforms, browser runners and operating systems: Luma with Luma and Hyvä CSP with Hyvä CSP. Include every measured application, theme and vendor file, PHP lines, JavaScript statements/functions/branches, template execution, DOM observations, source fingerprints and measurement warnings. Equal headline percentages are insufficient. Normalize only host paths, line endings, ordering, run metadata and repeated-hit frequencies; covered/uncovered outcomes, inventories and totals must match. Investigate discrepancies rather than excluding files or allowing a tolerance. Inspect `coverage/equivalence.json` and `theme-report-comparison.json` alongside the original eight-way comparison before declaring CI complete.
 
-Local development and CI use the same runner Dockerfile and harness. Cypress 16.2.1 is rebuilt from its pinned upstream source with the cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`; do not duplicate it in CI scripts or application code. Each Cypress case must pass the eleven runner regressions (nine cookie/authorization journeys, document initialization and a delayed-response check) and record matching source/patch provenance. Review the patch when updating Cypress; remove the source build after an upstream release passes the retained regressions. Existing installations must rerun installation with their saved selections to rebuild the runner.
+Local development and CI use the same runner Dockerfile and harness. Cypress 16.3.0 is rebuilt from its pinned upstream source with the cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`; do not duplicate it in CI scripts or application code. Each Cypress case must pass the eleven runner regressions (nine cookie/authorization journeys, document initialization and a delayed-response check) and record matching source/patch provenance. Review the patch when updating Cypress; remove the source build after an upstream release passes the retained regressions. Existing installations must rerun installation with their saved selections to rebuild the runner.
 
 CI runs on pull requests, including forks, against the exact merge candidate only when a maintainer applies the `run-ci` label. Remove and reapply the label to request a new run after changes. CI is optional for merging; release qualification remains mandatory for the final candidate. Merges and release tags do not rerun the matrix. Retrieve the `case-*-attempt-N` and `qualification-N` artifacts; see [tests/README.md](tests/README.md) for setup and diagnostics.
 
