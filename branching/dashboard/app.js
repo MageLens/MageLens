@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -111,6 +111,7 @@ $('follow-active').addEventListener('click', () => {
     graph.setFollowing(state.following);
     $('follow-active').setAttribute('aria-pressed', String(state.following));
     graph.followActive(state.current, true);
+    if (state.following) progress.followActive();
 });
 window.addEventListener('resize', fitGraph);
 $('viewport').addEventListener('scroll', details.position, {passive: true});

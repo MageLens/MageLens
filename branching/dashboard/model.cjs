@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -107,7 +107,9 @@ function applyEvent(state, event) {
         case 'checkpoint-invalid':
             node.active = false; node.checkpointState = 'invalid'; state.counts.fallbacks++; break;
         case 'spec-start': state.currentSpec = event.node; node.completedStages = []; node.activeStage = null; break;
-        case 'spec-end': node.active = false; node.status = event.status; node.blockedBy = event.blockedBy ?? null; break;
+        case 'spec-end':
+            if (state.currentSpec === event.node) state.currentSpec = null;
+            node.active = false; node.status = event.status; node.blockedBy = event.blockedBy ?? null; break;
         case 'consumer-finished': node.remaining = event.remaining; break;
         case 'checkpoint-released': node.active = false; node.checkpointState = 'released'; node.releasedAfter = event.after; node.releaseReason = event.reason ?? null; break;
         case 'run-error':

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -55,11 +55,11 @@ export function createNode(node, {onSelect, onHover}) {
     return button;
 }
 
-export function updateNode(el, node, run, selectedNode) {
+export function updateNode(el, node, run, selectedNode, currentTest) {
     el.dataset.kind = node.kind;
     el.dataset.depth = node.depth > 1 ? 'follow' : 'first';
     el.dataset.status = node.status;
-    el.dataset.active = String(node.active);
+    el.dataset.active = String(node.active || currentTest);
     el.dataset.checkpoint = node.checkpointState;
     const last = node.kind === 'checkpoint' && node.remaining === 1 && node.checkpointState === 'available';
     el.dataset.last = String(last);
@@ -69,7 +69,9 @@ export function updateNode(el, node, run, selectedNode) {
         node.kind === 'test' ? `${type} · ${run.schedule.indexOf(node.id) + 1}/${run.schedule.length}` : type;
     el.querySelector('.node-title').textContent = node.label;
     el.title = node.label;
-    const status = node.active ? `${words(node.operation)} · active` : outcome(node.status);
+    let status = outcome(node.status);
+    if (node.active) status = `${words(node.operation)} · active`;
+    else if (currentTest) status = node.status === 'failed' ? 'Running retry · failed attempt' : 'Running · active';
     el.querySelector('.node-status').textContent = status;
     const footer = nodeFooter(node, last);
     el.querySelector('.node-footer').textContent = footer;

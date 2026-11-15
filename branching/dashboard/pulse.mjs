@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -28,7 +28,7 @@ export function createPulse() {
     document.addEventListener('visibilitychange', updatePulse);
     return {
         update(run) {
-            hasActiveNodes = Boolean(run?.nodes.some((node) => node.active));
+            hasActiveNodes = Boolean(run?.nodes.some((node) => node.active) || run?.status === 'running' && run.currentSpec);
             updatePulse();
         },
         stop() {

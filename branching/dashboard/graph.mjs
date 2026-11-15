@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -46,9 +46,13 @@ export function createGraph({onSelect, onHover}) {
         const latest = run.activity.findLast(
             (event) => event.type === 'node-start' && active.some((node) => node.id === event.node)
         );
-        const node = active.find((node) => node.id === latest?.node) ?? active[0];
-        if (!node) return;
-        const key = `${run.id}:${node.id}:${node.operation}`;
+        const node = active.find((node) => node.id === latest?.node) ?? active[0]
+            ?? run.nodes.find((node) => run.status === 'running' && node.id === run.currentSpec);
+        if (!node) {
+            followed = null;
+            return;
+        }
+        const key = `${run.id}:${node.id}:${node.operation ?? node.status}`;
         if (!force && followed === key) return;
         followed = key;
         const el = elements.get(node.id);
@@ -76,6 +80,7 @@ export function createGraph({onSelect, onHover}) {
         $('edges').setAttribute('width', dimensions.width);
         $('edges').setAttribute('height', dimensions.height);
         const edges = [];
+        const currentTest = run.status === 'running' && !run.nodes.some(node => node.active) ? run.currentSpec : null;
         for (const node of run.nodes) {
             let el = elements.get(node.id);
             if (!el) {
@@ -89,7 +94,7 @@ export function createGraph({onSelect, onHover}) {
             const point = points.get(node.id);
             el.style.left = point.x + 'px';
             el.style.top = point.y + 'px';
-            updateNode(el, node, run, selectedNode);
+            updateNode(el, node, run, selectedNode, node.id === currentTest);
             const parent = points.get(node.parent);
             if (parent) {
                 const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
