@@ -76,6 +76,38 @@ test('native Cypress publishes the last retry outcome when browser observations 
     assert.ok(report.errors.some(error => error.phase === 'retry'));
 });
 
+test('a failed native capture retains its cost and the completed prefix outcome', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-capture-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
+    const events = [];
+    let time = 0, resumed = false;
+    const binding = {eligible: true, value: []};
+    const session = new NativeSession({directory, run: 'capture-regression', now: () => time, verifySources() {},
+        plan: [{id: 'prefix', identity: 'checked-prefix', consumers: ['first', 'second']}],
+        emit: (type, event) => events.push({type, ...event}), bridge: {continue() {}, call: () => binding},
+        provider: {identity: {}, entryState: () => ({}), assertBoundary() {}, abandon() {}, captureBarrier() {},
+            capture(payload) {
+                fs.writeFileSync(path.join(payload, 'fixture.json'), '{}');
+                time += 30000;
+            },
+            normalizedState: () => ({resumed}), resumeCapture() { resumed = true; }, restore() {}, cleanup() {}}});
+    await session.boundary({phase: 'enter', checkpoint: 'prefix', consumer: 'first', bindings: binding});
+    time += 60000;
+    await assert.rejects(session.boundary({phase: 'complete', checkpoint: 'prefix', consumer: 'first',
+        workMs: 60000, bindings: binding}), /state differs from captured state/i);
+    const report = await session.close({passed: false});
+    assert.deepEqual(events.filter(event => event.type === 'node-end').map(({operation, status, ms}) => [operation, status, ms]), [
+        ['execute', 'passed', 60000],
+        ['capture', 'failed', 30000]
+    ]);
+    assert.equal(report.prefixes.length, 1);
+    assert.deepEqual(report.checkpoints, []);
+    assert.deepEqual(report.restores, []);
+    assert.equal(report.errors.length, 1);
+    assert.equal(report.cleanup.storageReleased, true);
+});
+
 test('native Cypress preserves version 16 durations and failure details', () => {
     const {testResult} = require('../branching/runners/cypress/native.cjs');
     assert.deepEqual(testResult({state:'failed',duration:74785,displayError:'Shipment count mismatch',attempts:[{state:'failed'}]}),

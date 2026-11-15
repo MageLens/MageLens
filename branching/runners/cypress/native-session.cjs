@@ -188,14 +188,22 @@ class NativeSession {
         }
         if (profitable && !reason) {
             const time = started;
-            await this.provider.assertBoundary(candidate);
             this.emit('node-start', {node: candidate.id, operation: 'capture'});
-            const ref = await this.store.capture({key: this.key(candidate), stage: candidate.id, parent: null,
-                lineage: [consumer], ttlMs: 24 * 60 * 60 * 1000, provider: this.provider,
-                measured: (_name, operation) => operation(), assert: () => this.provider.assertBoundary(candidate)});
-            await this.verifyBindings(bindings);
-            await this.verifySources();
-            await this.provider.beginSegment?.();
+            let ref;
+            try {
+                await this.provider.assertBoundary(candidate);
+                ref = await this.store.capture({key: this.key(candidate), stage: candidate.id, parent: null,
+                    lineage: [consumer], ttlMs: 24 * 60 * 60 * 1000, provider: this.provider,
+                    measured: (_name, operation) => operation(), assert: () => this.provider.assertBoundary(candidate)});
+                await this.verifyBindings(bindings);
+                await this.verifySources();
+                await this.provider.beginSegment?.();
+            } catch (error) {
+                candidate.disabled = true;
+                this.active = null;
+                this.emit('node-end', {node: candidate.id, operation: 'capture', status: 'failed', ms: this.now() - time});
+                throw error;
+            }
             const ms = this.now() - time;
             this.economics.observe('captureMs', ms, candidate.id);
             this.economics.lifecycleCharged = true;
