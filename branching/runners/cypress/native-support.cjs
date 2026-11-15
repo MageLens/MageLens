@@ -1,9 +1,9 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
 const identity = (file, title, occurrence) => `cypress:${file}:${JSON.stringify(title)}:${occurrence}`;
-function install({list, selected, profile = false, inventory = true, discoveryBaseUrl}) {
+function install({list, selected, profile = false, inventory = true, discoveryBaseUrl, observe = false}) {
     // Skip the server availability probe while retaining the original value for
     // declaration-time configuration reads in support files and test modules.
     if (list && discoveryBaseUrl !== undefined) Cypress.config('baseUrl', discoveryBaseUrl);
@@ -11,6 +11,23 @@ function install({list, selected, profile = false, inventory = true, discoveryBa
     const after = root.after;
     const original = Object.fromEntries(['describe', 'context', 'it', 'specify', 'before', 'after', 'beforeEach', 'afterEach'].map(name => [name, root[name]]));
     const hooks = [];
+    const observations = [];
+    const flush = () => {
+        if (!observations.length) return;
+        return cy.task('magelens:observations', observations.splice(0), {log: false});
+    };
+    if (observe && !list) {
+        const report = (type, attributes, runnable) => {
+            if (!runnable.magelensIdentity) throw new Error('Native Cypress observation identity is missing');
+            observations.push({type, node: runnable.magelensIdentity,
+                ...(type === 'spec-end' ? {status: attributes.state === 'pending' ? 'skipped' : attributes.state, ms: attributes.duration} : {})});
+        };
+        Cypress.on('test:before:run', (attributes, runnable) => report('spec-start', attributes, runnable));
+        Cypress.on('test:after:run', (attributes, runnable) => report('spec-end', attributes, runnable));
+        original.before(() => cy.task('magelens:observations', [{type: 'run-ready'}], {log: false}));
+        original.beforeEach(flush);
+        original.after(flush);
+    }
     function registrationLocation(wrapper) {
         if (!profile || !list || typeof Error.captureStackTrace !== 'function') return undefined;
         const trace = {};
@@ -47,6 +64,7 @@ function install({list, selected, profile = false, inventory = true, discoveryBa
         if (!list && modifier === 'only') throw new Error(errors.at(-1));
         const runnable = list ? original[name](title, () => {})
             : (modifier === 'skip' ? original[name].skip : original[name])(...args);
+        if (observe && runnable) runnable.magelensIdentity = id;
         const location = runnable?.invocationDetails;
         if (profile && location?.absoluteFile === entry.file &&
             Number.isInteger(location.line) && Number.isInteger(location.column)) {

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -25,6 +25,16 @@ function observeSuite({eventDirectory, onEvent} = {}) {
                 source:{file:test.file,line:test.line}, consumers:[], releasePolicy:'none'}));
             const tests = new Map(nodes.map(node => [node.id,node]));
             const excludedCandidates = [];
+            if (prepared.nativeCheckpoints) {
+                const {plan, identities} = prepared.nativeCheckpoints;
+                for (const candidate of plan.candidates) {
+                    const consumers = candidate.consumers.map(id => identities.get(id));
+                    nodes.push({id: candidate.id, label: candidate.label ?? `Shared prefix · ${candidate.depth} steps`,
+                        kind: 'checkpoint', parent: null, consumers, lastConsumer: consumers.at(-1), releasePolicy: 'last-consumer'});
+                    for (const consumer of consumers) tests.get(consumer).parent = candidate.id;
+                }
+                excludedCandidates.push(...plan.excluded);
+            }
             for (const [index, block] of blocks.entries()) {
                 if (!block.built) continue;
                 const graph = block.built.workflow;

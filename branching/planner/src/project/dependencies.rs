@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -145,10 +145,22 @@ fn source_path(root: &Path, path: &str) -> Result<Option<PathBuf>> {
     if !full.exists() {
         return Ok(None);
     }
-    if fs::canonicalize(&full).map_err(|e| e.to_string())? != full {
+    let canonical = fs::canonicalize(&full).map_err(|e| e.to_string())?;
+    if let Some((parent, relative)) = path.split_once("node_modules/") {
+        let dependency_link = root.join(parent).join("node_modules");
+        if fs::symlink_metadata(&dependency_link).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+            let dependency_root = fs::canonicalize(dependency_link).map_err(|e| e.to_string())?;
+            if canonical == dependency_root.join(relative) {
+                return Ok(full.is_file().then_some(full));
+            }
+        }
+    }
+    if canonical != full && (!canonical.starts_with(root) ||
+        fs::symlink_metadata(&full).map_err(|e| e.to_string())?.file_type().is_symlink() ||
+        path.split('/').any(|part| part == "node_modules")) {
         return Err(format!("Dependency symlinks are unsupported: {path}"));
     }
-    Ok(full.is_file().then_some(full))
+    Ok(canonical.is_file().then_some(canonical))
 }
 fn add_source(root: &Path, path: &str, sources: &mut Vec<Source>) -> Result<Option<Vec<u8>>> {
     let Some(full) = source_path(root, path)? else {
@@ -167,6 +179,8 @@ fn add_source(root: &Path, path: &str, sources: &mut Vec<Source>) -> Result<Opti
             path: path.into(),
             sha256: hash(&bytes),
             bytes: bytes.len(),
+            link_target: None,
+            dependency_root: None,
         });
     }
     Ok(Some(bytes))
@@ -196,8 +210,8 @@ fn file(root: &Path, path: &str) -> Result<Option<String>> {
     ] {
         if let Some(stem) = path.strip_suffix(js) {
             let candidate = format!("{stem}{ts}");
-            if source_path(root, &candidate)?.is_some() {
-                return Ok(Some(candidate));
+            if let Some(resolved) = source_path(root, &candidate)? {
+                return Ok(Some(resolved.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/")));
             }
         }
     }
@@ -217,8 +231,8 @@ fn file(root: &Path, path: &str) -> Result<Option<String>> {
         "/index.cjs",
     ] {
         let candidate = format!("{path}{suffix}");
-        if source_path(root, &candidate)?.is_some() {
-            return Ok(Some(candidate));
+        if let Some(resolved) = source_path(root, &candidate)? {
+            return Ok(Some(resolved.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/")));
         }
     }
     Ok(None)

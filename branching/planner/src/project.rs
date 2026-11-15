@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -27,6 +27,7 @@ pub struct Project {
     import_cache: BTreeMap<String, BTreeMap<String, (String, String)>>,
     paths: Vec<(String, Vec<String>)>,
     base: PathBuf,
+    root: PathBuf,
     dependencies: BTreeMap<(String, String, bool), String>,
     write_cache: std::cell::RefCell<BTreeMap<(String, usize), bool>>,
 }
@@ -96,6 +97,7 @@ impl Project {
         let mut modules = BTreeMap::new();
         let mut data = BTreeMap::new();
         for source in sources.iter() {
+            if source.link_target.is_some() { continue; }
             if source.path.ends_with(".json") {
                 let bytes = fs::read(root.join(&source.path)).map_err(|e| e.to_string())?;
                 if hash(&bytes) != source.sha256 {
@@ -169,6 +171,7 @@ impl Project {
             import_cache: BTreeMap::new(),
             paths,
             base,
+            root: root.to_path_buf(),
             dependencies: BTreeMap::new(),
             write_cache: Default::default(),
         };
@@ -291,6 +294,14 @@ impl Project {
             ) {
                 if self.modules.contains_key(&path) || self.data.contains_key(&path) {
                     return Some(path);
+                }
+                if let Ok(resolved) = fs::canonicalize(self.root.join(&path)) {
+                    if let Ok(relative) = resolved.strip_prefix(&self.root) {
+                        let canonical = relative.to_string_lossy().replace('\\', "/");
+                        if self.modules.contains_key(&canonical) || self.data.contains_key(&canonical) {
+                            return Some(canonical);
+                        }
+                    }
                 }
             }
         }

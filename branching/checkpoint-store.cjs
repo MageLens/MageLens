@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -19,6 +19,7 @@ class CheckpointStore {
         this.owner = owner;
         this.profile = profile;
         this.available = new Map();
+        this.incomplete = new Set();
     }
     verify(ref, key, now = Date.now()) {
         const manifest = JSON.parse(fs.readFileSync(path.join(ref.directory, config.files.manifest), 'utf8'));
@@ -51,11 +52,20 @@ class CheckpointStore {
         this.available.delete(stage);
         return ref.id;
     }
+    discardIncomplete() {
+        for (const directory of this.incomplete) {
+            if (path.dirname(directory) !== this.root || fs.lstatSync(directory).isSymbolicLink())
+                throw new Error(messages.unownedCheckpointDirectory);
+            fs.rmSync(directory, {recursive: true});
+            this.incomplete.delete(directory);
+        }
+    }
     async capture({key, stage, parent, lineage, ttlMs, provider, measured, assert, fault}) {
         const id = randomUUID(),
             pending = path.join(this.root, id + config.files.pendingSuffix),
             directory = path.join(this.root, id);
         fs.mkdirSync(pending, {mode: 0o700});
+        this.incomplete.add(pending);
         fs.mkdirSync(path.join(pending, config.files.payload), {mode: 0o700});
         write(path.join(pending, config.files.operation), {
             owner: this.owner,
@@ -110,9 +120,12 @@ class CheckpointStore {
             write(path.join(pending, config.files.manifest), manifest);
             sync(pending);
             fs.renameSync(pending, directory);
+            this.incomplete.delete(pending);
+            this.incomplete.add(directory);
             sync(this.root);
         });
         this.available.set(stage, ref);
+        this.incomplete.delete(directory);
         return ref;
     }
 }

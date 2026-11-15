@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -30,6 +30,10 @@ pub struct Source {
     pub path: String,
     pub sha256: String,
     pub bytes: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependency_root: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +99,10 @@ pub struct Manifest {
     pub schema_version: u32,
     pub implementation: String,
     pub root: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_directories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_files: Vec<String>,
     pub source_digest: String,
     pub sources: Vec<Source>,
     #[serde(default)]
@@ -769,6 +777,16 @@ fn scan(root: &Path, directory: &Path, out: &mut Vec<Source>) -> Result<()> {
     entries.sort_by_key(|e| e.file_name());
     for e in entries {
         let name = e.file_name().to_string_lossy().into_owned();
+        if name == "node_modules" && e.file_type().map_err(|e| e.to_string())?.is_symlink() {
+            let resolved = fs::canonicalize(e.path()).map_err(|e| e.to_string())?;
+            if !resolved.is_dir() { return Err("Dependency root is not a directory".into()); }
+            let target = fs::read_link(e.path()).map_err(|e| e.to_string())?
+                .to_str().ok_or("Dependency link is not UTF-8")?.to_string();
+            out.push(Source {path: e.path().strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"),
+                sha256: hash(target.as_bytes()), bytes: target.len(), link_target: Some(target),
+                dependency_root: Some(resolved.to_string_lossy().to_string())});
+            continue;
+        }
         if name.starts_with('.')
             || [
                 "node_modules",
@@ -784,10 +802,18 @@ fn scan(root: &Path, directory: &Path, out: &mut Vec<Source>) -> Result<()> {
         let path = e.path();
         let ty = e.file_type().map_err(|e| e.to_string())?;
         if ty.is_symlink() {
-            return Err(format!(
-                "Source symlinks are unsupported: {}",
-                path.display()
-            ));
+            let resolved = fs::canonicalize(&path).map_err(|e| e.to_string())?;
+            // Directory aliases used by existing helper imports are identities,
+            // not a second source tree. File links and external targets remain
+            // forbidden. Record the link bytes and scan the canonical tree once.
+            if resolved == root || !resolved.starts_with(root) || !resolved.is_dir() {
+                return Err(format!("Source symlinks are unsupported: {}", path.display()));
+            }
+            let target = fs::read_link(&path).map_err(|e| e.to_string())?
+                .to_str().ok_or("Source link is not UTF-8")?.to_string();
+            out.push(Source {path: path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"),
+                sha256: hash(target.as_bytes()), bytes: target.len(), link_target: Some(target), dependency_root: None});
+            continue;
         }
         if ty.is_dir() {
             scan(root, &path, out)?;
@@ -806,6 +832,8 @@ fn scan(root: &Path, directory: &Path, out: &mut Vec<Source>) -> Result<()> {
                 .replace('\\', "/"),
             sha256: hash(&bytes),
             bytes: bytes.len(),
+            link_target: None,
+            dependency_root: None,
         });
     }
     Ok(())
@@ -826,32 +854,54 @@ pub fn plan(root: &Path) -> Result<Manifest> {
 // Diagnostic library API. Partial assessments are never executable manifests;
 // production entry points must use plan(), which enforces complete assessment.
 pub fn assess(root: &Path) -> Result<Manifest> {
+    assess_directories(root, &[])
+}
+pub fn assess_directories(root: &Path, directories: &[String]) -> Result<Manifest> {
+    assess_sources(root, directories, &[])
+}
+pub fn assess_sources(root: &Path, directories: &[String], test_files: &[String]) -> Result<Manifest> {
     // Source helpers can nest many expression frames inside each bounded call.
     // Give analysis a fixed stack independent of host/test-thread defaults.
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .name("source-analysis".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn_scoped(scope, || plan_project(root))
+            .spawn_scoped(scope, || plan_project(root, directories, test_files))
             .map_err(|error| error.to_string())?
             .join()
             .map_err(|_| "Source analysis worker failed".to_string())?
     })
 }
-fn plan_project(root: &Path) -> Result<Manifest> {
+fn plan_project(root: &Path, directories: &[String], test_files: &[String]) -> Result<Manifest> {
     let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("Source root must be a directory".into());
     }
     let mut sources = vec![];
-    scan(&root, &root, &mut sources)?;
+    if directories.is_empty() { scan(&root, &root, &mut sources)?; }
+    for directory in directories {
+        let target = root.join(directory);
+        let canonical = fs::canonicalize(&target).map_err(|e| e.to_string())?;
+        if canonical != target || !canonical.starts_with(&root) || canonical == root || !canonical.is_dir() {
+            return Err("Source directory must be a canonical directory inside the project".into());
+        }
+        scan(&root, &canonical, &mut sources)?;
+    }
+    sources.sort_by(|a, b| a.path.cmp(&b.path));
+    sources.dedup_by(|a, b| a.path == b.path);
     sources.sort_by(|a, b| a.path.cmp(&b.path));
     let project = project::Project::load(&root, &mut sources)?;
     sources.sort_by(|a, b| a.path.cmp(&b.path));
     let source_digest = hash(serde_json::to_vec(&sources).unwrap());
     let mut tests = vec![];
     let mut diagnostics = vec![];
+    for file in test_files {
+        if !sources.iter().any(|source| source.path == *file && source.link_target.is_none()) {
+            return Err(format!("Selected test source is missing: {file}"));
+        }
+    }
     for src in &sources {
+        if !test_files.is_empty() && !test_files.contains(&src.path) { continue; }
         if src.path.split('/').any(|part| part == "node_modules") {
             continue;
         }
@@ -1037,6 +1087,8 @@ fn plan_project(root: &Path) -> Result<Manifest> {
         schema_version: 1,
         implementation: "rust-prefix-v3".into(),
         root: root.to_string_lossy().into_owned(),
+        source_directories: directories.to_vec(),
+        test_files: test_files.to_vec(),
         source_digest,
         source_dependencies: project.source_dependencies(),
         sources,
@@ -1358,5 +1410,52 @@ mod tests {
         let f = Fixture::new(&format!("{IMPORT} test('a',async ({{page}})=>{{}});"));
         std::os::unix::fs::symlink("case.spec.ts", f.0.join("linked.spec.ts")).unwrap();
         assert!(plan(&f.0).is_err());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn records_internal_directory_aliases_without_duplicating_tests() {
+        let f = Fixture::new("import {visit} from './alias/helper'; it('a',()=>{visit();cy.title().should('eq','a');}); it('b',()=>{visit();cy.title().should('eq','b');});");
+        fs::rename(f.0.join("case.spec.ts"), f.0.join("case.cy.js")).unwrap();
+        fs::create_dir(f.0.join("helpers")).unwrap();
+        fs::write(f.0.join("helpers/helper.js"), "export function visit(){cy.visit('/');}").unwrap();
+        std::os::unix::fs::symlink("helpers", f.0.join("alias")).unwrap();
+        let manifest = plan(&f.0).unwrap();
+        assert_eq!(manifest.tests.len(), 2);
+        assert!(manifest.sources.iter().any(|source| source.path == "alias" && source.link_target.as_deref() == Some("helpers")));
+        assert!(manifest.sources.iter().all(|source| !source.path.starts_with("alias/")));
+        assert!(!manifest.checkpoints.is_empty());
+        fs::remove_file(f.0.join("alias")).unwrap();
+        std::os::unix::fs::symlink(std::env::temp_dir(), f.0.join("alias")).unwrap();
+        assert!(plan(&f.0).is_err());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn records_linked_dependency_root_and_rejects_links_inside_packages() {
+        let f = Fixture::new("import {visit} from 'helper'; it('a',()=>{visit();cy.title().should('eq','a');});");
+        fs::rename(f.0.join("case.spec.ts"), f.0.join("case.cy.js")).unwrap();
+        let packages = Fixture::new("");
+        fs::create_dir(packages.0.join("helper")).unwrap();
+        fs::write(packages.0.join("helper/package.json"), r#"{"main":"index.js"}"#).unwrap();
+        fs::write(packages.0.join("helper/index.js"), "export function visit(){cy.visit('/');}").unwrap();
+        std::os::unix::fs::symlink(&packages.0, f.0.join("node_modules")).unwrap();
+        let manifest = plan(&f.0).unwrap();
+        assert!(manifest.sources.iter().any(|source| source.path == "node_modules" && source.dependency_root.is_some()));
+        assert!(manifest.sources.iter().any(|source| source.path == "node_modules/helper/index.js"));
+        fs::remove_file(packages.0.join("helper/index.js")).unwrap();
+        std::os::unix::fs::symlink("../case.spec.ts", packages.0.join("helper/index.js")).unwrap();
+        assert!(plan(&f.0).is_err());
+    }
+    #[test]
+    fn scoped_source_discovery_keeps_imported_project_fixtures() {
+        let f = Fixture::new("");
+        fs::create_dir(f.0.join("suite")).unwrap();
+        fs::write(f.0.join("data.json"), "{\"url\":\"/\"}").unwrap();
+        fs::write(f.0.join("suite/example.cy.js"), "import data from '../data.json'; it('a',()=>{cy.visit(data.url);});").unwrap();
+        fs::write(f.0.join("unrelated.js"), "not valid javascript {").unwrap();
+        let manifest = assess_directories(&f.0, &["suite".into()]).unwrap();
+        assert_eq!(manifest.tests.len(), 1);
+        assert!(manifest.sources.iter().any(|source| source.path == "data.json"));
+        assert!(!manifest.sources.iter().any(|source| source.path == "unrelated.js"));
+        assert!(assess_directories(&f.0, &["../".into()]).is_err());
     }
 }

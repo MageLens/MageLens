@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
@@ -13,7 +13,19 @@ function writeJson(file,value) {
     } finally { fs.rmSync(temporary,{force:true}); }
 }
 function run(args=process.argv.slice(2)) {
-    const [command,input,output,discoveryFile,...extra]=args;
+    args=[...args];
+    const selectionFlag=args.indexOf('--test-files');
+    let testFiles;
+    if(selectionFlag >= 0) {
+        if(!args[selectionFlag+1])throw Error('--test-files requires a JSON inventory');
+        testFiles=JSON.parse(fs.readFileSync(args[selectionFlag+1],'utf8'));
+        if(!Array.isArray(testFiles)||!testFiles.length||testFiles.some(file=>typeof file!=='string'))throw Error('Invalid selected test files');
+        args.splice(selectionFlag,2);
+    }
+    const directoryFlag=args.indexOf('--source-directory');
+    const sourceDirectories=directoryFlag < 0 ? [] : args.slice(directoryFlag+1);
+    const [command,input,output,discoveryFile,...extra]=directoryFlag < 0 ? args : args.slice(0,directoryFlag);
+    if(directoryFlag >= 0 && !sourceDirectories.length) throw Error('--source-directory requires at least one project-relative directory');
     const binary=process.env.MAGELENS_SOURCE_BINARY ?? '/usr/local/bin/magelens-source';
     if (command === 'evaluate') throw Error('--evaluate was removed: plan shared prefixes and measure their first normal execution');
     for (const key of Object.keys(process.env))
@@ -31,7 +43,10 @@ function run(args=process.argv.slice(2)) {
     const temp=fs.mkdtempSync(path.join(os.tmpdir(),'magelens-source-'));
     try {
         const scan=path.join(temp,'manifest.json');
-        execFileSync(binary,['scan',root,scan],{maxBuffer:32*1024*1024,stdio:['ignore','pipe','pipe']});
+        const selected=saved?.testFiles ?? testFiles;
+        const selection=path.join(temp,'test-files.json');
+        if(selected?.length)fs.writeFileSync(selection,JSON.stringify(selected),{mode:0o600});
+        execFileSync(binary,['scan',root,scan,...(saved?.sourceDirectories ?? sourceDirectories),...(selected?.length?['--test-files',selection]:[])],{maxBuffer:32*1024*1024,stdio:['ignore','pipe','pipe']});
         const structure=JSON.parse(fs.readFileSync(scan));
         const evidence=discoveryFile ? JSON.parse(fs.readFileSync(discoveryFile,'utf8')) : saved?.assessment.discovery;
         if (evidence) {

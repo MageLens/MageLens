@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -6,13 +6,14 @@ const http = require('node:http');
 const {randomUUID} = require('node:crypto');
 
 class Bridge {
-    constructor({timeout = 180000} = {}) {
+    constructor({timeout = 180000, onBoundary} = {}) {
+        this.onBoundary = onBoundary;
         this.timeout = timeout; this.token = randomUUID(); this.serial = 0; this.pending = new Map(); this.queue = [];
         this.ready = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
         this.ready.catch(() => {});
         this.browser = new Promise((resolve, reject) => { this.resolveBrowser = resolve; this.rejectBrowser = reject; });
         this.browser.catch(() => {});
-        this.startup = setTimeout(() => this.fail(new Error('Cypress queue did not become ready')), timeout);
+        this.startup = onBoundary ? null : setTimeout(() => this.fail(new Error('Cypress queue did not become ready')), timeout);
         Promise.all([this.ready, this.browser]).then(() => clearTimeout(this.startup), () => {});
     }
     async listen() {
@@ -24,8 +25,13 @@ class Bridge {
                 const message = JSON.parse(body);
                 if (request.url === '/browser') { this.resolveBrowser(message); response.end('null'); return; }
                 if (request.url !== '/next' || this.waiter) throw new Error('Unexpected Cypress bridge request');
+                if (this.error) { response.end(JSON.stringify({operation: 'close', error: this.error.message})); return; }
                 this.waiter = response;
                 this.resolveReady();
+                if (message.boundary !== undefined) {
+                    if (!this.onBoundary || message.id !== undefined) throw new Error('Unexpected Cypress checkpoint boundary');
+                    Promise.resolve().then(() => this.onBoundary(message.boundary)).catch(error => this.fail(error));
+                }
                 if (message.id !== undefined) {
                     const pending = this.pending.get(message.id);
                     if (!pending) throw new Error('Unknown Cypress command result');
@@ -51,12 +57,17 @@ class Bridge {
             this.pending.set(id, {resolve, reject, timer}); this.queue.push({id, operation, ...input}); this.flush();
         });
     }
+    continue(input) {
+        if (this.error) throw this.error;
+        if (this.pending.size || this.queue.length) throw new Error('Cypress checkpoint has unfinished commands');
+        this.queue.push({operation: 'continue', ...input}); this.flush();
+    }
     fail(error) {
         clearTimeout(this.startup);
         this.error ??= error; this.rejectReady(error); this.rejectBrowser(error);
         for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
         this.pending.clear(); this.queue = [];
-        if (this.waiter) { this.waiter.end(JSON.stringify({operation: 'close'})); this.waiter = null; }
+        if (this.waiter) { this.waiter.end(JSON.stringify({operation: 'close', ...(this.onBoundary ? {error: error.message} : {})})); this.waiter = null; }
     }
     async close() {
         this.fail(new Error('Cypress bridge closed'));

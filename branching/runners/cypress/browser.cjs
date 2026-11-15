@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -24,6 +24,7 @@ class CypressState {
     check() { if (this.cdp.error || this.bridge.error) throw this.cdp.error ?? this.bridge.error; }
     async execute(code) { this.check(); await this.bridge.call('execute', {code}); await this.observe(); }
     evaluate(callback) { return this.bridge.call('evaluate', {code: String(callback)}); }
+    runtime(method, value) { return this.bridge.call('runtime', {method, value}); }
     async observe() {
         const state = await this.bridge.call('state'); this.url = state.url;
         if (state.unsupported.length) throw new Error(`Cypress checkpoint cannot restore ${state.unsupported.join(', ')}`);

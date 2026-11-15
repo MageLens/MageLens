@@ -1,10 +1,11 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
-async function invoke(configuration, directory, {list = false, tests, profile} = {}) {
+async function invoke(configuration, directory, {list = false, tests, profile, checkpoint, onEvent, observationRun} = {}) {
+    if (checkpoint && (list || tests)) throw new Error('Native checkpoint execution preserves the complete native invocation');
     if (profile && !list) throw new Error('ML profiling was removed; source discovery is list-only');
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
     const config = fs.realpathSync(configuration);
@@ -12,7 +13,8 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
     fs.mkdirSync(directory, {recursive: true});
     const run = fs.mkdtempSync(path.join(directory, 'cypress-'));
     const wrapper = path.join(path.dirname(config), `.magelens-native-${path.basename(run)}.cjs`);
-    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, originalConfig: config, configDigest, selected: tests?.map(test => test.id)};
+    const observation = onEvent ? await require('./native-observation.cjs').listen(onEvent, observationRun) : null;
+    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, checkpoint, observation: observation?.endpoint, originalConfig: config, configDigest, selected: tests?.map(test => test.id)};
     fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, retries: 0, e2e: {...c.e2e, retries: 0, setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
     fs.writeFileSync(input, JSON.stringify({resultFile, options: {project: path.dirname(config), configFile: wrapper, browser: 'chrome-for-testing', headed: true,
@@ -28,6 +30,7 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
         finally { signals.forEach((signal, index) => process.removeListener(signal, handlers[index])); }
         if (!fs.existsSync(resultFile) || !fs.existsSync(files.inventory)) throw new Error(`Cypress exited ${exitCode} without a complete inventory report`);
         const result = JSON.parse(fs.readFileSync(resultFile)), inventories = JSON.parse(fs.readFileSync(files.inventory));
+        if (!result.browserName && result.failures) throw new Error(result.message ?? 'Cypress failed before producing a browser result');
         if (result.browserName !== 'chrome-for-testing' || result.browserVersion !== process.env.CHROME_VERSION) throw new Error('Native Cypress browser changed');
         const inventory = inventories.flatMap(item => item.tests), results = [];
         const selected = tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory;
@@ -52,8 +55,14 @@ async function invoke(configuration, directory, {list = false, tests, profile} =
             browser: {name: result.browserName, version: result.browserVersion}};
         if (profile && fileDigest(config) !== configDigest) throw new Error('Cypress configuration changed during collection');
         if (profile && list) report.profileDiscovery = {directory:run, configDigest};
+        if (checkpoint) {
+            const evidence = path.join(run, 'checkpoints.json');
+            if (!fs.existsSync(evidence)) throw new Error('Native checkpoint report is missing');
+            report.checkpoints = JSON.parse(fs.readFileSync(evidence));
+            if (report.checkpoints.status !== 'passed') report.status = 'failed';
+        }
         return report;
-    } finally { fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }
+    } finally { await observation?.close(); fs.rmSync(wrapper, {force: true}); fs.rmSync(files.support, {force: true}); }
 }
 function reportErrors(result, inventories) {
     const errors = inventories.flatMap(item => item.errors.map(message => ({message})));

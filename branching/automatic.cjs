@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -12,9 +12,24 @@ function verifySources(manifest) {
     require('./estimation.cjs').assertAssessed(manifest);
     try {
         const root = fs.realpathSync(manifest.root);
+        const dependencyRoots = manifest.sources.filter(source => source.dependencyRoot !== undefined);
         for (const source of manifest.sources) {
             const file = path.resolve(root, source.path);
-            if (!file.startsWith(root + path.sep) || fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('Source escapes the manifest root');
+            if (source.linkTarget !== undefined) {
+                const resolved = fs.realpathSync(file);
+                if (!file.startsWith(root + path.sep) || !fs.lstatSync(file).isSymbolicLink() ||
+                    fs.readlinkSync(file) !== source.linkTarget || !fs.statSync(resolved).isDirectory() ||
+                    (source.dependencyRoot !== undefined ? path.basename(file) !== 'node_modules' || resolved !== source.dependencyRoot : !resolved.startsWith(root + path.sep)) ||
+                    require('node:crypto').createHash('sha256').update(source.linkTarget).digest('hex') !== source.sha256)
+                    throw new Error('Source directory alias changed or escapes the manifest root');
+                continue;
+            }
+            const resolved = fs.realpathSync(file);
+            const linkedDependency = dependencyRoots.some(dependency => {
+                const directory = path.resolve(root, dependency.path);
+                return file.startsWith(directory + path.sep) && resolved === path.join(dependency.dependencyRoot, path.relative(directory, file));
+            });
+            if (!file.startsWith(root + path.sep) || resolved !== file && !linkedDependency || !fs.lstatSync(file).isFile()) throw new Error('Source escapes the manifest root');
             if (fileDigest(file) !== source.sha256) throw new Error(`Stale source: ${source.path}; generate the manifest again`);
         }
         const discovery = manifest.assessment.discovery;

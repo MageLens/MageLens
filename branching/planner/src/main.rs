@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -12,7 +12,7 @@ fn run() -> Result<(), String> {
             let plan=magelens_plan::cost::select(input)?;
             println!("{}",serde_json::to_string(&plan).map_err(|e|e.to_string())?);
         },
-        Some("scan") if args.len()==3 => {
+        Some("scan") if args.len()>=3 => {
             let start=Instant::now();
             let output=Path::new(&args[2]);
             // Validate the destination before either a plan or its error record is written.
@@ -23,7 +23,13 @@ fn run() -> Result<(), String> {
             if parent.starts_with(&root) && !parent.strip_prefix(&root).unwrap().components().any(|c|c.as_os_str().to_string_lossy().starts_with('.')) {
                 return Err("Write the manifest outside the source root or inside an ignored dot directory".into());
             }
-            let manifest=record_result(output, magelens_plan::assess(&root).and_then(|manifest| {
+            let selection = args.iter().position(|argument| argument == "--test-files");
+            let test_files: Vec<String> = if let Some(index) = selection {
+                if index < 3 || args.len() != index + 2 { return Err("--test-files requires one JSON inventory".into()); }
+                serde_json::from_slice(&fs::read(&args[index+1]).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?
+            } else { vec![] };
+            let directories = &args[3..selection.unwrap_or(args.len())];
+            let manifest=record_result(output, magelens_plan::assess_sources(&root, directories, &test_files).and_then(|manifest| {
                 write_json(output,&serde_json::to_value(&manifest).map_err(|e|e.to_string())?)?;
                 Ok(manifest)
             }))?;
@@ -91,7 +97,7 @@ fn verify(file: &str) -> Result<(), String> {
     }
     let data = fs::read(file).map_err(|e| e.to_string())?;
     let saved: Manifest = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
-    let fresh = magelens_plan::assess(Path::new(&saved.root))?;
+    let fresh = magelens_plan::assess_sources(Path::new(&saved.root), &saved.source_directories, &saved.test_files)?;
     if serde_json::from_slice::<serde_json::Value>(&data).map_err(|e| e.to_string())?
         != serde_json::to_value(&fresh).unwrap()
     {

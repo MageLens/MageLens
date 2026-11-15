@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -15,6 +15,10 @@ async function install(on, config, original, options) {
     const hasNodeEvents = typeof original === 'function';
     if (hasNodeEvents) config = await original(collect, config) ?? config;
     const supportFile = config.supportFile;
+    if (options.checkpoint && (options.list || config.testIsolation === false))
+        throw new Error('Native checkpoints require execution with browser test isolation');
+    const boundarySupport = options.checkpoint
+        ? await require('./native-checkpoints.cjs').install(collect, config, events, tasks, options) : null;
     const discoveryBaseUrl = options.list ? config.baseUrl : undefined;
     if (options.list) config.baseUrl = null;
     const native = {projects: [{name: 'cypress', dependencies: []}], rootDir: config.projectRoot,
@@ -22,7 +26,7 @@ async function install(on, config, original, options) {
             ...(hasNodeEvents ? ['Cypress setupNodeEvents and plugin lifecycle'] : [])],
         checkpointLifecycle: !supportFile && !hasNodeEvents && config.testIsolation !== false ? 'independent-cypress' : 'native-cypress'};
     fs.writeFileSync(options.metadata, JSON.stringify(native), {mode: 0o600});
-    fs.writeFileSync(options.support, `require(${JSON.stringify(path.join(__dirname, 'native-support.cjs'))}).install(${JSON.stringify({list: options.list, selected: options.selected, profile: !!options.profile, discoveryBaseUrl})});\n${supportFile ? `require(${JSON.stringify(supportFile)});` : ''}\n`, {mode: 0o600});
+    fs.writeFileSync(options.support, `require(${JSON.stringify(path.join(__dirname, 'native-support.cjs'))}).install(${JSON.stringify({list: options.list, selected: options.selected, profile: !!options.profile, discoveryBaseUrl, observe: !!boundarySupport})});\n${supportFile ? `require(${JSON.stringify(supportFile)});` : ''}\n`, {mode: 0o600});
     config.supportFile = options.support;
     config.screenshotsFolder = path.join(options.directory, 'screenshots'); config.videosFolder = path.join(options.directory, 'videos');
     collect('task', {'magelens:inventory': value => {
@@ -42,10 +46,18 @@ async function install(on, config, original, options) {
         if (name === 'file:preprocessor' && callbacks.length !== 1) throw new Error('Multiple Cypress preprocessors');
         on(name, async (...args) => {
             let result;
+            const failures = [];
             for (const callback of callbacks) {
-                const next = await callback(...args);
-                if (next !== undefined) { result = next; if (name === 'before:browser:launch') args[1] = next; }
+                try {
+                    const next = await callback(...args);
+                    if (next !== undefined) { result = next; if (name === 'before:browser:launch') args[1] = next; }
+                } catch (error) {
+                    if (name !== 'after:run') throw error;
+                    failures.push(error);
+                }
             }
+            if (failures.length)
+                throw new AggregateError(failures, `Cypress after:run lifecycle failed: ${failures.map(error => error.message).join(' | ')}`);
             return result;
         });
     }

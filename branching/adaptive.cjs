@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -50,18 +50,20 @@ class Economics {
         this.observations.push(observation);
         this.emit('checkpoint-cost-observed', {node: stage, observation});
     }
-    decide(stage, prefixMs, remaining, {captured = false, transitionReset = false} = {}) {
+    decide(stage, prefixMs, remaining, {captured = false, transitionReset = false, initialReset = true} = {}) {
         if (!Number.isFinite(prefixMs) || prefixMs < 0 || !Number.isSafeInteger(remaining) || remaining < 0)
             throw new Error('Invalid measured prefix economics');
         const b = this.baseline;
         // Linear replay and restoration both replace the preceding test state.
         // Conservatively do not credit the reset avoided by restore. Charge the
         // additional provider startup/cleanup and first reset once per run.
+        // A native lifecycle already establishes its fixtures and performs no
+        // provider first reset; callers must exclude that absent operation.
         // Release is owed in both alternatives once a snapshot already exists.
         const components = {capture: captured ? 0 : b.captureMs,
             restore: remaining * b.restoreMs, release: captured ? 0 : b.releaseMs,
             transition: !captured && transitionReset ? b.resetMs : 0,
-            lifecycle: captured || this.lifecycleCharged ? 0 : b.backendMs + b.firstResetMs};
+            lifecycle: captured || this.lifecycleCharged ? 0 : b.backendMs + (initialReset ? b.firstResetMs : 0)};
         const avoidedMs = remaining * prefixMs;
         const costMs = Object.values(components).reduce((a, v) => a + v, 0);
         const requiredMs = costMs * b.overheadMultiplier * (1 + b.overheadMargin) + b.minSavingMs;

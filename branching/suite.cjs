@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -8,8 +8,8 @@ const costs = require('./costs.cjs');
 const {EstimationError} = require('./estimation.cjs');
 const testKey = test => `${path.resolve(test.file)}:${test.framework === 'cypress' || test.fixture?.startsWith('cypress:') ? 'cypress' : test.line}:${test.title}`;
 
-function assertInventoryAssessed(manifest, inventory) {
-    const lifecycle = [...(inventory.config.unassessedLifecycle ?? []),
+function assertInventoryAssessed(manifest, inventory, nativeCheckpoint = false) {
+    const lifecycle = [...(nativeCheckpoint ? [] : inventory.config.unassessedLifecycle ?? []),
         ...['globalSetup', 'globalTeardown', 'webServer'].filter(key => inventory.config[key])];
     if (lifecycle.length) throw new EstimationError(lifecycle.map(name => ({phase: 'native-lifecycle',
         message: `${name} is not covered by the source assessment. Move test work into assessed spec hooks or fixtures before using branching.`})));
@@ -96,7 +96,8 @@ async function collectAssessed(manifest, project, directory, runner) {
         throw new EstimationError([{phase: 'native-collection', message: 'Native collection failed or returned no tests', reasons: inventory.errors}]);
     if (new Set(inventory.tests.map(t => t.id)).size !== inventory.tests.length)
         throw new EstimationError([{phase: 'native-collection', message: 'Native inventory has duplicate test identities'}]);
-    assertInventoryAssessed(manifest, inventory);
+    assertInventoryAssessed(manifest, inventory, Boolean(project.native.checkpoint) &&
+        inventory.tests.every(test => test.framework === 'cypress'));
     return inventory;
 }
 async function prepareSuite(options) {
@@ -105,6 +106,22 @@ async function prepareSuite(options) {
     costs.assertAutomatic(project);
     require('./checkpoint-limit.cjs').validateLimit(project.maxCheckpointsPerTest);
     const inventory = await collectAssessed(manifest, project, directory, runner);
+    if (project.native.checkpoint) {
+        if (!inventory.tests.every(test => test.framework === 'cypress')) throw new Error('Native checkpoint lifecycle requires Cypress');
+        const identities = new Map();
+        for (const source of manifest.tests) {
+            const matches = inventory.tests.filter(test => testKey(test) === testKey({...source, file: path.join(manifest.root, source.file)}));
+            if (matches.length === 1) identities.set(source.id, matches[0].id);
+        }
+        const plan = require('./runners/cypress/native-plan.cjs').prepare(manifest, project.native.checkpoints, [...identities.keys()]);
+        if (plan.candidates.some(candidate => candidate.consumers.some(id => !identities.has(id))))
+            throw new Error('Native checkpoint consumers must have unique original test identities');
+        const consumers = new Set(plan.candidates.flatMap(candidate => candidate.consumers.map(id => identities.get(id))));
+        return {inventory, groups: {setup: [], native: inventory.tests, checkpoint: []},
+            checkpoint: inventory.tests.filter(test => consumers.has(test.id)), blocks: [], browserIneligible: [],
+            ordering: {basis: 'native-order', scheduled: inventory.tests.map(test => test.id), changed: false},
+            nativeCheckpoints: {plan, identities}};
+    }
     const groups = partition(manifest, inventory, project);
     let decision, built, checkpoint = groups.checkpoint;
     const browserIneligible = [];
@@ -205,7 +222,7 @@ async function executeSuite(options) {
     const mode = 'AUTO', started = performance.now(), phases = [];
     options.observer.emit('run-phase',{phase:'discovering tests'});
     const prepared = await prepareSuite(options);
-    const {inventory,groups,checkpoint,decision,browserIneligible,independent,blocks,ordering} = prepared;
+    const {inventory,groups,checkpoint,decision,browserIneligible,independent,blocks,ordering,nativeCheckpoints} = prepared;
     const observer = options.observer;
     observer.discover(prepared);
     observer.emit('checkpoint-baseline', {status:project.baselineStatus ?? 'estimated',reason:project.baselineReason ?? null,
@@ -220,11 +237,26 @@ async function executeSuite(options) {
         const result = await runner.run(project.native.config, directory, {...options,
             ...(coverageRoot ? {coverageRoot} : {}), ...(tests ? {tests} : {})});
         validateNative(result, tests ?? inventory.tests);
-        for (const entry of result.results) observer.emit('spec-end',{node:entry.id,status:entry.status});
+        if (!nativeCheckpoints) for (const entry of result.results) observer.emit('spec-end',{node:entry.id,status:entry.status});
         phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
-    observer.emit('run-ready');
-    if (!checkpoint.length) {
+    if (!nativeCheckpoints) observer.emit('run-ready');
+    if (nativeCheckpoints) {
+        const result = await native(null, {checkpoint: {module: project.native.checkpoint, manifest,
+            linear: project.native.linear === true,
+            selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id), consumers: [...nativeCheckpoints.identities.keys()]}, observationRun: observer.run,
+            onEvent: event => {
+                const {type, schemaVersion: _schema, run: _run, sequence: _sequence, time: _time, ...data} = event;
+                if (data.spec) data.spec = nativeCheckpoints.identities.get(data.spec) ?? data.spec;
+                observer.emit(type, data);
+            }});
+        if (result.results.some((test, index) => test.id !== inventory.tests[index]?.id))
+            throw new Error('Native Cypress execution did not preserve discovery order');
+        report.checkpoints = result.checkpoints.checkpoints.length;
+        report.reuseHits = result.checkpoints.restores.length;
+        observer.add({counts: {prefixExecutions: result.checkpoints.prefixes.length, reuseHits: report.reuseHits,
+            failures: result.checkpoints.errors.length}});
+    } else if (!checkpoint.length) {
         report.selectionReason = decision ? 'No eligible shared prefixes; execute the complete native suite.' : 'No qualified split; execute the complete native suite.';
         await native();
     } else {
@@ -268,8 +300,9 @@ async function executeSuite(options) {
     const checkpointReports = phases.filter(phase=>phase.kind==='checkpoint').map(phase=>phase.report);
     report.counts = {tests:report.results.length, nativeTests:report.results.filter(result=>result.execution==='native').length,
         checkpointTests:report.results.filter(result=>result.execution==='checkpoint').length,
-        candidates:blocks.reduce((sum,block)=>sum+(block.decision?.selected.length ?? 0),0),
-        prefixExecutions:checkpointReports.reduce((sum,item)=>sum+(item.counts.prefixExecutions ?? 0),0),
+        candidates:nativeCheckpoints?.plan.candidates.length ?? blocks.reduce((sum,block)=>sum+(block.decision?.selected.length ?? 0),0),
+        prefixExecutions:checkpointReports.reduce((sum,item)=>sum+(item.counts.prefixExecutions ?? 0),0) +
+            phases.reduce((sum,phase)=>sum+(phase.checkpoints?.prefixes.length ?? 0),0),
         candidateExecutions:checkpointReports.reduce((sum,item)=>sum+(item.segments ?? []).filter(segment=>segment.kind==='Stage' && item.checkpointPolicy.selected.includes(segment.node)).length,0),
         captures:report.checkpoints, restores:report.reuseHits};
     report.wallMs = performance.now() - started;
