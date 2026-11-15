@@ -1,8 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {$, words, short} from './dom.mjs';
+import {$, words, short, testTitle} from './dom.mjs';
 
 export function renderWarnings(data, run) {
     const limited = (run?.warnings ?? []).filter((warning) => warning.code === 'checkpoint-limit');
@@ -22,16 +22,15 @@ export function renderWarnings(data, run) {
 }
 
 function currentWork(run) {
-    if (run.status === 'planned') return 'Preview · groups follow planned execution order';
+    if (run.status === 'planned') return 'Test order from source';
     if (run.status !== 'running') return `Run ${words(run.status)} · no work is active`;
 
     const active = run.nodes.find((node) => node.active);
     const currentTest = run.nodes.find((node) => node.id === run.currentSpec);
     if (run.phaseTests?.length && !currentTest) return `${words(run.phase)} · ${run.phaseTests.length} native tests`;
-    const message = active ? `Running now: ${active.label}` : `Run ${words(run.phase)}`;
-    if (!currentTest) return message;
+    if (!currentTest) return active ? active.label : words(run.phase);
     const number = run.schedule.indexOf(currentTest.id) + 1;
-    return `${message} · test ${number}/${run.schedule.length}: ${currentTest.label}`;
+    return `Test ${number} of ${run.schedule.length} · ${testTitle(currentTest.label)}`;
 }
 
 function cleanupStatus(cleanup) {
@@ -41,18 +40,21 @@ function cleanupStatus(cleanup) {
     return cleanup.storageReleased ? 'Cleanup complete' : 'Storage still present';
 }
 
-export function renderSummary(run) {
+export function renderSummary(run, view) {
     document.body.dataset.run = run.id;
     document.body.dataset.sequence = run.sequence;
     const tests = run.nodes.filter((n) => n.kind === 'test');
-    const checkpoints = run.nodes.filter((n) => n.kind === 'checkpoint');
+    const checkpoints = view.nodes.filter((n) => n.kind === 'checkpoint');
     $('subtitle').textContent =
         run.id === 'source-plan'
             ? `${run.sourceFiles} source files · ${run.diagnostics} diagnostics · candidates before cost selection`
             : `${run.approach} · ${short(run.id)} · ${run.wallMs ? (run.wallMs / 1000).toFixed(1) + ' s' : words(run.phase)}`;
-    $('run-status').textContent = run.status === 'running' ? words(run.phase) : words(run.status);
+    $('run-status').textContent = run.status === 'running' && run.phase !== 'native execution'
+        ? words(run.phase) : words(run.status);
     $('run-status').className = 'status-pill ' + run.status;
-    $('current-work').textContent = currentWork(run);
+    const work = currentWork(run);
+    if ($('current-work').textContent !== work) $('current-work').textContent = work;
+    $('current-work').title = run.nodes.find(node => node.id === run.currentSpec)?.label ?? work;
     const completed = tests.filter(n => ['passed', 'failed', 'blocked', 'skipped'].includes(n.status)).length;
     $('metric-tests').textContent = `${completed} / ${tests.length}`;
     const progress = $('suite-progress'), maximum = Math.max(1, tests.length);
@@ -69,8 +71,9 @@ export function renderSummary(run) {
     $('metric-reuses').textContent = run.counts.reuseHits ?? '—';
     $('metric-cleaned').textContent = checkpoints.filter((n) => n.checkpointState === 'released').length;
     $('graph-summary').textContent =
-        `${run.nodes.length} stages and tests · ${checkpoints.length} ${run.status === 'planned' ? 'candidate ' : ''}checkpoints · ${tests.length} end tests${run.excludedCandidates?.length ? ` · ${run.excludedCandidates.length} overlapping prefixes excluded` : ''}${run.ordering?.changed ? ' · independent tests grouped; required order preserved' : ''}`;
+        `${view.nodes.length} visible stages and tests · ${checkpoints.length} checkpoints · ${tests.length} end tests${run.excludedCandidates?.length ? ` · ${run.excludedCandidates.length} overlapping prefixes excluded` : ''}${run.ordering?.changed ? ' · independent tests grouped; required order preserved' : ''}`;
     $('cleanup-summary').textContent = cleanupStatus(run.cleanup);
+    $('cleanup-summary').classList.toggle('recovery', Boolean(run.cleanup?.failed));
 }
 
 function activityText(event, run) {
@@ -84,6 +87,7 @@ function activityText(event, run) {
         'checkpoint-reuse-abandoned': 'Reuse abandoned · reset verified',
         'checkpoint-ready': 'Checkpoint available',
         'checkpoint-released': 'Checkpoint cleaned',
+        'checkpoint-ineligible': 'Setup runs normally · ' + words(event.reason),
         'checkpoint-invalid': 'Checkpoint rejected · replay required',
         'consumer-finished': 'Consumer finished',
         'cleanup-end': 'Cleanup checked',

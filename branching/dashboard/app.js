@@ -6,6 +6,7 @@ import {$} from './dom.mjs';
 import {DashboardState} from './state.mjs';
 import {connectStream} from './stream.mjs';
 import {createGraph} from './graph.mjs';
+import {executionView} from './layout.mjs';
 import {createDetails} from './details.mjs';
 import {createTestProgress} from './test-progress.mjs';
 import {createPulse} from './pulse.mjs';
@@ -13,11 +14,12 @@ import {renderHistory} from './run-history.mjs';
 import {renderWarnings, renderSummary, renderActivity} from './run-summary.mjs';
 
 const state = new DashboardState(location.hash);
+let view;
 const graph = createGraph({
     onSelect: chooseNode,
     onHover(id) {
         state.hoveredNode = id;
-        details.render(state.current, state);
+        details.render(view, state);
     }
 });
 const details = createDetails({getElement: graph.getElement});
@@ -43,14 +45,14 @@ function chooseRun(id) {
 function chooseNode(id) {
     state.selectedNode = id;
     remember();
-    details.render(state.current, state);
+    details.render(view, state);
     graph.select(id);
 }
 
 function dismissDetails() {
     state.dismissNode();
     remember();
-    details.render(state.current, state);
+    details.render(view, state);
     graph.select(null);
 }
 
@@ -63,24 +65,19 @@ function render() {
     $('preparation-warning').textContent = (state.data.warnings ?? []).join(' ');
     $('preparation-warning').hidden = !state.data.warnings?.length;
     if (!ready) {
+        view = undefined;
         pulse.update(null);
         details.render(null, state);
         return;
     }
-    pulse.update(run);
-    renderHistory(state.data, state, chooseRun);
+    view = executionView(run);
+    pulse.update(view);
+    renderHistory(state.data, state);
     renderWarnings(state.data, run);
-    $('empty').hidden = Boolean(run);
-    $('viewport').hidden = !run;
-    if (!run) {
-        details.render(null, state);
-        $('test-progress').replaceChildren();
-        return;
-    }
-    renderSummary(run);
-    graph.render(run, state.selectedNode);
-    details.render(run, state);
-    progress.render(run, state.following);
+    renderSummary(run, view);
+    graph.render(view, state.selectedNode);
+    details.render(view, state);
+    progress.render(view, state.following);
     renderActivity(run);
 }
 
@@ -97,12 +94,13 @@ for (const [id, amount] of [
 ]) {
     $(id).addEventListener('click', () => {
         graph.zoom(amount);
-        graph.followActive(state.current, true);
+        graph.followActive(view, true);
     });
 }
 function fitGraph() {
-    graph.fit(state.current);
-    graph.followActive(state.current, true);
+    if ($('workspace').hidden) return;
+    graph.fit(view);
+    graph.followActive(view, true);
     details.position();
 }
 $('zoom-fit').addEventListener('click', fitGraph);
@@ -110,7 +108,7 @@ $('follow-active').addEventListener('click', () => {
     state.following = !state.following;
     graph.setFollowing(state.following);
     $('follow-active').setAttribute('aria-pressed', String(state.following));
-    graph.followActive(state.current, true);
+    graph.followActive(view, true);
     if (state.following) progress.followActive();
 });
 window.addEventListener('resize', fitGraph);

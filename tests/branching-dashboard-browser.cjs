@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -50,6 +50,14 @@ async function main() {
         workflow.stages[2].label = 'Cart ready'; workflow.stages[3].label = 'Shipping selected';
         running = execute({...base, workflow, provider: new FixtureProvider()});
         await expect(block('customer-ready')).toHaveAttribute('data-active', 'true');
+        await expect(page.locator('#metric-tests')).toBeHidden();
+        await expect(page.locator('#activity')).toBeHidden();
+        assert.ok(await page.evaluate(() => {
+            const graph = document.getElementById('viewport').getBoundingClientRect();
+            const tests = document.getElementById('test-progress').getBoundingClientRect();
+            return graph.top < tests.top + 5 && graph.bottom <= innerHeight && tests.bottom <= innerHeight;
+        }));
+        checked('live execution occupies the first screen with totals and activity collapsed below');
         await expect(page.locator('[data-test="remove-item"]')).toHaveAttribute('data-status', 'running');
         assert.equal(await page.locator('[data-test="remove-item"] progress').evaluate(el => el.value), 1);
         assert.equal(await page.locator('[data-test="coupon-1"] progress').evaluate(el => el.value), 0);
@@ -162,9 +170,8 @@ async function main() {
         assert.ok(manifest.checkpoints.every(cp => cp.label === 'After page.goto()'));
         await page.locator('#plan-button').click(); await expect(page.locator('#run-status')).toHaveText('planned');
         await expect(page.locator('.node[data-kind="test"]')).toHaveCount(3);
-        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(manifest.checkpoints.length);
-        await expect(page.locator('.node[data-kind="checkpoint"]').first()).toContainText('After page.goto()');
-        checked('real Rust source manifest renders repeated prefixes and all terminal tests');
+        await expect(page.locator('.node[data-kind="checkpoint"], #edges path')).toHaveCount(0);
+        checked('Rust source manifest previews every test before a checkpoint has been approved');
         class AutomaticProvider extends FixtureProvider {
             get page() { return {goto: async url => { this.hit(url); this.state.browser.url = url; }}; }
         }
@@ -175,7 +182,7 @@ async function main() {
         const decision = {report: await autoExecute({...base, ...built, provider: new AutomaticProvider()})};
         assert.equal(decision.report.checkpoints.length, 0);
         assert.ok(decision.report.adaptive.decisions.every(item => !item.reuse)); await select(decision.report);
-        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(decision.report.checkpointPolicy.selected.length);
+        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(0);
         await expect(page.locator('#metric-reuses')).toHaveText('0'); checked('first-use measurement keeps tiny repeated prefixes linear');
 
         const large = new Graph(deepWorkflow());
@@ -184,7 +191,7 @@ async function main() {
         assert.equal(bounded.report.checkpointLimit.maxCheckpointsPerTest, 9);
         assert.equal(bounded.decision.selected.length, 1);
         assert.equal(bounded.report.status, 'passed'); await select(bounded.report);
-        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(1);
+        await expect(page.locator('.node[data-kind="checkpoint"]')).toHaveCount(0);
         await expect(page.locator('#warnings')).toContainText('at most 9');
         assert.ok(bounded.report.adaptive.decisions.every(item => !item.reuse));
         checked('adaptive selection avoids overlapping prefixes and preserves checkpoint-limit warnings');

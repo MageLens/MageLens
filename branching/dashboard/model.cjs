@@ -76,37 +76,46 @@ function applyEvent(state, event) {
             if (!node) throw new Error('Unknown node');
             node.active = true; node.operation = event.operation;
             if (node.kind === 'checkpoint' && state.policy?.basis === 'measured-first-use') {
-                if (event.operation === 'executing' && node.checkpointState === 'candidate') node.checkpointState = 'measuring';
-                if (event.operation === 'capturing') node.checkpointState = 'capturing';
+                if (['execute', 'executing'].includes(event.operation) && node.checkpointState === 'candidate') node.checkpointState = 'measuring';
+                if (['capture', 'capturing'].includes(event.operation)) node.checkpointState = 'capturing';
             }
-            if (event.operation === 'executing') { node.status = 'running'; node.executions++; }
+            if (['execute', 'executing'].includes(event.operation)) { node.status = 'running'; node.executions++; }
             if (node.kind !== 'test') {
                 const test = state.nodes.find(n => n.id === state.currentSpec);
                 if (test) test.activeStage = node.id;
             }
             break;
-        case 'node-end':
+        case 'node-end': {
             node.active = false; node.status = event.status; node.elapsedMs += event.ms;
             // The test body can finish before terminal-state validation. Only
             // spec-end confirms the final test outcome.
             if (node.kind === 'test' && event.status === 'passed') {
                 node.active = true; node.status = 'running'; node.operation = 'validating';
             }
-            if (event.operation === 'restoring' && event.status === 'passed') { node.restores++; state.counts.reuseHits++; }
-            if (event.operation === 'executing' && node.kind !== 'test') state.counts.prefixExecutions++;
+            const restoring = ['restore', 'restoring'].includes(event.operation);
+            if (restoring && event.status === 'passed') { node.restores++; state.counts.reuseHits++; }
+            if (['execute', 'executing'].includes(event.operation) && node.kind !== 'test') state.counts.prefixExecutions++;
             if (event.status === 'passed' && node.kind !== 'test') {
                 const test = state.nodes.find(n => n.id === state.currentSpec);
                 if (test?.setup.includes(node.id)) {
-                    const completed = event.operation === 'restoring' ? test.setup.slice(0, test.setup.indexOf(node.id) + 1) : [node.id];
+                    const completed = restoring ? test.setup.slice(0, test.setup.indexOf(node.id) + 1) : [node.id];
                     test.completedStages = [...new Set([...test.completedStages, ...completed])];
+                    if (restoring) {
+                        test.restoredStages = [...new Set([...(test.restoredStages ?? []), node.id])];
+                        node.restoredFor = [...new Set([...(node.restoredFor ?? []), test.id])];
+                    }
                 }
             }
             break;
+        }
         case 'checkpoint-ready':
-            node.active = false; node.checkpointState = 'available'; node.checkpointId = event.checkpoint; node.elapsedMs += event.ms; break;
+            node.active = false; node.checkpointState = 'available'; node.checkpointId = event.checkpoint; node.elapsedMs += event.ms;
+            node.capturedFor = state.currentSpec;
+            break;
         case 'checkpoint-invalid':
             node.active = false; node.checkpointState = 'invalid'; state.counts.fallbacks++; break;
-        case 'spec-start': state.currentSpec = event.node; node.completedStages = []; node.activeStage = null; break;
+        case 'spec-start':
+            state.currentSpec = event.node; node.completedStages = []; node.restoredStages = []; node.activeStage = null; break;
         case 'spec-end':
             if (state.currentSpec === event.node) state.currentSpec = null;
             node.active = false; node.status = event.status; node.blockedBy = event.blockedBy ?? null; break;
@@ -114,7 +123,10 @@ function applyEvent(state, event) {
         case 'checkpoint-released': node.active = false; node.checkpointState = 'released'; node.releasedAfter = event.after; node.releaseReason = event.reason ?? null; break;
         case 'run-error':
             state.counts.failures++;
-            if (node) { node.active = false; node.lastError = event.phase; }
+            if (node) {
+                node.active = false; node.lastError = event.phase;
+                if (event.phase === 'restore') node.status = 'failed';
+            }
             break;
         case 'group-cleanup':
         case 'cleanup-end':

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -31,29 +31,27 @@ export function createDetails({getElement}) {
         describedElement?.removeAttribute('aria-describedby');
         describedElement = getElement(activeNode);
         $('node-details').hidden = !node;
-        $('node-details').dataset.pinned = String(Boolean(selectedNode));
+        const expanded = Boolean(node && node.id === selectedNode);
+        $('node-details').dataset.pinned = String(expanded);
         $('details').replaceChildren();
         $('last-use').hidden = true;
         $('detail-title').textContent = node?.label ?? '';
-        $('detail-description').textContent = node
-            ? `${node.id}${node.source ? ` · ${node.source.file}:${node.source.line}` : ''}`
-            : '';
+        $('detail-description').textContent = node?.source
+            ? node.source.file + (node.source.line > 0 ? ':' + node.source.line : '') : '';
         if (!node) return;
         $('detail-kind').textContent = `${node.kind === 'step' ? 'Linear step' : words(node.kind)} details`;
         describedElement?.setAttribute('aria-describedby', 'node-details');
-        const fields = [
-            ['Type', words(node.kind)],
-            ['Status', node.active ? words(node.operation) + ' · active' : words(node.status)],
-            ['Checkpoint', words(node.checkpointState)],
-            ['Executions / restores', `${node.executions} / ${node.restores}`]
-        ];
-        if (node.kind !== 'test')
-            fields.push(
-                ['Remaining consumers', `${node.remaining} / ${node.consumers.length}`],
+        const current = run.status === 'running' && run.currentSpec === node.id;
+        const fields = [['Status', node.active ? words(node.operation) + ' · active'
+            : current ? 'Running' : words(node.status)]];
+        if (node.kind === 'checkpoint') {
+            fields.push(['Checkpoint', words(node.checkpointState)],
+                ['Remaining consumers', `${node.remaining} / ${node.consumers.length}`]);
+            if (expanded) fields.push(['Executions / restores', `${node.executions} / ${node.restores}`],
                 ['Last consumer', run.nodes.find((n) => n.id === node.lastConsumer)?.label ?? 'None'],
-                ['Release policy', words(node.releasePolicy)]
-            );
-        if (node.decision) {
+                ['Release policy', words(node.releasePolicy)]);
+        }
+        if (expanded && node.decision) {
             const d = node.decision;
             fields.push(['Measured prefix', `${d.prefixMs.toFixed(1)} ms`],
                 ['Remaining consumers at decision', String(d.remaining)],
@@ -78,7 +76,7 @@ export function createDetails({getElement}) {
             group.append(dt, dd);
             $('details').append(group);
         }
-        if (node.kind === 'checkpoint') {
+        if (expanded && node.kind === 'checkpoint') {
             $('last-use').hidden = false;
             $('last-use').textContent = checkpointLifetime(node, run);
         }

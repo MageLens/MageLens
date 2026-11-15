@@ -1,6 +1,29 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
+
+// Measured runs publish their full test inventory before any checkpoint exists.
+export function executionView(run) {
+    const preview = run.status === 'planned';
+    if (!preview && run.policy?.basis !== 'measured-first-use') return run;
+
+    const approved = new Map(run.nodes.filter(node => !preview && node.kind === 'checkpoint' && node.checkpointId &&
+        node.decisions?.some(decision => decision.reuse === true && decision.captured === false &&
+            decision.avoidedMs > decision.requiredMs)).map(node => [node.id, node]));
+    const applies = (test, id) => {
+        const checkpoint = approved.get(id);
+        return checkpoint && (checkpoint.capturedFor === test.id || checkpoint.restoredFor?.includes(test.id) ||
+            (run.currentSpec === test.id && checkpoint.active && ['restore', 'restoring'].includes(checkpoint.operation)));
+    };
+    const nodes = run.nodes.filter(node => node.kind === 'test' || approved.has(node.id)).map(node => {
+        if (node.kind === 'checkpoint') return {...node, parent: approved.has(node.parent) ? node.parent : null};
+        const setup = (node.setup ?? []).filter(id => applies(node, id));
+        return {...node, parent: setup.at(-1) ?? null, setup,
+            activeStage: setup.includes(node.activeStage) ? node.activeStage : null,
+            completedStages: (node.completedStages ?? []).filter(id => setup.includes(id))};
+    });
+    return {...run,nodes};
+}
 
 export function layout(nodes, schedule) {
     const children = new Map(nodes.map((node) => [node.id, []]));
@@ -33,14 +56,12 @@ export function layout(nodes, schedule) {
         });
         return x;
     }
-    // Independent groups run sequentially. Give each its own vertical band
-    // instead of treating every root as simultaneous work on one row.
     for (const node of roots) {
         column = 0;
         maxDepth = 0;
         place(node, 0);
         width = Math.max(width, column * 258 + 20);
-        offsetY += (maxDepth + 1) * 184 + 40;
+        offsetY += node.kind === 'test' ? 158 : (maxDepth + 1) * 184 + 40;
     }
     return {
         points,

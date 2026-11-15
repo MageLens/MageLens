@@ -65,7 +65,8 @@ export function createGraph({onSelect, onHover}) {
     }
 
     function render(run, selectedNode) {
-        const key = run.id + ':' + run.nodes.map((n) => n.id + n.parent).join(',');
+        const width = $('viewport').clientWidth;
+        const key = `${run.id}:${run.nodes.map((n) => n.id + n.parent).join(',')}`;
         const fresh = key !== graphKey;
         graphKey = key;
         if (fresh) {
@@ -113,7 +114,7 @@ export function createGraph({onSelect, onHover}) {
         $('edges').replaceChildren(...edges);
         if (fresh) {
             followed = null;
-            fit(run);
+            setZoom(Math.min(1, Math.max(.88, (width - 12) / dimensions.width)));
             centerStart();
         } else setZoom(scale);
         followActive(run);

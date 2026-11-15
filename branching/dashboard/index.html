@@ -1,54 +1,108 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MageLens · Branching explorer</title>
     <link rel="stylesheet" href="/style.css">
     <script src="/model.js" defer></script>
     <script src="/app.js" type="module"></script>
 </head>
 <body>
-<header class="topbar"><a class="brand" href="/" aria-label="MageLens branching explorer"><span class="brand-icon">M</span> MageLens <span class="edition">/ ORCHESTRATOR</span></a><span id="connection" role="status"><i></i> Connecting</span></header>
-<section id="preparation" class="preparation" aria-live="polite"><h1>Preparing your run</h1><p id="preparation-status">Waiting for a ready run.</p><progress id="preparation-progress" aria-label="Preparing execution"></progress><p>The execution dashboard opens when discovery, ordering and environment preparation are complete.</p><p id="preparation-warning" hidden></p></section>
-<div id="workspace" class="workspace" hidden>
-    <aside class="sidebar">
-        <div class="eyebrow">WORKSPACE</div><h2>Execution history</h2>
-        <p class="muted">Follow a run from shared setup to the final cleanup.</p>
-        <button id="plan-button" class="plan-button" hidden>View source plan <span>→</span></button>
-        <label class="eyebrow" for="run-select">RECENT RUNS</label>
-        <select id="run-select"><option value="">Waiting for a run</option></select>
-        <button id="latest-run" class="latest-run" aria-pressed="true">Follow latest run</button>
-        <div id="run-list" class="run-list"></div>
-        <div class="sidebar-note"><span class="tiny-dot"></span> Live observation<p>Run your branching workflow to see its graph here. Finished runs remain available.</p></div>
-    </aside>
-    <main>
-        <div class="page-heading"><div><div class="eyebrow">EXECUTION MAP</div><h1>Branching explorer</h1><p id="subtitle">A clear view of the work you share.</p></div><span id="run-status" class="status-pill">Waiting</span></div>
+<header class="topbar">
+    <a class="brand" href="/" aria-label="MageLens branching explorer"><span class="brand-icon">M</span> MageLens</a>
+    <span id="connection" role="status"><i></i> Connecting</span>
+</header>
+<section id="preparation" class="preparation" aria-live="polite">
+    <h1>Preparing your run</h1>
+    <p id="preparation-status">Waiting for a ready run.</p>
+    <progress id="preparation-progress" aria-label="Preparing execution"></progress>
+    <p id="preparation-warning" hidden></p>
+</section>
+<main id="workspace" class="workspace" hidden>
+    <header class="page-heading">
+        <div>
+            <h1>Branching explorer</h1>
+            <span id="run-status" class="status-pill">Waiting</span>
+        </div>
+        <div class="run-controls">
+            <button id="plan-button" hidden>Source plan</button>
+            <select id="run-select" aria-label="Run history"><option value="">Waiting for a run</option></select>
+            <button id="latest-run" aria-pressed="true" title="Follow latest run">Latest run</button>
+        </div>
+    </header>
+    <section class="run-progress" aria-label="Current run">
         <p id="current-work" role="status">Waiting for orchestrator events</p>
-        <div class="run-progress"><progress id="suite-progress" value="0" max="1" aria-label="Completed tests" aria-describedby="suite-progress-label"></progress><span id="suite-progress-label">0 tests completed</span></div>
-        <div id="warnings" role="alert" hidden></div>
-        <section class="metrics" aria-label="Run summary">
-            <div><span>Test outcomes</span><strong id="metric-tests">—</strong></div>
-            <div><span>Checkpoints available</span><strong id="metric-checkpoints">—</strong></div>
-            <div><span>Checkpoint reuses</span><strong id="metric-reuses">—</strong></div>
-            <div><span>Shared / all prefix executions</span><strong id="metric-prefixes">—</strong></div>
-            <div><span>Checkpoints cleaned</span><strong id="metric-cleaned">—</strong></div>
-        </section>
-        <section id="checkpoint-costs" class="activity-panel" aria-label="Checkpoint costs" hidden><h2>Checkpoint costs</h2><p id="baseline-status"></p><div id="baseline-values"></div><p id="measurement-note"></p></section>
+        <div class="progress-track">
+            <progress id="suite-progress" value="0" max="1" aria-label="Completed tests" aria-describedby="suite-progress-label"></progress>
+            <span id="suite-progress-label">0 tests completed</span>
+        </div>
+    </section>
+    <div class="execution-view">
         <section class="map-panel" aria-label="Execution graph">
-            <div class="map-toolbar"><div class="legend"><span><i class="blue"></i>Shared prefix</span><span><i class="green"></i>Nested prefix</span><span><i class="violet"></i>End test</span><span><i class="gray"></i>Linear step</span></div><div class="map-controls"><button id="follow-active" aria-pressed="true">Follow active</button><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button></div></div></div>
-            <div id="empty" class="empty"><div class="empty-symbol">◇</div><h2>Your execution map will appear here</h2><p>Start a branching run to discover shared prefixes and watch decisions as tests execute.</p><code>./bin/run-coverage --branching SOURCE_ROOT</code></div>
-            <div id="viewport" class="viewport" hidden><div id="canvas-wrap"><div id="canvas"><svg id="edges" aria-hidden="true"></svg><div id="nodes"></div></div></div></div>
-            <div class="map-footer"><span id="graph-summary">Waiting for orchestrator events</span><span><i class="activity-dot"></i> Active work pulses · hover or focus a checkpoint or test for details</span></div>
+            <div class="panel-heading map-toolbar">
+                <h2>Execution graph</h2>
+                <div class="map-controls">
+                    <button id="follow-active" aria-pressed="true">Follow active</button>
+                    <div class="zoom-tools" role="group" aria-label="Graph zoom">
+                        <button id="zoom-out" aria-label="Zoom out">−</button>
+                        <button id="zoom-fit">Fit</button>
+                        <button id="zoom-in" aria-label="Zoom in">+</button>
+                    </div>
+                </div>
+            </div>
+            <div id="viewport" class="viewport">
+                <div id="canvas-wrap"><div id="canvas"><svg id="edges" aria-hidden="true"></svg><div id="nodes"></div></div></div>
+            </div>
         </section>
-        <section class="activity-panel"><div class="activity-heading"><h2>Activity</h2><span id="cleanup-summary">No cleanup recorded</span></div><ol id="activity"><li class="muted">Events will appear as the orchestrator runs.</li></ol></section>
-    </main>
-    <aside class="linear-panel" aria-label="Linear test progress"><div class="eyebrow">LINEAR VIEW</div><h2>Test progress</h2><p class="muted">The same run, in execution order. Shared setup counts toward each test when it executes or restores.</p><ol id="test-progress"></ol></aside>
+        <section class="linear-panel" aria-label="Test progress">
+            <div class="panel-heading"><h2>Tests</h2></div>
+            <ol id="test-progress"></ol>
+        </section>
+    </div>
+    <div id="warnings" role="alert" hidden></div>
+    <details id="run-details" class="disclosure">
+        <summary>Run details <span id="cleanup-summary"></span></summary>
+        <div class="disclosure-body">
+            <p id="subtitle"></p>
+            <div class="metrics" aria-label="Run totals">
+                <div><span>Tests completed</span><strong id="metric-tests">—</strong></div>
+                <div><span>Checkpoints available</span><strong id="metric-checkpoints">—</strong></div>
+                <div><span>Checkpoint reuses</span><strong id="metric-reuses">—</strong></div>
+                <div><span>Shared / all prefix executions</span><strong id="metric-prefixes">—</strong></div>
+                <div><span>Checkpoints cleaned</span><strong id="metric-cleaned">—</strong></div>
+            </div>
+            <p id="graph-summary"></p>
+            <div class="legend" aria-label="Graph legend">
+                <span><i class="blue"></i>Shared prefix</span>
+                <span><i class="green"></i>Nested prefix</span>
+                <span><i class="violet"></i>Test</span>
+                <span><i class="gray"></i>Linear step</span>
+            </div>
+            <section id="checkpoint-costs" aria-label="Checkpoint costs" hidden>
+                <h2>Checkpoint costs</h2>
+                <p id="baseline-status"></p>
+                <div id="baseline-values"></div>
+                <p id="measurement-note"></p>
+            </section>
+        </div>
+    </details>
+    <details class="disclosure">
+        <summary>Activity and decisions</summary>
+        <ol id="activity"></ol>
+    </details>
+</main>
+<div id="node-details" role="tooltip" hidden>
+    <div id="detail-kind" class="eyebrow">Checkpoint details</div>
+    <h2 id="detail-title"></h2>
+    <p id="detail-description" class="muted"></p>
+    <dl id="details"></dl>
+    <div id="last-use" class="last-use" hidden></div>
 </div>
-<div id="node-details" role="tooltip" hidden><div id="detail-kind" class="eyebrow">Checkpoint details</div><h2 id="detail-title"></h2><p id="detail-description" class="muted"></p><dl id="details"></dl><div id="last-use" class="last-use" hidden></div></div>
 </body>
 </html>

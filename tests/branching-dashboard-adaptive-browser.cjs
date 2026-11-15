@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -21,6 +21,7 @@ async function acceptance(page, checked = () => {}, output) {
     const onError = error => errors.push(error.message);
     page.on('pageerror', onError);
     const block = () => page.locator('.node[data-node="prefix"]');
+    const edge = (id) => page.locator(`#edges [data-from="prefix"][data-to="${id}"]`);
     async function publish(events) {
         fs.writeFileSync(path.join(root, events[0].run + '.ndjson'), events.map(e => JSON.stringify(e)).join('\n') + '\n');
         await app.scan();
@@ -37,35 +38,40 @@ async function acceptance(page, checked = () => {}, output) {
             await expect(page.locator('.node:visible')).toHaveCount(0);
         }],
         ['measuring', async () => {
-            await expect(block()).toHaveAttribute('data-checkpoint', 'measuring');
-            await expect(block()).toContainText(/measuring/i);
-            await expect(page.locator('#metric-checkpoints')).toHaveText('0 / 1');
-            await expect(page.locator('#metric-reuses')).toHaveText('0');
+            await expect(block()).toHaveCount(0);
+            await expect(page.locator('#edges path')).toHaveCount(0);
+            await expect(page.locator('.node[data-node="a"]')).toHaveAttribute('data-active', 'true');
+            const positions = await page.locator('.node[data-kind="test"]').evaluateAll(items =>
+                items.map(node => [node.offsetLeft,node.offsetTop]));
+            assert.equal(new Set(positions.map(p => p[0])).size, 1);
+            assert.ok(positions.every((p,index) => index === 0 || p[1] > positions[index - 1][1]));
+            await expect(page.locator('#metric-checkpoints')).toHaveText('0 / 0');
         }],
         ['linear', async () => {
-            await expect(block()).toHaveAttribute('data-checkpoint', 'linear');
-            await block().click();
-            await expect(page.locator('#details')).toContainText(/measured prefix/i);
-            await expect(page.locator('#details')).toContainText(/remaining consumers/i);
-            await expect(page.locator('#details')).toContainText(/avoided work/i);
-            await expect(page.locator('#details')).toContainText(/checkpoint cost/i);
+            await expect(block()).toHaveCount(0);
+            await expect(page.locator('#edges path')).toHaveCount(0);
             await expect(page.locator('#activity')).toContainText(/linear/i);
             await expect(page.locator('#metric-cleaned')).toHaveText('0');
         }],
         ['capturing', async () => {
-            await expect(block()).toHaveAttribute('data-checkpoint', 'capturing');
-            await expect(page.locator('#metric-checkpoints')).toHaveText('0 / 1');
+            await expect(block()).toHaveCount(0);
+            await expect(page.locator('#metric-checkpoints')).toHaveText('0 / 0');
             await expect(page.locator('#metric-reuses')).toHaveText('0');
         }],
         ['restoring', async () => {
             await expect(block()).toHaveAttribute('data-active', 'true');
             await expect(block()).toContainText(/restoring/i);
+            await expect(edge('a')).toHaveCount(1);
+            await expect(edge('b')).toHaveCount(1);
+            await expect(edge('c')).toHaveCount(0);
             await expect(page.locator('#metric-reuses')).toHaveText('0');
             await expect(page.locator('.test-cell[data-test="b"]')).not.toHaveAttribute('data-status', 'passed');
         }],
         ['abandoning', async () => {
             await expect(block()).toHaveAttribute('data-checkpoint', 'abandoning');
             await expect(page.locator('#metric-cleaned')).toHaveText('0');
+            await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toBeHidden();
+            await page.locator('#run-details > summary').click();
             await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/restore/i);
             await expect(page.locator('#baseline-values')).toContainText('average 1500.0 ms from 1 sample');
             await expect(page.locator('#activity')).toContainText(/recalibrat/i);
@@ -73,6 +79,14 @@ async function acceptance(page, checked = () => {}, output) {
         ['finished', async () => {
             await expect(block()).toHaveAttribute('data-checkpoint', 'released');
             await expect(block()).toContainText(/uneconomic|abandoned/i);
+            await expect(edge('a')).toHaveCount(1);
+            await expect(edge('b')).toHaveCount(1);
+            await expect(edge('c')).toHaveCount(0);
+            await expect(page.locator('.test-cell[data-test="b"]')).toContainText('checkpoint restored');
+            const siblings = await page.locator('.node:is([data-node="a"],[data-node="b"])').evaluateAll(items =>
+                items.map(node => [node.offsetLeft,node.offsetTop]));
+            assert.equal(siblings[0][1], siblings[1][1]);
+            assert.notEqual(siblings[0][0], siblings[1][0]);
             await expect(page.locator('#metric-tests')).toHaveText('5 / 5');
             await expect(page.locator('#metric-reuses')).toHaveText('1');
             await expect(page.locator('#metric-cleaned')).toHaveText('1');

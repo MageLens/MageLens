@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {words, outcome} from './dom.mjs';
+import {words, outcome, testTitle} from './dom.mjs';
 
 function nodeType(node) {
-    if (node.kind === 'test') return 'End test';
+    if (node.kind === 'test') return 'Test';
     if (node.kind === 'step') return 'Linear step';
     return node.depth > 1 ? 'Nested shared prefix' : 'Shared prefix';
 }
 
 function nodeFooter(node, last) {
     if (node.kind === 'test') {
-        return node.blockedBy ? 'Blocked by ' + node.blockedBy : (node.source?.file ?? node.id);
+        return node.blockedBy ? 'Blocked by ' + node.blockedBy : '';
     }
     if (node.releaseReason === 'uneconomic') return node.reuseState === 'abandoned' ? 'Reuse abandoned · reset verified' : 'Uneconomic · reset pending';
     if (node.checkpointState === 'released') return '✓ Cleaned after last use';
@@ -67,7 +67,7 @@ export function updateNode(el, node, run, selectedNode, currentTest) {
     const type = nodeType(node);
     el.querySelector('.node-kind').textContent =
         node.kind === 'test' ? `${type} · ${run.schedule.indexOf(node.id) + 1}/${run.schedule.length}` : type;
-    el.querySelector('.node-title').textContent = node.label;
+    el.querySelector('.node-title').textContent = node.kind === 'test' ? testTitle(node.label) : node.label;
     el.title = node.label;
     let status = outcome(node.status);
     if (node.active) status = `${words(node.operation)} · active`;
