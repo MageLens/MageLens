@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -14,6 +14,7 @@ const yaml = fs.readFileSync(path.join(root, 'dependencies.yaml'), 'utf8');
 const configured = key => yaml.match(new RegExp(`^${key}: \"([^\"]+)\"`, 'm'))[1];
 const phpVersion = configured('PHP_IMAGE').match(/^php:([0-9]+\.[0-9]+\.[0-9]+)-/)[1];
 const phpBase = (version = phpVersion, upstream = configured('MARKSHUST_DOCKER_MAGENTO_VERSION')) => `magelens-php-base:${version}-markshust${upstream}`;
+const composerInstall = 'RUN curl -sS https://getcomposer.org/installer | php -- --version=2.9.8 --install-dir=/usr/local/bin --filename=composer';
 const browserVersions = {
     ISTANBUL_LIB_REPORT_VERSION: '3.0.1',
     ISTANBUL_REPORTS_VERSION: '3.2.0',
@@ -92,6 +93,8 @@ test('dependency YAML rejects missing, duplicate, unknown and unsafe values', t 
     const file = path.join(workspace(t), 'dependencies.yaml');
     for (const content of [
         yaml.replace(/^PCOV_VERSION:.*\n/m, ''),
+        yaml.replace(/^COMPOSER_VERSION:.*\n/m, ''),
+        select(yaml, {COMPOSER_VERSION: 'latest'}),
         yaml + 'PCOV_VERSION: "2.1.3"\n',
         yaml + 'TYPO_VERSION: "1.2.3"\n',
         select(yaml, {MAGENTO_VERSION: '$(touch /tmp/magelens-must-not-execute)'}),
@@ -116,7 +119,7 @@ test('dependency YAML rejects missing, duplicate, unknown and unsafe values', t 
     }
 });
 
-test('PHP base rebuild changes only the official base and rejects incompatible upstream recipes', t => {
+test('PHP base rebuild pins PHP and Composer and rejects incompatible upstream recipes', t => {
     const directory = workspace(t);
     for (const file of ['bin/common', 'bin/dependencies', 'bin/build-php-image']) {
         fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
@@ -127,7 +130,7 @@ test('PHP base rebuild changes only the official base and rejects incompatible u
     const context = path.join(directory, '.runtime/docker-magento/images/php/8.4');
     fs.mkdirSync(context, {recursive: true});
     const recipe = path.join(context, 'Dockerfile');
-    const original = Buffer.from('FROM php:8.4-fpm-bookworm AS base\n# Magento extensions and configuration\nRUN docker-php-ext-install bcmath intl pdo_mysql\nCOPY conf/php.ini /usr/local/etc/php/conf.d/zz-magento.ini\nFROM base AS test\nRUN php --version\n');
+    const original = Buffer.from('FROM php:8.4-fpm-bookworm AS base\n# Magento extensions and configuration\nRUN docker-php-ext-install bcmath intl pdo_mysql\nCOPY conf/php.ini /usr/local/etc/php/conf.d/zz-magento.ini\n' + composerInstall + '\nFROM base AS test\nRUN php --version\n');
     fs.writeFileSync(recipe, original);
     const commands = path.join(directory, 'commands');
     fs.mkdirSync(commands);
@@ -145,7 +148,9 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args, recipe: fs.readF
     assert.deepEqual(fs.readFileSync(recipe), original, 'Never change the pinned upstream recipe');
     const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].recipe, original.toString().replace('FROM php:8.4-fpm-bookworm AS base', `FROM ${image} AS base`),
+    assert.equal(calls[0].recipe, original.toString()
+        .replace('FROM php:8.4-fpm-bookworm AS base', `FROM ${image} AS base`)
+        .replace('--version=2.9.8', `--version=${configured('COMPOSER_VERSION')}`),
         'Preserve upstream extensions, configuration and later build stages');
     assert.equal(calls[0].args.at(-1), context, 'Build with the upstream context for its configuration files');
     for (const content of [
@@ -161,6 +166,14 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args, recipe: fs.readF
         assert.match(rejected.stderr, /no compatible PHP 8\.4 Bookworm base recipe/);
         assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').length, 1, 'Reject before Docker runs');
         if (content !== null) assert.equal(fs.readFileSync(recipe, 'utf8'), content);
+    }
+    for (const content of [original.toString().replace(composerInstall, ''), `${original}${composerInstall}\n`]) {
+        fs.writeFileSync(recipe, content);
+        const rejected = run();
+        assert.notEqual(rejected.status, 0, 'Reject missing or duplicate Composer installations');
+        assert.match(rejected.stderr, /Unsupported upstream Composer installation recipe/);
+        assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').length, 1, 'Reject before Docker runs');
+        assert.equal(fs.readFileSync(recipe, 'utf8'), content, 'Never change the pinned upstream recipe');
     }
 });
 
@@ -222,7 +235,7 @@ test(`installer selects ${platform}/${theme}/${runner} with ${containerOnly ? 'c
         RUNNER_IMAGE: 'cypress/base:24.16.0'}));
     const recipe = path.join(directory, '.runtime/docker-magento/images/php/8.4');
     fs.mkdirSync(recipe, {recursive: true});
-    fs.writeFileSync(path.join(recipe, 'Dockerfile'), 'FROM php:8.4-fpm-bookworm AS base\nRUN true\nFROM base AS test\nRUN true\n');
+    fs.writeFileSync(path.join(recipe, 'Dockerfile'), 'FROM php:8.4-fpm-bookworm AS base\nRUN true\n' + composerInstall + '\nFROM base AS test\nRUN true\n');
     for (const child of ['bin', 'lib', 'env']) fs.mkdirSync(path.join(directory, '.runtime/docker-magento/compose', child), {recursive: true});
     fs.writeFileSync(path.join(directory, '.runtime/docker-magento/compose/bin/status'), '#!/bin/sh\n');
     // Keep the upstream entry points in the installer contract; Docker is mocked below.
