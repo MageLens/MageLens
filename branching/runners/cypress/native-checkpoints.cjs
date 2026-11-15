@@ -68,7 +68,7 @@ async function install(collect, config, events, tasks, options) {
                 body: JSON.stringify(event), signal: AbortSignal.timeout(10000)});
             if (!response.ok) throw new Error('Native observation delivery failed');
         } : extension.emit ? event => extension.emit(event.type, event) : undefined});
-    const observedEnds = new Set(), retryFailures = new Map();
+    const observedEnds = new Map(), retryFailures = new Map();
     const consumerByNode = new Map(Object.entries(identities).map(([consumer,node]) => [node,consumer]));
     let session, cdp, state, initialized, startupMs = 0;
     function recordFailure(node, status) {
@@ -94,7 +94,7 @@ async function install(collect, config, events, tasks, options) {
                 for (const node of unverified) journal.emit('checkpoint-ineligible', {node, reason:'unverified-restoration'});
             }
             if (type === 'spec-end') {
-                observedEnds.add(data.node);
+                observedEnds.set(data.node, data.attempt);
                 recordFailure(data.node, data.status);
             }
             journal.emit(type, data);
@@ -106,11 +106,13 @@ async function install(collect, config, events, tasks, options) {
     collect('after:spec', (spec, result) => {
         for (const {test,node} of reportedTests(spec,result)) {
             recordFailure(node, test.state);
-            if (!observedEnds.has(node)) {
-                observedEnds.add(node);
-                const status = test.state === 'pending' ? 'skipped' : test.attempts?.length > 1 ? 'failed' : test.state;
-                journal.emit('spec-end', {node, status, ms: test.duration});
+            const attempt = Math.max(0, (test.attempts?.length ?? 0) - 1);
+            // A flushed failure from an earlier attempt does not close the retry.
+            if (observedEnds.get(node) !== attempt) {
+                const status = test.state === 'pending' ? 'skipped' : attempt > 0 ? 'failed' : test.state;
+                journal.emit('spec-end', {node, attempt, status, ms: test.duration});
             }
+            observedEnds.delete(node);
         }
     });
     let preparationMs;

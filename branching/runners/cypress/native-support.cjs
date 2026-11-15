@@ -29,7 +29,7 @@ function install({list, selected, profile = false, inventory = true, discoveryBa
                 throw new Error('Native Cypress observation identity is missing');
             previous = {...previous, runner: runnable.id, attempt};
             const status = attributes.state === 'pending' ? 'skipped' : attempt ? 'failed' : attributes.state;
-            observations.push({type, node: previous.node,
+            observations.push({type, node: previous.node, attempt,
                 ...(type === 'spec-end' ? {status, ms: attributes.duration} : {})});
         };
         Cypress.on('test:before:run', (attributes, runnable) => report('spec-start', attributes, runnable));

@@ -35,6 +35,47 @@ test('native Cypress still rejects cyclic fixtures and opaque values without inv
     assert.equal(accessed, false);
 });
 
+test('native Cypress publishes the last retry outcome when browser observations end at spec teardown', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-observations-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    const extension = path.join(directory, 'checkpoint.cjs');
+    fs.writeFileSync(extension, 'module.exports = {assess() { return []; }, createProvider() {}};');
+    const {install: installCheckpoints} = require('../branching/runners/cypress/native-checkpoints.cjs');
+    const {identity} = require('../branching/runners/cypress/native-support.cjs');
+    const lifecycle = new Map();
+    await installCheckpoints((name, handler) => lifecycle.set(name, handler), {}, new Map(), {}, {directory,
+        checkpoint: {module: extension, manifest: {root: directory, schemaVersion: 1, implementation: 'rust-prefix-v3',
+            assessment: {version: 'measured-first-use-v1', status: 'complete', analysis: {collectionComplete: true}},
+            sources: [], tests: [{id: 'test'}], checkpoints: []}}});
+    const spec = {absolute: path.join(directory, 'original.cy.js')};
+    const retryTitle = ['original suite', 'retry'];
+    const stableTitle = ['original suite', 'stable'];
+    const retry = identity(spec.absolute, retryTitle, 0);
+    const stable = identity(spec.absolute, stableTitle, 0);
+    lifecycle.get('task')['magelens:observations']([
+        {type: 'spec-end', node: stable, attempt: 0, status: 'passed'},
+        {type: 'spec-end', node: retry, attempt: 0, status: 'failed'},
+        {type: 'spec-start', node: retry, attempt: 1}
+    ]);
+    const result = {spec, tests: [
+        {title: stableTitle, state: 'passed', attempts: [{state: 'passed'}]},
+        {title: retryTitle, state: 'passed', attempts: [{state: 'failed'}, {state: 'passed'}]}
+    ]};
+    lifecycle.get('after:spec')(spec, result);
+    await lifecycle.get('after:run')({runs: [result]});
+    const journal = path.join(directory, 'events');
+    const entries = fs.readFileSync(path.join(journal, fs.readdirSync(journal)[0]), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(entries.map(({type, node, attempt, status}) => [type, node, attempt, status]), [
+        ['spec-end', stable, 0, 'passed'],
+        ['spec-end', retry, 0, 'failed'],
+        ['spec-start', retry, 1, undefined],
+        ['spec-end', retry, 1, 'failed']
+    ]);
+    const report = JSON.parse(fs.readFileSync(path.join(directory, 'checkpoints.json'), 'utf8'));
+    assert.equal(report.status, 'failed');
+    assert.ok(report.errors.some(error => error.phase === 'retry'));
+});
+
 test('native Cypress preserves version 16 durations and failure details', () => {
     const {testResult} = require('../branching/runners/cypress/native.cjs');
     assert.deepEqual(testResult({state:'failed',duration:74785,displayError:'Shipment count mismatch',attempts:[{state:'failed'}]}),
