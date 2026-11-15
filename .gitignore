@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -6,6 +6,7 @@
 # Retired private forecasting artifacts are not supported source.
 /branching/predictor/
 /branching/planner/target/
+/.cleanup-tools/
 # Track only application sources inside the otherwise generated Magento tree.
 /src/*
 !/src/app/

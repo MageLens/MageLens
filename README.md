@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -8,9 +8,9 @@ License: see LICENSE in the repository root.
   <img src="assets/magelens.svg" alt="MageLens logo" width="320">
 </p>
 
-# MageLens: Magento 2 and Mage-OS E2E code coverage with Docker
+# MageLens: Magento 2 and Mage-OS full stack coverage with Docker
 
-**See which PHP, JavaScript and templates your end-to-end tests execute.** MageLens sets up a local Magento Open Source or Mage-OS environment in Docker and collects PHP, JavaScript, and template coverage from a Cypress or Playwright run.
+**See which PHP, JavaScript and templates your end-to-end and functional tests execute.** MageLens sets up a local Magento Open Source or Mage-OS environment in Docker and collects full stack coverage from Cypress or Playwright runs.
 
 **[Website](https://magelens.dev/)** · [Real-world Magento E2E coverage guide](https://magelens.dev/guides/parallel-magento-e2e-coverage/)
 
@@ -56,9 +56,11 @@ MageLens grew out of a real-world Magento project with **600+ E2E tests**, where
 
 It makes those gaps visible across PHP, JavaScript and templates, with **low coverage overhead and near-native performance** observed in that project.
 
+Use the same browser-based flows for **functional testing** by mocking external integrations such as ERP, shipping and tax services. This keeps tests independent of those services and helps provide faster pull request feedback. For release testing, run end-to-end scenarios against the integrations you need to validate.
+
 ## Quick start
 
-On Linux or macOS with Apple Silicon, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
+On Linux, Windows with WSL2, or macOS with Apple Silicon, run this inside the empty directory you want to use for MageLens. It downloads the latest stable release:
 
 ```bash
 bash -c "$(wget -qO- https://raw.githubusercontent.com/MageLens/MageLens/main/bootstrap.sh)" --
@@ -68,9 +70,9 @@ To install a specific release, prefix the command with `MAGELENS_VERSION=v1.8.2`
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
 
-Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches the latest published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Linux amd64 and arm64 images are published, including native images for Apple Silicon. GHCR retains the latest successful release; older releases build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
+Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches a published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Linux amd64 and arm64 images are published, including native images for Apple Silicon. GHCR retains images referenced by published releases; checkouts without published images or with modified inputs build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
 
-The command above installs Magento Open Source with Luma and Cypress. Add `--mageos` to install Mage-OS instead. On Linux, both platforms are tested with every storefront and browser runner combination:
+The command above installs Magento Open Source with Luma and Cypress. Add `--mageos` to install Mage-OS instead. On Linux and Apple Silicon macOS, both platforms are tested with every storefront and browser runner combination:
 
 | Magento Open Source | Mage-OS | Storefront | Browser runner |
 | --- | --- | --- | --- |
@@ -81,7 +83,7 @@ The command above installs Magento Open Source with Luma and Cypress. Add `--mag
 
 On Windows, run the commands from Ubuntu 24.04 under WSL2 and keep the project in the Linux filesystem. Append `--mageos --container-only` to the bootstrap command above to select the Mage-OS, Luma, and Cypress profile tested in Windows CI.
 
-On macOS with Apple Silicon (Intel Macs are not supported), run the commands with Docker (Docker Desktop or Colima with vz virtualization, e.g. `colima start --vm-type vz --cpu 4 --memory 8`). Apple Silicon (`arm64`) automatically compiles container images locally from source during installation. Keep the project within your user home directory so the Docker engine can mount workspace files.
+On macOS with Apple Silicon (Intel Macs are not supported), run the commands with Docker (Docker Desktop or Colima with vz virtualization, e.g. `colima start --vm-type vz --cpu 4 --memory 8`). Compatible installations use the published native `linux/arm64` images, subject to the image selection and source-build conditions above. Keep the project within your user home directory so the Docker engine can mount workspace files.
 
 Each installation includes its selected runner and browser, with the same live viewer for Cypress and Playwright. Both run entirely in Docker. The installer saves the platform, theme and runner; `./bin/run-coverage` uses them automatically. Repeat the same flags when rerunning installation; omitted flags select Magento Open Source/Luma/Cypress.
 
@@ -321,6 +323,8 @@ Thank you to [Mark Shust](https://github.com/markshust) for creating and maintai
 For reproducible setup or reporting problems, [open an issue](https://github.com/MageLens/MageLens/issues) with the MageLens version, platform, theme, runner and relevant diagnostics. See [releases](https://github.com/MageLens/MageLens/releases) and the [changelog](CHANGELOG.md) for version changes.
 
 ## License
+
+MageLens TM is owned by Vitalii Boiko; copyright notices naming MageLens refer to Vitalii Boiko.
 
 MageLens is source-available under the [Elastic License 2.0](LICENSE). Commercial use, modification and redistribution are allowed under its terms, including agencies using MageLens to check clients' projects and deliver reports.
 

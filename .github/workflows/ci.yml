@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -22,12 +22,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check:static
+        env:
+          COPYRIGHT_BASE: ${{ github.event.pull_request.base.sha }}
       - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
   integration:
     if: github.event.label.name == 'run-ci'
@@ -68,6 +71,24 @@ jobs:
           sudo chown "$(id -u):$(id -g)" /coverage /pcov-state
           php tests/collection.test.php
           # PCOV/report tests run in each E2E case with the production PHP image.
+  copyright:
+    if: github.event.label.name == 'run-ci'
+    name: Copyright and license notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm run check:copyright
+        env:
+          COPYRIGHT_BASE: ${{ github.event.pull_request.base.sha }}
+      - run: node --test tests/copyright.test.cjs
   branching:
     if: github.event.label.name == 'run-ci'
     name: Branching browser, provider and dashboard checks
@@ -77,6 +98,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -177,7 +199,7 @@ jobs:
   gate:
     name: Required CI gate
     if: always() && github.event.label.name == 'run-ci'
-    needs: [static, integration, branching, e2e, magento, images]
+    needs: [static, integration, copyright, branching, e2e, magento, images]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
