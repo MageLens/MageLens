@@ -12,6 +12,13 @@ async function install(on, config, original, options) {
             for (const [key, task] of Object.entries(callback)) { if (key in tasks) throw new Error(`Duplicate Cypress task: ${key}`); tasks[key] = task; }
         } else { if (!events.has(name)) events.set(name, []); events.get(name).push(callback); }
     };
+    if (options.expectedSpecOrder) collect('before:run', ({specs}) => {
+        const expected = options.expectedSpecOrder, actual = (specs ?? []).map(spec => spec.absolute);
+        if (actual.length !== expected.length || actual.some((file, index) => file !== expected[index])) {
+            fs.writeFileSync(options.orderFailure, JSON.stringify({expected, actual}), {mode: 0o600, flag: 'wx'});
+            throw new Error('Native Cypress spec order changed after discovery');
+        }
+    });
     const hasNodeEvents = typeof original === 'function';
     if (hasNodeEvents) config = await original(collect, config) ?? config;
     const supportFile = config.supportFile;

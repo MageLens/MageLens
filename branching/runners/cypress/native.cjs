@@ -4,20 +4,25 @@
 
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
-async function invoke(configuration, directory, {list = false, tests, spec, profile, checkpoint, onEvent, observationRun} = {}) {
+async function invoke(configuration, directory, {list = false, tests, spec, expectedSpecOrder, profile, checkpoint, onEvent, observationRun} = {}) {
     if (checkpoint && (list || tests)) throw new Error('Native checkpoint execution preserves the complete native invocation');
     if (profile && !list) throw new Error('ML profiling was removed; source discovery is list-only');
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
     if (spec !== undefined && (tests || !Array.isArray(spec) || !spec.length ||
         spec.some(pattern=>typeof pattern!=='string' || !pattern.trim())))
         throw new Error('Cypress native spec selectors must be a nonempty list and cannot filter individual tests');
+    if (expectedSpecOrder !== undefined && (!checkpoint || !Array.isArray(expectedSpecOrder) || !expectedSpecOrder.length ||
+        new Set(expectedSpecOrder).size !== expectedSpecOrder.length ||
+        expectedSpecOrder.some(file => typeof file !== 'string' || !path.isAbsolute(file))))
+        throw new Error('Native Cypress execution requires a unique absolute spec order from discovery');
     const config = fs.realpathSync(configuration);
     const configDigest = profile ? fileDigest(config) : null;
     fs.mkdirSync(directory, {recursive: true});
     const run = fs.mkdtempSync(path.join(directory, 'cypress-'));
     const wrapper = path.join(path.dirname(config), `.magelens-native-${path.basename(run)}.cjs`);
     const observation = onEvent ? await require('./native-observation.cjs').listen(onEvent, observationRun) : null;
-    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, checkpoint, observation: observation?.endpoint, originalConfig: config, configDigest, selected: tests?.map(test => test.id)};
+    const orderFailure = expectedSpecOrder ? path.join(run, 'spec-order-change.json') : undefined;
+    const files = {metadata: path.join(run, 'config.json'), inventory: path.join(run, 'inventory.json'), support: path.join(run, 'support.cjs'), directory: run, list, profile, checkpoint, observation: observation?.endpoint, originalConfig: config, configDigest, expectedSpecOrder, orderFailure, selected: tests?.map(test => test.id)};
     const retryOverride = checkpoint || list ? '' : 'retries: 0, ';
     fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, ${retryOverride}e2e: {...c.e2e, ${retryOverride}setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
@@ -32,9 +37,13 @@ async function invoke(configuration, directory, {list = false, tests, spec, prof
         let exitCode;
         try { exitCode = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', (code, signal) => resolve(code ?? (signal === 'SIGINT' ? 130 : 143))); }); }
         finally { signals.forEach((signal, index) => process.removeListener(signal, handlers[index])); }
-        if (!fs.existsSync(resultFile) || !fs.existsSync(files.inventory)) throw new Error(`Cypress exited ${exitCode} without a complete inventory report`);
-        const result = JSON.parse(fs.readFileSync(resultFile)), inventories = JSON.parse(fs.readFileSync(files.inventory));
+        if (orderFailure && fs.existsSync(orderFailure))
+            throw new Error('Native Cypress spec order changed after discovery');
+        if (!fs.existsSync(resultFile)) throw new Error(`Cypress exited ${exitCode} without a runner result`);
+        const result = JSON.parse(fs.readFileSync(resultFile));
         if (!result.browserName && result.failures) throw new Error(result.message ?? 'Cypress failed before producing a browser result');
+        if (!fs.existsSync(files.inventory)) throw new Error(`Cypress exited ${exitCode} without a complete inventory report`);
+        const inventories = JSON.parse(fs.readFileSync(files.inventory));
         if (result.browserName !== 'chrome-for-testing' || result.browserVersion !== process.env.CHROME_VERSION) throw new Error('Native Cypress browser changed');
         const inventory = inventories.flatMap(item => item.tests), results = [];
         const selected = tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory;
@@ -55,7 +64,7 @@ async function invoke(configuration, directory, {list = false, tests, spec, prof
         const errors = reportErrors(result, inventories);
         const status = exitCode === 0 && !errors.length && results.length === selected.length && results.every(test => ['passed', 'skipped'].includes(test.status)) ? 'passed' : 'failed';
         const report = {schemaVersion: 1, config: JSON.parse(fs.readFileSync(files.metadata)), tests: tests ? inventory.filter(test => files.selected.includes(test.id)) : inventory,
-            results: list ? [] : results, status, errors, exitCode, wallMs: performance.now() - started, reportFile: resultFile,
+            results: list ? [] : results, specOrder: (result.runs ?? []).map(run => run.spec.absolute), status, errors, exitCode, wallMs: performance.now() - started, reportFile: resultFile,
             browser: {name: result.browserName, version: result.browserVersion}};
         if (profile && fileDigest(config) !== configDigest) throw new Error('Cypress configuration changed during collection');
         if (profile && list) report.profileDiscovery = {directory:run, configDigest};

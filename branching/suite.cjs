@@ -98,6 +98,8 @@ async function collectAssessed(manifest, project, directory, runner) {
             : await runner.collect(project.native.config, directory, {spec});
     }
     catch (error) { throw new EstimationError([{phase: 'native-collection', message: error.message}]); }
+    if (project.native.spec !== undefined && (!Array.isArray(inventory.specOrder) || !inventory.specOrder.length))
+        throw new EstimationError([{phase: 'native-collection', message: 'Cypress did not report the discovered spec order'}]);
     if (inventory.exitCode !== 0 || inventory.errors.length || !inventory.tests.length)
         throw new EstimationError([{phase: 'native-collection', message: 'Native collection failed or returned no tests', reasons: inventory.errors}]);
     if (new Set(inventory.tests.map(t => t.id)).size !== inventory.tests.length)
@@ -256,7 +258,7 @@ async function executeSuite(options) {
     if (!nativeCheckpoints) observer.emit('run-ready');
     if (nativeCheckpoints) {
         const result = await native(null, {
-            ...(project.native.spec === undefined ? {} : {spec: project.native.spec}),
+            ...(project.native.spec === undefined ? {} : {spec: project.native.spec, expectedSpecOrder: inventory.specOrder}),
             checkpoint: {module: project.native.checkpoint, manifest,
             linear: project.native.linear === true,
             selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id),
