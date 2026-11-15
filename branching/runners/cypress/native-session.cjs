@@ -13,11 +13,13 @@ const {defaults} = require('../../baseline.cjs');
 class NativeSession {
     constructor({plan, provider, directory, run, bridge, verifySources, emit = () => {}, baseline = defaults,
         statistics, linear = false, now = () => performance.now()}) {
-        for (const name of ['entryState', 'assertBoundary', 'abandon', 'captureBarrier', 'capture',
-            'resumeCapture', 'restore', 'normalizedState', 'cleanup']) {
-            if (typeof provider[name] !== 'function') throw new Error(`Native checkpoint provider requires ${name}`);
+        if (plan.some(candidate => !candidate.measureOnly)) {
+            for (const name of ['entryState', 'assertBoundary', 'abandon', 'captureBarrier', 'capture',
+                'resumeCapture', 'restore', 'normalizedState', 'cleanup']) {
+                if (typeof provider?.[name] !== 'function') throw new Error(`Native checkpoint provider requires ${name}`);
+            }
         }
-        if (provider.discardPrefetch !== undefined &&
+        if (provider?.discardPrefetch !== undefined &&
             (typeof provider.prefetch !== 'function' || typeof provider.discardPrefetch !== 'function'))
             throw new Error('Native checkpoint prefetch requires preparation and cleanup');
         if (typeof verifySources !== 'function') throw new Error('Native checkpoints require source verification');
@@ -25,7 +27,7 @@ class NativeSession {
         this.emit = emit; this.now = now; this.linear = linear;
         this.lifecycleMs = 0;
         this.economics = new Economics(baseline, emit, statistics);
-        this.store = new CheckpointStore(directory, run, digest({plan, provider: provider.identity}));
+        this.store = new CheckpointStore(directory, run, digest({plan, provider: provider?.identity ?? null}));
         this.candidates = new Map(); this.consumers = new Set(); this.finished = new Set();
         for (const candidate of plan) {
             if (this.candidates.has(candidate.id) || candidate.consumers.length < 2) throw new Error('Invalid native checkpoint candidate');
@@ -33,7 +35,8 @@ class NativeSession {
                 if (this.consumers.has(consumer)) throw new Error('Overlapping native checkpoint consumers');
                 this.consumers.add(consumer);
             }
-            this.candidates.set(candidate.id, {...candidate, remaining: candidate.consumers.length, started: new Set()});
+            this.candidates.set(candidate.id, {...candidate, disabled: candidate.measureOnly === true,
+                remaining: candidate.consumers.length, started: new Set()});
         }
         this.report = {run, checkpoints: [], restores: [], prefixes: [], decisions: this.economics.decisions,
             observations: this.economics.observations, errors: [], status: 'running'};
@@ -292,7 +295,7 @@ class NativeSession {
             for (const candidate of this.candidates.values()) releaseMs += await this.release(candidate);
         } finally {
             try { this.store.discardIncomplete(); }
-            finally { await this.provider.cleanup(); }
+            finally { await this.provider?.cleanup(); }
         }
         this.report.cleanup = {storageReleased: this.store.available.size === 0 && this.store.incomplete.size === 0};
         await this.verifySources();

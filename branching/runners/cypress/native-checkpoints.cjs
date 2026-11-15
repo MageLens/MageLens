@@ -43,13 +43,21 @@ async function install(collect, config, events, tasks, options) {
     // of support files or plugins is neither blanket rejection nor permission.
     const assessment = await extension.assess({manifest, plan, config, tasks: Object.keys(tasks)});
     const unverified = [];
-    for (const candidate of plan.candidates) {
+    const candidates = plan.candidates.flatMap(candidate => {
         const evidence = assessment?.find(item => item.identity === candidate.identity);
-        if (!evidence || domains.some(domain => !['restored', 'unchanged', 'absent'].includes(evidence.domains?.[domain])) ||
-            evidence.continuation !== 'equivalent') unverified.push(candidate.id);
-    }
-    const candidates = plan.candidates.filter(candidate => !unverified.includes(candidate.id));
-    const entries = plan.entries.filter(entry => !unverified.includes(entry.checkpoint));
+        if (evidence?.continuation === 'equivalent' &&
+            domains.every(domain => ['restored', 'unchanged', 'absent'].includes(evidence.domains?.[domain])))
+            return [candidate];
+        unverified.push(candidate.id);
+        // The extension may attest the exact instrumentation boundary while
+        // restoration remains unverified. Time it during the original run.
+        return evidence?.continuation === 'unverified' && evidence.measure === true
+            ? [{...candidate, measureOnly: true}]
+            : [];
+    });
+    const instrumented = new Set(candidates.map(candidate => candidate.id));
+    const entries = plan.entries.filter(entry => instrumented.has(entry.checkpoint));
+    const needsProvider = candidates.some(candidate => !candidate.measureOnly);
     const preprocessors = events.get('file:preprocessor') ?? [];
     if (entries.length && preprocessors.length) {
         if (preprocessors.length !== 1 || typeof extension.instrumentPreprocessor !== 'function')
@@ -125,11 +133,14 @@ async function install(collect, config, events, tasks, options) {
     const bridge = candidates.length ? await new Bridge({onBoundary: async message => {
         initialized ??= (async () => {
             const started = performance.now();
-            connectedLaunch = latestLaunch ?? await bridge.browser;
-            connectedSpec = currentSpec;
-            cdp = await Cdp.connect(connectedLaunch.port);
-            state = new CypressState(bridge, cdp); await state.initialize();
-            const provider = await extension.createProvider({config, state, tasks, directory, assessment});
+            let provider;
+            if (needsProvider) {
+                connectedLaunch = latestLaunch ?? await bridge.browser;
+                connectedSpec = currentSpec;
+                cdp = await Cdp.connect(connectedLaunch.port);
+                state = new CypressState(bridge, cdp); await state.initialize();
+                provider = await extension.createProvider({config, state, tasks, directory, assessment});
+            }
             startupMs = preparationMs + performance.now() - started;
             session = new NativeSession({plan:candidates, provider, directory,
                 run, bridge, verifySources: () => {
@@ -141,7 +152,7 @@ async function install(collect, config, events, tasks, options) {
                 emit: journal.emit, baseline: extension.baseline, statistics: extension.statistics, linear});
         })();
         await initialized;
-        if (currentSpec !== connectedSpec || (latestLaunch && latestLaunch !== connectedLaunch)) {
+        if (needsProvider && (currentSpec !== connectedSpec || (latestLaunch && latestLaunch !== connectedLaunch))) {
             const started = performance.now();
             const launch = latestLaunch ?? connectedLaunch;
             const spec = currentSpec;
