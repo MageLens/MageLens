@@ -157,7 +157,19 @@ async function prepareSuite(options) {
         inventory.config.projects.find(project=>mainProjects.has(project.name))?.fullyParallel === true &&
         groups.checkpoint.every(test=>{const source=sourceTests.get(test.staticId); return !source.restoration && !source.fixtureSetup?.length;});
     const checkpointIds = new Set(checkpoint.map(test=>test.id));
-    const ordered = canGroup ? [...main.filter(test=>!checkpointIds.has(test.id)),...main.filter(test=>checkpointIds.has(test.id))] : main;
+    const grouped = [];
+    if (canGroup) {
+        const byId = new Map(checkpoint.map(test=>[test.id,test]));
+        const candidates = new Set(decision.selected), groupsByPrefix = new Map();
+        for (const test of main.filter(test=>checkpointIds.has(test.id))) {
+            const spec = built.workflow.specs.get(byId.get(test.id).staticId);
+            const prefix = built.workflow.chain(spec.parent).find(node=>candidates.has(node.id)).id;
+            if (!groupsByPrefix.has(prefix)) groupsByPrefix.set(prefix,[]);
+            groupsByPrefix.get(prefix).push(test);
+        }
+        grouped.push(...[...groupsByPrefix.values()].flat());
+    }
+    const ordered = canGroup ? [...main.filter(test=>!checkpointIds.has(test.id)),...grouped] : main;
     const blocks = [];
     for (const test of ordered) {
         const kind = checkpointIds.has(test.id) ? 'checkpoint' : 'native';
@@ -167,21 +179,49 @@ async function prepareSuite(options) {
     const scheduled = [...groups.setup,...ordered].map(test=>test.id);
     const ordering = {basis:canGroup ? 'independent-page-project' : 'native-order', scheduled,
         changed:JSON.stringify(scheduled)!==JSON.stringify(inventory.tests.map(test=>test.id))};
+    for (const block of blocks) {
+        if (block.kind !== 'checkpoint') continue;
+        const configuration = independentCypress ? {...project, runnerOptions:{...project.runnerOptions,nativeConfig:project.native.config}} : project;
+        block.tests = block.tests.map(entry=>checkpoint.find(test=>test.id===entry.id));
+        const ids = block.tests.map(test=>test.staticId);
+        const discovery = buildWorkflow(manifest,configuration,ids);
+        const candidateDecision = costs.planWorkflow(discovery.workflow).decision;
+        block.built = buildWorkflow(manifest,configuration,ids,candidateDecision.selected);
+        const planned = costs.planWorkflow(block.built.workflow);
+        block.plan = planned.plan; block.decision = planned.decision;
+        block.excludedCandidates = candidateDecision.excluded ?? [];
+    }
     return {inventory,groups,checkpoint,decision,browserIneligible,independent,independentCypress,blocks,ordering};
 }
 async function runSuite(options) {
+    const observer = options.observer ?? require('./suite-observation.cjs').observeSuite(options);
+    let report;
+    try { report = await executeSuite({...options,observer}); return report; }
+    catch (error) { observer.emit('run-error',{phase:'suite'}); throw error; }
+    finally { if (!options.observer) await observer.finish(report); }
+}
+async function executeSuite(options) {
     const {manifest, project, directory, runner, runCheckpoint, coverageRoot} = options;
     const mode = 'AUTO', started = performance.now(), phases = [];
-    const {inventory,groups,checkpoint,decision,browserIneligible,independent,independentCypress,blocks,ordering} = await prepareSuite(options);
-    const report = {schemaVersion: 1, kind: 'full-native-suite', mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
+    options.observer.emit('run-phase',{phase:'discovering tests'});
+    const prepared = await prepareSuite(options);
+    const {inventory,groups,checkpoint,decision,browserIneligible,independent,blocks,ordering} = prepared;
+    const observer = options.observer;
+    observer.discover(prepared);
+    observer.emit('checkpoint-baseline', {status:'compatible',baseline:project.costBaseline ?? require('./baseline.cjs').defaults,
+        calibrationMs:options.calibrationMs ?? 0});
+    const report = {schemaVersion: 1, kind: 'full-native-suite', run:observer.run, mode, inventory: inventory.tests, sourceDigest: manifest.sourceDigest,
         setupDiagnostics: {nativeCollectionMs: inventory.wallMs},
         diagnostics: manifest.diagnostics, assessment: manifest.assessment, decision, ordering, phases, results: [], checkpoints: 0, reuseHits: 0, status: 'failed',
         routing: {checkpoint: checkpoint.map(t => t.id), native: inventory.tests.filter(t => !checkpoint.some(c => c.id === t.id)).map(t => t.id),
             ...(browserIneligible.length ? {browserIneligible} : {})}};
     async function native(tests, options = {}) {
+        observer.emit('run-phase',{phase:'native execution',tests:(tests ?? inventory.tests).map(test=>test.id)});
         const result = await runner.run(project.native.config, directory, {...options,
             ...(coverageRoot ? {coverageRoot} : {}), ...(tests ? {tests} : {})});
-        validateNative(result, tests ?? inventory.tests); phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
+        validateNative(result, tests ?? inventory.tests);
+        for (const entry of result.results) observer.emit('spec-end',{node:entry.id,status:entry.status});
+        phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
     if (!checkpoint.length) {
         report.selectionReason = decision ? 'No eligible shared prefixes; execute the complete native suite.' : 'No qualified split; execute the complete native suite.';
@@ -195,17 +235,13 @@ async function runSuite(options) {
                 if (block.kind === 'native') { await native(block.tests, {setup:false}); continue; }
                 verifySources(manifest);
                 const selected = block.tests.map(entry => checkpoint.find(test => test.id === entry.id));
-                const configuration = {...project, costBaseline:baseline,
-                    ...(independentCypress ? {runnerOptions:{...project.runnerOptions, nativeConfig:project.native.config}} : {})};
-                const ids = selected.map(test=>test.staticId);
-                const discovery = buildWorkflow(manifest,configuration,ids);
-                const candidates = costs.planWorkflow(discovery.workflow).decision.selected;
-                // Execute contiguous source fragments through selected boundaries;
-                // unselected ancestors must not introduce readiness/collection work.
-                const built = buildWorkflow(manifest,configuration,ids,candidates);
+                const built = block.built;
+                built.workflow.costBaseline = baseline ?? built.workflow.costBaseline;
                 const {plan, decision} = costs.planWorkflow(built.workflow);
                 const byId = new Map(selected.map(test => [test.staticId,test]));
-                const result = await runCheckpoint({...built, specs:built.workflow.select().map(test => test.id), plan}, decision);
+                const result = await runCheckpoint({...built, specs:built.workflow.select().map(test => test.id), plan,
+                    onEvent:observer.child(block), eventDirectory:null}, decision);
+                observer.add(result);
                 phases.push({kind:'checkpoint', report:result});
                 for (const entry of result.results) {
                     const source = byId.get(entry.spec);
@@ -226,6 +262,13 @@ async function runSuite(options) {
     report.status = !report.missing.length && !report.duplicates.length && phases.every(p => p.kind === 'native' ? p.status === 'passed' && p.exitCode === 0 && !p.errors.length : p.report.status === 'passed') ? 'passed' : 'failed';
     if (report.results.some(r => !['passed', 'skipped'].includes(r.status))) report.status = 'failed';
     if (report.status === 'passed' && report.skipped.length) report.status = 'completed-with-skips';
+    const checkpointReports = phases.filter(phase=>phase.kind==='checkpoint').map(phase=>phase.report);
+    report.counts = {tests:report.results.length, nativeTests:report.results.filter(result=>result.execution==='native').length,
+        checkpointTests:report.results.filter(result=>result.execution==='checkpoint').length,
+        candidates:blocks.reduce((sum,block)=>sum+(block.decision?.selected.length ?? 0),0),
+        prefixExecutions:checkpointReports.reduce((sum,item)=>sum+(item.counts.prefixExecutions ?? 0),0),
+        candidateExecutions:checkpointReports.reduce((sum,item)=>sum+(item.segments ?? []).filter(segment=>segment.kind==='Stage' && item.checkpointPolicy.selected.includes(segment.node)).length,0),
+        captures:report.checkpoints, restores:report.reuseHits};
     report.wallMs = performance.now() - started;
     return report;
 }

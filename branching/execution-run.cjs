@@ -87,7 +87,7 @@ async function executePlan({
             schedule: selected.map((spec) => spec.id),
             nodes: describeGraph(graph, selected, {approach, checkpointLifetime, retain, chosen}),
             policy: checkpointPolicy
-                ? {reason: checkpointPolicy.reason, selected: checkpointPolicy.selected}
+                ? {basis: checkpointPolicy.basis, reason: checkpointPolicy.reason, selected: checkpointPolicy.selected}
                 : null,
             checkpointLimit: limited.report
         });

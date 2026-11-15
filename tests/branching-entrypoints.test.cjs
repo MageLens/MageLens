@@ -66,6 +66,20 @@ function defaultProject(directory) {
     fs.copyFileSync(path.join(directory, 'manifest.json'), path.join(directory, '.runtime/branching-plan.json'));
     fs.copyFileSync(path.join(directory, 'workflow file.cjs'), path.join(directory, 'branching.config.cjs'));
 }
+test('source-directory execution needs no saved manifest and gives the planner only owned output writes', t => {
+    const {directory,run}=launchFixture(t);
+    fs.mkdirSync(path.join(directory,'scenarios'));
+    fs.copyFileSync(path.join(directory,'workflow file.cjs'),path.join(directory,'branching.config.cjs'));
+    const result=run(['bin/run-coverage','--branching','scenarios']);
+    assert.equal(result.status,37,result.stderr);
+    const calls=result.calls.split('\n').filter(line=>line.startsWith('[')).map(JSON.parse);
+    assert.equal(calls.some(args=>args[0]==='exec' && args.includes('verify')),false);
+    const controller=calls.find(args=>args.includes('--detach'));
+    assert.ok(controller.includes(`type=bind,source=${directory},target=${directory},readonly`));
+    assert.ok(controller.includes(`type=bind,source=${directory}/.runtime/branching-discovery,target=${directory}/.runtime/branching-discovery`));
+    assert.ok(calls.find(args=>args.includes('node')).includes(path.join(directory,'scenarios')));
+    assert.equal(fs.existsSync(path.join(directory,'.runtime/branching-plan.json')),false);
+});
 test('branching and calibration use saved project paths and create default storage', t => {
     const {directory, run} = launchFixture(t);
     defaultProject(directory);

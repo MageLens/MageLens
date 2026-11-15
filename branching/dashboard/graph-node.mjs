@@ -7,14 +7,18 @@ import {words, outcome} from './dom.mjs';
 function nodeType(node) {
     if (node.kind === 'test') return 'End test';
     if (node.kind === 'step') return 'Linear step';
-    return node.depth > 1 ? 'Follow-up checkpoint' : 'First checkpoint';
+    return node.depth > 1 ? 'Nested shared prefix' : 'Shared prefix';
 }
 
 function nodeFooter(node, last) {
     if (node.kind === 'test') {
         return node.blockedBy ? 'Blocked by ' + node.blockedBy : (node.source?.file ?? node.id);
     }
+    if (node.releaseReason === 'uneconomic') return node.reuseState === 'abandoned' ? 'Reuse abandoned · reset verified' : 'Uneconomic · reset pending';
     if (node.checkpointState === 'released') return '✓ Cleaned after last use';
+    if (node.checkpointState === 'linear') return 'Measured prefix · continue linearly';
+    if (node.checkpointState === 'measuring') return 'Measuring first necessary execution';
+    if (node.checkpointState === 'abandoning') return 'Uneconomic · release and reset pending';
     if (node.checkpointState === 'retained') return 'Retained by run policy';
     if (last) return 'Last consumer · cleanup next';
     if (node.kind === 'step') return 'Replayed when needed';

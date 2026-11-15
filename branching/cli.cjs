@@ -44,7 +44,8 @@ async function main(configuration, storage) {
         const report = await runtime.run({workflow: graph, backend, state: configuration.state,
             root: storage, specs, plan, ...coverage,
             checkpointLifetime: configuration.checkpointLifetime ?? 'run',
-            eventDirectory: process.env.MAGELENS_BRANCHING_EVENTS || path.join(workspace, '.runtime/branching-events')});
+            onEvent:configuration.onEvent,
+            eventDirectory: configuration.eventDirectory !== undefined ? configuration.eventDirectory : process.env.MAGELENS_BRANCHING_EVENTS || path.join(workspace, '.runtime/branching-events')});
         report.browser = runtime.description;
         const output = path.join(workspace, '.runtime/branching-results'); fs.mkdirSync(output, {recursive: true});
         const file = path.join(output, report.run + '.json'); fs.writeFileSync(file, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
@@ -62,5 +63,5 @@ async function main(configuration, storage) {
         await runtime.close();
     }
 }
-if (require.main === module) { console.error('Use run-coverage --branching with an automatic source manifest and native runner configuration.'); process.exitCode = 1; }
+if (require.main === module) { console.error('Use run-coverage --branching with a source directory or assessed manifest and native runner configuration.'); process.exitCode = 1; }
 module.exports = {main, activeCoverage};

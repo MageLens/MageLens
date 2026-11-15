@@ -37,6 +37,25 @@ function fixture(t) {
     const runCheckpoint = async ({specs: ids, workflow, plan}) => {costs.resolvePlan(workflow, ids, plan);calls.push({checkpoint:ids});return {status:'passed',results:ids.map(spec=>({spec,status:'passed'})),checkpoints:[{id:'shared'}],counts:{reuseHits:1}};};
     return {root,manifest,inventory,project,runner,calls,runCheckpoint};
 }
+test('one suite journal includes native setup, all native tests and real checkpoint execution', async t => {
+    const f=fixture(t), events=[];
+    f.project.expect=assert;
+    const {FixtureProvider}=require('./fixtures/branching/provider.cjs');
+    class Provider extends FixtureProvider { get page() { return {goto:async url=>{this.state.browser.url=url;}}; } }
+    const report=await runSuite({...f,directory:f.root,onEvent:event=>events.push(event),
+        runCheckpoint:options=>require('../branching/engine.cjs').execute({...options,root:path.join(f.root,'storage'),provider:new Provider()})});
+    const state=events.reduce(require('../branching/dashboard/model.cjs').applyEvent,null);
+    assert.equal(report.status,'passed',JSON.stringify(report.phases.filter(p=>p.kind==='checkpoint').map(p=>p.report.errors))); assert.equal(state.status,'passed');
+    assert.equal(events.filter(e=>e.type==='run-start').length,1);
+    assert.equal(events.filter(e=>e.type==='run-end').length,1);
+    assert.equal(events[0].nodes.length,0);
+    assert.equal(state.nodes.filter(n=>n.kind==='test' && n.status==='passed').length,103);
+    assert.deepEqual(state.schedule,report.ordering.scheduled);
+    assert.equal(state.counts.prefixExecutions,4);
+    assert.equal(state.nodes.filter(n=>n.kind==='checkpoint').length,1);
+    assert.ok(state.baseline.observations.length>0);
+    assert.equal(state.counts.reuseHits,0);
+});
 test('native inventory preserves every assessed generated and fixture-based test beyond the old subset',t=>{
     const f=fixture(t),g=partition(f.manifest,f.inventory,f.project);
     assert.equal(g.setup.length,1);assert.equal(g.checkpoint.length,2);assert.equal(g.native.length,100);
@@ -247,6 +266,22 @@ test('declared parallel page tests group consumers without crossing setup or rer
     assert.equal(report.ordering.changed,true);
     assert.deepEqual(f.calls.map(call=>call.checkpoint??call.tests.map(test=>test.id)),[['setup'],['native-middle'],['first','second']]);
     assert.deepEqual(report.results.map(result=>result.id),report.ordering.scheduled);
+});
+test('independent interleaved prefix groups become contiguous while setup stays first', async t => {
+    const f=fixture(t);
+    const extra=['third','fourth'].map(id=>({...f.manifest.tests[0],id,title:id,scope:'another'}));
+    f.manifest.tests.push(...extra);
+    f.manifest.checkpoints.push({...f.manifest.checkpoints[0],id:'another-shared',representative:'third',consumers:['third','fourth']});
+    f.manifest.schedule.push('third','fourth');
+    const native=extra.map(source=>({...f.inventory.tests[1],id:'native-'+source.id,title:source.title}));
+    f.inventory.tests=[f.inventory.tests[0],f.inventory.tests[1],native[0],f.inventory.tests[2],native[1]];
+    f.inventory.config.projects[1].fullyParallel=true;
+    const report=await runSuite({...f,directory:f.root});
+    assert.equal(report.status,'passed');
+    assert.deepEqual(report.ordering.scheduled,['setup','native-first','native-second','native-third','native-fourth']);
+    assert.equal(report.counts.candidates,2);
+    assert.deepEqual(report.results.map(result=>result.id),report.ordering.scheduled);
+    assert.deepEqual(f.calls.map(call=>call.checkpoint??call.tests.map(test=>test.id)),[['setup'],['first','second','third','fourth']]);
 });
 test('parallel configuration cannot reorder fixture setup or native-only lifecycle work', async t => {
     const f=fixture(t); f.inventory.config.projects[1].fullyParallel=true;

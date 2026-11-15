@@ -10,7 +10,7 @@ source "$ROOT/branching/configs/entrypoints.conf"
 disposable=0
 if [[ "${1:-}" == --disposable ]]; then disposable=1; shift; fi
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: ./bin/run-coverage --branching [--calibrate] [MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nCreate the saved plan with ./bin/plan-branching SOURCE_ROOT and configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching preserves configured Playwright coverage collection.\n' \
+    printf 'Usage: ./bin/run-coverage --branching [--calibrate] [SOURCE_ROOT_OR_MANIFEST [CONFIG.cjs [COW_STORAGE]]]\nDefaults: %s, %s, %s\nOverride paths with positional arguments or MAGELENS_BRANCHING_MANIFEST, MAGELENS_BRANCHING_CONFIG and MAGELENS_BRANCHING_STORAGE.\nPass a source directory to discover prefixes during this run; saved manifests remain supported. Configure your project in %s.\nDefault storage is created automatically and requires filesystem reflinks.\nAUTO is the only checkpoint policy. The optional --auto spelling is also accepted.\n--calibrate refreshes project checkpoint costs without executing tests.\nSuccessful runs update the baseline by default; set baseline.updateOnSuccess=false to opt out.\nConfigure test selection in the native runner configuration.\nBranching preserves configured Playwright coverage collection.\n' \
         "$BRANCHING_DEFAULT_MANIFEST" "$BRANCHING_DEFAULT_CONFIGURATION" "$BRANCHING_DEFAULT_STORAGE" "$BRANCHING_DEFAULT_CONFIGURATION"
     exit 0
 fi
@@ -26,11 +26,11 @@ if [[ "${1:-}" == --calibrate ]]; then calibrate=1; shift; fi
 manifest=${1-${MAGELENS_BRANCHING_MANIFEST:-$BRANCHING_DEFAULT_MANIFEST}}
 configuration=${2-${MAGELENS_BRANCHING_CONFIG:-$BRANCHING_DEFAULT_CONFIGURATION}}
 storage=${3-${MAGELENS_BRANCHING_STORAGE:-$BRANCHING_DEFAULT_STORAGE}}
-[[ -f "$manifest" ]] || fail "Branching plan not found: $manifest. Run ./bin/plan-branching SOURCE_ROOT first."
+[[ -f "$manifest" || -d "$manifest" ]] || fail "Source directory or branching manifest not found: $manifest. Pass SOURCE_ROOT to run-coverage --branching, or create a saved manifest with ./bin/plan-branching SOURCE_ROOT."
 [[ -f "$configuration" ]] || fail "Branching configuration not found: $configuration. Configure your project there; see tests/README.md#run-branching."
 manifest=$(realpath -e "$manifest")
 configuration=$(realpath -e "$configuration")
-[[ "$manifest" == "$ROOT/"* && "$configuration" == "$ROOT/"* && -f "$manifest" && -f "$configuration" ]] || fail 'Manifest and configuration must be files in this checkout.'
+[[ "$manifest" == "$ROOT/"* && "$configuration" == "$ROOT/"* && ( -f "$manifest" || -d "$manifest" ) && -f "$configuration" ]] || fail 'Source/manifest and configuration must be in this checkout.'
 [[ -f .runtime/installed ]] || fail 'Install a dedicated test checkout first.'
 [[ ! -e .runtime/workflow.lock && ! -e .runtime/branching-recovery.json ]] || fail 'An active or interrupted workflow needs recovery first.'
 preflight
@@ -52,15 +52,23 @@ image=$("$ROOT/bin/branching-image" "$MAGELENS_RUNNER")
 planner_image=$("$ROOT/bin/branching-image" orchestrator)
 modules=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/node_modules"}}type={{.Type}},source={{if eq .Type "volume"}}{{.Name}}{{else}}{{.Source}}{{end}},target=/workspace/node_modules,readonly{{end}}{{end}}' "$runner")
 [[ -n "$modules" ]] || fail 'The installed runner has no dependency mount.'
+discovery_mount=()
+if [[ -d "$manifest" ]]; then
+    (( ! calibrate )) || fail 'Explicit calibration requires a saved manifest.'
+    [[ ! -L .runtime/branching-discovery ]] || fail 'Discovery output cannot be a symbolic link.'
+    mkdir -p .runtime/branching-discovery
+    discovery_mount=(--mount "type=bind,source=$ROOT/.runtime/branching-discovery,target=$ROOT/.runtime/branching-discovery")
+fi
 controller=$(docker run --detach --rm --init --network none --cpus 2 --memory 512m --memory-swap 512m \
     --user "$LOCAL_UID:$LOCAL_GID" --mount "type=bind,source=$ROOT,target=$ROOT,readonly" --workdir "$ROOT" \
-    --mount "$modules" \
+    --mount "$modules" "${discovery_mount[@]}" \
     --label org.magelens.role=branching-orchestrator --entrypoint sleep "$planner_image" infinity)
 verification_error=''
 cleanup_controller() { local result=$?; trap - EXIT; if [[ -n "$verification_error" ]]; then rm -f -- "$verification_error" || result=1; fi; docker rm --force "$controller" >/dev/null || result=1; exit "$result"; }
 trap cleanup_controller EXIT
 # Keep the controller's source mount read-only; publish its failure on the host
 # so the dashboard cannot silently display a superseded successful assessment.
+if [[ -f "$manifest" ]]; then
 verification_error=$(mktemp "${manifest}.verify-XXXXXX")
 if docker exec "$controller" magelens-plan verify "$manifest" 2>"$verification_error"; then
     rm -f -- "$verification_error"
@@ -74,6 +82,7 @@ else
     mv -f -- "$verification_error" "${manifest}.error.json"
     verification_error=''
     exit "$result"
+fi
 fi
 # Driver needs Docker control for the application barrier. No ports are exposed.
 # The original browser runner and normal coverage entry point remain unchanged.

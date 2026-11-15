@@ -33,11 +33,13 @@ License: see LICENSE in the repository root.
             <div><span>Test outcomes</span><strong id="metric-tests">—</strong></div>
             <div><span>Checkpoints available</span><strong id="metric-checkpoints">—</strong></div>
             <div><span>Checkpoint reuses</span><strong id="metric-reuses">—</strong></div>
+            <div><span>Shared / all prefix executions</span><strong id="metric-prefixes">—</strong></div>
             <div><span>Checkpoints cleaned</span><strong id="metric-cleaned">—</strong></div>
         </section>
+        <section id="checkpoint-costs" class="activity-panel" aria-label="Checkpoint costs" hidden><h2>Checkpoint costs</h2><p id="baseline-status"></p><div id="baseline-values"></div><p id="calibration-cost"></p></section>
         <section class="map-panel" aria-label="Execution graph">
-            <div class="map-toolbar"><div class="legend"><span><i class="blue"></i>First checkpoint</span><span><i class="green"></i>Follow-up</span><span><i class="red"></i>End test</span><span><i class="gray"></i>Linear step</span></div><div class="map-controls"><button id="follow-active" aria-pressed="true">Follow active</button><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button></div></div></div>
-            <div id="empty" class="empty"><div class="empty-symbol">◇</div><h2>Your execution map will appear here</h2><p>Start a branching run, or generate a source manifest to preview its shared checkpoints.</p><code>./bin/plan-branching SOURCE_ROOT</code></div>
+            <div class="map-toolbar"><div class="legend"><span><i class="blue"></i>Shared prefix</span><span><i class="green"></i>Nested prefix</span><span><i class="red"></i>End test</span><span><i class="gray"></i>Linear step</span></div><div class="map-controls"><button id="follow-active" aria-pressed="true">Follow active</button><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button></div></div></div>
+            <div id="empty" class="empty"><div class="empty-symbol">◇</div><h2>Your execution map will appear here</h2><p>Start a branching run to discover shared prefixes and watch decisions as tests execute.</p><code>./bin/run-coverage --branching SOURCE_ROOT</code></div>
             <div id="viewport" class="viewport" hidden><div id="canvas-wrap"><div id="canvas"><svg id="edges" aria-hidden="true"></svg><div id="nodes"></div></div></div></div>
             <div class="map-footer"><span id="graph-summary">Waiting for orchestrator events</span><span><i class="activity-dot"></i> Active work pulses · hover or focus a checkpoint or test for details</span></div>
         </section>

@@ -237,6 +237,7 @@ async function main() {
         })).toBe(true);
         await page.screenshot({path: path.join(output, 'graph-mobile.png'), fullPage: true});
         checked('labels stay inert, keyboard selection works, and the mobile layout avoids page overflow');
+        await require('./branching-dashboard-adaptive-browser.cjs').acceptance(page, checked, output);
         assert.deepEqual(errors, []); checked('no uncaught browser errors');
     } catch (error) { failure = error; await page.screenshot({path: path.join(output, 'failure.png'), fullPage: true}).catch(() => {}); }
     finally {

@@ -41,7 +41,7 @@ database and machine, especially before running branching in CI:
 ```
 
 Calibration measures your environment and adjusts future checkpoint decisions.
-Run `./bin/run-coverage --branching` to execute the suite and
+Run `./bin/run-coverage --branching SOURCE_ROOT` to discover prefixes and execute the suite, and
 `./bin/branching-dashboard` to follow its progress. Project paths have defaults;
 use `--branching --help` for setup and overrides. Branching currently requires
 an isolated Linux test installation with Cypress or Playwright and reflink

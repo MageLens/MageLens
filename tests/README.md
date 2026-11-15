@@ -176,16 +176,22 @@ mechanism harness so safety failures remain covered independently of cost select
 
 ## Run branching
 
-Save the project configuration as `branching.config.cjs` and generate its plan
-with `./bin/plan-branching SOURCE_ROOT`. Then use
-`./bin/run-coverage --branching` or `./bin/run-coverage --branching --calibrate`.
-Both commands read `.runtime/branching-plan.json` and create checkpoint storage
-at `.runtime/branching-storage`, which must be on a reflink-capable filesystem.
-Regenerate the plan after changing its source files.
+Save the project configuration as `branching.config.cjs`, then run
+`./bin/run-coverage --branching SOURCE_ROOT` to discover shared prefixes during
+the run. The dashboard starts with discovery, then shows every original test,
+the safe execution order, first-use decisions and checkpoint-cost updates.
+Independent prefix groups can each capture; overlapping prefixes do not receive
+duplicate savings credit. Native runner blocks show their outcomes when the
+runner completes.
+
+Saved manifests remain supported: generate one with `./bin/plan-branching SOURCE_ROOT`,
+then use `./bin/run-coverage --branching` or `./bin/run-coverage --branching --calibrate`.
+Those commands read `.runtime/branching-plan.json`; regenerate it after source changes.
+Default checkpoint storage is `.runtime/branching-storage` on a reflink-capable filesystem.
 
 Override individual paths with `MAGELENS_BRANCHING_MANIFEST`,
 `MAGELENS_BRANCHING_CONFIG` or `MAGELENS_BRANCHING_STORAGE`, or supply
-`[MANIFEST.json [CONFIG.cjs [COW_STORAGE]]]` after the command. Explicit paths
+`[SOURCE_ROOT_OR_MANIFEST [CONFIG.cjs [COW_STORAGE]]]` after the command. Explicit paths
 take precedence; custom storage directories must already exist. The planner
 also honors `MAGELENS_BRANCHING_MANIFEST`.
 
@@ -205,12 +211,14 @@ Set `maxCheckpointsPerTest` in the project configuration to change the checkpoin
 budget (a positive integer, default **9**). Rust selection and the execution guard
 use the same budget. The limit applies to each test's ancestor path, not the number
 of tests or the whole suite. Excess candidates produce warnings; their actions
-still execute, and AUTO prioritizes the checkpoints with greater estimated savings.
+still execute. AUTO selects disjoint shared-prefix groups and measures their first use;
+overlapping ancestors cannot claim the same avoided work.
 
-Fresh projects use the versioned checkpoint-cost defaults in
-[`baseline.json`](../branching/planner/src/baseline.json), with **2 × overhead × 1.20**
-as the conservative cost. Successful, fully cleaned checkpoint runs update
-operation averages for later runs by default; the current plan stays unchanged.
+Missing or incompatible measurements trigger bounded calibration. The cost policy
+in [`baseline.json`](../branching/planner/src/baseline.json) requires incremental
+costs plus a **1% margin and 50 ms minimum saving**. Actual capture and complete
+restore measurements conservatively update subsequent decisions during the run.
+Successful, fully cleaned runs persist separate operation measurements for later runs.
 Set `baseline: {updateOnSuccess: false}` for explicit updates only, or run
 `./bin/run-coverage --branching --calibrate`
 to measure and replace the project baseline. Both modes retain overhead history
@@ -222,6 +230,31 @@ and flag increases before averaging.
 event ordering, actual last-consumer deletion, failed/retained cleanup,
 observation failure isolation, read-only HTTP access, reconnect snapshots and
 large SSE messages. The dashboard uses the real engine's events in these checks.
+
+The adaptive dashboard criteria live in
+`tests/branching-dashboard-adaptive.test.cjs` and
+`tests/branching-dashboard-adaptive-browser.cjs` (also invoked by the browser
+suite). Run the first with
+`node --test tests/branching-dashboard-adaptive.test.cjs`. The browser file can
+also run directly with Node inside the pinned Playwright adapter image.
+
+Acceptance requires a live run to begin without a prebuilt manifest, populate
+its discovered candidates and complete safe test order, and distinguish first-use
+measurement, linear decisions, capture, verified restore, recalibration and
+economic abandonment. Graph blocks, counters, details, activity and test progress
+must agree. Show remaining-consumer economics, separate cost components and
+baseline observations; capture is sunk for continued reuse. Incompatible costs
+require visible calibration. Cleanup cannot erase restore failures or complete
+unexecuted tests. Reload/reconnect must preserve decisions and cost history, and
+projected avoided work must never be labeled measured net savings.
+
+The deterministic journal fixture specifies the observation contract:
+`discovery-complete` supplies nodes, safe schedule and excluded overlaps;
+`checkpoint-baseline` supplies compatibility and calibration status;
+`checkpoint-decision` and `checkpoint-cost-observed` carry the engine's existing
+decision/observation records; `checkpoint-reuse-abandoned` confirms verified reset
+after release. Real-engine assertions separately require those economic records
+to match the final report. Synthetic journal timings are not performance evidence.
 
 Run the focused browser suite with the prebuilt Playwright adapter image:
 

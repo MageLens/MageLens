@@ -37,8 +37,10 @@ function createExecution({
     fault,
     adaptive = false
 }) {
-    const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline) : null;
+    const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline, emit) : null;
     const prefixDurations = new Map();
+    const abandoning = new Set();
+    if (economics) emit('checkpoint-baseline', {status:'compatible', baseline:graph.costBaseline, calibrationMs:0});
     if (economics) report.adaptive = {baselineBefore: {...economics.baseline},
         observations: economics.observations, decisions: economics.decisions, baselineAfter: economics.baseline};
     const remaining = new Map();
@@ -177,8 +179,9 @@ function createExecution({
         if (ref && economics && !economics.decide(id, measuredPrefix(id), remaining.get(id), {captured: true})) {
             // Release only owned, verified snapshot data; resolution below resets
             // through the same path as ordinary linear execution.
-            await releaseCheckpoint(id);
+            await releaseCheckpoint(id, null, 'uneconomic');
             disabled.add(id);
+            abandoning.add(id);
         }
         if (ref && !disabled.has(id)) {
             const restored = await restoreCheckpoint(node, ref, next);
@@ -202,6 +205,7 @@ function createExecution({
                   report.costs.resets.push(resetMs);
                   return {parent: null, lineage: []};
               });
+        if (abandoning.delete(id)) emit('checkpoint-reuse-abandoned', {node:id, remaining:remaining.get(id), resetVerified:true});
         prior.lineage.push(await measured('prefix', () => segment(node, 'Stage')));
         if (
             reuse &&
@@ -294,7 +298,7 @@ function createExecution({
     function measuredPrefix(id) {
         return graph.chain(id).reduce((sum, node) => sum + (prefixDurations.get(node.id) ?? 0), 0);
     }
-    async function releaseCheckpoint(id, after = null) {
+    async function releaseCheckpoint(id, after = null, reason = 'last-consumer') {
         try {
             const time = performance.now();
             const checkpoint = await measured('checkpointRelease', async () => store.release(id));
@@ -303,7 +307,7 @@ function createExecution({
                 report.releases.push({stage: id, checkpoint, after});
                 report.costs.releases.push({stage: id, ms});
                 economics?.observe('releaseMs', ms, id);
-                emit(protocol.event.checkpointReleased, {node: id, after});
+                emit(protocol.event.checkpointReleased, {node: id, after, reason, ms});
             }
         } catch (error) {
             errorRecord('checkpointRelease', error, id);

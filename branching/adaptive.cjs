@@ -20,11 +20,16 @@ function candidates(graph, specs) {
         selected.push(node.id);
         consumers.forEach(i => occupied.add(i));
     }
-    return {schemaVersion: 1, basis: 'measured-first-use', reason: 'measure-at-boundary', selected};
+    const excluded = [...counts.keys()].filter(id=>!selected.includes(id)).flatMap(id=>{
+        const overlap=selected.find(chosen=>paths.some(p=>p.some(n=>n.id===id)&&p.some(n=>n.id===chosen)));
+        return overlap ? [{id,reason:'overlapping-prefix',selected:overlap}] : [];
+    });
+    return {schemaVersion: 1, basis: 'measured-first-use', reason: 'measure-at-boundary', selected, excluded};
 }
 
 class Economics {
-    constructor(baseline) {
+    constructor(baseline, emit = () => {}) {
+        this.emit = emit;
         this.baseline = {...validate(baseline)};
         this.observations = [];
         this.decisions = [];
@@ -37,7 +42,9 @@ class Economics {
         // A slow first restore must affect the very next decision. Do not dilute
         // regressions with historical averages or lower costs on a warm sample.
         this.baseline[component] = Math.max(before, ms);
-        this.observations.push({component, stage, ms, before, after: this.baseline[component]});
+        const observation = {component, stage, ms, before, after: this.baseline[component]};
+        this.observations.push(observation);
+        this.emit('checkpoint-cost-observed', {node: stage, observation});
     }
     decide(stage, prefixMs, remaining, {captured = false} = {}) {
         if (!Number.isFinite(prefixMs) || prefixMs < 0 || !Number.isSafeInteger(remaining) || remaining < 0)
@@ -56,6 +63,7 @@ class Economics {
         const decision = {stage, prefixMs, remaining, captured, components, baseline: {...b},
             avoidedMs, costMs, requiredMs, reuse: remaining > 0 && avoidedMs > requiredMs};
         this.decisions.push(decision);
+        this.emit('checkpoint-decision', {node: stage, decision});
         return decision.reuse;
     }
 }

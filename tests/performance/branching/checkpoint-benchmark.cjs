@@ -64,13 +64,15 @@ async function run([manifestFile, configuration, storage, output]) {
             const directory = path.join(output, arm);
             fs.mkdirSync(directory);
             const started = performance.now();
-            let report;
+            const observer=arm==='adaptive' ? load('branching/suite-observation.cjs').observeSuite({eventDirectory:path.join(directory,'events')}) : null;
+            let report, completed=false;
             try {
+                observer?.emit('run-phase',{phase:'preparing coverage'});
                 coverageCommand(['coverage_cleanup']);
                 pairedFixture.reset();
                 coverageCommand(['coverage_prepare','playwright','bin/run-playwright.cjs']);
                 const coverage = load('branching/cli.cjs').activeCoverage(process.cwd());
-                report = await (arm === 'linear' ? linearSuite : load('branching/suite.cjs').runSuite)({manifest,project:{...project,costBaseline:used.baseline},
+                report = await (arm === 'linear' ? linearSuite : load('branching/suite.cjs').runSuite)({...(observer ? {observer,calibrationMs} : {}),manifest,project:{...project,costBaseline:used.baseline},
                     directory,runner,coverageRoot:process.cwd(),runCheckpoint:async options => {
                         const {chromium} = require('@playwright/test');
                         const browser = await chromium.launch({channel:'chrome',headless:true});
@@ -90,14 +92,21 @@ async function run([manifestFile, configuration, storage, output]) {
                 assert.equal(leases.needsRecovery(lease),false);
                 const result = load('branching/suite.cjs').playwrightCoverageResult(report,coverage.coverageRunId,process.env.CHROME_VERSION);
                 fs.writeFileSync('coverage/playwright-results.json',JSON.stringify(result));
+                observer?.emit('run-phase',{phase:'reporting'});
                 coverageCommand(['coverage_finalize']);
                 const snapshot = load('tests/ci/report-equivalence.cjs').snapshot(path.resolve('coverage'));
                 fs.writeFileSync(path.join(directory,'equivalence.json'),JSON.stringify(snapshot));
                 report.sourceIdentities = JSON.parse(fs.readFileSync('coverage/run.json')).sources;
                 report.baseline = {used,calibrationMs};
                 if (arm === 'adaptive') report.baseline.update = store.update(report);
+                completed=true;
             } finally {
-                if (!leases.needsRecovery(lease)) { coverageCommand(['coverage_cleanup']); pairedFixture.reset(); }
+                observer?.emit('run-phase',{phase:'cleaning'});
+                let cleanupComplete=false;
+                try {
+                    if (!leases.needsRecovery(lease)) { coverageCommand(['coverage_cleanup']); pairedFixture.reset(); }
+                    cleanupComplete=true;
+                } finally { completed &&= cleanupComplete; await observer?.finish({...report,status:completed ? report.status : 'failed'},{cleanupFailed:leases.needsRecovery(lease)}); }
                 if (report) {
                     fs.writeFileSync(path.join(directory,'suite.json'),JSON.stringify(report,null,2));
                     report.discoveryMs = arm === 'adaptive' ? discoveryMs : 0;
