@@ -4,7 +4,7 @@
 
 import {$} from './dom.mjs';
 import {layout} from './layout.mjs';
-import {createNode, updateNode} from './graph-node.mjs';
+import {createNode, nodeTypes, updateNode} from './graph-node.mjs';
 
 // Own graph elements and viewport state; selection stays in the application state.
 
@@ -81,6 +81,7 @@ export function createGraph({onSelect, onHover}) {
         $('edges').setAttribute('width', dimensions.width);
         $('edges').setAttribute('height', dimensions.height);
         const edges = [];
+        const types = nodeTypes(run.nodes);
         const currentTest = run.status === 'running' && !run.nodes.some(node => node.active) ? run.currentSpec : null;
         for (const node of run.nodes) {
             let el = elements.get(node.id);
@@ -95,7 +96,7 @@ export function createGraph({onSelect, onHover}) {
             const point = points.get(node.id);
             el.style.left = point.x + 'px';
             el.style.top = point.y + 'px';
-            updateNode(el, node, run, selectedNode, node.id === currentTest);
+            updateNode(el, node, types.get(node.id), selectedNode, node.id === currentTest);
             const parent = points.get(node.parent);
             if (parent) {
                 const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');

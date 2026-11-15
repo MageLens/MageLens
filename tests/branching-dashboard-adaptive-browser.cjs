@@ -83,6 +83,10 @@ async function acceptance(page, checked = () => {}, output) {
             await expect(edge('b')).toHaveCount(1);
             await expect(edge('c')).toHaveCount(0);
             await expect(page.locator('.test-cell[data-test="b"]')).toContainText('checkpoint restored');
+            await expect(block().locator('.node-kind')).toHaveText('Shared prefix');
+            await expect(page.locator('.node[data-node="a"] .node-kind')).toHaveText('Specific case');
+            await expect(page.locator('.node[data-node="b"] .node-kind')).toHaveText('Specific case');
+            await expect(page.locator('.node[data-node="c"] .node-kind')).toHaveText('Test');
             const siblings = await page.locator('.node:is([data-node="a"],[data-node="b"])').evaluateAll(items =>
                 items.map(node => [node.offsetLeft,node.offsetTop]));
             assert.equal(siblings[0][1], siblings[1][1]);

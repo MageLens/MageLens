@@ -4,10 +4,22 @@
 
 import {words, outcome, testTitle} from './dom.mjs';
 
-function nodeType(node) {
-    if (node.kind === 'test') return 'Test';
-    if (node.kind === 'step') return 'Linear step';
-    return node.depth > 1 ? 'Nested shared prefix' : 'Shared prefix';
+export function nodeTypes(nodes) {
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const types = new Map();
+    for (const node of nodes) {
+        const prefixes = [];
+        for (let parent = byId.get(node.parent); parent; parent = byId.get(parent.parent)) {
+            if (parent.kind === 'checkpoint') prefixes.unshift(parent.id);
+        }
+        if (node.kind === 'test') types.set(node.id, prefixes.length ? 'Specific case' : 'Test');
+        else if (node.kind === 'step') types.set(node.id, 'Linear step');
+        else if (prefixes.length) {
+            prefixes.push(node.id);
+            prefixes.forEach((id, index) => types.set(id, `Shared prefix ${index + 1}`));
+        } else if (!types.has(node.id)) types.set(node.id, 'Shared prefix');
+    }
+    return types;
 }
 
 function nodeFooter(node, last) {
@@ -55,7 +67,7 @@ export function createNode(node, {onSelect, onHover}) {
     return button;
 }
 
-export function updateNode(el, node, run, selectedNode, currentTest) {
+export function updateNode(el, node, type, selectedNode, currentTest) {
     el.dataset.kind = node.kind;
     el.dataset.depth = node.depth > 1 ? 'follow' : 'first';
     el.dataset.status = node.status;
@@ -64,9 +76,8 @@ export function updateNode(el, node, run, selectedNode, currentTest) {
     const last = node.kind === 'checkpoint' && node.remaining === 1 && node.checkpointState === 'available';
     el.dataset.last = String(last);
     el.classList.toggle('selected', node.id === selectedNode);
-    const type = nodeType(node);
-    el.querySelector('.node-kind').textContent =
-        node.kind === 'test' ? `${type} · ${run.schedule.indexOf(node.id) + 1}/${run.schedule.length}` : type;
+    el.dataset.type = type;
+    el.querySelector('.node-kind').textContent = type;
     el.querySelector('.node-title').textContent = node.kind === 'test' ? testTitle(node.label) : node.label;
     el.title = node.label;
     let status = outcome(node.status);

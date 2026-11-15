@@ -70,7 +70,11 @@ async function main() {
         const pulse = block('customer-ready').locator('.working-dot'), initialOpacity = await pulse.evaluate(el => getComputedStyle(el).opacity);
         await expect.poll(() => pulse.evaluate(el => getComputedStyle(el).opacity)).not.toBe(initialOpacity);
         await block('cart-ready').hover(); await expect(page.getByRole('tooltip')).toBeVisible();
-        await expect(page.locator('#detail-kind')).toHaveText('checkpoint details');
+        await expect(block('baseline').locator('.node-kind')).toHaveText('Shared prefix 1');
+        await expect(block('customer-ready').locator('.node-kind')).toHaveText('Shared prefix 2');
+        await expect(block('cart-ready').locator('.node-kind')).toHaveText('Shared prefix 3');
+        await expect(block('coupon-1').locator('.node-kind')).toContainText('Specific case');
+        await expect(page.locator('#detail-kind')).toHaveText('Shared prefix 3 details');
         await block('cart-ready').click(); await expect(page.locator('#detail-title')).toHaveText('Cart ready');
         await expect(page.locator('#details')).toContainText('coupon-1');
         await page.screenshot({path: path.join(output, 'graph-active.png'), fullPage: true});

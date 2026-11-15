@@ -39,7 +39,7 @@ export function createDetails({getElement}) {
         $('detail-description').textContent = node?.source
             ? node.source.file + (node.source.line > 0 ? ':' + node.source.line : '') : '';
         if (!node) return;
-        $('detail-kind').textContent = `${node.kind === 'step' ? 'Linear step' : words(node.kind)} details`;
+        $('detail-kind').textContent = `${describedElement.dataset.type} details`;
         describedElement?.setAttribute('aria-describedby', 'node-details');
         const current = run.status === 'running' && run.currentSpec === node.id;
         const fields = [['Status', node.active ? words(node.operation) + ' · active'
