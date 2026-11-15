@@ -38,6 +38,7 @@ function journey(kind = 'abandoned', run = require('node:crypto').randomUUID()) 
         return events;
     }
     add('checkpoint-baseline', {status: 'estimated', baseline});
+    add('run-ready');
     add('spec-start', {node: 'setup'});
     add('spec-end', {node: 'setup', status: 'passed'});
     add('spec-start', {node: 'a'});

@@ -118,6 +118,7 @@ async function executePlan({
     try {
         emit(protocol.event.runPhase, {phase: 'preparing'});
         await measured('prepare', () => provider.prepare({run, directory, approach}));
+        emit(protocol.event.runReady);
         emit(protocol.event.runPhase, {phase: protocol.status.running});
         for (const [index, spec] of selected.entries()) await execution.runSpec(spec, index);
     } catch (error) {

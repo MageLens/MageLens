@@ -44,13 +44,13 @@ test('first use counts only remaining consumers and charges complete costs once'
     const e = new Economics(baseline);
     assert.equal(e.decide('prefix', 1, 8), false);
     assert.equal(e.decide('prefix', 100, 2), true);
-    assert.deepEqual(e.decisions.at(-1).components, {capture: 1, restore: 2, release: 1, lifecycle: 2});
+    assert.deepEqual(e.decisions.at(-1).components, {capture: 1, restore: 2, release: 1, transition:0, lifecycle: 2});
     assert.equal(e.decisions.at(-1).avoidedMs, 200);
     e.lifecycleCharged = true;
     e.decide('next', 100, 2);
     assert.equal(e.decisions.at(-1).components.lifecycle, 0);
     e.decide('prefix', 100, 2, {captured: true});
-    assert.deepEqual(e.decisions.at(-1).components, {capture: 0, restore: 2, release: 0, lifecycle: 0});
+    assert.deepEqual(e.decisions.at(-1).components, {capture: 0, restore: 2, release: 0, transition:0, lifecycle: 0});
 });
 test('first restore recalibrates only restore and revisits subsequent decisions', () => {
     const e = new Economics(baseline);
@@ -157,12 +157,33 @@ test('uneconomic native page consumers preserve application/cache continuity and
 test('native page continuity never replaces the verified reset after abandoning a checkpoint', async t => {
     const options=setup(t,true);
     options.workflow.nativePageLifecycle=true;
-    options.provider.nextLinear=async()=>assert.fail('Abandonment must restore the verified baseline');
+    let linearStarts=0;
+    options.provider.nextLinear=async()=>{linearStarts++;options.provider.state.browser.cookies=[];};
     const restore=options.provider.restore.bind(options.provider);
     options.provider.resumeCapture=async()=>{};
     options.provider.restore=async directory=>{await delay(200);await restore(directory);};
     const report=await execute(options);
     assert.equal(report.status,'passed'); assert.equal(report.checkpoints.length,1);
-    assert.equal(report.counts.reuseHits,1); assert.ok(report.costs.resets.length>=2);
+    assert.equal(report.counts.reuseHits,1); assert.equal(report.costs.resets.length,2);
+    assert.equal(linearStarts,1,'Linear lifecycle resumes after the one verified transition reset');
     assert.ok(report.adaptive.decisions.some(decision=>decision.captured&&!decision.reuse));
+});
+test('leaving a captured group resets once and charges the transition before capture',async t=>{
+    const options=setup(t,false);
+    options.workflow={identity:options.workflow.identity,nativePageLifecycle:true,costBaseline:baseline,
+        stages:[{id:'expensive',run:async()=>delay(100),assert:async()=>{}},
+            {id:'cheap',run:async()=>{},assert:async()=>{}}],
+        specs:[...Array.from({length:2},(_,i)=>({id:'expensive-'+i,parent:'expensive',run:async()=>{},assert:async()=>{}})),
+            ...Array.from({length:8},(_,i)=>({id:'cheap-'+i,parent:'cheap',run:async()=>{},assert:async()=>{}}))]};
+    options.provider.resumeCapture=async()=>{};
+    options.provider.nextLinear=async()=>{options.provider.state.browser.cookies=[];};
+    const report=await execute(options);
+    assert.equal(report.status,'passed');assert.equal(report.results.length,10);
+    assert.equal(report.checkpoints.length,1);assert.equal(report.counts.reuseHits,1);
+    assert.equal(report.costs.resets.length,2);assert.equal(report.costs.linearStarts.length,7);
+    assert.equal(report.adaptive.decisions[0].components.transition,baseline.resetMs);
+    const e=new Economics({...baseline,resetMs:1000});
+    assert.equal(e.decide('group',100,1,{transitionReset:true}),false);
+    assert.equal(e.decide('group',100,1,{captured:true,transitionReset:true}),true,
+        'The exit reset is common to continuing and abandoning an existing checkpoint');
 });

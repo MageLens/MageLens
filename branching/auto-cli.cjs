@@ -68,8 +68,6 @@ async function execute(args, workflowLease, observer) {
         project.costStatistics = used.statistics;
         project.baselineStatus = used.source === 'measured' ? 'measured' : 'estimated';
         project.baselineReason = used.source === 'measured' ? null : fs.existsSync(store.file) ? 'incompatible-measurements-ignored' : 'no-prior-measurements';
-        observer.emit('checkpoint-baseline',{status:project.baselineStatus,reason:project.baselineReason,
-            baseline:used.baseline,statistics:used.statistics});
         if (collectCoverage) {
             observer.emit('run-phase',{phase:'preparing coverage'});
             coverageCommand(['coverage_cleanup']);

@@ -27,16 +27,14 @@ async function acceptance(page, checked = () => {}, output) {
     }
     const cases = [
         ['discovered', async () => {
-            await expect(block()).toHaveAttribute('data-checkpoint', 'candidate');
-            await expect(page.locator('#metric-tests')).toHaveText('0 / 5');
-            await expect(page.locator('#graph-summary')).toContainText('1 overlapping prefixes excluded');
+            await expect(page.locator('#preparation')).toBeVisible();
+            await expect(page.locator('#workspace')).toBeHidden();
+            await expect(page.locator('.node:visible')).toHaveCount(0);
         }],
         ['bootstrap', async () => {
-            await expect(page.locator('#run-status')).toHaveText('preparing');
-            await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/incompatible/i);
-            await expect(page.getByRole('region', {name: 'Checkpoint costs'})).toContainText(/estimated/i);
-            await expect(page.locator('#measurement-note')).toContainText('No separate calibration run');
-            await expect(page.locator('#metric-reuses')).toHaveText('0');
+            await expect(page.locator('#preparation-status')).toHaveText('Preparing execution.');
+            await expect(page.locator('#workspace')).toBeHidden();
+            await expect(page.locator('.node:visible')).toHaveCount(0);
         }],
         ['measuring', async () => {
             await expect(block()).toHaveAttribute('data-checkpoint', 'measuring');
@@ -99,15 +97,17 @@ async function acceptance(page, checked = () => {}, output) {
         for (const [kind, check] of cases) {
             try {
                 const events = kind === 'discovered' ? journey(kind) : withDiscoveredGraph(journey(kind));
-                await page.goto(app.url + '/#run=' + events[0].run + '&history=1');
                 await publish(events.slice(0, 2));
-                await expect(page.locator(`#run-select option[value="${events[0].run}"]`)).toHaveCount(1);
-                await page.locator('#run-select').selectOption(events[0].run);
-                await expect(page.locator('#run-status')).toHaveText('discovering', {timeout: 2000});
-                if (kind === 'discovered') await expect(page.locator('.node')).toHaveCount(0);
+                await page.goto('about:blank');
+                await page.goto(app.url + '/#run=' + events[0].run + '&history=1');
+                await expect(page.locator('#preparation-status')).toHaveText('Discovering tests.', {timeout: 2000});
+                await expect(page.locator('#workspace')).toBeHidden();
                 await publish(events);
-                await expect(page.locator('.node[data-kind="test"]')).toHaveCount(5, {timeout: 2000});
-                assert.deepEqual(await page.locator('.test-cell').evaluateAll(els => els.map(el => el.dataset.test)), schedule);
+                if (!['discovered','bootstrap'].includes(kind)) {
+                    await expect(page.locator('#workspace')).toBeVisible();
+                    await expect(page.locator('.node[data-kind="test"]')).toHaveCount(5, {timeout: 2000});
+                    assert.deepEqual(await page.locator('.test-cell').evaluateAll(els => els.map(el => el.dataset.test)), schedule);
+                }
                 await expect(page.locator('.node[data-node="ancestor"]')).toHaveCount(0);
                 await check();
                 assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Adaptive details must not overflow the page');
@@ -115,6 +115,52 @@ async function acceptance(page, checked = () => {}, output) {
                 checked('adaptive dashboard: ' + kind);
             } catch (error) { failures.push(new Error(kind + ': ' + error.message)); }
         }
+        // A complete large suite remains hidden through preparation, regardless
+        // of how much observation history was produced before readiness.
+        const run=require('node:crypto').randomUUID(), large=[];
+        const add=(type,data={})=>large.push({schemaVersion:1,run,sequence:large.length+1,time:1700000000000+large.length,type,...data});
+        const tests=Array.from({length:600},(_,i)=>({id:`test-${i}`,label:`Test ${i}`,kind:'test',parent:null,consumers:[],releasePolicy:'none'}));
+        add('run-start',{approach:'AUTO suite',nodes:[],schedule:[]});
+        add('discovery-complete',{nodes:tests,schedule:tests.map(t=>t.id),ordering:{changed:false}});
+        for(let i=0;i<6000;i++)add('run-phase',{phase:'preparing',diagnostic:'x'.repeat(600)});
+        assert.ok(Buffer.byteLength(large.map(e=>JSON.stringify(e)).join('\n'))>4*1024*1024);
+        await publish(large);
+        await page.goto('about:blank');
+                await page.goto(app.url+'/#run='+run+'&history=1');
+        await expect(page.locator('#preparation-status')).toHaveText('Preparing execution.');
+        await expect(page.locator('#workspace')).toBeHidden();
+        await expect(page.locator('#preparation-warning')).toBeHidden();
+        await expect(page.locator('#preparation-progress')).not.toHaveAttribute('value');
+        checked('large suite stays in preparation until execution is ready');
+        add('run-ready'); add('spec-start',{node:'test-0'});
+        await publish(large);
+        await expect(page.locator('#workspace')).toBeVisible();
+        await expect(page.locator('.test-cell')).toHaveCount(600);
+        await expect(page.locator('.node[data-node="test-0"]')).toHaveCSS('border-left-color','rgb(128, 84, 184)');
+        await expect(page.locator('#suite-progress')).toHaveAttribute('max','600');
+        await expect(page.locator('#suite-progress')).toHaveAttribute('value','0');
+        await expect(page.locator('.legend .violet')).toHaveCSS('background-color','rgb(128, 84, 184)');
+        for(const test of tests)add('spec-end',{node:test.id,status:test.id==='test-599'?'failed':'passed'});
+        add('cleanup-end',{storageReleased:true,retained:false,failed:false});
+        add('run-end',{status:'failed',counts:{failures:1}});
+        await publish(large);
+        await expect(page.locator('.node[data-node="test-599"] .node-status')).toHaveCSS('color','rgb(190, 48, 71)');
+        await expect(page.locator('.test-cell[data-status="passed"]')).toHaveCount(599);
+        await expect(page.locator('#suite-progress')).toHaveAttribute('value','600');
+        await page.reload();
+        await expect(page.locator('.test-cell')).toHaveCount(600);
+        await expect(page.locator('#run-status')).toHaveText('failed');
+        await expect(page.locator('#warnings')).toBeHidden();
+        checked('large journal reconnect preserves every outcome and separates violet tests from red failures');
+        const failedPreparation=journey('bootstrap');
+        failedPreparation.push({schemaVersion:1,run:failedPreparation[0].run,sequence:failedPreparation.length+1,
+            time:1700000001000,type:'run-end',status:'failed',counts:{failures:1}});
+        await publish(failedPreparation);
+        await page.goto('about:blank');
+        await page.goto(app.url+'/#run='+failedPreparation[0].run+'&history=1');
+        await expect(page.locator('#preparation-status')).toHaveText('Preparation failed. The suite has not started.');
+        await expect(page.locator('#workspace')).toBeHidden();
+        checked('failed preparation does not expose an execution dashboard');
         assert.deepEqual(errors, [], 'No application errors may be suppressed');
         if (failures.length) throw new AggregateError(failures, `${failures.length} adaptive dashboard acceptance cases failed`);
     } finally {

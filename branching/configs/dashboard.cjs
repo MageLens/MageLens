@@ -8,7 +8,6 @@ const dashboard = Object.freeze({
     pollMs: 250,
     heartbeatMs: 10000,
     drainTimeoutMs: 10000,
-    maxJournalBytes: 4 * 1024 * 1024,
     maxRuns: 20,
     maxViewers: 32,
     eventDirectory: '.runtime/branching-events',
@@ -34,7 +33,6 @@ const warnings = Object.freeze({
     manifestInvalid: 'The source manifest could not be read.',
     assetsUpdating: 'Dashboard files are being updated; waiting for a complete revision.',
     directoryUnreadable: 'Cannot read the event directory.',
-    journalTooLarge: 'An event journal exceeds the dashboard size limit.',
     journalUnreadable: 'An event journal could not be read.',
     scanFailed: 'Event discovery failed; the last complete state is displayed.'
 });

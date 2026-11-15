@@ -12,7 +12,7 @@ const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
 class PlaywrightState {
     constructor(browser, {baseURL, timeout = 30000, contextOptions = {}, javascriptCoverageDirectory, templateCoverageDirectory, coverageRunId}) {
         this.browser = browser; this.baseURL = baseURL; this.timeout = timeout;
-        this.options = {...contextOptions, baseURL, serviceWorkers: 'block'};
+        this.options = require('./browser-options.cjs').contextOptions(baseURL, contextOptions);
         this.javascriptCoverageDirectory = javascriptCoverageDirectory;
         this.templateCoverageDirectory = templateCoverageDirectory;
         this.coverageCookie = coverageRunId === undefined ? null : coverageCookie(baseURL, coverageRunId);

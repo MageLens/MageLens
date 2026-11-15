@@ -4,23 +4,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const {stripTypeScriptTypes} = require('node:module');
 const {digest, fileDigest, Graph} = require('./engine.cjs');
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-function compileFragment(parameters, code) {
-    const strict = '"use strict";\n';
-    try { return new AsyncFunction(...parameters, strict + code); }
-    catch (original) {
-        if (!(original instanceof SyntaxError)) throw original;
-        try { return new AsyncFunction(...parameters, strict + stripTypeScriptTypes(code, {mode: 'transform'})); }
-        catch (error) {
-            if (error.code === 'ERR_NO_TYPESCRIPT') {
-                original.message += '; TypeScript syntax requires the pinned runner Node build'; throw original;
-            }
-            throw error;
-        }
-    }
-}
+const {compileFragment, fragments} = require('./fragments.cjs');
+const {playwrightCoverageAdapter} = require('./runners/playwright/coverage-adapter.cjs');
 
 function verifySources(manifest) {
     require('./estimation.cjs').assertAssessed(manifest);
@@ -43,76 +29,6 @@ function verifySources(manifest) {
     }
 }
 
-function playwrightCoverageAdapter(manifest, expect) {
-    const files = ['playwright/support.cjs', 'playwright/coverage-cookie.cjs',
-        'playwright/javascript-coverage.cjs', 'bin/browser-navigation.cjs'];
-    const expected = new Map(files.map(file => [file, fileDigest(path.resolve(__dirname, '..', file))]));
-    const verified = new Set(manifest.sources.filter(source =>
-        expected.get(source.path) === source.sha256).map(source => source.path));
-    const fixtureReasons = new Set([
-        'Custom fixture lifecycle is not equivalent to a bare page',
-        'Project imports or custom fixtures require an execution adapter'
-    ]);
-    const imports = new Map();
-    function supportedImports(file) {
-        if (!imports.has(file)) {
-            const source = fs.readFileSync(path.join(manifest.root, file), 'utf8');
-            const ast = require('@babel/parser').parse(source, {sourceType: 'module', plugins: ['typescript']});
-            const declarations = ast.program.body.filter(node => node.type === 'ImportDeclaration');
-            imports.set(file, declarations.length === 1 && declarations[0].source.value === './playwright/support.cjs' &&
-                declarations[0].specifiers.length === 2 && ['test', 'expect'].every(name =>
-                    declarations[0].specifiers.some(specifier => specifier.type === 'ImportSpecifier' &&
-                        specifier.imported.name === name && specifier.local.name === name)));
-        }
-        return imports.get(file);
-    }
-    const checkedBodies = new Map();
-    function supportedBindings(test) {
-        if (!checkedBodies.has(test.id)) {
-            const source = fs.readFileSync(path.join(manifest.root, test.file));
-            const body = test.steps.map(step => source.subarray(step.start, step.end).toString('utf8')).join('\n');
-            const ast = require('@babel/parser').parse(`async function fragment(page, expect) {\n${body}\n}`,
-                {sourceType: 'module', plugins: ['typescript']});
-            let supported = true;
-            require('@babel/traverse').default(ast, {
-                ReferencedIdentifier(identifier) {
-                    if (!identifier.scope.hasBinding(identifier.node.name, {noGlobals: true})) supported = false;
-                }
-            });
-            checkedBodies.set(test.id, supported);
-        }
-        return checkedBodies.get(test.id);
-    }
-    const independentPage = test => test.fixture === './playwright/support.cjs:test' &&
-        test.parameters === '( { page } )' && !test.restoration &&
-        files.every(file => verified.has(file) && test.contextFiles.includes(file)) &&
-        test.contextFiles.every(file => file === test.file || verified.has(file)) &&
-        test.reasons.length === fixtureReasons.size && test.reasons.every(reason => fixtureReasons.has(reason)) &&
-        test.steps.every(step => step.kind === 'statement') &&
-        supportedImports(test.file) && supportedBindings(test);
-    const supports = test => independentPage(test) && test.steps.every(step => step.portable);
-    const tests = new Map(manifest.tests.map(test => [test.id, test]));
-    const compiled = new Map();
-    return {
-        identity: digest([...expected]),
-        nativePageLifecycle: true,
-        supports,
-        // Whole-test locals can prevent checkpoint splitting without changing
-        // the isolated page lifecycle of an explicitly parallel native test.
-        supportsOrdering: independentPage,
-        supportsCheckpoint: checkpoint => checkpoint.depth > 0 &&
-            checkpoint.consumers.every(id => tests.has(id) && supports(tests.get(id))),
-        execute(test, from, to, runtime) {
-            const key = JSON.stringify([test.id, from, to]);
-            if (!compiled.has(key)) {
-                const bytes = fs.readFileSync(path.join(manifest.root, test.file));
-                const code = test.steps.slice(from, to).map(step => bytes.subarray(step.start, step.end).toString('utf8')).join('\n');
-                compiled.set(key, compileFragment(['page', 'expect'], code));
-            }
-            return compiled.get(key)(runtime.page, expect ?? require('@playwright/test').expect);
-        }
-    };
-}
 
 function buildWorkflow(manifest, configuration, selected, boundaries) {
     verifySources(manifest);
@@ -141,7 +57,7 @@ function buildWorkflow(manifest, configuration, selected, boundaries) {
     }
     const fixtureState = !adapter && [...selection].some(id=>byId.get(id).restoration)
         ? new (require('./runners/playwright/fixture-state.cjs').FixtureState)(manifest, configuration) : undefined;
-    const source = new Map(), compiled = new Map();
+    const prepared = fragments(manifest);
     const cypress = test => test.fixture?.startsWith('cypress:');
     const execute = (test, from, to, runtime, terminal = false) => {
         if (adapter) return adapter.execute(test, from, to, runtime);
@@ -150,20 +66,9 @@ function buildWorkflow(manifest, configuration, selected, boundaries) {
             if (!terminal || from!==0 || to!==test.steps.length) throw new Error('Fixture continuation requires a complete test body');
             return fixtureState.run(test,runtime);
         }
-        const key = `${test.id}:${from}:${to}`;
-        if (cypress(test)) {
-            if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
-            const original = source.get(test.file);
-            return runtime.executeCypress(test.steps.slice(from, to).map(s => original.subarray(s.start, s.end).toString('utf8')).join('\n'));
-        }
-        if (!compiled.has(key)) {
-            if (!source.has(test.file)) source.set(test.file, fs.readFileSync(path.join(manifest.root, test.file)));
-            // Rust offsets are UTF-8 byte offsets, not JavaScript string indexes.
-            const original = source.get(test.file);
-            const code = test.steps.slice(from, to).map(s => original.subarray(s.start, s.end).toString('utf8')).join('\n');
-            compiled.set(key, compileFragment(['page', 'expect'], code));
-        }
-        return compiled.get(key)(runtime.page, configuration.expect ?? require('@playwright/test').expect);
+        if (cypress(test)) return runtime.executeCypress(prepared.source(test, from, to));
+        return prepared.execute(test, from, to, runtime, configuration.expect);
+
     };
     const roots = new Map();
     const stages = [];
@@ -206,22 +111,20 @@ function buildWorkflow(manifest, configuration, selected, boundaries) {
         return {id, label: test.title, source: {file: test.file, line: test.line}, parent: parent?.id ?? rootFor(test), inputs: {test: id, source: manifest.sourceDigest},
             run: runtime => execute(test, parent?.depth ?? 0, test.steps.length, runtime, true), assert: async () => {}};
     });
-    // Compile all native fragments now: syntax failures must precede backend setup.
-    if (!adapter) for (const test of manifest.tests.filter(t => selection.has(t.id))) {
-        if(test.restoration)continue;
+    // Both built-in paths compile before any backend preparation or test execution.
+    for (const test of manifest.tests.filter(t => selection.has(t.id))) {
+        if (test.restoration && !adapter) continue;
         const cuts = [0, ...usable.filter(c => c.consumers.includes(test.id)).map(c => c.depth).sort((a,b)=>a-b), test.steps.length];
-        const original = fs.readFileSync(path.join(manifest.root, test.file));
-        for (let i=1;i<cuts.length;i++) {
-            const code = test.steps.slice(cuts[i-1], cuts[i]).map(s=>original.subarray(s.start,s.end).toString('utf8')).join('\n');
-            compiled.set(`${test.id}:${cuts[i-1]}:${cuts[i]}`, compileFragment(cypress(test) ? ['cy','Cypress','expect'] : ['page','expect'],code));
-        }
+        if (adapter) adapter.prepareFragments?.(test, cuts);
+        else prepared.prepare(test, cuts, cypress(test) ? ['cy','Cypress','expect'] : ['page','expect']);
     }
+
     return {
         workflow: new Graph({nativePageLifecycle:adapter?.nativePageLifecycle === true, runtimeState:fixtureState, costBaseline: configuration.costBaseline, costStatistics: configuration.costStatistics, maxCheckpointsPerTest: configuration.maxCheckpointsPerTest, identity: {source: manifest.sourceDigest, fixture: configuration.identity,
             configuration: {selection: [...selection].sort(), adapter: adapter?.identity ?? null,
                 runnerOptions: digest(configuration.runnerOptions ?? {})},
             dependencies: configuration.dependencies ?? configuration.identity,
-            implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./engine.cjs')), manifest.implementation,
+            implementation: digest([fileDigest(__filename), fileDigest(require.resolve('./fragments.cjs')), fileDigest(require.resolve('./engine.cjs')), manifest.implementation,
                 ...(fixtureState?['./runtime-state.cjs','./runners/playwright/fixture-state.cjs','./runners/playwright/fixture-values.cjs'].map(file=>fileDigest(require.resolve(file))):[])])}, stages, specs}),
         state: configuration.state, checkpointLifetime: 'last-consumer', runnerOptions: configuration.runnerOptions
     };

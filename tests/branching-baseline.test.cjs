@@ -138,3 +138,22 @@ test('successful measured groups persist costs even when a preceding group staye
     linear.report.status = 'failed';
     assert.equal(store.update(input).updated, false);
 });
+
+test('online and persisted statistics share validation and reject overflow without changing evidence',t=>{
+    const {Economics}=require('../branching/adaptive.cjs');
+    const {store}=fixture(t);store.update(report());
+    const record=JSON.parse(fs.readFileSync(store.file));
+    for(const value of [{count:-1,sumMs:0},{count:0,sumMs:1},{count:1.5,sumMs:1},{count:1,sumMs:-1}]){
+        assert.throws(()=>new Economics(baseline.defaults,undefined,{restoreMs:value}),/Invalid/);
+        record.statistics.restoreMs=value;fs.writeFileSync(store.file,JSON.stringify(record));
+        assert.equal(store.read(),null);
+    }
+    const full={count:Number.MAX_SAFE_INTEGER,sumMs:1};
+    const economics=new Economics(baseline.defaults,undefined,{restoreMs:full});
+    assert.throws(()=>economics.observe('restoreMs',1,'prefix'),/overflow/);
+    assert.deepEqual(economics.statistics.restoreMs,full);
+    record.statistics.restoreMs=full;fs.writeFileSync(store.file,JSON.stringify(record));
+    const before=fs.readFileSync(store.file,'utf8');
+    assert.throws(()=>store.update(report([1])),/overflow/);
+    assert.equal(fs.readFileSync(store.file,'utf8'),before);
+});

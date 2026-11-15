@@ -16,6 +16,7 @@ mod cypress;
 pub mod estimation;
 mod normalize;
 mod project;
+mod restoration;
 mod structure;
 
 type Result<T> = std::result::Result<T, String>;
@@ -56,6 +57,8 @@ pub struct Test {
     pub scope: String,
     pub steps: Vec<Step>,
     pub reasons: Vec<String>,
+    #[serde(default)]
+    pub reason_codes: Vec<String>,
     pub disposition: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub statically_skipped: bool,
@@ -278,11 +281,15 @@ fn boundary_label(n: Node, s: &str) -> Option<String> {
     Some(format!("After {name}()"))
 }
 
+fn reason(code: &str, message: impl Into<String>) -> (String, String) {
+    (code.into(), message.into())
+}
+
 #[derive(Clone, Default)]
 struct Scope {
     names: Vec<String>,
     hooks: Vec<Step>,
-    reasons: Vec<String>,
+    reasons: Vec<(String, String)>,
     identity: Vec<String>,
     bindings: structure::Bindings,
     skipped: bool,
@@ -385,7 +392,7 @@ fn parse_file_with_aliases(
     if !native_imports {
         scope
             .reasons
-            .push("Project imports or custom fixtures require an execution adapter".into());
+            .push(reason("project-imports", "Project imports or custom fixtures require an execution adapter"));
     }
     walk_scope(
         tree.root_node(),
@@ -454,7 +461,7 @@ fn walk_scope(
                     }
                     scope
                         .reasons
-                        .push("beforeEach hooks require an execution adapter".into());
+                        .push(reason("before-each-hook", "beforeEach hooks require an execution adapter"));
                     continue;
                 }
                 if [
@@ -467,16 +474,16 @@ fn walk_scope(
                 .contains(&method)
                 {
                     scope.identity.push(normalize::canonical(c, s));
-                    scope.reasons.push(format!(
+                    scope.reasons.push(reason("runner-lifecycle", format!(
                         "{method} requires native runner lifecycle handling"
-                    ));
+                    )));
                     continue;
                 }
                 if ["skip", "fixme", "fail", "slow"].contains(&method) && callback(c).is_none() {
                     scope.identity.push(normalize::canonical(c, s));
-                    scope.reasons.push(format!(
+                    scope.reasons.push(reason("test-modifier", format!(
                         "test.{method} requires native runner lifecycle handling"
-                    ));
+                    )));
                     continue;
                 }
                 if method.is_empty()
@@ -489,7 +496,7 @@ fn walk_scope(
         }
         scope.identity.push(normalize::canonical(node, s));
         scope.reasons.push(
-            "Module/suite setup or dynamic registration requires an execution adapter".into(),
+            reason("module-setup", "Module/suite setup or dynamic registration requires an execution adapter"),
         );
     }
     let runner = if cypress { "Cypress" } else { "Playwright" };
@@ -526,7 +533,7 @@ fn walk_scope(
                 // Native discovery owns predicate evaluation and test selection.
                 // Assess both branches so their callback sources are available.
                 let mut child = scope.clone();
-                child.reasons.push("Conditional Cypress registration requires native selection".into());
+                child.reasons.push(reason("conditional-registration", "Conditional Cypress registration requires native selection"));
                 if let Some(body) = field(node, "consequence").filter(|body| body.kind() == "statement_block") {
                     walk_scope(body, context, child.clone(), tests, diagnostics);
                     if let Some(alternative) = field(node, "alternative") {
@@ -601,7 +608,7 @@ fn walk_scope(
             let mut child = scope.clone();
             child.skipped |= matches!(method, "describe.skip" | "describe.fixme");
             if tagged {
-                child.reasons.push("Tagged Cypress registration requires native selection".into());
+                child.reasons.push(reason("tagged-registration", "Tagged Cypress registration requires native selection"));
             }
             if !title.is_empty() {
                 child.names.push(title);
@@ -609,7 +616,7 @@ fn walk_scope(
             if method != "describe" {
                 child
                     .reasons
-                    .push(format!("{method} scheduling must be preserved"));
+                    .push(reason("suite-scheduling", format!("{method} scheduling must be preserved")));
             }
             walk_scope(body, context, child, tests, diagnostics);
             continue;
@@ -619,17 +626,17 @@ fn walk_scope(
         }
         let mut reasons = scope.reasons.clone();
         if tagged {
-            reasons.push("Tagged Cypress registration requires native selection".into());
+            reasons.push(reason("tagged-registration", "Tagged Cypress registration requires native selection"));
         }
         let parameters = params(cb, s);
         if !cypress && parameters != "( { page } )" {
-            reasons.push("Fixture parameters beyond { page } require an execution adapter".into());
+            reasons.push(reason("fixture-parameters", "Fixture parameters beyond { page } require an execution adapter"));
         }
         if cypress && parameters != "( )" {
-            reasons.push("Cypress callback parameters require native lifecycle handling".into());
+            reasons.push(reason("cypress-parameters", "Cypress callback parameters require native lifecycle handling"));
         }
         if body.kind() != "statement_block" {
-            reasons.push("Expression test callback requires native execution".into());
+            reasons.push(reason("expression-callback", "Expression test callback requires native execution"));
         }
         if contains(body, &|n| {
             n.kind() == "this"
@@ -647,23 +654,22 @@ fn walk_scope(
                             | "globalThis"
                     ))
         }) {
-            reasons.push("Module/process bindings require an execution adapter".into());
+            reasons.push(reason("module-bindings", "Module/process bindings require an execution adapter"));
         }
         if contains(body, &|n| {
             n.kind() == "identifier" && aliases.contains_key(text(n, s))
         }) {
             reasons.push(
-                "Test metadata, modifiers or steps require native Playwright lifecycle handling"
-                    .into(),
+                reason("test-metadata", "Test metadata, modifiers or steps require native Playwright lifecycle handling"),
             );
         }
         if !method.is_empty() {
-            reasons.push(format!(
+            reasons.push(reason("test-modifier", format!(
                 "test.{method} must be honored by native Playwright"
-            ));
+            )));
         }
         if !cypress && fixture != "@playwright/test:test" {
-            reasons.push("Custom fixture lifecycle is not equivalent to a bare page".into());
+            reasons.push(reason("custom-fixture", "Custom fixture lifecycle is not equivalent to a bare page"));
         }
         let mut steps = scope.hooks.clone();
         let mut prefix_portable = true;
@@ -697,6 +703,7 @@ fn walk_scope(
                 )
             });
             prefix_portable &= !has_host_callback(statement, s);
+            prefix_portable &= restoration::supported(statement, s);
             prefix_portable &= !contains(statement, &|n| {
                 n.kind() == "identifier"
                     && matches!(text(n, s), "Math" | "Date" | "crypto" | "performance")
@@ -705,8 +712,7 @@ fn walk_scope(
         }
         if cypress && !prefix_portable {
             reasons.push(
-                "Cypress lexical state, callbacks or unsupported commands require native execution"
-                    .into(),
+                reason("cypress-state", "Cypress lexical state, callbacks or unsupported commands require native execution"),
             );
         }
         reasons.sort();
@@ -735,7 +741,8 @@ fn walk_scope(
                 "adapter-required"
             }
             .into(),
-            reasons,
+            reason_codes: reasons.iter().map(|(code, _)| code.clone()).collect(),
+            reasons: reasons.into_iter().map(|(_, message)| message).collect(),
             statically_skipped: scope.skipped || matches!(method, "skip" | "fixme"),
             opaque_fixture_provider: false,
             restoration: None,
@@ -903,6 +910,7 @@ fn plan_project(root: &Path) -> Result<Manifest> {
             test.restoration = Some(recipe);
             test.disposition = "automatic".into();
             test.reasons.clear();
+            test.reason_codes.clear();
             // Fixture frames are restored at use(), not midway through a test's
             // local JavaScript stack. Body prefixes remain cost-only candidates.
             for step in &mut test.steps {
@@ -1117,6 +1125,24 @@ mod tests {
             fixture.tests[0].steps[0].label.as_deref(),
             Some("beforeEach()")
         );
+    }
+    #[test]
+    fn browser_mutations_cannot_be_checkpoint_prefixes() {
+        for mutation in [
+            "page.setViewportSize({width:375,height:812})",
+            "page.emulateMedia({colorScheme:'dark'})",
+            "page.setExtraHTTPHeaders({'X-Test':'mobile'})",
+            "page.context().setGeolocation({latitude:1,longitude:2})",
+            "page.keyboard.down('Shift')",
+        ] {
+            let source = format!("import {{test,expect}} from '@playwright/test';
+                test('one',async({{page}})=>{{await {mutation};await page.goto('/cart');await expect(page).toHaveURL('/cart');}});
+                test('two',async({{page}})=>{{await {mutation};await page.goto('/cart');await expect(page).toHaveURL('/checkout');}});");
+            let manifest = Fixture::new(&source).plan();
+            assert_eq!(manifest.tests.len(), 2);
+            assert!(manifest.tests.iter().all(|test| test.steps.iter().all(|step| !step.portable)));
+            assert!(manifest.checkpoints.iter().all(|checkpoint| !checkpoint.automatic));
+        }
     }
     struct Fixture(PathBuf);
     impl Fixture {

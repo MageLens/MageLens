@@ -94,3 +94,37 @@ test('backend Compose overrides use private state and restore the original netwo
         }
     }
 });
+test('capture and first restore compare application state with collection paused', async t => {
+    const {PlaywrightState}=require('../branching/browser.cjs');
+    const {CheckpointStore}=require('../branching/checkpoint-store.cjs');
+    const {digest}=require('../branching/identity.cjs');
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'magelens-cookie-state-'));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    const browserState=new PlaywrightState({}, {baseURL:'https://example.test',coverageRunId:'a'.repeat(32)});
+    let cookies=[{name:'PHPSESSID',value:'session'}];
+    const context={cookies:async()=>structuredClone(cookies),storageState:async()=>({cookies:structuredClone(cookies),origins:[]}),
+        clearCookies:async({name})=>{cookies=cookies.filter(cookie=>cookie.name!==name);},
+        addCookies:async values=>{cookies.push(...values);}};
+    browserState.context=context;browserState.check=()=>{};
+    browserState.freeze=async()=>{browserState.saved={url:'https://example.test/cart',storage:await context.storageState()};browserState.frozen=true;};
+    browserState.resume=async()=>{browserState.frozen=false;};
+    browserState.closePages=async()=>{};
+    browserState.open=async saved=>{assert.equal(browserState.javascriptGate.paused,true);cookies=structuredClone(saved.storage.cookies);browserState.frozen=false;};
+    const backend={identity:'cookie-state',paths:{}};
+    for(const name of require('../branching/configs/runtime.cjs').provider.lifecycle)backend[name]=async()=>{};
+    const provider=new BranchingProvider({browser:{version:()=> 'test'},browserState,backend,state:runtime=>runtime.context.storageState()});
+    provider.directory=root;
+    await provider.beginSegment();
+    assert.ok(cookies.some(cookie=>cookie.name==='application_coverage'));
+    const store=new CheckpointStore(root,'owner','profile');
+    const ref=await store.capture({key:'key',stage:'prefix',parent:null,lineage:[],ttlMs:60000,provider,
+        measured:async(_name,fn)=>fn(),assert:async()=>{assert.deepEqual(cookies.map(c=>c.name),['PHPSESSID']);}});
+    const manifest=store.verify(ref,'key');
+    await provider.beginSegment();
+    assert.ok(cookies.some(cookie=>cookie.name==='application_coverage'));
+    await provider.restore(path.join(ref.directory,'payload'));
+    assert.deepEqual(cookies.map(c=>c.name),['PHPSESSID']);
+    assert.equal(digest(await provider.normalizedState()),manifest.expectedStateDigest);
+    await provider.beginSegment();
+    assert.ok(cookies.some(cookie=>cookie.name==='application_coverage'));
+});

@@ -53,13 +53,18 @@ test('coverage replay requires verified support and resolves all bindings before
             kind: 'statement', portable: true}];
     }
     Object.assign(entry, {fixture: './playwright/support.cjs:test', parameters: '( { page } )',
-        contextFiles: [entry.file, ...dependencies], reasons: [
+        contextFiles: [entry.file, ...dependencies], reasonCodes:['custom-fixture','project-imports'], reasons: [
             'Custom fixture lifecycle is not equivalent to a bare page',
             'Project imports or custom fixtures require an execution adapter'
         ]});
     setBody("await page.goto('/cart');");
+    entry.reasons=['Diagnostic wording can change'];
     const adapter = playwrightCoverageAdapter(manifest, assert);
     assert.equal(adapter.supports(entry), true);
+    const codes=entry.reasonCodes;entry.reasonCodes=[...codes,'runner-lifecycle'];
+    assert.equal(adapter.supports(entry),false);entry.reasonCodes=codes;
+    adapter.prepareFragments(entry,[0,1]);
+    fs.unlinkSync(file); // Execution must use the already prepared fragment.
     const routes = [];
     await adapter.execute(entry, 0, 1, {page: {goto: async url => routes.push(url)}});
     assert.deepEqual(routes, ['/cart']);
@@ -213,4 +218,44 @@ test('outdated duration models require replanning before workflow construction',
         manifest.assessment=assessment;
         assert.throws(()=>buildWorkflow(manifest,configuration),error => error.issues?.some(issue => /Replan/.test(issue.message)));
     }
+});
+
+test('shared preparation preserves UTF-8 ranges and TypeScript in cached fragments', async t=>{
+    const {root,manifest}=fixture(t),file=path.join(root,'flow.spec.ts');
+    const prefix='// 🛒\n',code="await page.goto(('/cart' as string));";
+    fs.writeFileSync(file,prefix+code);
+    const entry={id:'typed',file:'flow.spec.ts',steps:[{start:Buffer.byteLength(prefix),end:Buffer.byteLength(prefix+code)}]};
+    const prepared=require('../branching/fragments.cjs').fragments(manifest);
+    prepared.prepare(entry,[0,1]);fs.unlinkSync(file);
+    const seen=[];await prepared.execute(entry,0,1,{page:{goto:async url=>seen.push(url)}},assert);
+    assert.deepEqual(seen,['/cart']);
+});
+test('Rust discovery routes both mobile-prefix consumers through the complete native lifecycle',async t=>{
+    const root=require('./fixtures/branching/planner.cjs').plannerFixture(t,'magelens-mobile-prefix-');
+    const source=path.join(root,'source');fs.mkdirSync(source);
+    for(const file of ['playwright/support.cjs','playwright/coverage-cookie.cjs','playwright/javascript-coverage.cjs','bin/browser-navigation.cjs']){
+        const target=path.join(source,file);fs.mkdirSync(path.dirname(target),{recursive:true});
+        fs.copyFileSync(path.resolve(__dirname,'..',file),target);
+    }
+    const file=path.join(source,'mobile.spec.ts');
+    fs.writeFileSync(file,`import {test,expect} from './playwright/support.cjs';
+        test('first',async({page})=>{await page.setViewportSize({width:375,height:812});await page.goto('/cart');await expect(page).toHaveURL('/cart');});
+        test('second',async({page})=>{await page.setViewportSize({width:375,height:812});await page.goto('/cart');await expect(page).toHaveURL('/cart');});`);
+    const output=path.join(root,'manifest.json');
+    require('../branching/planner-client.cjs').planner(['plan',source,output],{stdio:'pipe'});
+    const manifest=JSON.parse(fs.readFileSync(output)),adapter=playwrightCoverageAdapter(manifest,assert);
+    assert.equal(manifest.tests.length,2);
+    assert.ok(manifest.tests.every(entry=>!adapter.supports(entry)));
+    const tests=manifest.tests.map(entry=>({...entry,file:path.join(source,entry.file),expectedStatus:'passed',project:'browser'}));
+    const executed=[];
+    const runner={collect:async()=>({tests,errors:[],exitCode:0,config:{projects:[{name:'browser'}]}}),
+        run:async(_config,_directory,{tests:selected=tests})=>{
+            executed.push(...selected.map(entry=>entry.id));
+            return {tests:selected,results:selected.map(entry=>({id:entry.id,status:'passed'})),status:'passed',exitCode:0,errors:[]};
+        }};
+    const report=await require('../branching/suite.cjs').runSuite({manifest,directory:path.join(root,'run'),runner,
+        project:{identity:'mobile',state:async()=>({}),assertCheckpoint:async()=>{},adapter,native:{config:'config',splitSafe:true}},
+        runCheckpoint:async()=>assert.fail('Unsupported viewport state must not reach checkpoint execution')});
+    assert.equal(report.status,'passed');assert.equal(report.routing.checkpoint.length,0);
+    assert.deepEqual(executed,tests.map(entry=>entry.id));
 });

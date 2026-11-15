@@ -320,3 +320,17 @@ test('verified independent native locals can move as a whole test without becomi
     assert.deepEqual(report.routing.native,['setup','native-middle']);
     assert.deepEqual(report.results.map(result=>result.id),['setup','native-middle','native-first','native-second']);
 });
+test('conflicting context and environment base URLs cannot qualify a different native store',async t=>{
+    const f=fixture(t),previous=process.env.PLAYWRIGHT_BASE_URL;
+    process.env.PLAYWRIGHT_BASE_URL='https://store-a.test';
+    t.after(()=>{if(previous===undefined)delete process.env.PLAYWRIGHT_BASE_URL;else process.env.PLAYWRIGHT_BASE_URL=previous;});
+    const {browserProfile}=require('../branching/runners/playwright/native-reporter.cjs');
+    const {PlaywrightState}=require('../branching/browser.cjs');
+    f.project.runnerOptions={contextOptions:{baseURL:'https://store-b.test',ignoreHTTPSErrors:true}};
+    f.inventory.config.projects[1].browserProfile=browserProfile({channel:'chrome',...f.project.runnerOptions.contextOptions,serviceWorkers:'block'});
+    const browser=new PlaywrightState({}, {baseURL:process.env.PLAYWRIGHT_BASE_URL,contextOptions:f.project.runnerOptions.contextOptions});
+    assert.equal(browser.options.baseURL,'https://store-a.test');
+    const report=await runSuite({...f,directory:f.root,coverageRoot:f.root});
+    assert.equal(report.status,'passed');assert.equal(report.routing.checkpoint.length,0);
+    assert.equal(report.routing.browserIneligible.length,2);
+});

@@ -39,6 +39,7 @@ function createExecution({
 }) {
     const economics = adaptive ? new (require('./adaptive.cjs').Economics)(graph.costBaseline, emit, graph.costStatistics) : null;
     const prefixDurations = new Map();
+    let needsVerifiedReset = true;
     const abandoning = new Set();
     if (economics) emit('checkpoint-baseline', {status:Object.values(economics.statistics).some(value=>value.count) ? 'measured' : 'estimated', baseline:graph.costBaseline,statistics:economics.statistics});
     if (economics) report.adaptive = {baselineBefore: {...economics.baseline},
@@ -112,6 +113,7 @@ function createExecution({
         return entry.id;
     };
     function invalidate(id, phase, operation, error) {
+        needsVerifiedReset = true;
         errorRecord(phase, error, id);
         report.counts.fallbacks++;
         disabled.add(id);
@@ -133,6 +135,7 @@ function createExecution({
     }
     async function restoreCheckpoint(node, ref, next) {
         const id = node.id;
+        needsVerifiedReset = true;
         const restoreStart = performance.now();
         emit(protocol.event.nodeStart, {node: id, operation: protocol.operation.restore});
         try {
@@ -189,8 +192,7 @@ function createExecution({
         }
         const prior = node.parent
             ? await resolve(node.parent, next)
-            : graph.nativePageLifecycle && provider.nextLinear && report.costs.resets.length &&
-                !report.checkpoints.length && !report.counts.fallbacks
+            : graph.nativePageLifecycle && provider.nextLinear && !needsVerifiedReset
               ? await measured('linearStart', async () => {
                   const time = performance.now();
                   await provider.nextLinear();
@@ -200,6 +202,7 @@ function createExecution({
               : await measured('reset', async () => {
                   const time = performance.now();
                   await provider.reset();
+                  needsVerifiedReset = false;
                   const resetMs = performance.now() - time;
                   economics?.observe(report.costs.resets.length ? 'resetMs' : 'firstResetMs', resetMs, id);
                   report.costs.resets.push(resetMs);
@@ -213,7 +216,10 @@ function createExecution({
             (!chosen || chosen.has(id)) &&
             !disabled.has(id) &&
             (checkpointLifetime === config.checkpoint.lifetime || remaining.get(id) > 1) &&
-            (!economics || economics.decide(id, measuredPrefix(id), remaining.get(id) - 1))
+            (!economics || economics.decide(id, measuredPrefix(id), remaining.get(id) - 1, {
+                transitionReset: Boolean(graph.nativePageLifecycle && provider.nextLinear &&
+                    selected.findLastIndex(spec=>graph.chain(spec.parent).some(stage=>stage.id===id)) < selected.length-1)
+            }))
         ) {
             try {
                 const time = performance.now();
@@ -222,6 +228,7 @@ function createExecution({
                     const entry = report.segments.at(-1);
                     entry.coverage = (await provider.endSegment?.(entry.id)) ?? null;
                 }
+                needsVerifiedReset = true;
                 const ref = await store.capture({
                     key: graph.key(id),
                     stage: id,

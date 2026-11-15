@@ -35,3 +35,28 @@ test('fixture restoration preserves early preparation options and restores runne
     await withRuntimeState(provider,state).restore(root,options);
     assert.deepEqual(events,['backend','fixtures']);
 });
+test('retained cleanup distinguishes an unfinished Redis capture from a lost captured snapshot', async t=>{
+    const {settings}=require('../branching/configs/magento.cjs');
+    for(const captured of [false,true]){
+        const root=temporary(t),backend=new RetainedMagentoBackend({workspace:root,disposable:true});
+        Object.assign(backend,{ownsLock:true,changed:true,originalRedisCaptured:captured,directory:root,
+            control:root,lock:path.join(root,'lock'),recovery:path.join(root,'recovery'),
+            originalGrants:'grants',databaseStartedAt:'started'});
+        fs.mkdirSync(backend.lock);fs.writeFileSync(path.join(backend.lock,settings.lockOwner),'owner');fs.writeFileSync(backend.recovery,'marker');
+        backend.database.settle=async()=>null;
+        backend.assertWriters=()=>{};
+        backend.inspect=()=>({State:{Running:false,StartedAt:'started'},Mounts:[]});
+        backend.dc=()=>'';backend.controlSql=()=>'';backend.grantIdentity=()=> 'grants';
+        if(captured){
+            await assert.rejects(backend.cleanup(),{code:'ENOENT'});
+            assert.equal(backend.ownsLock,true);
+            assert.equal(fs.existsSync(backend.recovery),true);
+            assert.equal(fs.existsSync(backend.lock),true);
+        }else{
+            await backend.cleanup();
+            assert.equal(backend.ownsLock,false);
+            assert.equal(fs.existsSync(backend.recovery),false);
+            assert.equal(fs.existsSync(backend.lock),false);
+        }
+    }
+});

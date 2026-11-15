@@ -30,14 +30,20 @@ function applyEvent(state, event) {
         state = {id: event.run, startedAt: event.time, updatedAt: event.time, sequence: 0, status: 'running', phase: 'planning',
             approach: event.approach, lifetime: event.checkpointLifetime, policy: event.policy, schedule: event.schedule, warnings: event.checkpointLimit?.warnings ?? [],
             counts: {prefixExecutions: 0, reuseHits: 0, fallbacks: 0, failures: 0, blockedSpecs: 0},
-            nodes: [], activity: [], cleanup: null};
+            nodes: [], activity: [], cleanup: null, ready: false};
         setGraph(state, event.nodes, event.schedule);
 
     }
     if (!state || state.id !== event.run || event.sequence !== state.sequence + 1) throw new Error('Out-of-order journal');
     const node = state.nodes.find(n => n.id === event.node);
     switch (event.type) {
-        case 'run-phase': state.phase = event.phase; state.phaseTests = event.tests ?? null; break;
+        case 'run-ready': state.ready = true; break;
+        case 'run-phase':
+            state.phase = event.phase; state.phaseTests = event.tests ?? null;
+            // Older native adapters announce their complete execution selection
+            // at the ready boundary, immediately before invoking the runner.
+            if (event.tests?.length && state.schedule.length) state.ready = true;
+            break;
         case 'discovery-complete':
             setGraph(state, event.nodes, event.schedule);
             state.ordering = event.ordering; state.excludedCandidates = event.excludedCandidates ?? [];

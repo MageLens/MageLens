@@ -9,6 +9,7 @@ function observeSuite({eventDirectory, onEvent} = {}) {
     const run = randomUUID(), started = performance.now();
     const journal = events({run, directory: eventDirectory, onEvent});
     const cleanups = [];
+    let discovered = false;
     const counts = {prefixExecutions:0, reuseHits:0, fallbacks:0, failures:0, blockedSpecs:0};
     const emit = (type, data) => journal.emit(type, data);
     emit('run-start', {approach:'AUTO suite', checkpointLifetime:'last-consumer',
@@ -17,6 +18,8 @@ function observeSuite({eventDirectory, onEvent} = {}) {
     return {
         run, emit, diagnostics:journal.diagnostics,
         discover(prepared) {
+            if (discovered) throw new Error('Execution inventory has already been published');
+            discovered = true;
             const {inventory, blocks, ordering} = prepared;
             const nodes = inventory.tests.map(test => ({id:test.id, label:test.title, kind:'test', parent:null,
                 source:{file:test.file,line:test.line}, consumers:[], releasePolicy:'none'}));
@@ -38,7 +41,8 @@ function observeSuite({eventDirectory, onEvent} = {}) {
                     id:block.observationId(excluded.id), selected:block.observationId(excluded.selected)});
             }
             emit('discovery-complete',{nodes,schedule:ordering.scheduled,
-                ordering:{...ordering,original:inventory.tests.map(t=>t.id),execution:ordering.scheduled},excludedCandidates});
+                ordering:{basis:ordering.basis,changed:ordering.changed,
+                    ...(ordering.changed ? {original:inventory.tests.map(t=>t.id)} : {})},excludedCandidates});
         },
         child(block) {
             return event => {
@@ -48,7 +52,7 @@ function observeSuite({eventDirectory, onEvent} = {}) {
                         storageReleased:event.storageReleased,retained:event.retained,failed:event.failed});
                     return;
                 }
-                if (['run-start','run-end','checkpoint-baseline'].includes(event.type)) return;
+                if (['run-start','run-ready','run-end','checkpoint-baseline'].includes(event.type)) return;
                 const {schemaVersion:_schema, run:_run, sequence:_sequence, time:_time, type, ...data} = event;
                 if (data.node) data.node=block.observationId(data.node);
                 if (data.after) data.after=block.observationId(data.after);

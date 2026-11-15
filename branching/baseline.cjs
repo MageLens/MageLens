@@ -10,9 +10,10 @@ const {execFileSync} = require('node:child_process');
 const config = require('./configs/baseline.json');
 const projectRoot = path.resolve(__dirname, '..');
 const operationDefaults = Object.freeze(require(path.join(projectRoot, config.paths.operationDefaults)));
-const {metrics} = config;
+const measurement = require('./operation-statistics.cjs');
+const {metrics} = measurement;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const valid = (value) => Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
+const valid = measurement.validMeasurement;
 // Equivalent break-even for one checkpoint shared by exactly two tests.
 // Fanout and nested checkpoints still use the full operation model.
 function decisionBaselineMs(baseline) {
@@ -133,14 +134,7 @@ class Store {
                 return null;
             for (const key of metrics) {
                 const item = record.statistics[key];
-                if (
-                    !item ||
-                    !Number.isSafeInteger(item.count) ||
-                    item.count < 0 ||
-                    !valid(item.sumMs) ||
-                    (!item.count && item.sumMs !== 0)
-                )
-                    return null;
+                if (!measurement.validStatistic(item)) return null;
                 if (item.count && !valid(record.reference?.[key])) return null;
             }
             return record;
@@ -157,7 +151,7 @@ class Store {
             for (const key of metrics) {
                 const item = record.statistics[key];
                 counts[key] = item.count;
-                if (item.count) baseline[key] = item.sumMs / item.count;
+                if (item.count) baseline[key] = measurement.mean(item);
             }
         return Object.freeze({
             source: record ? config.labels.measured : config.labels.default,
@@ -165,7 +159,7 @@ class Store {
             baseline: validate(baseline),
             decisionBaselineMs: decisionBaselineMs(baseline),
             samples: Object.freeze(counts),
-            statistics: Object.fromEntries(metrics.map(key=>[key,record ? {...record.statistics[key]} : {count:0,sumMs:0}]))
+            statistics: measurement.statistics(record?.statistics)
         });
     }
     update(report, {explicit = false, replace = false} = {}) {
@@ -181,19 +175,16 @@ class Store {
         const previousBaseline = this.load().baseline,
             existing = this.read();
         const previous = replace ? null : existing;
-        const statistics =
-            previous?.statistics ?? Object.fromEntries(metrics.map((key) => [key, {count: 0, sumMs: 0}]));
+        const statistics = measurement.statistics(previous?.statistics);
+        const observed = {};
         for (const key of metrics) {
-            statistics[key].count += values[key].length;
-            statistics[key].sumMs += values[key].reduce((sum, value) => sum + value, 0);
-            if (!Number.isSafeInteger(statistics[key].count) || !valid(statistics[key].sumMs))
-                throw new Error(config.messages.overflow);
+            let batch = {count:0,sumMs:0};
+            for (const value of values[key]) {
+                statistics[key] = measurement.add(statistics[key],value);
+                batch = measurement.add(batch,value);
+            }
+            if (batch.count) observed[key] = measurement.mean(batch);
         }
-        const observed = Object.fromEntries(
-            metrics
-                .filter((key) => values[key].length)
-                .map((key) => [key, values[key].reduce((sum, value) => sum + value, 0) / values[key].length])
-        );
         const reference = {...(previous?.reference ?? observed)};
         for (const [key, value] of Object.entries(observed))
             if (reference[key] === undefined) reference[key] = value;

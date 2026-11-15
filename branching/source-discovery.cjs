@@ -131,19 +131,17 @@ function localDependencies(file, source, root, packageRoots = []) {
 
 function collector(profile, directory, root, {onPrepared} = {}) {
     if (!profile.discoveryOnly) throw new Error('Source discovery is list-only; duration forecasting was removed');
-    const v5 = true;
     const file = path.join(directory,'discovery.json');
     return batch => {
-        const preparationStarted = performance.now();
         const rows = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : [];
         const firstRow = rows.length;
         const original = fs.readFileSync(batch.file,'utf8'), fileHash=sha256(original);
         const inputs = new Map([[batch.file,original]]);
         const pending = [...(profile.files ?? []), ...(batch.files ?? []),
-            ...(v5 ? [profile.supportFile,profile.configFile].filter(file=>typeof file === 'string' && file) : [])].map(file=>path.resolve(root,file));
+            ...[profile.supportFile,profile.configFile].filter(file=>typeof file === 'string' && file)].map(file=>path.resolve(root,file));
         const sourceRoot = path.resolve(root);
         const externalRoots = new Set();
-        if (v5 && profile.runner === 'playwright') {
+        if (profile.runner === 'playwright') {
             for (const file of pending) {
                 if (file.startsWith(sourceRoot+path.sep)) continue;
                 const boundary = file.indexOf(path.sep+'node_modules'+path.sep);
@@ -151,7 +149,7 @@ function collector(profile, directory, root, {onPrepared} = {}) {
             }
         }
         const dependencies = (file,source) => {
-            if (!v5 || !/\.[cm]?[jt]sx?$/.test(file)) return;
+            if (!/\.[cm]?[jt]sx?$/.test(file)) return;
             const dependencyRoot = file.startsWith(sourceRoot+path.sep) ? sourceRoot :
                 [...externalRoots].find(candidate=>file.startsWith(path.join(candidate,'node_modules')+path.sep));
             if (dependencyRoot) pending.push(...localDependencies(file,source,
@@ -212,7 +210,7 @@ function collector(profile, directory, root, {onPrepared} = {}) {
             return finders.get(file);
         }
         function attribute(source, file, location, fixtureName, searchModules = false, expectedNames) {
-            if (!v5 || !modules.has(file)) return source;
+            if (!modules.has(file)) return source;
             let origin;
             if (searchModules) {
                 for (const candidate of modules.keys()) {
@@ -230,9 +228,7 @@ function collector(profile, directory, root, {onPrepared} = {}) {
             const restored = origin.method ? `const work = {${fragment}};` : `const work = ${fragment};`;
             return {...source,origin,source:source.source.includes(fragment) ? source.source : restored};
         }
-        const timingOrder = v5 ? runnableTests : batch.tests;
-        for (const test of timingOrder) {
-            if (test.expectedStatus === 'skipped') continue;
+        for (const test of runnableTests) {
             const hooks = batch.hooks.filter(h => h.scope.every((title,i) => test.titlePath[i] === title));
             const workloadHooks = hooks.filter(h => !isDiagnostic(h));
             const diagnosticHooks = hooks.filter(h => isDiagnostic(h));
@@ -256,16 +252,10 @@ function collector(profile, directory, root, {onPrepared} = {}) {
                 ...contextSources
             ];
             const snapshot = {sourceArchive: sources.map(({source, ...entry}) => ({...entry, sha256: sha256(source)}))};
-            rows.push({id:test.id,file:batch.file,fileHash,files,snapshot,...(profile.discoveryOnly ? {
-                discoveryOnly:true,...(profile.configDigest ? {configDigest:profile.configDigest} : {})
-            } : {})});
+            rows.push({id:test.id,file:batch.file,fileHash,files,snapshot,
+                discoveryOnly:true,...(profile.configDigest ? {configDigest:profile.configDigest} : {})});
         }
-        // Cypress attributes this root before hook to the first runnable test.
-        // Record the measured collector work separately; never estimate or
-        // retrospectively subtract overhead from older observations.
         if (onPrepared) onPrepared(rows.slice(firstRow).map(({id,snapshot})=>({id,snapshot})));
-        if ((profile.runner ?? 'cypress') === 'cypress' && !profile.discoveryOnly && rows[firstRow])
-            rows[firstRow].preparationMs = performance.now() - preparationStarted;
         fs.writeFileSync(file,JSON.stringify(rows)+'\n',{mode:0o600});
         return null;
     };

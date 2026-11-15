@@ -27,7 +27,7 @@ function currentWork(run) {
 
     const active = run.nodes.find((node) => node.active);
     const currentTest = run.nodes.find((node) => node.id === run.currentSpec);
-    if (run.phaseTests?.length) return `${words(run.phase)} · ${run.phaseTests.length} native tests; individual outcomes arrive when the runner finishes`;
+    if (run.phaseTests?.length && !currentTest) return `${words(run.phase)} · ${run.phaseTests.length} native tests`;
     const message = active ? `Running now: ${active.label}` : `Run ${words(run.phase)}`;
     if (!currentTest) return message;
     const number = run.schedule.indexOf(currentTest.id) + 1;
@@ -53,8 +53,15 @@ export function renderSummary(run) {
     $('run-status').textContent = run.status === 'running' ? words(run.phase) : words(run.status);
     $('run-status').className = 'status-pill ' + run.status;
     $('current-work').textContent = currentWork(run);
-    $('metric-tests').textContent =
-        `${tests.filter((n) => ['passed', 'failed', 'blocked'].includes(n.status)).length} / ${tests.length}`;
+    const completed = tests.filter(n => ['passed', 'failed', 'blocked', 'skipped'].includes(n.status)).length;
+    $('metric-tests').textContent = `${completed} / ${tests.length}`;
+    const progress = $('suite-progress'), maximum = Math.max(1, tests.length);
+    // Reuse the existing frame-batched render and outcome count. Progress never
+    // polls the runner or reads layout, and unchanged values need no DOM writes.
+    if (progress.max !== maximum) progress.max = maximum;
+    if (progress.value !== completed) progress.value = completed;
+    const label = `${completed} / ${tests.length} tests completed`;
+    if ($('suite-progress-label').textContent !== label) $('suite-progress-label').textContent = label;
     $('metric-checkpoints').textContent =
         `${checkpoints.filter((n) => n.checkpointState === 'available').length} / ${checkpoints.length}`;
     $('metric-prefixes').textContent = `${checkpoints.reduce((sum,node)=>sum+node.executions,0)} / ${run.counts.prefixExecutions ?? 0}`;

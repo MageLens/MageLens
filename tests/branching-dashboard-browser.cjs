@@ -40,7 +40,7 @@ async function main() {
     async function select(report) { await expect(page.locator(`#run-select option[value="${report.run}"]`)).toHaveCount(1); await page.locator('#run-select').selectOption(report.run); }
     try {
         assert.equal(browser.version(), pinned('CHROME_VERSION')); assert.equal(require('@playwright/test/package.json').version, pinned('PLAYWRIGHT_VERSION'));
-        await page.goto(app.url); await expect(page.getByText('Your execution map will appear here')).toBeVisible();
+        await page.goto(app.url); await expect(page.getByText('Waiting for a ready run.')).toBeVisible();
         checked('empty dashboard connects without requiring a Magento installation');
 
         const workflow = fixtureWorkflow(), login = Promise.withResolvers(), last = Promise.withResolvers(); releases.push(login.resolve, last.resolve);
@@ -58,7 +58,7 @@ async function main() {
         await expect(block('coupon-1')).toHaveAttribute('data-kind', 'test');
         assert.equal(await block('baseline').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(45, 103, 203)');
         assert.equal(await block('cart-ready').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(27, 136, 102)');
-        assert.equal(await block('coupon-1').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(198, 75, 89)');
+        assert.equal(await block('coupon-1').evaluate(el => getComputedStyle(el).borderLeftColor), 'rgb(128, 84, 184)');
         const pulse = block('customer-ready').locator('.working-dot'), initialOpacity = await pulse.evaluate(el => getComputedStyle(el).opacity);
         await expect.poll(() => pulse.evaluate(el => getComputedStyle(el).opacity)).not.toBe(initialOpacity);
         await block('cart-ready').hover(); await expect(page.getByRole('tooltip')).toBeVisible();

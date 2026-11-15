@@ -56,6 +56,17 @@ function dismissDetails() {
 
 function render() {
     const run = state.current;
+    const ready = Boolean(run?.ready || run?.status === 'planned');
+    $('workspace').hidden = !ready;
+    $('preparation').hidden = ready;
+    $('preparation-status').textContent = run ? run.status === 'failed' ? 'Preparation failed. The suite has not started.' : /discover/i.test(run.phase) ? 'Discovering tests.' : 'Preparing execution.' : 'Waiting for a ready run.';
+    $('preparation-warning').textContent = (state.data.warnings ?? []).join(' ');
+    $('preparation-warning').hidden = !state.data.warnings?.length;
+    if (!ready) {
+        pulse.update(null);
+        details.render(null, state);
+        return;
+    }
     pulse.update(run);
     renderHistory(state.data, state, chooseRun);
     renderWarnings(state.data, run);

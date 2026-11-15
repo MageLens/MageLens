@@ -171,7 +171,7 @@ class RetainedMagentoBackend extends MagentoBackend {
                 assert.ok(!this.inspect(service).Mounts.some(m => m.Source.startsWith(this.directory + path.sep)), 'Private mount remained after cleanup');
             }
             // Restore the original cache contents, including expiration deadlines.
-            this.redisState.restore(path.join(this.control, 'original-redis.json'));
+            if (this.originalRedisCaptured) this.redisState.restore(path.join(this.control, 'original-redis.json'));
             this.diagnostics.schemasRemoved = true; this.diagnostics.grantsRestored = true;
         }
         if (this.recovery) fs.rmSync(this.recovery);

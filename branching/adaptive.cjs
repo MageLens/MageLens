@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const {validate} = require('./baseline.cjs');
+const samples = require('./operation-statistics.cjs');
 
 // Select disjoint consumer groups in deterministic source order. A consumer can
 // contribute avoided work to only one candidate, including nested prefixes.
@@ -31,32 +32,25 @@ class Economics {
     constructor(baseline, emit = () => {}, statistics = {}) {
         this.emit = emit;
         this.baseline = {...validate(baseline)};
-        this.statistics = Object.fromEntries(require('./configs/baseline.json').metrics.map(component=>{
-            const value = statistics[component] ?? {count:0,sumMs:0};
-            if (!Number.isSafeInteger(value.count) || value.count<0 || !Number.isFinite(value.sumMs) || value.sumMs<0 ||
-                value.sumMs>Number.MAX_SAFE_INTEGER || !value.count && value.sumMs!==0) throw new Error('Invalid checkpoint measurement statistics');
-            return [component,{...value}];
-        }));
+        this.statistics = samples.statistics(statistics);
         this.observations = [];
         this.decisions = [];
         this.lifecycleCharged = false;
     }
     observe(component, ms, stage) {
-        if (!['captureMs', 'restoreMs', 'releaseMs', 'resetMs', 'firstResetMs', 'backendMs'].includes(component) ||
-            !Number.isFinite(ms) || ms < 0) throw new Error('Invalid checkpoint operation measurement');
+        if (!samples.metrics.includes(component)) throw new Error('Invalid checkpoint operation measurement');
         const before = this.baseline[component];
-        const sample = this.statistics[component];
-        if (!Number.isSafeInteger(sample.count+1) || sample.sumMs+ms>Number.MAX_SAFE_INTEGER) throw new Error('Checkpoint measurement overflow');
-        sample.count++; sample.sumMs+=ms;
-        const meanMs=sample.sumMs/sample.count;
-        // Bootstrap estimates are not observations. Use the real sample mean,
+        const sample = samples.add(this.statistics[component], ms);
+        this.statistics[component] = sample;
+        const meanMs = samples.mean(sample);
+        // Bootstrap estimates are not observations. Use the measured sample mean,
         // but let a newly slow operation affect the next decision immediately.
         this.baseline[component] = Math.max(meanMs, ms);
         const observation = {component, stage, ms, before, after: this.baseline[component],count:sample.count,meanMs};
         this.observations.push(observation);
         this.emit('checkpoint-cost-observed', {node: stage, observation});
     }
-    decide(stage, prefixMs, remaining, {captured = false} = {}) {
+    decide(stage, prefixMs, remaining, {captured = false, transitionReset = false} = {}) {
         if (!Number.isFinite(prefixMs) || prefixMs < 0 || !Number.isSafeInteger(remaining) || remaining < 0)
             throw new Error('Invalid measured prefix economics');
         const b = this.baseline;
@@ -66,6 +60,7 @@ class Economics {
         // Release is owed in both alternatives once a snapshot already exists.
         const components = {capture: captured ? 0 : b.captureMs,
             restore: remaining * b.restoreMs, release: captured ? 0 : b.releaseMs,
+            transition: !captured && transitionReset ? b.resetMs : 0,
             lifecycle: captured || this.lifecycleCharged ? 0 : b.backendMs + b.firstResetMs};
         const avoidedMs = remaining * prefixMs;
         const costMs = Object.values(components).reduce((a, v) => a + v, 0);

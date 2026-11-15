@@ -120,8 +120,8 @@ async function prepareSuite(options) {
         inventory.config.projects.some(p => p.teardown)) checkpoint = [];
     if (coverageRoot && checkpoint.length) {
         const {browserProfile} = require('./runners/playwright/native-reporter.cjs');
-        const expected = browserProfile({channel: 'chrome', baseURL: process.env.PLAYWRIGHT_BASE_URL,
-            ignoreHTTPSErrors: true, ...project.runnerOptions?.contextOptions, serviceWorkers: 'block'});
+        const expected = browserProfile({channel:'chrome', ...require('./browser-options.cjs').contextOptions(
+            process.env.PLAYWRIGHT_BASE_URL, {ignoreHTTPSErrors:true, ...project.runnerOptions?.contextOptions})});
         const projects = new Map(inventory.config.projects.map(p => [p.name, p]));
         checkpoint = checkpoint.filter(test => {
             const profile = projects.get(test.project)?.browserProfile;
@@ -223,6 +223,7 @@ async function executeSuite(options) {
         for (const entry of result.results) observer.emit('spec-end',{node:entry.id,status:entry.status});
         phases.push({kind: 'native', ...result}); report.results.push(...result.results.map(r => ({...r, execution: 'native'}))); return result;
     }
+    observer.emit('run-ready');
     if (!checkpoint.length) {
         report.selectionReason = decision ? 'No eligible shared prefixes; execute the complete native suite.' : 'No qualified split; execute the complete native suite.';
         await native();

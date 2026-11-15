@@ -37,6 +37,7 @@ class BranchingProvider {
                     './snapshot-state.cjs',
                     './storage.cjs',
                     './browser.cjs',
+                    './browser-options.cjs',
                     './coverage-gate.cjs',
                     './browser-context.cjs',
                     './code-cache.cjs',
@@ -95,6 +96,9 @@ class BranchingProvider {
         await this.browserState.open();
     }
     async captureBarrier() {
+        // Expected and restored application state both exclude collection state.
+        // Collection resumes at beginSegment, after validation/reconstruction.
+        await this.browserState.pauseCoverage();
         await this.browserState.freeze();
         await this.backend.drain();
         this.saved = await this.browserState.save();
