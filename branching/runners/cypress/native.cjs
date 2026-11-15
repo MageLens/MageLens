@@ -4,10 +4,13 @@
 
 const fs = require('node:fs'), path = require('node:path'), {spawn} = require('node:child_process');
 const {fileDigest} = require('../../identity.cjs');
-async function invoke(configuration, directory, {list = false, tests, profile, checkpoint, onEvent, observationRun} = {}) {
+async function invoke(configuration, directory, {list = false, tests, spec, profile, checkpoint, onEvent, observationRun} = {}) {
     if (checkpoint && (list || tests)) throw new Error('Native checkpoint execution preserves the complete native invocation');
     if (profile && !list) throw new Error('ML profiling was removed; source discovery is list-only');
     if (tests && (!tests.length || new Set(tests.map(test => test.id)).size !== tests.length)) throw new Error('Native Cypress needs a nonempty, unique selection');
+    if (spec !== undefined && (tests || !Array.isArray(spec) || !spec.length ||
+        spec.some(pattern=>typeof pattern!=='string' || !pattern.trim())))
+        throw new Error('Cypress native spec selectors must be a nonempty list and cannot filter individual tests');
     const config = fs.realpathSync(configuration);
     const configDigest = profile ? fileDigest(config) : null;
     fs.mkdirSync(directory, {recursive: true});
@@ -19,7 +22,7 @@ async function invoke(configuration, directory, {list = false, tests, profile, c
     fs.writeFileSync(wrapper, `const loaded = require(${JSON.stringify(config)});\nconst c = loaded.default ?? loaded;\nmodule.exports = {...c, ${retryOverride}e2e: {...c.e2e, ${retryOverride}setupNodeEvents: (on,config) => require(${JSON.stringify(path.join(__dirname, 'native-plugin.cjs'))}).install(on,config,c.e2e?.setupNodeEvents,${JSON.stringify(files)})}};\n`, {mode: 0o600, flag: 'wx'});
     const resultFile = path.join(run, 'result.json'), input = path.join(run, 'input.json');
     fs.writeFileSync(input, JSON.stringify({resultFile, options: {project: path.dirname(config), configFile: wrapper, browser: 'chrome-for-testing', headed: true,
-        ...(tests ? {spec: [...new Set(tests.map(test => test.file))]} : {})}}), {mode: 0o600});
+        ...(tests ? {spec: [...new Set(tests.map(test => test.file))]} : spec ? {spec} : {})}}), {mode: 0o600});
     const started = performance.now(), env = {...process.env};
     if (env.DISPLAY === ':99' && !fs.existsSync('/tmp/.X11-unix/X99')) delete env.DISPLAY;
     try {
@@ -90,4 +93,4 @@ function testResult(test) {
         durationMs: test.duration ?? test.attempts.reduce((sum, attempt) => sum + (attempt.wallClockDuration ?? attempt.duration ?? 0), 0),
         attempts: test.attempts.length, errors};
 }
-module.exports = {collect: (config, directory) => invoke(config, directory, {list: true}), run: invoke, testResult, reportErrors};
+module.exports = {collect: (config, directory, {spec} = {}) => invoke(config, directory, {list: true, spec}), run: invoke, testResult, reportErrors};

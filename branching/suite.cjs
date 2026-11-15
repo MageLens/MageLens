@@ -89,8 +89,14 @@ async function collectAssessed(manifest, project, directory, runner) {
     verifySources(manifest);
     // Native inventory and lifecycle checks remain independent of timing.
     if (!project.native?.config) throw new EstimationError([{phase: 'native-collection', message: 'A native runner configuration is required to assess the complete inventory and lifecycle'}]);
+    if (project.native.spec !== undefined && !project.native.checkpoint)
+        throw new Error('Original Cypress spec selectors require the native checkpoint lifecycle');
     let inventory;
-    try { inventory = await runner.collect(project.native.config, directory); }
+    try {
+        const {spec} = project.native;
+        inventory = spec === undefined ? await runner.collect(project.native.config, directory)
+            : await runner.collect(project.native.config, directory, {spec});
+    }
     catch (error) { throw new EstimationError([{phase: 'native-collection', message: error.message}]); }
     if (inventory.exitCode !== 0 || inventory.errors.length || !inventory.tests.length)
         throw new EstimationError([{phase: 'native-collection', message: 'Native collection failed or returned no tests', reasons: inventory.errors}]);
@@ -242,7 +248,9 @@ async function executeSuite(options) {
     }
     if (!nativeCheckpoints) observer.emit('run-ready');
     if (nativeCheckpoints) {
-        const result = await native(null, {checkpoint: {module: project.native.checkpoint, manifest,
+        const result = await native(null, {
+            ...(project.native.spec === undefined ? {} : {spec: project.native.spec}),
+            checkpoint: {module: project.native.checkpoint, manifest,
             linear: project.native.linear === true,
             selected: nativeCheckpoints.plan.candidates.map(candidate => candidate.id),
             consumers: [...nativeCheckpoints.identities.keys()], identities: Object.fromEntries(nativeCheckpoints.identities)}, observationRun: observer.run,
