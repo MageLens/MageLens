@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '5') {
+function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '6') {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-workflow-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const name of ['bin', '.runtime', 'coverage']) fs.mkdirSync(path.join(directory, name));
@@ -56,7 +56,7 @@ test(`${runner}: default run preserves running services, configuration and cache
     assert.match(result.calls, /finalize.cjs/);
     const ordered = ['prepare.cjs', 'project-hooks.php before', 'project-hooks.php prepare',
         `timeout --signal=TERM --kill-after=10s 600s node bin/${browserScript} --warmup`,
-        'manifest.php', 'collection.php start', `runner node bin/${browserScript}\n`, 'report.php'];
+        '/php/manifest.php', 'collection.php start', `runner node bin/${browserScript}\n`, 'report.php'];
     for (const command of ordered) assert.ok(result.calls.includes(command), `Missing command: ${command}`);
     for (let index = 1; index < ordered.length; index++) {
         assert.ok(result.calls.indexOf(ordered[index - 1]) < result.calls.indexOf(ordered[index]), `${ordered[index - 1]} must precede ${ordered[index]}`);
@@ -90,12 +90,12 @@ test(`${runner}: warm-up timeout cleans hooks before collection and does not run
     assert.match(result.stderr, /exceeded its 10-minute limit/);
     assert.match(result.stderr, /warmup-diagnostics.json/);
     assert.equal((result.calls.match(/project-hooks.php cleanup/g) || []).length, 1);
-    assert.doesNotMatch(result.calls, /collection.php start|runner node bin\/run-(browser|playwright).cjs\n|manifest.php|report.php|finalize.cjs/);
+    assert.doesNotMatch(result.calls, /collection.php start|runner node bin\/run-(browser|playwright).cjs\n|\/php\/manifest.php|report.php|finalize.cjs/);
     assert.equal(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), false);
 });
 
 test(`${runner}: old installations require an update before launching a headed browser`, t => {
-    for (const version of runner === 'cypress' ? ['2', '3', '4'] : ['2', '3']) {
+    for (const version of runner === 'cypress' ? ['2', '3', '4', '5'] : ['2', '3', '4', '5']) {
         const result = workflow(t, [], '', false, runner, version);
         assert.equal(result.status, 1);
         assert.match(result.stderr, /saved platform, theme and runner flags/);
@@ -105,10 +105,10 @@ test(`${runner}: old installations require an update before launching a headed b
 });
 }
 
-test('the Cypress cookie update does not require rebuilding an existing Chrome Playwright runner', t => {
+test('the XML hook extension requires rebuilding an older Playwright installation', t => {
     const result = workflow(t, [], '', false, 'playwright', '4');
-    assert.equal(result.status, 0);
-    assert.match(result.calls, /run-playwright.cjs/);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Rerun/);
 });
 
 test('help and invalid options do not touch the environment', t => {

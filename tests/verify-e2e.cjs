@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -18,7 +18,7 @@ assert.equal(summary.run, run.id);
 assert.ok(tests.totalTests > 0);
 assert.equal(tests.totalPassed, tests.totalTests);
 for (const key of ['totalFailed', 'totalPending', 'totalSkipped']) assert.equal(tests[key], 0);
-for (const file of ['coverage/index.html', ...['php', 'js', 'templates'].map(type => `coverage/${type}/index.html`)]) {
+for (const file of ['coverage/index.html', ...['php', 'js', 'templates', 'xml'].map(type => `coverage/${type}/index.html`)]) {
     assert.match(fs.readFileSync(file, 'utf8'), /<html/i, `Missing HTML report: ${file}`);
 }
 for (const file of ['coverage/.active-run', '.runtime/hooks-active', '.runtime/workflow.lock', 'src/var/blog-coverage-fixtures.json']) {

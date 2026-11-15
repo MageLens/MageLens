@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -143,7 +143,7 @@ test('service, runner and coverage entry points reuse the saved project and reje
     f.write('.runtime/docker-magento/compose/bin/stop', '#!/bin/sh\nexec bin/docker-compose stop "$@"\n');
     f.write('.runtime/docker-magento/compose/env/local.env', 'TEST=1\n');
     assert.equal(f.run('bin/expose-tools').status, 0);
-    f.write('.runtime/installed', '5\n');
+    f.write('.runtime/installed', '6\n');
     f.write('.runtime/install-profile', 'luma cypress magento\n');
     f.write('.runtime/compose-project-name', 'client-shop\n');
     for (const [script, args] of [['bin/application-compose', ['stop']], ['bin/start', []], ['bin/stop', []],

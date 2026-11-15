@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -26,12 +26,15 @@ if (!function_exists('pcov\\export')) {
     return;
 }
 $state = json_decode(file_get_contents('/coverage/collector.json'), true, flags: JSON_THROW_ON_ERROR);
+require_once '/application/docker/php/xml-hooks.php';
+startXmlHooks($token);
 pcov\start();
 // Retain the shared lock until request shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
 register_shutdown_function(static function () use ($record, $token, $state, $collectionLock): void {
     pcov\stop();
     try {
+        $xmlRecord = \MageLens\XmlCoverage\Recorder::finish();
         $result = pcov\export($record . '.pcov', $state['manifest'], $state['identity']['id'], pcov\inclusive, array_keys($state['scope']));
         if ($result === false) {
             throw new RuntimeException('Native PCOV export failed');
@@ -42,6 +45,7 @@ register_shutdown_function(static function () use ($record, $token, $state, $col
             throw new RuntimeException('Cannot make the request record readable by the reporting container');
         }
         file_put_contents($record . '.json', json_encode([
+            'xml' => $xmlRecord,
             'run' => $token,
             'uri' => $_SERVER['REQUEST_URI'],
             'method' => $_SERVER['REQUEST_METHOD'],

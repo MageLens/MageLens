@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -41,7 +41,7 @@ foreach ($records as $path) {
             $merged[$file][$line] = max($merged[$file][$line] ?? -1, $hit);
         }
     }
-    $requests[] = $metadata;
+    $requests[] = array_diff_key($metadata, ['xml' => true]);
 }
 if ($state['manifest']) {
     $result = pcov_manifest_merge($state['manifest'], $records);

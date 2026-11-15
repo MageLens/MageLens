@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -10,11 +10,15 @@ ARG EXPECTED_PHP_VERSION
 RUN php -r 'if (PHP_VERSION !== $argv[1]) { fwrite(STDERR, "Unexpected PHP version: " . PHP_VERSION . "\n"); exit(1); }' "$EXPECTED_PHP_VERSION"
 ARG PIE_VERSION
 ARG PCOV_VERSION
+ARG OPENTELEMETRY_VERSION
 # Current supported installation mechanism, pinned to the fork's release.
 RUN curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://github.com/php/pie/releases/download/${PIE_VERSION}/pie.phar" -o /usr/local/bin/pie \
     && chmod +x /usr/local/bin/pie \
     && pie install "vitaliyboyko/pcov:${PCOV_VERSION}" --no-interaction \
     && php -r 'if (phpversion("pcov") !== getenv("PCOV_VERSION") || !function_exists("pcov\\export") || extension_loaded("xdebug")) exit(1);'
+RUN pecl install "opentelemetry-${OPENTELEMETRY_VERSION}" \
+    && docker-php-ext-enable opentelemetry \
+    && php -r 'if (phpversion("opentelemetry") !== getenv("OPENTELEMETRY_VERSION") || !function_exists("OpenTelemetry\\Instrumentation\\hook")) exit(1);'
 RUN mkdir /opt/pcov-tools \
     && curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://codeload.github.com/VitaliyBoyko/pcov/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
     && tar xzf /tmp/pcov.tar.gz --strip-components=2 -C /opt/pcov-tools --wildcards '*/tools/*' \

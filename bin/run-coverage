@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -40,8 +40,8 @@ done
 preflight
 [[ -f .runtime/installed ]] || fail 'Run ./install.sh first.'
 installed_runtime=$(cat .runtime/installed)
-[[ "$installed_runtime" == 5 || ( "$MAGELENS_RUNNER" == playwright && "$installed_runtime" == 4 ) ]] \
-    || fail 'Rerun ./install.sh with your saved platform, theme and runner flags to install the current browser runner.'
+[[ "$installed_runtime" == 6 ]] \
+    || fail 'Rerun ./install.sh with your saved platform, theme and runner flags to install the current browser runner and PHP coverage hooks.'
 lock_workflow
 if (( start_services )); then
     if ! dc up -d --wait --wait-timeout 180 db redis opensearch phpfpm app runner; then
@@ -88,6 +88,7 @@ dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-root
 touch .runtime/hooks-active
 dc exec -T phpfpm php /application/docker/php/project-hooks.php before
 dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
+dc exec -T phpfpm php /application/docker/php/xml-manifest.php
 say 'Warming the storefront and fixture pages in a separate browser (up to 10 minutes)'
 browser_script=bin/run-browser.cjs
 [[ "$runner" == playwright ]] && browser_script=bin/run-playwright.cjs
@@ -107,5 +108,6 @@ say "Running the full $runner suite (preparation: ${SECONDS}s)"
 dc exec -T runner node "$browser_script"
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
-dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/finalize.cjs'
+dc exec -T phpfpm php /application/docker/php/xml-manifest.php check
+dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/report-xml.cjs && node bin/finalize.cjs'
 say 'Open coverage/index.html for the combined report'

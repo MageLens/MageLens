@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -98,6 +98,12 @@ cp tests/php-report.test.php "$scratch/docker/php/e2e/"
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
 cp -a src/app/code/Application "$scratch/src/app/code/"
+# XML acceptance declarations/routes exist only in this disposable demo checkout.
+cp -a src/app/code/Application/Blog/Test/Configuration/fixtures/. "$scratch/src/app/code/Application/Blog/"
+touch "$scratch/src/app/code/Application/Blog/Test/Configuration/.enabled"
+cp src/app/code/Application/Blog/Test/Configuration/Cypress/settings.cy.js "$scratch/src/app/code/Application/Blog/Test/Cypress/"
+cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js "$scratch/src/app/code/Application/Blog/Test/Playwright/"
+
 cp -a src/app/design/frontend/Application "$scratch/src/app/design/frontend/"
 mkdir -p "$scratch/src/app/code/MageLens"
 cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
@@ -158,6 +164,7 @@ fi
     # The installer selection must drive coverage without an extra runner flag.
     ./bin/run-coverage
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
+    ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-e2e.cjs

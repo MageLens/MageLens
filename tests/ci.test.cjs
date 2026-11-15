@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -20,9 +20,10 @@ const titles = [
     'requires Admin authentication and the Blog ACL permission',
     'searches, filters, paginates, reads articles, and retains favorites',
     'rejects invalid filters and keeps draft, scheduled, and inactive-category posts private',
-    'collects real PHP, JavaScript and template execution', 'starts the next test with fresh state'
+    'collects real PHP, JavaScript and template execution', 'starts the next test with fresh state',
+    'uses inherited journal settings and shows the selected Admin fields'
 ];
-const counts = {totalTests: 7, totalPassed: 7, totalFailed: 0, totalSkipped: 0, totalPending: 0};
+const counts = {totalTests: 8, totalPassed: 8, totalFailed: 0, totalSkipped: 0, totalPending: 0};
 function fixture(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-unit-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
@@ -54,7 +55,7 @@ test('artifact projection removes credentials, source, private packages and arbi
     const safe = sanitizedCoverage(directory);
     assert.doesNotMatch(JSON.stringify(safe), /SECRET|password|credential|vendor\/private/);
     assert.equal(safe['php/line-coverage.json']['/shop/app/code/Application/Blog/Model/Article.php']['1'], 1);
-    assert.equal(safe['cypress-results.json'].totalPassed, 7);
+    assert.equal(safe['cypress-results.json'].totalPassed, 8);
 });
 test('case gate accepts complete evidence and rejects stale, skipped, canceled and forged host evidence', t => {
     const {directory, entry, evidence, context} = fixture(t);
@@ -76,7 +77,7 @@ test('final gate fails when reports are missing even if all job results claim su
     assert.equal(report.passed, false);
     assert.equal(report.completedCases, 0);
     assert.equal(report.expectedCases, 9);
-    assert.equal(report.expectedAcceptanceTests, 63);
+    assert.equal(report.expectedAcceptanceTests, 72);
     assert.match(result.stdout, /Linux comparison incomplete/);
 });
 test('case gate rejects missing or incomplete runner regressions and stale source builds', t => {

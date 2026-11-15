@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -14,12 +14,13 @@ function reports(t, covered) {
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const json = (file, data) => fs.writeFileSync(path.join(root, file), JSON.stringify(data));
     const percent = covered * 100;
-    for (const type of ['php', 'js', 'templates']) {
+    for (const type of ['php', 'js', 'templates', 'xml']) {
         fs.mkdirSync(`${root}/coverage/${type}`, {recursive: true});
         fs.writeFileSync(`${root}/coverage/${type}/index.html`, '<html></html>');
     }
     fs.writeFileSync(`${root}/README.md`, '<!-- coverage-badges:start -->\n<!-- coverage-badges:end -->');
     fs.writeFileSync(`${root}/coverage/.active-run`, 'fixture');
+    json('coverage/xml/coverage.json', {run: 'fixture', covered, total: 1, percent, complete: true, sourcesUnchanged: true, collectorErrors: []});
     json('coverage/run.json', {id: 'fixture', sources: {}});
     json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}]});
     json('coverage/js/coverage-summary.json', {total: {statements: {covered, total: 1, pct: percent}}});
