@@ -8,6 +8,13 @@ declare(strict_types=1);
 
 // Small result/config doubles exercise the real isolated controller without
 // requiring a Magento database. Browser acceptance still runs the real forms.
+namespace Magento\Framework {
+    class DataObject {
+        public function __construct(private array $data) {}
+        public function getData() { return $this->data; }
+    }
+}
+namespace Magento\Framework\Event { interface ManagerInterface { public function dispatch($eventName, array $data = []); } }
 namespace Magento\Framework\App\Action { interface HttpGetActionInterface {} }
 namespace Magento\Framework\App\Config {
     interface ScopeConfigInterface {
@@ -51,8 +58,12 @@ namespace {
         public function getValue($path) { return 'Backend journal'; }
         public function isSetFlag($path) { return true; }
     };
+    $events = new class implements \Magento\Framework\Event\ManagerInterface {
+        public array $names = [];
+        public function dispatch($eventName, array $data = []) { $this->names[] = $eventName; }
+    };
     $controller = new \Application\Blog\Controller\Index\Configuration($config, $request,
-        new \Magento\Framework\Controller\Result\JsonFactory, new \Magento\Framework\Controller\Result\RawFactory, $stores, $backend);
+        new \Magento\Framework\Controller\Result\JsonFactory, new \Magento\Framework\Controller\Result\RawFactory, $stores, $backend, $events);
     $response = $controller->execute();
     if (!$response instanceof \Magento\Framework\Controller\Result\Raw
         || $response->headers['Content-Type'] !== 'text/html; charset=UTF-8'
@@ -60,6 +71,7 @@ namespace {
         || !str_contains($response->contents, '<html lang="en">')
         || !str_contains($response->contents, '&lt;img src=x')
         || str_contains($response->contents, '<img')
+        || $events->names !== ['magelens_journal_warmup']
         || $config->reads !== ['application_blog/display/unused']) {
         throw new \RuntimeException('Warm-up must render escaped HTML while consuming only its fixture setting');
     }

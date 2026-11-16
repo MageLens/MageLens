@@ -127,3 +127,29 @@ test('missing or duplicate host cases and stale or incomplete reports cannot sat
     write('js/coverage-final.json', js);
     assert.throws(() => snapshot(directory), /Missing coverage map/);
 });
+test('observer equivalence retains registration, per-area outcomes, source and warnings', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    const registration = {event: 'SECRET_event', observer: 'SECRET_observer'};
+    const [file] = xml.files;
+    file.declarations.push({id: 'observer', family: 'events', path: 'SECRET_event/SECRET_observer',
+        declaredScope: {type: 'global', code: ''}, startLine: 3, endLine: 5, supported: true, effective: true, state: 'covered',
+        registration, areas: {frontend: {status: 'eligible', state: 'covered', hits: 1},
+            adminhtml: {status: 'ambiguous', state: 'unmeasured', hits: 0, reason: 'SECRET reason'}},
+        evidence: [{type: 'observer-execute', area: 'frontend', registration, request: 'SECRET request'}]});
+    xml.warnings.push({path: file.path, declaration: 'observer', area: 'adminhtml', reason: 'SECRET reason'});
+    xml.observers = {total: 1, covered: 1, hook: true};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    const observer = file.declarations.at(-1);
+    observer.areas.frontend.hits = 99;
+    observer.evidence.push({...observer.evidence[0], request: 'repeat'});
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    observer.areas.adminhtml.status = 'unsupported';
+    write('xml/coverage.json', xml);
+    const matrix = reports(original);
+    matrix[1].snapshot = snapshot(directory);
+    assert.equal(compareThemes(matrix, cases).passed, false);
+});

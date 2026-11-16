@@ -57,3 +57,33 @@ test('warm repeat frequencies do not grant credit to unvisited declarations', ()
     const cold = merge(manifest, [record], sources), warm = merge(manifest, [{...record, events: [{...record.events[0], hits: 90}]}], sources);
     assert.deepEqual(cold.files[0].declarations.map(item => item.state), warm.files[0].declarations.map(item => item.state));
 });
+test('observer coverage counts eligible registrations independently in each HTTP area', () => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/events.xml';
+    const source = Buffer.from('<config>\n<event name="save">\n<observer name="observer"/>\n</event>\n</config>');
+    sources[file] = source;
+    const registration = {event: 'save', observer: 'observer'};
+    manifest.files.push({path: file, sourceHash: createHash('sha256').update(source).digest('hex'), declarations: [{
+        id: 'observer', family: 'events', path: 'save/observer', declaredScope: {type: 'global', code: ''},
+        startLine: 3, endLine: 3, supported: true, registration,
+        areas: {global: {status: 'eligible'}, frontend: {status: 'eligible'}, adminhtml: {status: 'disabled', reason: 'disabled override'}}
+    }]});
+    manifest.observers = Object.fromEntries(['global', 'frontend'].map(area => [area, {save: {targets: {observer: {id: 'observer'}}}}]));
+    const healthy = {...record, observerHook: true};
+    const empty = merge(manifest, [healthy], sources);
+    assert.deepEqual(empty.observers, {total: 2, covered: 0, hook: true});
+    assert.throws(() => merge(manifest, [record], sources), /No functioning XML observer execution hook/);
+    const event = {id: 'observer', type: 'observer-execute', area: 'frontend', registration, hits: 2};
+    const report = merge(manifest, [{...healthy, events: [...record.events, event]}], sources);
+    const [item] = report.files[1].declarations;
+    assert.deepEqual(report.observers, {total: 2, covered: 1, hook: true});
+    assert.deepEqual(item.areas, {global: {status: 'eligible', state: 'uncovered', hits: 0},
+        frontend: {status: 'eligible', state: 'covered', hits: 2},
+        adminhtml: {status: 'disabled', state: 'unmeasured', reason: 'disabled override', hits: 0}});
+    assert.deepEqual(item.evidence, [{run: 'fresh', request: 'request', type: event.type, area: 'frontend', registration}]);
+    for (const alteration of [{area: 'adminhtml'}, {registration: {event: 'save', observer: 'other'}}, {type: 'config-read'}]) {
+        assert.throws(() => merge(manifest, [{...healthy, events: [{...event, ...alteration}]}], sources));
+    }
+    delete manifest.observers.frontend.save.targets.observer;
+    assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /does not match effective provenance/);
+});

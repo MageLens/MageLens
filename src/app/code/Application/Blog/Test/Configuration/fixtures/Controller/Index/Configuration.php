@@ -16,7 +16,8 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         private \Magento\Framework\Controller\Result\JsonFactory $json,
         private \Magento\Framework\Controller\Result\RawFactory $raw,
         private \Magento\Store\Model\StoreManagerInterface $stores,
-        private \Magento\Backend\App\ConfigInterface $backend
+        private \Magento\Backend\App\ConfigInterface $backend,
+        private \Magento\Framework\Event\ManagerInterface $events
     ) {}
     public function execute()
     {
@@ -41,12 +42,19 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
                 $result['heading'] = $this->config->getValue($path . 'heading', 'store', 'Journal_Mixed');
                 $result['lowercase'] = $this->config->getValue($path . 'heading', 'store', 'journal_mixed');
                 break;
+            case 'observer-dispatch':
+                $counter = new \Magento\Framework\DataObject(['hits' => 0]);
+                $this->events->dispatch('MageLens_Journal_Observers', ['counter' => $counter]);
+                $result = $counter->getData();
+                break;
             case 'warmup-only':
+                $counter = new \Magento\Framework\DataObject(['hits' => 0]);
+                $this->events->dispatch('magelens_journal_warmup', ['counter' => $counter]);
                 $preview = htmlspecialchars((string) $this->config->getValue($path . 'unused'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 return $this->raw->create()
                     ->setHeader('Content-Type', 'text/html; charset=UTF-8', true)
                     ->setHeader('Cache-Control', 'no-store', true)
-                    ->setContents('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Journal preview</title></head><body><p>' . $preview . '</p></body></html>');
+                    ->setContents('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Journal preview</title></head><body><p>' . $preview . '</p><p>Observer calls: ' . (int) $counter->getData('hits') . '</p></body></html>');
             case 'value-reads':
                 $result['empty'] = $this->config->getValue($path . 'empty');
                 $result['enabled'] = $this->config->isSetFlag($path . 'enabled');

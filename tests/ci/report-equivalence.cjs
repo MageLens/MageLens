@@ -99,7 +99,8 @@ function snapshot(directory) {
         schema: 1, run: run.id,
         metrics: Object.fromEntries(['php', 'js', 'templates', 'xml'].map(key => [key, summary.metrics[key].percent])),
         xml: {totals: totals({total: xml.total, covered: xml.covered, percent: xml.percent}),
-            warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), digest(item.reason)])),
+            observers: {total: count(xml.observers?.total), covered: count(xml.observers?.covered)},
+            warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
                 lines: Object.fromEntries(Object.entries(object(file.lines)).map(([line, value]) => [line, value.state])),
@@ -107,7 +108,14 @@ function snapshot(directory) {
                     id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],
                     range: [item.startLine, item.endLine], supported: item.supported, effective: item.effective,
                     state: item.state, reason: digest(item.reason || ''),
-                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify([event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
+                    ...(item.family === 'events' ? {
+                        registration: [digest(item.registration.event), digest(item.registration.observer)],
+                        areas: sort(Object.entries(object(item.areas)).map(([area, outcome]) =>
+                            [area, outcome.status, outcome.state, hit(outcome.hits), digest(outcome.reason || '')]))
+                    } : {}),
+                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(event.type === 'observer-execute'
+                        ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
+                        : [event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
                 })))
             }))},
         php: {totals: totals({total: php.total, covered: php.covered, percent: php.percent}),
@@ -139,11 +147,30 @@ function validateSnapshot(value, run, summary) {
     }
     totals(value.xml.totals);
     array(value.xml.warnings);
+    const observerTotals = {total: 0, covered: 0};
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
-        object(file.lines); array(file.declarations);
+        object(file.lines);
+        for (const item of array(file.declarations)) {
+            if (!item.registration) continue;
+            assert.equal(array(item.registration).length, 2);
+            for (const part of item.registration) assert.match(part, /^[a-f0-9]{64}$/);
+            for (const [area, status, state, executed, reason] of array(item.areas)) {
+                assert.equal(typeof area, 'string');
+                assert.ok(['eligible', 'disabled', 'overridden', 'ambiguous', 'unsupported'].includes(status));
+                assert.equal(typeof executed, 'boolean');
+                assert.match(reason, /^[a-f0-9]{64}$/);
+                assert.equal(state, status === 'eligible' ? (executed ? 'covered' : 'uncovered') : 'unmeasured');
+                if (status === 'eligible') observerTotals.total++;
+                if (executed) {
+                    assert.equal(status, 'eligible');
+                    observerTotals.covered++;
+                }
+            }
+        }
         for (const state of Object.values(file.lines)) assert.ok(['covered', 'uncovered', 'unmeasured'].includes(state));
     }
+    assert.deepEqual(value.xml.observers, observerTotals, 'Incomplete observer coverage inventory');
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
         assert.match(line, /^[1-9]\d*$/, 'Invalid PHP line');

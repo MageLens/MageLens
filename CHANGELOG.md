@@ -9,6 +9,7 @@ License: see LICENSE in the repository root.
 ## 1.10.0 - Unreleased
 
 - Add a separate XML configuration coverage report in `coverage/xml/` for scoped `config.xml` reads and rendered `system.xml` fields, preserving source directories and identifying measurement limitations.
+- Report executed HTTP `events.xml` observer registrations by area, with original source links and explicit override and measurement statuses.
 - Add Blog Journal settings scenarios for Cypress and Playwright to exercise configuration consumption across default, website and store scopes.
 - Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
 

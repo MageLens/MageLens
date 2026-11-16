@@ -34,7 +34,7 @@ function writeCoverage(directory) {
     const totals = createCoverageMap(javascript).getCoverageSummary().toJSON();
     write('javascript-summary.json', {run: 'fresh', groups: {all: totals, application: totals, libraries: createCoverageMap({}).getCoverageSummary().toJSON()},
         excluded: [{path: 'vendor/private/SECRET-excluded.js', reason: 'SECRET'}]});
-    const xml = {run: 'fresh', complete: true, sourcesUnchanged: true, collectorErrors: [], total: 2, covered: 1, percent: 50, warnings: [], files: [
+    const xml = {run: 'fresh', complete: true, sourcesUnchanged: true, collectorErrors: [], observers: {total: 0, covered: 0, hook: false}, total: 2, covered: 1, percent: 50, warnings: [], files: [
         {path: 'app/code/Application/Blog/etc/config.xml', sourceFingerprint: 'a'.repeat(64), lines: {'11': {state: 'covered'}}, declarations: []},
         {path: 'vendor/private/SECRET.xml', sourceFingerprint: 'b'.repeat(64), lines: {'12': {state: 'uncovered'}}, declarations: []}
     ]};
