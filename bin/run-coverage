@@ -8,6 +8,7 @@ start_services=0
 refresh_cache=0
 refresh_assets=0
 restart_php=0
+readme_options=()
 runner=${MAGELENS_RUNNER:-cypress}
 for option in "$@"; do
     case "$option" in
@@ -15,6 +16,7 @@ for option in "$@"; do
         --refresh-cache) refresh_cache=1 ;;
         --refresh-assets) refresh_assets=1 ;;
         --restart-php) restart_php=1 ;;
+        --update-readme) readme_options=(--update-readme) ;;
         --runner=cypress) runner=cypress ;;
         --runner=playwright) runner=playwright ;;
         --help|-h)
@@ -27,6 +29,7 @@ Run the selected browser suite and create fresh coverage reports using the runni
   --refresh-cache   Clean Magento caches (for example after layout/config changes)
   --refresh-assets  Clear published static assets and Magento caches
   --restart-php     Restart PHP-FPM before the run
+  --update-readme   Mark README badges pending, then update them after successful validation
   --runner=cypress|playwright Assert the installed runner (defaults to saved selection)
   --help            Show this help
 
@@ -111,7 +114,7 @@ elif (( refresh_cache )); then
 fi
 say 'Preparing fresh coverage'
 dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
-dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json
+dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json ${readme_options[@]+"${readme_options[@]}"}
 touch .runtime/hooks-active
 dc exec -T phpfpm php /application/docker/php/project-hooks.php before
 dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json
@@ -134,5 +137,5 @@ say "Running the full $runner suite (preparation: ${SECONDS}s)"
 dc exec -T runner node "$browser_script"
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
-dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/finalize.cjs'
+dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/finalize.cjs "$@"' sh ${readme_options[@]+"${readme_options[@]}"}
 report_ready=1

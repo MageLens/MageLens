@@ -44,9 +44,15 @@ Optional refreshes can be combined:
 
 For example: `./bin/run-coverage --start --refresh-assets`.
 
+Optional flags can be combined:
+
+| Option | Use when |
+| --- | --- |
+| `--update-readme` | Update the README badge section for this run |
+
 Installation merges [docker/php/env.php.sample](../docker/php/env.php.sample) into `src/app/etc/env.php`, preserving credentials, theme selections and unrelated settings. The fragment enables developer mode, disables full-page/block output caching and HTML/PHTML, JavaScript and CSS minification, and sets local URLs and Admin defaults. These settings also apply at website and store scope. HTML assets pass through unchanged; PHTML executes directly. CSS/LESS compilation remains available for themes. Edit the fragment and rerun installation to change these defaults.
 
-The combined report and badges are published after all tests pass and the coverage records and source checks succeed. Skipped or pending tests prevent publication. The README badge section is marked pending when collection starts.
+The combined report and badges are published after all tests pass and the coverage records and source checks succeed. Skipped or pending tests prevent publication. The README is unchanged unless you pass `--update-readme`. With that flag, its badge section is marked pending during preparation and updated after successful validation. A failed run leaves the pending message.
 
 If a process is forcibly terminated, check for active installation or coverage processes before removing `.runtime/workflow.lock` and rerunning the command. For the demo's patch recovery command, see [Cypress patch notes](../patches/cypress/README.md).
 
@@ -134,7 +140,7 @@ Detailed HTML reports live in `coverage/php/`, `coverage/js/`, and `coverage/tem
 
 For collection details, inspect PHP records under `coverage/raw/php/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
 
-Reports and raw artifacts are ignored by Git. The SVGs in `coverage/badges/` can be committed with the README. To share browsable reports, copy the entire `coverage/` directory so relative links continue to work.
+Reports, raw artifacts and the SVGs in `coverage/badges/` are ignored by Git. To share browsable reports, copy the entire `coverage/` directory so relative links continue to work.
 
 ## Use an existing Playwright fixture
 
