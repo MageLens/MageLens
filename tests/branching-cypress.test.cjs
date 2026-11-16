@@ -174,10 +174,12 @@ test('native prefetch overlaps the original suffix and is discarded before an in
     assert.deepEqual(calls.slice(6), ['discard', 'abandon', 'run']);
     time += 60000;
     await complete('third');
-    const report = await session.close({passed: true});
+    const report = await session.close({passed: true, startupMs: 1200});
     assert.equal(report.status, 'passed');
     assert.equal(report.restores.length, 1);
     assert.equal(report.cleanup.storageReleased, true);
+    assert.equal(report.statisticsAfter.backendMs.count, 1);
+    assert.equal(report.baselineAfter.backendMs, 1200);
     assert.deepEqual(report.prefetches.map(({status, workMs, waitMs}) => [status, workMs, waitMs]),
         [['used', 23000, 0], ['discarded', 25000, 0]]);
 });
@@ -197,11 +199,14 @@ test('an unverified native prefix is timed while both original Cypress consumers
         time += 60000;
         await session.boundary({phase: 'complete', checkpoint: 'prefix', consumer, bindings, workMs: 60000});
     }
-    const report = await session.close({passed: true});
+    const report = await session.close({passed: true, startupMs: 1200});
     assert.equal(report.status, 'passed');
     assert.deepEqual(report.prefixes.map(({consumer,workMs}) => [consumer,workMs]), [['first',60000],['second',60000]]);
     assert.deepEqual(continuations, Array.from({length: 4}, () => ({restored: false})));
     assert.deepEqual(report.decisions, []);
+    assert.deepEqual(report.observations, []);
+    assert.equal(report.statisticsAfter.backendMs.count, 0);
+    assert.equal(report.baselineAfter.backendMs, require('../branching/baseline.cjs').defaults.backendMs);
     assert.deepEqual(report.checkpoints, []);
     assert.deepEqual(report.restores, []);
     assert.equal(report.cleanup.storageReleased, true);

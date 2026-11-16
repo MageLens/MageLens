@@ -194,8 +194,7 @@ async function install(collect, config, events, tasks, options) {
             const passed = !result.totalFailed && !result.totalSkipped && declared && !retried && !retryFailures.size;
             let report;
             if (session) {
-                report = await session.close({passed});
-                session.economics.observe('backendMs', startupMs + session.lifecycleMs, null);
+                report = await session.close({passed, startupMs});
             } else {
                 verifySources(manifest);
                 const errors = candidates.length ? [{phase: 'prefix', message: 'Native checkpoint callbacks did not execute'}] : [];

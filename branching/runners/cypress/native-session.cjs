@@ -287,7 +287,7 @@ class NativeSession {
         }
         return 0;
     }
-    async close({passed = false} = {}) {
+    async close({passed = false, startupMs = 0} = {}) {
         const started = this.now();
         let releaseMs = 0;
         if (!this.bridge.error) this.interruptPrefix();
@@ -305,10 +305,11 @@ class NativeSession {
         await attempt('cleanup', () => this.provider?.cleanup());
         this.report.cleanup = {storageReleased: this.store.available.size === 0 && this.store.incomplete.size === 0};
         await attempt('source-verification', () => this.verifySources());
+        this.lifecycleMs += this.now() - started - releaseMs;
+        if (this.provider) this.economics.observe('backendMs', startupMs + this.lifecycleMs, null);
         this.report.status = passed && !this.report.errors.length && this.finished.size === this.consumers.size ? 'passed' : 'failed';
         this.report.statisticsAfter = this.economics.statistics;
         this.report.baselineAfter = this.economics.baseline;
-        this.lifecycleMs += this.now() - started - releaseMs;
         return this.report;
     }
 }
