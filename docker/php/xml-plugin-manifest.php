@@ -9,6 +9,8 @@ namespace MageLens\XmlCoverage;
 
 require_once __DIR__ . '/xml-inline-plugins.php';
 
+use Magento\Framework\Component\{ComponentRegistrar, ComponentRegistrarInterface};
+use Magento\Framework\Module\ModuleListInterface;
 use Magento\Framework\Config\{ConverterInterface, FileResolverInterface, ValidationStateInterface};
 use Magento\Framework\Interception\{DefinitionInterface, PluginListGenerator, PluginListInterface};
 use Magento\Framework\Interception\ObjectManager\ConfigInterface;
@@ -144,19 +146,38 @@ final class PluginManifest
         return $segments;
     }
 
-    private static function candidateTypes(array $files, array $paths): array
+    private static function localModules($om): array
+    {
+        $enabled = array_fill_keys($om->get(ModuleListInterface::class)->getNames(), true);
+        $prefix = BP . '/app/code/';
+        $modules = [];
+        foreach ($om->get(ComponentRegistrarInterface::class)->getPaths(ComponentRegistrar::MODULE) as $name => $directory) {
+            if (str_starts_with($directory, $prefix)) $modules[substr($directory, strlen(BP) + 1)] = isset($enabled[$name]);
+        }
+        return $modules;
+    }
+
+    private static function moduleEnabled(string $path, array $modules): ?bool
+    {
+        for ($parent = dirname($path); $parent !== '.'; $parent = dirname($parent)) {
+            if (isset($modules[$parent])) return $modules[$parent];
+        }
+        return null;
+    }
+
+    private static function candidateTypes(array $items, array $paths, array $modules, string $sourceRoot): array
     {
         $targets = [];
-        foreach ($files as $file) foreach ($file['declarations'] as $item) {
-            if ($item['family'] === 'plugins') $targets[$item['registration']['target']] = true;
-        }
+        foreach ($items as $item) $targets[$item['registration']['target']] = true;
         foreach ($paths as $path) {
             if (!preg_match('~^src/app/code/(.+)/([A-Z][A-Za-z0-9_]*)\.php$~', $path, $match)
                 || preg_match('~/(Test|Setup|node_modules|tailwind)/~', $path)) continue;
+            $relative = substr($path, 4);
+            if (self::moduleEnabled($relative, $modules) !== true) continue;
             $namespace = str_replace('/', '\\', $match[1]);
-            $source = file_get_contents('/source/' . substr($path, 4));
-            // Match the actual declaration before autoload. Registration
-            // scripts and copied fixture files need not follow PSR conventions.
+            $source = file_get_contents($sourceRoot . '/' . $relative);
+            // Match the declaration before autoload, including on PSR-mapped
+            // paths that could also contain registration scripts.
             $tokens = array_values(array_filter(\PhpToken::tokenize($source), static fn($token) => !$token->isIgnorable()));
             $declared = null;
             foreach ($tokens as $index => $token) {
@@ -171,7 +192,32 @@ final class PluginManifest
         return array_keys($targets);
     }
 
-    public static function prepare($om, array &$files, array $paths): array
+    private static function callback(string $implementation, string $method, string $phase): ?\ReflectionMethod
+    {
+        $name = $phase . ucfirst($method);
+        if (!method_exists($implementation, $name)) return null;
+        $body = new \ReflectionMethod($implementation, $name);
+        return $body->isPublic() && !$body->isAbstract() && !$body->isStatic() && !$body->isInternal() ? $body : null;
+    }
+
+    private static function deferredSegments(array $chain, array $implementations, string $method): array
+    {
+        $deferred = false;
+        $segments = [];
+        foreach ($chain as $key => $segment) {
+            if ($deferred) {
+                $segments[$key] = true;
+                continue;
+            }
+            $around = $segment[DefinitionInterface::LISTENER_AROUND] ?? null;
+            // Only the next segment runs through $proceed. The current
+            // segment's after callbacks still run during ordinary dispatch.
+            $deferred = $around !== null && self::callback($implementations[$around], $method, 'around')?->isGenerator();
+        }
+        return $segments;
+    }
+
+    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source'): array
     {
         $known = $items = $sourcePaths = $sourceHashes = [];
         foreach ($files as $path => &$file) {
@@ -188,12 +234,15 @@ final class PluginManifest
         if (!$items) return [[], []];
 
         [$configs, $tagged, $sources, $providers] = self::sources($om->get(Dom::class), $known);
+        $active = [];
         foreach ($items as $id => $item) {
             $scope = $item['declaredScope']['type'];
             $hash = $sources[$scope][$sourcePaths[$id]] ?? null;
-            if ($hash !== null && $hash !== $sourceHashes[$id]) {
+            if ($hash === null) continue;
+            if ($hash !== $sourceHashes[$id]) {
                 throw new \RuntimeException('Runtime DI XML differs from its inventoried source');
             }
+            $active[$id] = true;
         }
         $loader = $om->get(ConfigLoaderInterface::class);
         $live = $om->get(ConfigInterface::class);
@@ -201,7 +250,8 @@ final class PluginManifest
         $developer = $loader instanceof \Magento\Framework\App\ObjectManager\ConfigLoader
             && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Developer;
         $compiled = glob(BP . '/generated/metadata/*|plugin-list.php');
-        $classes = self::candidateTypes($files, $paths);
+        $modules = $active ? self::localModules($om) : [];
+        $classes = $active ? self::candidateTypes(array_intersect_key($items, $active), $paths, $modules, $sourceRoot) : [];
         $generatorType = $developer ? InlinePluginManifest::generator($live) : '';
         $runtime = [];
         foreach (self::AREAS as $area) {
@@ -223,7 +273,7 @@ final class PluginManifest
                 $origins = self::origins($registration);
                 $item['areas'][$area] = match (true) {
                     !$supported => self::outcome('unsupported', 'Compiled DI, custom plugin lists or unsupported interceptor generators are unmeasured'),
-                    !isset($sources[$scope][$sourcePaths[$id]]) => self::outcome('unsupported', 'Declaration is inactive in the installed DI reader'),
+                    !isset($active[$id]) => self::outcome('unsupported', 'Declaration is inactive in the installed DI reader'),
                     !in_array($id, $origins, true) => self::outcome('overridden', 'Superseded by another declaration'),
                     !empty($registration['disabled']) => self::outcome('disabled', 'Effective Magento registration is disabled'),
                     count($origins) > 1 => self::outcome('ambiguous', 'Multiple declarations supply effective plugin attributes'),
@@ -244,11 +294,15 @@ final class PluginManifest
             }
             $validator = new InterceptableValidator();
             foreach (array_keys($subjects) as $subject) {
+                $conventionalPath = 'app/code/' . str_replace('\\', '/', $subject) . '.php';
+                if (self::moduleEnabled($conventionalPath, $modules) === false) continue;
                 if (!class_exists($subject) || !$validator->validate($subject)) continue;
                 $reflection = new \ReflectionClass($subject);
                 if ($reflection->isFinal() || $reflection->isAbstract() || $di->getOriginalInstanceType($subject) !== $subject) continue;
                 $areaGenerator->inheritPlugins($subject, $data, $inherited, $processed);
                 $registrations = $inherited[$subject] ?? [];
+                $implementations = [];
+                $methods = [];
                 foreach ($registrations as $name => $registration) {
                     $origins = self::origins($registration);
                     if (count($origins) > 1 || !empty($registration['disabled'])) {
@@ -266,21 +320,41 @@ final class PluginManifest
                     if (!$origins || !isset($items[$origins[0]])) continue;
                     $id = $origins[0];
                     $item = &$items[$id];
-                    if (!isset($item['areas'][$area]) || !isset($sources[$item['declaredScope']['type']][$sourcePaths[$id]])) continue;
-                    $implementation = $di->getOriginalInstanceType($di->getPreference($registration['instance']));
+                    if (!isset($item['areas'][$area], $active[$id])) continue;
+                    if (!$implementations) {
+                        foreach ($registrations as $code => $candidate) {
+                            if (!empty($candidate['disabled'])) continue;
+                            $implementations[$code] = $di->getOriginalInstanceType($di->getPreference($candidate['instance']));
+                        }
+                    }
+                    $implementation = $implementations[$name];
                     foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
                         if ($method->isFinal() || $method->isStatic() || $method->isInternal() || $method->isConstructor()
                             || $method->isDestructor() || in_array($method->name, ['__sleep', '__wakeup', '__clone', '_resetState'], true)) continue;
-                        $chain = self::chain($processed, $subject, $method->name);
-                        foreach ($chain as $segment) foreach (self::PHASES as $listener => $phase) {
+                        $methodName = $method->name;
+                        if (!isset($methods[$methodName])) {
+                            $chain = self::chain($processed, $subject, $methodName);
+                            $methods[$methodName] = [$chain, self::deferredSegments($chain, $implementations, $methodName)];
+                        }
+                        [$chain, $deferred] = $methods[$methodName];
+                        foreach ($chain as $segmentKey => $segment) foreach (self::PHASES as $listener => $phase) {
                             if (!in_array($name, (array) ($segment[$listener] ?? []), true)) continue;
-                            $callback = $phase . ucfirst($method->name);
-                            if (!method_exists($implementation, $callback)) continue;
-                            $body = new \ReflectionMethod($implementation, $callback);
-                            if (!$body->isPublic() || $body->isAbstract() || $body->isStatic() || $body->isInternal()) continue;
-                            $identity = ['subject' => $subject, 'method' => $method->name, 'phase' => $phase];
+                            $body = self::callback($implementation, $methodName, $phase);
+                            if (!$body) continue;
+                            $identity = ['subject' => $subject, 'method' => $methodName, 'phase' => $phase];
                             $key = self::callbackKey($identity);
-                            if ($item['areas'][$area]['status'] !== 'eligible') $item['areas'][$area] = self::outcome('eligible', null);
+                            $outcome = &$item['areas'][$area];
+                            if ($body->isGenerator() || isset($deferred[$segmentKey])) {
+                                $reason = $body->isGenerator()
+                                    ? 'Generator callback bodies execute on iteration outside synchronous plugin coverage'
+                                    : 'Callback runs through a generator plugin’s deferred proceed';
+                                $outcome['unmeasuredCallbacks'][$key] = $identity + ['reason' => $reason];
+                                unset($outcome);
+                                continue;
+                            }
+                            $outcome['status'] = 'eligible';
+                            $outcome['reason'] = null;
+                            unset($outcome);
                             $item['areas'][$area]['callbacks'][$key] = $identity;
                             $runtime[$area][$subject]['signature'] ??= self::signature($registrations);
                             $runtime[$area][$subject]['chains'][$method->name] = $chain;
@@ -299,6 +373,13 @@ final class PluginManifest
         }
         foreach ($items as &$item) {
             $item['areas'] ??= [$item['declaredScope']['type'] => self::outcome('unsupported', 'Configuration scope is outside HTTP plugin coverage')];
+            foreach ($item['areas'] as &$outcome) {
+                if ($outcome['status'] !== 'eligible' && !empty($outcome['unmeasuredCallbacks'])) {
+                    $outcome['status'] = 'unsupported';
+                    $outcome['reason'] = 'Plugin callback execution is deferred by a generator';
+                }
+            }
+            unset($outcome);
             $item['supported'] = in_array('eligible', array_column($item['areas'], 'status'), true);
             $item['effective'] = $item['supported'];
         }

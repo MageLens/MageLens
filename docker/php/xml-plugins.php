@@ -22,6 +22,7 @@ final class Plugins
     private static array $targets = [];
     private static array $types = [];
     private static array $inline = [];
+    private static array $inlineMethods = [];
     private static array $inlineFiles = [];
     private static array $dispatches = [];
     private static array $validated = [];
@@ -42,14 +43,14 @@ final class Plugins
         self::$targets = $targets;
         $methods = [self::PROBE_BODY => ['beforeRun' => true]];
         $subjects = [self::PROBE => true];
-        $inlineMethods = $inlineGetters = [];
+        $inlineGetters = [];
         foreach ($targets as $subjectsInArea) foreach ($subjectsInArea as $subject => $entry) {
             $wrapper = $subject . '\\Interceptor';
             if (isset($entry['inline'])) {
                 self::$inline[$wrapper] = $entry['inline'];
                 foreach ($entry['inline']['sites'] as $site) {
                     if (!isset($entry['targets'][$site['name']][$site['method']][$site['phase']])) continue;
-                    $inlineMethods[$wrapper][$site['method']] = true;
+                    self::$inlineMethods[$wrapper][$site['method']] = true;
                     $inlineGetters[$wrapper][$site['getter']] = true;
                 }
             } else {
@@ -80,7 +81,7 @@ final class Plugins
                 self::leaveHook($class)];
         }
         foreach (self::$inline as $class => $unused) {
-            foreach (array_keys($inlineMethods[$class] ?? []) as $method) {
+            foreach (array_keys(self::$inlineMethods[$class] ?? []) as $method) {
                 $hooks[] = [$class, $method,
                     static function ($object, array $args, string $declaring) use ($class, $method) {
                         if ($declaring === $class) self::enter($object, $method);
@@ -203,17 +204,27 @@ final class Plugins
         return str_starts_with($frame['function'] ?? '', '{closure:' . Interceptor::class . '::___callPlugins():');
     }
 
-    private static function dispatch(array $trace, int $index): ?int
+    private static function generatorAround(array $frame): bool
     {
-        if (!self::closure($trace[$index] ?? [])) return null;
+        $class = $frame['class'] ?? null;
+        $method = $frame['function'];
+        if ($class === null || !str_starts_with(strtolower($method), 'around')) return false;
+        static $generators = [];
+        return $generators[$class][$method] ??= method_exists($class, $method)
+            && (new \ReflectionMethod($class, $method))->isGenerator();
+    }
+
+    private static function dispatch(array $trace, int $index, string $method = '___callPlugins'): ?int
+    {
+        if ($method === '___callPlugins' && !self::closure($trace[$index] ?? [])) return null;
         $object = $trace[$index]['object'] ?? null;
         if (!$object) return null;
-        for ($i = $index + 1, $size = count($trace); $i < $size; $i++) {
+        for ($i = $index, $size = count($trace); $i < $size; $i++) {
             $frame = $trace[$i];
-            if (($frame['object'] ?? null) !== $object || $frame['function'] !== '___callPlugins') continue;
-            $depth = $size - $i;
-            if ((self::$dispatches[$depth]['object'] ?? null) === $object) return $i;
-            return null;
+            if (($frame['object'] ?? null) === $object && $frame['function'] === $method) return $i;
+            // Iteration may happen during an unrelated invocation on the same
+            // object. A resumed around callback cannot inherit that frame.
+            if (self::generatorAround($frame)) return null;
         }
         return null;
     }
@@ -230,8 +241,10 @@ final class Plugins
             $phase = ($trace[0]['file'] ?? null) === $trait ? (self::LOOKUP[$trace[0]['line']] ?? null) : null;
             if (!$phase) return;
             $index = self::dispatch($trace, 1);
-            if ($index === null) throw new \RuntimeException();
-            $depth = count($trace) - $index;
+            // Magento's proceed closure can outlive its dispatch. Deferred
+            // calls have no live frame to bind and are unmeasured.
+            if ($index === null) return;
+            $depth = self::dispatchDepth($trace, $index) ?? throw new \RuntimeException();
             $method = self::$dispatches[$depth]['method'];
             $target = $area === 'probe'
                 ? ['id' => '', 'implementation' => self::PROBE_BODY, 'class' => self::PROBE_BODY, 'callback' => 'beforeRun']
@@ -244,18 +257,10 @@ final class Plugins
         }
     }
 
-    private static function inlineDispatch(array $trace, int $call, array $site): ?int
+    private static function dispatchDepth(array $trace, int $index): ?int
     {
-        $object = $trace[$call + 1]['object'] ?? null;
-        if (!$object) return null;
-        for ($i = $call + 1, $size = count($trace); $i < $size; $i++) {
-            $frame = $trace[$i];
-            if (($frame['object'] ?? null) !== $object || $frame['function'] !== $site['method']) continue;
-            $depth = $size - $i;
-            if ((self::$dispatches[$depth]['object'] ?? null) === $object) return $i;
-            return null;
-        }
-        return null;
+        $depth = count($trace) - $index;
+        return (self::$dispatches[$depth]['object'] ?? null) === $trace[$index]['object'] ? $depth : null;
     }
 
     private static function lookupInline(object $owner, string $getter, mixed $object): void
@@ -266,10 +271,11 @@ final class Plugins
             $line = $trace[0]['line'] ?? 0;
             if (!isset(self::$inlineFiles[$file])) self::inlineScope(get_class($owner));
             $site = self::$inlineFiles[$file][$line] ?? null;
-            if (!$site || $site['getter'] !== $getter || ($trace[1]['object'] ?? null) !== $owner) return;
-            $index = self::inlineDispatch($trace, 0, $site);
-            if ($index === null) throw new \RuntimeException();
-            $depth = count($trace) - $index;
+            if (!$site || $site['getter'] !== $getter || ($trace[1]['object'] ?? null) !== $owner
+                || !isset(self::$inlineMethods[get_class($owner)][$site['method']])) return;
+            $index = self::dispatch($trace, 1, $site['method']);
+            if ($index === null) return;
+            $depth = self::dispatchDepth($trace, $index) ?? throw new \RuntimeException();
             $area = self::$dispatches[$depth]['area'] ?? '';
             $subject = get_parent_class($owner);
             ['name' => $name, 'method' => $method, 'phase' => $phase] = $site;
@@ -350,10 +356,11 @@ final class Plugins
                 $file = $frame['file'] ?? '';
                 $line = $frame['line'] ?? 0;
                 $site = self::$inlineFiles[$file][$line] ?? null;
-                $index = $site ? self::inlineDispatch($trace, $call, $site)
+                $index = $site ? self::dispatch($trace, $call + 1, $site['method'])
                     : ($file === self::traitFile() ? self::dispatch($trace, $call + 1) : null);
                 if ($index === null) return;
-                $depth = count($trace) - $index;
+                $depth = self::dispatchDepth($trace, $index);
+                if ($depth === null) return;
                 $closure = count($trace) - $call - 1;
                 $dispatch = self::$dispatches[$depth];
                 $candidate = $dispatch['pending'][$closure] ?? null;

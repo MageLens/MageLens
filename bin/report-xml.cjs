@@ -118,6 +118,11 @@ function merge(manifest, records, sources) {
                         if (callback.ambiguousEntry) warnings.push({path: file.path, declaration: item.id, area,
                             reason: `Unconfirmed entry to ${callback.subject}::${callback.method} (${callback.phase}) after a TypeError at the callback declaration`});
                     }
+                    for (const callback of Object.values(outcome.unmeasuredCallbacks || {})) {
+                        callback.state = 'unmeasured';
+                        warnings.push({path: file.path, declaration: item.id, area,
+                            reason: `${callback.subject}::${callback.method} (${callback.phase}) — ${callback.reason}`});
+                    }
                     if (['ambiguous', 'unsupported'].includes(outcome.status)) {
                         warnings.push({path: file.path, declaration: item.id, area, reason: outcome.reason});
                     }
@@ -153,8 +158,8 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         const details = file.declarations.map(item => {
             const outcomes = item.areas
                 ? Object.entries(item.areas).map(([area, outcome]) => {
-                    const callbacks = Object.values(outcome.callbacks || {}).map(callback =>
-                        `<small>${escape(callback.subject)}::${escape(callback.method)} · ${escape(callback.phase)} · ${escape(callback.state)}${callback.ambiguousEntry ? ' · entry could not be confirmed for a TypeError' : ''}</small>`).join('');
+                    const callbacks = [...Object.values(outcome.callbacks || {}), ...Object.values(outcome.unmeasuredCallbacks || {})].map(callback =>
+                        `<small>${escape(callback.subject)}::${escape(callback.method)} · ${escape(callback.phase)} · ${escape(callback.state)}${callback.ambiguousEntry ? ' · entry could not be confirmed for a TypeError' : ''}${callback.reason ? ' · ' + escape(callback.reason) : ''}</small>`).join('');
                     return `<small>${escape(area)} · ${escape(outcome.status === 'eligible' ? outcome.state : outcome.status)}${outcome.reason ? ' · ' + escape(outcome.reason) : ''}</small>${callbacks}`;
                 }).join('')
                 : `<small>${escape(item.reason || (item.effective ? 'effective' : 'shadowed or externally overridden'))}</small>`;

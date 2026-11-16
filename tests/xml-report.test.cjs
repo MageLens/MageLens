@@ -97,11 +97,13 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     const before = callback('save', 'before'), after = callback('save', 'after'), unused = callback('unused', 'before');
     const key = ({subject, method, phase}) => createHash('sha256').update(JSON.stringify([subject, method, phase])).digest('hex');
     const callbacks = Object.fromEntries([before, after, unused].map(callback => [key(callback), callback]));
+    const deferred = {...callback('stream', 'around'), reason: 'Generator callback bodies execute on iteration outside synchronous plugin coverage'};
     sources[file] = source;
     manifest.files.push({path: file, family: 'plugins', sourceHash: createHash('sha256').update(source).digest('hex'), declarations: [{
         id: 'plugin', family: 'plugins', path: 'Acme\\Contract/shared', declaredScope: {type: 'global', code: ''},
         startLine: 3, endLine: 4, supported: true, effective: true, registration,
-        areas: {global: {status: 'eligible', callbacks}, frontend: {status: 'eligible', callbacks: structuredClone(callbacks)},
+        areas: {global: {status: 'eligible', callbacks}, frontend: {status: 'eligible', callbacks: structuredClone(callbacks),
+            unmeasuredCallbacks: {[key(deferred)]: deferred}},
             adminhtml: {status: 'disabled', reason: 'disabled override', callbacks: {}}}
     }]});
     const target = {targets: {shared: {save: {before: {id: 'plugin'}, after: {id: 'plugin'}}, unused: {before: {id: 'plugin'}}}}};
@@ -118,6 +120,8 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     assert.deepEqual(Object.values(item.areas.frontend.callbacks).map(({method, phase, state}) => [method, phase, state]),
         [['save', 'before', 'covered'], ['save', 'after', 'uncovered'], ['unused', 'before', 'uncovered']]);
     assert.equal(report.warnings.filter(warning => warning.reason?.includes('TypeError')).length, 1);
+    assert.deepEqual(item.areas.frontend.unmeasuredCallbacks[key(deferred)], {...deferred, state: 'unmeasured'});
+    assert.equal(report.warnings.find(warning => warning.reason?.includes(deferred.reason)).area, 'frontend');
     assert.deepEqual(item.evidence, [{run: 'fresh', request: 'request', type: 'plugin-execute', area: 'frontend', registration, callback: before}]);
     assert.equal(report.files[1].lines[3].state, 'covered');
     assert.equal(report.files[1].lines[4].state, 'covered');
@@ -126,10 +130,12 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     writeReport(report, sources, root);
     assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /1\/2 eligible plugin registrations/);
-    assert.match(fs.readFileSync(path.join(root, file + '.html'), 'utf8'), /#L3.*Acme\\Concrete::save · before · covered/s);
+    const html = fs.readFileSync(path.join(root, file + '.html'), 'utf8');
+    assert.match(html, /#L3.*Acme\\Concrete::save · before · covered/s);
+    assert.match(html, /Acme\\Concrete::stream · around · unmeasured · Generator callback bodies execute on iteration/);
 
     for (const altered of [{area: 'adminhtml'}, {name: 'other'}, {callback: {...before, phase: 'around'}},
-        {callback: {...before, subject: 'Acme\\Other'}}, {arguments: ['forbidden']}, {type: 'config-read'}]) {
+        {callback: {...before, subject: 'Acme\\Other'}}, {callback: callback('stream', 'around')}, {arguments: ['forbidden']}, {type: 'config-read'}]) {
         assert.throws(() => merge(manifest, [{...healthy, events: [{...hit, ...altered}]}], sources));
     }
     assert.throws(() => merge(manifest, [healthy, {...record, events: [hit]}], sources), /without a functioning request hook/);

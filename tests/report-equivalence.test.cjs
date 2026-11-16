@@ -187,6 +187,17 @@ test('plugin equivalence preserves phase, registration and outcomes while normal
         matrix[1].snapshot = snapshot(directory);
         assert.equal(compareThemes(matrix, cases).passed, false);
     }
+    write('xml/coverage.json', xml);
+    const withoutGeneratorWarning = snapshot(directory);
+    const warning = {path: file.path, declaration: plugin.id, area: 'frontend',
+        reason: 'SECRET Subject::stream (around) — Generator callback bodies execute on iteration outside synchronous plugin coverage'};
+    xml.warnings.push(warning);
+    write('xml/coverage.json', xml);
+    const withGeneratorWarning = snapshot(directory);
+    const matrix = reports(withoutGeneratorWarning);
+    matrix[1].snapshot = withGeneratorWarning;
+    assert.equal(compareThemes(matrix, cases).passed, false);
+    assert.doesNotMatch(JSON.stringify(withGeneratorWarning), /SECRET/);
     xml.plugins.total = 0;
     write('xml/coverage.json', xml);
     assert.throws(() => snapshot(directory), /Incomplete plugin coverage inventory/);
