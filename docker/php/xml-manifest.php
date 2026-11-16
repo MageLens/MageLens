@@ -6,7 +6,8 @@
  */
 declare(strict_types=1);
 require_once __DIR__ . '/xml-data.php';
-use MageLens\XmlCoverage\Xml;
+require_once __DIR__ . '/xml-observer-manifest.php';
+use MageLens\XmlCoverage\{Xml, ObserverManifest};
 
 function xmlFingerprint($om): string
 {
@@ -23,7 +24,7 @@ function xmlFingerprint($om): string
     return hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
 }
 
-function xmlManifest($om, array $run): array
+function prepareXmlManifests($om, array $run): array
 {
     $files = []; $ids = []; $providers = [];
     foreach ($run['sources'] as $source => $hash) {
@@ -31,11 +32,16 @@ function xmlManifest($om, array $run): array
         $path = substr($source, 4);
         $bytes = file_get_contents('/source/' . $path);
         if (hash('sha256', $bytes) !== $hash) throw new RuntimeException('XML source changed after preparation');
-        $family = preg_match('~/etc/config\.xml$~', $path) ? 'config' : (preg_match('~/etc/adminhtml/system\.xml$~', $path) ? 'system' : null);
+        $family = match (true) {
+            (bool) preg_match('~/etc/config\.xml$~', $path) => 'config',
+            (bool) preg_match('~/etc/adminhtml/system\.xml$~', $path) => 'system',
+            (bool) preg_match('~/etc/(?:[^/]+/)?events\.xml$~', $path) => 'events',
+            default => null,
+        };
         $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
         $files[$path] = ['path' => $path, 'sourceHash' => $hash, 'family' => $family,
             'reason' => $declarations ? null : 'Unsupported XML family, location or schema', 'declarations' => $declarations];
-        foreach ($declarations as $item) $ids[$item['id']] = true;
+        if ($family === 'config') foreach ($declarations as $item) $ids[$item['id']] = true;
     }
     // Clone the installed reader, changing only its input resolver. Its actual
     // DOM merge, converter and scope-priority scheme remain authoritative.
@@ -143,6 +149,8 @@ function xmlManifest($om, array $run): array
         $item['effective'] = $file['family'] === 'system' ? $item['supported'] : isset($effectiveIds[$item['id']]);
     }
     unset($file, $item);
+    [$observers, $eventProviders] = ObserverManifest::prepare($om, $files);
+    $providers += $eventProviders;
     $scopes = ['default' => ['' => '']];
     $stores = $om->get(\Magento\Store\Model\StoreManagerInterface::class);
     foreach ($stores->getWebsites(true) as $website) $scopes['websites'][(string) $website->getId()] = $website->getCode();
@@ -158,46 +166,77 @@ function xmlManifest($om, array $run): array
         \Magento\Config\Block\System\Config\Form\Field::class => ['render']] as $class => $methods) {
         foreach ($methods as $method) if (!(new ReflectionMethod($class, $method))->isPublic()) throw new RuntimeException('Unsupported XML hook method');
     }
-    $manifest = ['schemaVersion' => 1, 'run' => $run['id'], 'files' => array_values($files), 'origins' => $origins,
-        'fields' => array_filter($fields, static fn($items) => count($items) === 1), 'scopes' => $scopes, 'scopeCodes' => $scopeCodes,
-        'runtime' => ['php' => PHP_VERSION, 'opentelemetry' => phpversion('opentelemetry')],
-        'providers' => $providers, 'fieldHashes' => $fieldHashes, 'valueHashes' => $valueHashes, 'configuration' => xmlFingerprint($om)];
-    $manifest['id'] = hash('sha256', json_encode($manifest, JSON_THROW_ON_ERROR));
-    return $manifest;
+    return xmlManifestPayloads(
+        [
+            'run' => $run['id'],
+            'observers' => $observers,
+            'scopes' => $scopes,
+            'scopeCodes' => $scopeCodes,
+            'fieldHashes' => $fieldHashes,
+        ],
+        [
+            'schemaVersion' => 1,
+            'files' => array_values($files),
+            'origins' => $origins,
+            'fields' => array_filter($fields, static fn($items) => count($items) === 1),
+            'runtime' => ['php' => PHP_VERSION, 'opentelemetry' => phpversion('opentelemetry')],
+            'providers' => $providers,
+            'valueHashes' => $valueHashes,
+            'configuration' => xmlFingerprint($om),
+        ]
+    );
+}
+
+function xmlManifestPayloads(array $shared, array $report): array
+{
+    $manifest = $shared + $report;
+    $id = hash('sha256', json_encode($manifest, JSON_THROW_ON_ERROR));
+    $manifest['id'] = $id;
+    $collector = $shared + [
+        'id' => $id,
+        'paths' => ['' => true],
+        'fields' => [],
+        'originScopes' => [],
+        'valueHashes' => [],
+    ];
+
+    foreach ($report['files'] as $file) {
+        foreach ($file['declarations'] as $item) {
+            if (!$item['supported']) continue;
+            if ($item['family'] === 'config') {
+                $parts = explode('/', $item['path']);
+                while ($parts) {
+                    $collector['paths'][implode('/', $parts)] = true;
+                    array_pop($parts);
+                }
+            } elseif ($item['family'] === 'system') {
+                $collector['fields'][$item['path']] = [$item['id']];
+            }
+        }
+    }
+    foreach ($report['origins'] as $key => $originId) {
+        [$scope, $leaf] = explode('/', $key, 2);
+        if ($scope !== 'default') {
+            [$code, $leaf] = explode('/', $leaf, 2);
+            $scope .= '/' . $code;
+        }
+        $collector['originScopes'][$scope][$leaf] = $originId;
+        $collector['valueHashes'][$scope][$leaf] = $report['valueHashes'][$key];
+    }
+
+    return [$manifest, $collector];
 }
 
 if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
     require '/var/www/html/app/bootstrap.php';
     $om = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
     $run = json_decode(file_get_contents('/coverage/run.json'), true, flags: JSON_THROW_ON_ERROR);
-    $manifest = xmlManifest($om, $run);
+    [$manifest, $collector] = prepareXmlManifests($om, $run);
     if (($argv[1] ?? '') === 'check') {
         $previous = json_decode(file_get_contents('/coverage/xml-manifest.json'), true, flags: JSON_THROW_ON_ERROR);
         if ($manifest !== $previous) throw new RuntimeException('XML configuration, scope or provenance changed during collection');
     } else {
         file_put_contents('/coverage/xml-manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
-        $paths = ['' => true];
-        $fields = [];
-        foreach ($manifest['files'] as $file) foreach ($file['declarations'] as $item) {
-            if (!$item['supported']) continue;
-            if ($item['family'] === 'config') {
-                $parts = explode('/', $item['path']);
-                while ($parts) { $paths[implode('/', $parts)] = true; array_pop($parts); }
-            } else $fields[$item['path']] = [$item['id']];
-        }
-        $compact = array_intersect_key($manifest, array_flip(['run', 'id', 'origins', 'scopes', 'scopeCodes', 'fieldHashes']));
-        $compact['paths'] = $paths; $compact['fields'] = $fields;
-        $compact['originScopes'] = [];
-        $compact['valueHashes'] = [];
-        foreach ($manifest['origins'] as $key => $id) {
-            $parts = explode('/', $key);
-            $scope = array_shift($parts);
-            if ($scope !== 'default') $scope .= '/' . array_shift($parts);
-            $leaf = implode('/', $parts);
-            $compact['originScopes'][$scope][$leaf] = $id;
-            $compact['valueHashes'][$scope][$leaf] = $manifest['valueHashes'][$key];
-        }
-        unset($compact['origins']);
-        file_put_contents('/coverage/xml-collector.json', json_encode($compact, JSON_THROW_ON_ERROR));
+        file_put_contents('/coverage/xml-collector.json', json_encode($collector, JSON_THROW_ON_ERROR));
     }
 }

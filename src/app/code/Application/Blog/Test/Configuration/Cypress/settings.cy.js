@@ -43,7 +43,9 @@ describe('Blog configuration', () => {
         toggleDisplayGroup();
         cy.get('#application_blog_display-state').should('have.value', '1');
         cy.get('#application_blog_display_heading').should('be.visible');
+        cy.intercept({method: 'GET', url: '**/system_config/edit/**', times: 1}).as('reloadSettings');
         cy.reload();
+        cy.wait('@reloadSettings').its('response.headers.x-magelens-admin-observer').should('equal', 'executed');
         cy.get('#application_blog_display_heading').should('be.visible').and('have.value', 'Journal');
     });
 });

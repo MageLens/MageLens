@@ -4,7 +4,7 @@
 
 const fs = require('node:fs');
 const {test: base, expect} = require('../../../../../../../playwright/support.cjs');
-const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+const {observeStorefrontReadiness, lumaMessagesReady} = require('../storefront-readiness.cjs');
 // A shared module's beforeEach belongs only to its first importing spec.
 // Extend the context fixture so every spec and every new page observes events.
 const test = base.extend({
@@ -17,10 +17,12 @@ const fixtures = () => JSON.parse(fs.readFileSync('coverage/project-fixtures.jso
 const headers = () => ({'x-application-coverage': JSON.parse(fs.readFileSync('coverage/run.json')).id});
 const get = (page, name) => page.locator(`[data-cy="${name}"]`);
 const message = (page, type) => page.locator(`.message-${type}, [ui-id="message-${type}"]`);
-async function waitForStorefront(page) {
+async function waitForStorefront(page, {lumaMessages = false} = {}) {
     if (fixtures().themePaths[0] === 'Hyva/default-csp') {
         await expect.poll(() => page.evaluate(() => window.__magelensStorefrontReady),
             {message: 'Hyva cookie messages and private content initialized'}).toEqual({messages: true, privateContent: true});
+    } else if (lumaMessages) {
+        await page.waitForFunction(lumaMessagesReady);
     }
 }
 async function storefrontMessage(page, type, text) {
@@ -96,4 +98,4 @@ async function fillComment(page, name, email, body) {
     const form = get(page, 'comment-form');
     for (const [field, value] of Object.entries({name, email, body})) await form.locator(`[name="${field}"]`).fill(value);
 }
-module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForBlog, visitBlog, search, login, navigateAdminMenu, section, findRecord, save, remove, fillPost, fillComment};
+module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForStorefront, waitForBlog, visitBlog, search, login, navigateAdminMenu, section, findRecord, save, remove, fillPost, fillComment};

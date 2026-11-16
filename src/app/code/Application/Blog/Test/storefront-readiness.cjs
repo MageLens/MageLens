@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -10,4 +10,9 @@ function observeStorefrontReadiness(win = window) {
     win.addEventListener('messages-loaded', () => { state.messages = true; });
     win.addEventListener('private-content-loaded', () => { state.privateContent = true; });
 }
-module.exports = {observeStorefrontReadiness};
+// Luma clears the message cookie when its UI component initializes. Let the
+// current document finish that work before a form sends a new message.
+function lumaMessagesReady(win = window) {
+    return Boolean(win.require?.defined?.('uiRegistry') && win.require('uiRegistry').get('messages'));
+}
+module.exports = {observeStorefrontReadiness, lumaMessagesReady};

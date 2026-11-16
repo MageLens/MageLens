@@ -23,6 +23,16 @@ final class Recorder
         self::$manifest = json_decode(file_get_contents('/coverage/xml-collector.json'), true, flags: JSON_THROW_ON_ERROR);
         if (self::$manifest['run'] !== $run) throw new \RuntimeException('Stale XML manifest');
     }
+    public static function observerTargets(): array
+    {
+        return self::$manifest['observers'] ?? [];
+    }
+    public static function observer(string $id, string $area, string $event, string $observer): void
+    {
+        $key = "$id\0observer-execute\0$area";
+        self::$events[$key] = ['id' => $id, 'type' => 'observer-execute', 'area' => $area,
+            'registration' => ['event' => $event, 'observer' => $observer], 'hits' => (self::$events[$key]['hits'] ?? 0) + 1];
+    }
     public static function mutation(): void
     {
         if (self::$manifest) self::$errors[] = 'Configuration changed during collection';
@@ -154,7 +164,7 @@ final class Recorder
         if (!self::$manifest) throw new \RuntimeException('XML collector did not initialize');
         if (self::$errors) throw new \RuntimeException(implode('; ', array_unique(self::$errors)));
         $data = ['run' => self::$manifest['run'], 'manifest' => self::$manifest['id'], 'readHook' => self::$readHook,
-            'renderHook' => self::$renderHook, 'events' => array_values(self::$events)];
+            'renderHook' => self::$renderHook, 'observerHook' => Observers::finish(), 'events' => array_values(self::$events)];
         return $data;
     }
 }

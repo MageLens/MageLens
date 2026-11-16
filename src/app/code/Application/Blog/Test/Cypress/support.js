@@ -2,15 +2,17 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+const {observeStorefrontReadiness, lumaMessagesReady} = require('../storefront-readiness.cjs');
 Cypress.on('window:before:load', observeStorefrontReadiness);
 
 export const fixtures = () => Cypress.expose('projectFixtures').Application_Blog;
 export const headers = () => ({'x-application-coverage': Cypress.expose('coverageRun')});
 export const get = (name) => cy.get(`[data-cy="${name}"]`);
-export function waitForStorefront() {
+export function waitForStorefront({lumaMessages = false} = {}) {
     if (fixtures().themePaths[0] === 'Hyva/default-csp') {
         cy.window().its('__magelensStorefrontReady').should('deep.equal', {messages: true, privateContent: true});
+    } else if (lumaMessages) {
+        cy.window().should(win => expect(lumaMessagesReady(win), 'Luma cookie messages initialized').to.equal(true));
     }
 }
 export function storefrontMessage(type, text) {

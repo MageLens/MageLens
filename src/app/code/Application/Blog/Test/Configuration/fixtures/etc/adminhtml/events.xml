@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <event name="controller_front_send_response_before">
+        <observer name="admin_journal" instance="Application\Blog\Observer\AdminJournalProbe"/>
+    </event>
+</config>

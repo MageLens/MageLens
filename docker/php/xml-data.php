@@ -132,10 +132,32 @@ final class Xml
     {
         $dom = self::document($source);
         $schema = $dom->documentElement->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'noNamespaceSchemaLocation');
-        $expected = $family === 'config' ? 'urn:magento:module:Magento_Store:etc/config.xsd' : 'urn:magento:module:Magento_Config:etc/system_file.xsd';
+        $expected = match ($family) {
+            'config' => 'urn:magento:module:Magento_Store:etc/config.xsd',
+            'system' => 'urn:magento:module:Magento_Config:etc/system_file.xsd',
+            'events' => 'urn:magento:framework:Event/etc/events.xsd',
+        };
         if ($dom->documentElement->tagName !== 'config' || $schema !== $expected) return [];
         $ranges = self::ranges($source, $dom);
         $xpath = new \DOMXPath($dom);
+        if ($family === 'events') {
+            $scope = preg_match('~/etc/([^/]+)/events\.xml$~', $path, $match) ? $match[1] : 'global';
+            $result = []; $seen = [];
+            foreach ($xpath->query('/config/event/observer') as $node) {
+                $rawEvent = $node->parentNode->getAttribute('name');
+                $observer = $node->getAttribute('name');
+                $key = "$rawEvent\0$observer";
+                $index = $seen[$key] ?? 0;
+                $seen[$key] = $index + 1;
+                $id = hash('sha256', "$path\0events\0$key\0$index");
+                $event = mb_strtolower($rawEvent);
+                $result[] = ['id' => $id, 'path' => "$event/$observer", 'family' => $family,
+                    'declaredScope' => ['type' => $scope, 'code' => ''], ...$ranges[$node->getNodePath()],
+                    'node' => $node->getNodePath(), 'registration' => ['event' => $event, 'observer' => $observer],
+                    'supported' => false, 'reason' => null];
+            }
+            return $result;
+        }
         $query = $family === 'config' ? '/config/default//*[not(*)] | /config/websites/*//*[not(*)] | /config/stores/*//*[not(*)]' : '/config/system/section//field';
         $result = [];
         foreach ($xpath->query($query) as $node) {

@@ -128,3 +128,38 @@ test('repeated requests on warmed configuration preserve declaration and scope o
         assert.deepEqual(normalize(first), normalize(warm), name);
     }
 });
+test('reports exact observer declarations and scoped execution through Magento', () => {
+    const result = report();
+    assert.equal(result.observers.hook, true);
+    const global = 'app/code/Application/Blog/etc/events.xml';
+    const frontend = 'app/code/Application/Blog/etc/frontend/events.xml';
+    const admin = 'app/code/Application/Blog/etc/adminhtml/events.xml';
+    const event = 'magelens_journal_observers/';
+    const first = declaration(result, global, event + 'global_journal', 'global');
+    const second = declaration(result, frontend, event + 'frontend_journal', 'frontend');
+    const adminObserver = declaration(result, admin, 'controller_front_send_response_before/admin_journal', 'adminhtml');
+    for (const [item, file, start, end, area] of [[first, global, 9, 10, 'frontend'], [second, frontend, 9, 9, 'frontend'],
+        [adminObserver, admin, 9, 9, 'adminhtml']]) {
+        assert.deepEqual([item.startLine, item.endLine], [start, end]);
+        assert.equal(item.areas[area].state, 'covered');
+        assert.ok(item.evidence.every(evidence => evidence.type === 'observer-execute' && evidence.area === area
+            && evidence.run === result.run && evidence.registration.observer === item.registration.observer));
+        const html = fs.readFileSync(path.join(directory, 'xml', file + '.html'), 'utf8');
+        assert.ok(html.includes(`href="#L${start}">${item.path}</a>`));
+    }
+    assert.equal(first.areas.adminhtml.state, 'uncovered');
+    assert.equal(declaration(result, global, event + 'disabled_in_frontend', 'global').areas.frontend.status, 'disabled');
+    assert.equal(declaration(result, frontend, event + 'disabled_in_frontend', 'frontend').areas.frontend.status, 'disabled');
+    assert.equal(declaration(result, global, event + 'external_override', 'global').areas.frontend.status, 'overridden');
+    assert.ok(!result.files.some(file => file.path.includes('ObserverOverride')));
+    for (const name of ['warmup', 'unvisited']) {
+        const item = declaration(result, global, `magelens_journal_${name}/${name}`, 'global');
+        assert.equal(item.areas.frontend.state, 'uncovered');
+        assert.deepEqual(item.evidence, []);
+    }
+    for (const name of ['observer-dispatch', 'observer-dispatch-warm']) {
+        const events = request(result, name).events.filter(event => event.type === 'observer-execute');
+        assert.deepEqual(events.map(event => event.id).sort(), [first.id, second.id].sort());
+        assert.ok(events.every(event => event.hits === 1 && event.area === 'frontend'));
+    }
+});
