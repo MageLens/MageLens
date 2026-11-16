@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, login} from './support';
+import {fixtures, headers, login, navigateAdminMenu} from './support';
 const {journeys} = require('../Configuration/journeys.cjs');
 
 describe('Blog configuration', () => {
@@ -20,8 +20,7 @@ describe('Blog configuration', () => {
         }
         login();
         // Follow Magento's generated secret-key URL, never synthesize an Admin URL.
-        cy.get('#menu-magento-backend-stores > a').click();
-        cy.get('[data-ui-id="menu-magento-config-system-config"] > a').click();
+        navigateAdminMenu('#menu-magento-backend-stores > a', '[data-ui-id="menu-magento-config-system-config"] > a');
         cy.contains('a', 'Journal settings').click();
         cy.intercept('POST', '**/system_config/state/**').as('saveDisplayState');
         const toggleDisplayGroup = () => {

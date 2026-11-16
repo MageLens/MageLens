@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -44,8 +44,9 @@ export function login(username = 'application', password = 'ApplicationOnly12345
     cy.get('.action-login').click();
     cy.get('#nav').should('be.visible');
 }
-export function section(name) {
-    cy.get('.admin__menu-overlay').should('exist');
+export function navigateAdminMenu(parent, child) {
+    // The sidebar HTML is visible before Magento binds its click handlers.
+    cy.get('.admin__menu-overlay', {timeout: Cypress.config('pageLoadTimeout')}).should('exist');
     const clickMenu = selector => cy.get(selector).should('be.visible').then(link => {
         const element = link[0], win = element.ownerDocument.defaultView;
         element.scrollIntoView({block: 'nearest', inline: 'nearest'});
@@ -59,8 +60,11 @@ export function section(name) {
         return cy.wrap(link).click((left + right) / 2 - box.left, (top + bottom) / 2 - box.top,
             {scrollBehavior: false});
     });
-    clickMenu('#menu-application-blog-manage > a');
-    clickMenu(`[data-ui-id="menu-application-blog-${name}"] > a`);
+    clickMenu(parent);
+    clickMenu(child);
+}
+export function section(name) {
+    navigateAdminMenu('#menu-application-blog-manage > a', `[data-ui-id="menu-application-blog-${name}"] > a`);
     get('blog-admin').should('be.visible');
 }
 export function findRecord(name) {

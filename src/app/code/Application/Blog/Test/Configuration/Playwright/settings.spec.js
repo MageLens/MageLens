@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {test, expect, fixtures, headers, login} = require('./support');
+const {test, expect, fixtures, headers, login, navigateAdminMenu} = require('./support');
 const {journeys} = require('../Configuration/journeys.cjs');
 
 test('uses inherited journal settings and shows the selected Admin fields', async ({page}) => {
@@ -16,8 +16,7 @@ test('uses inherited journal settings and shows the selected Admin fields', asyn
         if (body.heading) for (const key of ['numeric', 'object', 'current']) if (key in body) expect(body[key]).toBe(body.heading);
     }
     await login(page);
-    await page.locator('#menu-magento-backend-stores > a').click();
-    await page.locator('[data-ui-id="menu-magento-config-system-config"] > a').click();
+    await navigateAdminMenu(page, '#menu-magento-backend-stores > a', '[data-ui-id="menu-magento-config-system-config"] > a');
     await page.getByRole('link', {name: 'Journal settings', exact: true}).click();
     const toggleDisplayGroup = async () => {
         const saved = page.waitForResponse(response => response.request().method() === 'POST'
