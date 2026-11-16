@@ -21,12 +21,6 @@ Run the installer, run the tests, and open one report to see which parts of your
 The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä. The badges are updated after each successful coverage run.
 
 <!-- coverage-badges:start -->
-[![Cypress: 5/5 passed](coverage/badges/cypress.svg)](coverage/index.html)
-[![PHP lines: 92.88%](coverage/badges/php.svg)](coverage/php/index.html)
-[![JavaScript statements: 50.32%](coverage/badges/js.svg)](coverage/js/index.html)
-[![Template executable lines: 54.84%](coverage/badges/templates.svg)](coverage/templates/index.html)
-
-Full Cypress run: `c856dc8f9106040db2adcdc0fcd37fd6` · 2026-11-15T15:36:30.614Z
 <!-- coverage-badges:end -->
 
 ## Why MageLens?
