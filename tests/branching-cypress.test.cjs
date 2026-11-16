@@ -184,33 +184,38 @@ test('native prefetch overlaps the original suffix and is discarded before an in
         [['used', 23000, 0], ['discarded', 25000, 0]]);
 });
 
-test('an unverified native prefix is timed while both original Cypress consumers execute', async t => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-linear-prefix-'));
-    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
-    const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
-    const bindings = {eligible: true, value: ['original']};
-    const continuations = [];
-    let time = 0;
-    const session = new NativeSession({directory, run: 'native-linear-prefix', now: () => time, verifySources() {},
-        plan: [{id: 'prefix', identity: 'checked-prefix', measureOnly: true, consumers: ['first', 'second']}],
-        bridge: {continue: result => continuations.push(result)}});
-    for (const consumer of ['first', 'second']) {
-        await session.boundary({phase: 'enter', checkpoint: 'prefix', consumer, bindings});
-        time += 60000;
-        await session.boundary({phase: 'complete', checkpoint: 'prefix', consumer, bindings, workMs: 60000});
-    }
-    const report = await session.close({passed: true, startupMs: 1200});
-    assert.equal(report.status, 'passed');
-    assert.deepEqual(report.prefixes.map(({consumer,workMs}) => [consumer,workMs]), [['first',60000],['second',60000]]);
-    assert.deepEqual(continuations, Array.from({length: 4}, () => ({restored: false})));
-    assert.deepEqual(report.decisions, []);
-    assert.deepEqual(report.observations, []);
-    assert.equal(report.statisticsAfter.backendMs.count, 0);
-    assert.equal(report.baselineAfter.backendMs, require('../branching/baseline.cjs').defaults.backendMs);
-    assert.deepEqual(report.checkpoints, []);
-    assert.deepEqual(report.restores, []);
-    assert.equal(report.cleanup.storageReleased, true);
-});
+for (const {label, linear, measureOnly} of [
+    {label: 'an unverified native prefix is timed while both original Cypress consumers execute', linear: false, measureOnly: true},
+    {label: 'linear Cypress times a verified prefix without starting a checkpoint provider', linear: true, measureOnly: false}
+]) {
+    test(label, async t => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-linear-prefix-'));
+        t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+        const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
+        const bindings = {eligible: true, value: ['original']};
+        const continuations = [];
+        let time = 0;
+        const session = new NativeSession({directory, run: 'native-linear-prefix', linear, now: () => time, verifySources() {},
+            plan: [{id: 'prefix', identity: 'checked-prefix', measureOnly, consumers: ['first', 'second']}],
+            bridge: {continue: result => continuations.push(result)}});
+        for (const consumer of ['first', 'second']) {
+            await session.boundary({phase: 'enter', checkpoint: 'prefix', consumer, bindings});
+            time += 60000;
+            await session.boundary({phase: 'complete', checkpoint: 'prefix', consumer, bindings, workMs: 60000});
+        }
+        const report = await session.close({passed: true, startupMs: 1200});
+        assert.equal(report.status, 'passed');
+        assert.deepEqual(report.prefixes.map(({consumer,workMs}) => [consumer,workMs]), [['first',60000],['second',60000]]);
+        assert.deepEqual(continuations, Array.from({length: 4}, () => ({restored: false})));
+        assert.deepEqual(report.decisions, []);
+        assert.deepEqual(report.observations, []);
+        assert.equal(report.statisticsAfter.backendMs.count, 0);
+        assert.equal(report.baselineAfter.backendMs, require('../branching/baseline.cjs').defaults.backendMs);
+        assert.deepEqual(report.checkpoints, []);
+        assert.deepEqual(report.restores, []);
+        assert.equal(report.cleanup.storageReleased, true);
+    });
+}
 
 test('a failed native capture retains its cost and the completed prefix outcome', async t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-capture-'));

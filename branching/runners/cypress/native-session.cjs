@@ -13,7 +13,7 @@ const {defaults} = require('../../baseline.cjs');
 class NativeSession {
     constructor({plan, provider, directory, run, bridge, verifySources, emit = () => {}, baseline = defaults,
         statistics, linear = false, now = () => performance.now()}) {
-        if (plan.some(candidate => !candidate.measureOnly)) {
+        if (!linear && plan.some(candidate => !candidate.measureOnly)) {
             for (const name of ['entryState', 'assertBoundary', 'abandon', 'captureBarrier', 'capture',
                 'resumeCapture', 'restore', 'normalizedState', 'cleanup']) {
                 if (typeof provider?.[name] !== 'function') throw new Error(`Native checkpoint provider requires ${name}`);

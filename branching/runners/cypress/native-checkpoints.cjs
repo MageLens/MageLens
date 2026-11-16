@@ -57,7 +57,7 @@ async function install(collect, config, events, tasks, options) {
     });
     const instrumented = new Set(candidates.map(candidate => candidate.id));
     const entries = plan.entries.filter(entry => instrumented.has(entry.checkpoint));
-    const needsProvider = candidates.some(candidate => !candidate.measureOnly);
+    const needsProvider = !linear && candidates.some(candidate => !candidate.measureOnly);
     const preprocessors = events.get('file:preprocessor') ?? [];
     if (entries.length && preprocessors.length) {
         if (preprocessors.length !== 1 || typeof extension.instrumentPreprocessor !== 'function')
@@ -172,7 +172,7 @@ async function install(collect, config, events, tasks, options) {
         if (!response.ok) throw new Error('Native Cypress checkpoint transport failed');
         return response.json();
     }});
-    if (bridge) collect('before:browser:launch', (browser, launch) => {
+    if (needsProvider) collect('before:browser:launch', (browser, launch) => {
         const port = Number(launch.args.find(argument => argument.startsWith('--remote-debugging-port='))?.split('=')[1]);
         if (browser.name !== 'chrome-for-testing' || browser.version !== process.env.CHROME_VERSION || !Number.isInteger(port) || port < 1)
             throw new Error('Native checkpoints require pinned Chrome for Testing and its debugging port');
