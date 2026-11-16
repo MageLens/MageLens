@@ -35,13 +35,30 @@ test('native Cypress still rejects cyclic fixtures and opaque values without inv
     assert.equal(accessed, false);
 });
 
-test('native Cypress treats hook-installed intercepts and aliased history as unverified', () => {
-    const route = {alias: 'from-original-hook', requests: {}};
-    assert.deepEqual(interceptState({}, []), []);
-    assert.deepEqual(interceptState({route}, []), ['active-intercept']);
-    assert.deepEqual(interceptState({}, [{request: {}}]), ['active-intercept']);
-    assert.deepEqual(interceptState(undefined, []), ['unverified-intercept-state']);
-    assert.deepEqual(interceptState({}, undefined), ['unverified-intercept-state']);
+test('native Cypress compares unused static intercepts in registration order', () => {
+    const route = {options: {url: /^https:\/\/example\.test\/metrics/, method: 'GET'}, handler: {statusCode: 204},
+        hitCount: 0, requests: {}};
+    const second = {...route, options: {url: '**/status'}, handler: ''};
+    const read = (routes, aliases = []) => interceptState(routes, aliases);
+    const baseline = read({'first-id': route, 'second-id': second});
+    assert.deepEqual(baseline.operations, []);
+    assert.ok(baseline.routes);
+    assert.deepEqual(read({'new-first-id': structuredClone(route), 'new-second-id': structuredClone(second)}), baseline);
+    const vm = require('node:vm');
+    const foreign = vm.runInNewContext(`({ route: {options: {url: new RegExp(${JSON.stringify(route.options.url.source)}), method: 'GET'},
+        handler: {statusCode: 204}, hitCount: 0, requests: {}} })`);
+    assert.deepEqual(read({...foreign, second}), baseline);
+    assert.notDeepEqual(read({second, route}), baseline);
+    assert.notDeepEqual(read({route: {...route, handler: {statusCode: 200}}, second}), baseline);
+    assert.deepEqual(read({}), {operations: []});
+    for (const changed of [{alias: 'expected'}, {handler() {}}, {handler: undefined},
+        {requests: {first: {}}}, {hitCount: 1}, {options: {...route.options, times: 1}}])
+        assert.deepEqual(read({route: {...route, ...changed}}), {operations: ['active-intercept']});
+    assert.deepEqual(read({}, [{request: {}}]), {operations: ['active-intercept']});
+    assert.deepEqual(read(undefined), {operations: ['unverified-intercept-state']});
+    assert.deepEqual(interceptState({}, undefined), {operations: ['unverified-intercept-state']});
+    const inheritedMatcher = Object.create({constructor: Object, method: 'GET'});
+    assert.deepEqual(read({route: {...route, options: inheritedMatcher}}), {operations: ['unverified-intercept-state']});
 });
 
 test('native Cypress publishes the last retry outcome when browser observations end at spec teardown', async t => {
@@ -258,24 +275,28 @@ test('a failed native capture retains its cost and the completed prefix outcome'
     assert.equal(report.cleanup.storageReleased, true);
 });
 
-for (const failure of ['release', 'continuation']) {
+for (const [failure, expected] of [['release', /release failed/], ['continuation', /continuation failed/],
+    ['an intercept during reconstruction', /changed the original Cypress boundary state/]]) {
     test(`native restore stays failed when ${failure} prevents the original suffix`, async t => {
         const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-restore-failure-'));
         t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
         const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
         const bindings = {eligible: true, value: []};
         const events = [], continuations = [];
-        let time = 0;
+        let time = 0, restoring = false, observed = bindings;
         const session = new NativeSession({directory, run: 'restore-failure', now: () => time, verifySources() {},
             plan: [{id: 'prefix', identity: 'checked-prefix', consumers: ['first', 'second']}],
             emit: (type, event) => events.push({type, ...event}),
-            bridge: {call: () => bindings, continue({restored}) {
+            bridge: {call: () => observed, continue({restored}) {
                 if (restored && failure === 'continuation') throw Error('continuation failed');
                 continuations.push(restored);
             }},
             provider: {identity: {}, entryState: () => ({}), assertBoundary() {}, abandon() {}, captureBarrier() {},
                 capture(payload) { fs.writeFileSync(path.join(payload, 'fixture.json'), '{}'); },
-                normalizedState: () => ({}), resumeCapture() {}, restore() { time += 10; }, cleanup() {}}});
+                normalizedState: () => ({}), resumeCapture() {}, restore() { restoring = true; time += 10; },
+                beginSegment() {
+                    if (restoring && failure === 'an intercept during reconstruction') observed = {eligible: false};
+                }, cleanup() {}}});
         const enter = consumer => session.boundary({phase: 'enter', checkpoint: 'prefix', consumer, bindings});
         await enter('first');
         time += 60000;
@@ -285,7 +306,7 @@ for (const failure of ['release', 'continuation']) {
             const release = session.store.release.bind(session.store);
             session.store.release = () => { session.store.release = release; throw Error('release failed'); };
         }
-        await assert.rejects(enter('second'), new RegExp(`${failure} failed`));
+        await assert.rejects(enter('second'), expected);
         const report = await session.close({passed: true});
         assert.equal(report.status, 'failed');
         assert.deepEqual(continuations, [false, false]);

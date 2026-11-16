@@ -126,9 +126,9 @@ class NativeSession {
                     await this.provider.assertBoundary(candidate);
                     if (digest(await this.provider.normalizedState()) !== manifest.expectedStateDigest)
                         throw new Error('Native checkpoint restored state mismatch');
+                    await this.provider.beginSegment?.();
                     await this.verifyBindings(bindings);
                     await this.verifySources();
-                    await this.provider.beginSegment?.();
                     const ms = this.now() - time;
                     if (candidate.remaining > 1) this.startPrefetch(candidate, ref);
                     await this.consumed(candidate, consumer);
@@ -210,9 +210,9 @@ class NativeSession {
                 ref = await this.store.capture({key: this.key(candidate), stage: candidate.id, parent: null,
                     lineage: [consumer], ttlMs: 24 * 60 * 60 * 1000, provider: this.provider,
                     measured: (_name, operation) => operation(), assert: () => this.provider.assertBoundary(candidate)});
+                await this.provider.beginSegment?.();
                 await this.verifyBindings(bindings);
                 await this.verifySources();
-                await this.provider.beginSegment?.();
             } catch (error) {
                 candidate.disabled = true;
                 this.active = null;
@@ -237,7 +237,7 @@ class NativeSession {
     async verifyBindings(expected) {
         const actual = await this.bridge.call('bindings');
         if (actual?.eligible !== true || digest(actual) !== digest(expected))
-            throw new Error('Native checkpoint changed the original closure state');
+            throw new Error('Native checkpoint changed the original Cypress boundary state');
     }
     startPrefetch(candidate, ref) {
         if (!this.provider.discardPrefetch || this.prefetch) return;

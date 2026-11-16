@@ -21,13 +21,40 @@ function changesRunnerState(command) {
     const alias = name === 'wait' && command.get('args')?.[0];
     return Array.isArray(alias) ? alias.some(routeAlias) : routeAlias(alias);
 }
+function hasNativePrototype(value, constructor) {
+    const prototype = Object.getPrototypeOf(value);
+    const ownConstructor = prototype && Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value;
+    return typeof ownConstructor === 'function' && ownConstructor.prototype === prototype &&
+        Function.prototype.toString.call(ownConstructor) === Function.prototype.toString.call(constructor);
+}
+const plainRecord = value => value && typeof value === 'object' &&
+    (Object.getPrototypeOf(value) === null || hasNativePrototype(value, Object));
 function interceptState(routes, aliasedRequests) {
-    if (!routes || typeof routes !== 'object' || Array.isArray(routes) || !Array.isArray(aliasedRequests))
-        return ['unverified-intercept-state'];
-    // An original hook can register an intercept before the marker. Even if
-    // the prefix never calls cy.intercept(), an ordinary request can populate
-    // runner-owned history that an original suffix later waits for or reads.
-    return Object.keys(routes).length || aliasedRequests.length ? ['active-intercept'] : [];
+    const unknown = {operations: ['unverified-intercept-state']};
+    const active = {operations: ['active-intercept']};
+    try {
+        if (!plainRecord(routes) || !Array.isArray(aliasedRequests)) return unknown;
+        if (aliasedRequests.length) return active;
+        const observed = [];
+        // Route IDs are allocated afresh by the original hooks. Preserve
+        // registration order and compare the matchers and responses instead.
+        for (const route of Object.values(routes)) {
+            if (!plainRecord(route) || !plainRecord(route.options) || !plainRecord(route.requests)) return unknown;
+            if (Object.hasOwn(route, 'alias') || route.hitCount !== 0 || Reflect.ownKeys(route.requests).length || Object.hasOwn(route.options, 'times'))
+                return active;
+            if (typeof route.handler !== 'string' && !plainRecord(route.handler)) return active;
+            observed.push([route.options, route.handler]);
+        }
+        if (!observed.length) return {operations: []};
+        const encoded = bindingsSnapshot(() => observed, {routeData: true});
+        return encoded.eligible ? {operations: [], routes: encoded.value} : unknown;
+    } catch { return unknown; }
+}
+function boundaryState(read) {
+    const bindings = bindingsSnapshot(read);
+    const {operations, routes} = interceptState(cy.state('routes'), cy.state('aliasedRequests'));
+    if (routes) bindings.intercepts = routes;
+    return {bindings, operations};
 }
 function install(extension) {
     runtime = extension;
@@ -68,7 +95,8 @@ function dispatch(result) {
             cy.window().then(win => { value = Function('window', '"use strict";return (' + command.code + ')(window);')(win); });
         } else if (command.operation === 'bindings') {
             if (!activeInputs) throw new Error('No active native lexical scope');
-            value = bindingsSnapshot(activeInputs);
+            const {bindings, operations} = boundaryState(activeInputs);
+            value = operations.length ? {eligible: false} : bindings;
         } else if (command.operation === 'runtime') {
             if (typeof runtime?.[command.method] !== 'function') throw new Error('Missing native runner state operation');
             cy.then(() => runtime[command.method](command.value)).then(result => { value = result ?? null; });
@@ -76,7 +104,7 @@ function dispatch(result) {
         return cy.then(() => dispatch({id: command.id, value}));
     });
 }
-function bindingsSnapshot(read) {
+function bindingsSnapshot(read, {routeData = false} = {}) {
     try {
         const objects = new Map();
         const visiting = new Set();
@@ -87,7 +115,7 @@ function bindingsSnapshot(read) {
             if (type === 'undefined') return ['undefined'];
             if (type === 'string' || type === 'boolean') return [type, value];
             if (type === 'number' && Number.isFinite(value)) return [type, Object.is(value, -0) ? '-0' : value];
-            if (value && ['function', 'object'].includes(type) && bindingReaders.has(value)) {
+            if (!routeData && value && ['function', 'object'].includes(type) && bindingReaders.has(value)) {
                 if (closures.has(value)) throw new Error('Aliased closure input');
                 closures.add(value);
                 const {id, read} = bindingReaders.get(value);
@@ -96,8 +124,13 @@ function bindingsSnapshot(read) {
             if (type !== 'object') throw new Error('Opaque fixture input');
             if (visiting.has(value)) throw new Error('Cyclic fixture input');
             if (objects.has(value)) return ['reference', objects.get(value)];
-            if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-                throw new Error('Opaque fixture input');
+            if (routeData && hasNativePrototype(value, RegExp) && Reflect.ownKeys(value).length === 1 && value.lastIndex === 0) {
+                const source = Object.getOwnPropertyDescriptor(RegExp.prototype, 'source').get.call(value);
+                const flags = Object.getOwnPropertyDescriptor(RegExp.prototype, 'flags').get.call(value);
+                return ['regexp', source, flags];
+            }
+            const plain = routeData ? plainRecord(value) : [Object.prototype, null].includes(Object.getPrototypeOf(value));
+            if (!Array.isArray(value) && !plain) throw new Error('Opaque fixture input');
             const id = objects.size;
             objects.set(value, id);
             visiting.add(value);
@@ -135,9 +168,8 @@ function begin(checkpoint, consumer, inputs) {
             throw new Error('Native checkpoint queue identity changed');
         const chainers = new Set(token.commands.map(command=>command.get('chainerId')));
         const sharedSubject = queue.slice(endIndex+1).some(command=>chainers.has(command.get('chainerId')));
-        const bindings = bindingsSnapshot(inputs);
+        const {bindings, operations: unsupportedRunnerState} = boundaryState(inputs);
         if (sharedSubject) bindings.eligible = false;
-        const unsupportedRunnerState = interceptState(cy.state('routes'), cy.state('aliasedRequests'));
         return dispatch({boundary:{phase:'enter',checkpoint,consumer,bindings,attempt,unsupportedRunnerState}}).then(action=>{
             if (token.retry && action.restored) throw new Error('Native Cypress retries must execute the original prefix');
             token.restored = action.restored;
@@ -158,8 +190,10 @@ function end(token) {
     cy.then(() => {
         prefixActive = false;
         if (token.restored || token.retry) return null;
+        const workMs = performance.now() - token.started;
+        const {bindings, operations} = boundaryState(token.inputs);
         return dispatch({boundary:{phase:'complete',checkpoint:token.checkpoint,consumer:token.consumer,
-            workMs:performance.now()-token.started,bindings:bindingsSnapshot(token.inputs),unsupportedRunnerState:[...runnerState]}});
+            workMs,bindings,unsupportedRunnerState:[...runnerState,...operations]}});
     });
     token.end = commands().at(-1);
 }
