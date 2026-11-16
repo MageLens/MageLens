@@ -47,9 +47,8 @@ export function login(username = 'application', password = 'ApplicationOnly12345
 export function navigateAdminMenu(parent, child) {
     // The sidebar HTML is visible before Magento binds its click handlers.
     cy.get('.admin__menu-overlay', {timeout: Cypress.config('pageLoadTimeout')}).should('exist');
-    const clickMenu = selector => cy.get(selector).should('be.visible').then(link => {
-        const element = link[0], win = element.ownerDocument.defaultView;
-        element.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    const menuPoint = element => {
+        const win = element.ownerDocument.defaultView;
         const box = element.getBoundingClientRect();
         // Mage-OS's fixed sidebar can extend below the viewport. Click the
         // visible part of the link, keeping Cypress's normal hit-testing.
@@ -57,8 +56,16 @@ export function navigateAdminMenu(parent, child) {
         const top = Math.max(0, box.top), bottom = Math.min(win.innerHeight, box.bottom);
         expect(right, 'menu link visible width').to.be.greaterThan(left);
         expect(bottom, 'menu link visible height').to.be.greaterThan(top);
-        return cy.wrap(link).click((left + right) / 2 - box.left, (top + bottom) / 2 - box.top,
-            {scrollBehavior: false});
+        return {x: (left + right) / 2 - box.left, y: (top + bottom) / 2 - box.top};
+    };
+    const clickMenu = selector => cy.get(selector).should('be.visible').then(link => {
+        link[0].scrollIntoView({block: 'nearest', inline: 'nearest'});
+        // CSS visibility changes before the submenu's slide enters the viewport.
+        // Retry geometry assertions just like Cypress's actionability checks.
+        return cy.wrap(link).should(link => { menuPoint(link[0]); }).then(link => {
+            const {x, y} = menuPoint(link[0]);
+            return cy.wrap(link).click(x, y, {scrollBehavior: false});
+        });
     });
     clickMenu(parent);
     clickMenu(child);
