@@ -21,6 +21,14 @@ function changesRunnerState(command) {
     const alias = name === 'wait' && command.get('args')?.[0];
     return Array.isArray(alias) ? alias.some(routeAlias) : routeAlias(alias);
 }
+function interceptState(routes, aliasedRequests) {
+    if (!routes || typeof routes !== 'object' || Array.isArray(routes) || !Array.isArray(aliasedRequests))
+        return ['unverified-intercept-state'];
+    // An original hook can register an intercept before the marker. Even if
+    // the prefix never calls cy.intercept(), an ordinary request can populate
+    // runner-owned history that an original suffix later waits for or reads.
+    return Object.keys(routes).length || aliasedRequests.length ? ['active-intercept'] : [];
+}
 function install(extension) {
     runtime = extension;
     // A source-verified adapter may expose the captured cells of specific
@@ -129,7 +137,8 @@ function begin(checkpoint, consumer, inputs) {
         const sharedSubject = queue.slice(endIndex+1).some(command=>chainers.has(command.get('chainerId')));
         const bindings = bindingsSnapshot(inputs);
         if (sharedSubject) bindings.eligible = false;
-        return dispatch({boundary:{phase:'enter',checkpoint,consumer,bindings,attempt}}).then(action=>{
+        const unsupportedRunnerState = interceptState(cy.state('routes'), cy.state('aliasedRequests'));
+        return dispatch({boundary:{phase:'enter',checkpoint,consumer,bindings,attempt,unsupportedRunnerState}}).then(action=>{
             if (token.retry && action.restored) throw new Error('Native Cypress retries must execute the original prefix');
             token.restored = action.restored;
             if (action.restored) for (const command of token.commands) command.skip();
@@ -154,4 +163,4 @@ function end(token) {
     });
     token.end = commands().at(-1);
 }
-module.exports = {install, begin, end, bindingsSnapshot, changesRunnerState};
+module.exports = {install, begin, end, bindingsSnapshot, changesRunnerState, interceptState};

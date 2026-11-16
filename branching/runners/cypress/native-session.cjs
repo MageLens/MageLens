@@ -47,7 +47,8 @@ class NativeSession {
             await this.verifySources();
             const candidate = this.candidates.get(message.checkpoint);
             if (!candidate || !candidate.consumers.includes(message.consumer)) throw new Error('Unknown native checkpoint consumer');
-            if (message.phase === 'enter') await this.enter(candidate, message.consumer, message.bindings, started, message.attempt ?? 0);
+            if (message.phase === 'enter') await this.enter(candidate, message.consumer, message.bindings, started,
+                message.attempt ?? 0, message.unsupportedRunnerState);
             else if (message.phase === 'complete') await this.complete(candidate, message.consumer, message.workMs, message.unsupportedRunnerState, started, message.bindings);
             else throw new Error('Unknown native checkpoint phase');
         } catch (error) {
@@ -56,7 +57,15 @@ class NativeSession {
             throw error;
         }
     }
-    async enter(candidate, consumer, bindings, started, attempt) {
+    rejectRunnerState(candidate, operations, reason) {
+        if (!Array.isArray(operations) || operations.some(name => typeof name !== 'string'))
+            throw new Error('Invalid native runner capability evidence');
+        if (operations.length) {
+            candidate.disabled = true;
+            this.emit('checkpoint-ineligible', {node: candidate.id, reason, operations: [...new Set(operations)]});
+        }
+    }
+    async enter(candidate, consumer, bindings, started, attempt, unsupportedRunnerState = []) {
         if (!Number.isSafeInteger(attempt) || attempt < 0 ||
             (!attempt && candidate.started.has(consumer)) ||
             (this.active && !(attempt && this.active.consumer === consumer)))
@@ -81,6 +90,7 @@ class NativeSession {
             candidate.disabled = true;
             this.emit('checkpoint-ineligible', {node: candidate.id, reason: 'opaque-lexical-input'});
         }
+        this.rejectRunnerState(candidate, unsupportedRunnerState, 'unverified-runner-state');
         if (!candidate.disabled && !this.linear) {
             const reason = await this.provider.assessEntry?.(candidate, consumer);
             if (reason) {
@@ -170,8 +180,6 @@ class NativeSession {
         if (!active || active.candidate !== candidate || active.consumer !== consumer ||
             !Number.isFinite(workMs) || workMs < 0 || workMs > this.now() - active.started + 1000)
             throw new Error('Invalid native checkpoint completion');
-        if (!Array.isArray(unsupportedRunnerState) || unsupportedRunnerState.some(name => typeof name !== 'string'))
-            throw new Error('Invalid native runner capability evidence');
         // The current native continuation restores application/browser state,
         // not JavaScript lexical cells in the spec module. If prefix work
         // changes a witnessed cell, skipping that work cannot be equivalent.
@@ -179,11 +187,7 @@ class NativeSession {
             candidate.disabled = true;
             this.emit('checkpoint-ineligible', {node: candidate.id, reason: 'changed-or-unverified-closure-state'});
         }
-        if (unsupportedRunnerState.length) {
-            candidate.disabled = true;
-            this.emit('checkpoint-ineligible', {node: candidate.id, reason: 'prefix-changed-runner-state',
-                operations: [...new Set(unsupportedRunnerState)]});
-        }
+        this.rejectRunnerState(candidate, unsupportedRunnerState, 'prefix-changed-runner-state');
         // Browser time begins immediately before the closure and ends only once
         // its Cypress queue drains. Task/bridge roundtrips are not avoided work.
         candidate.prefixMs = candidate.prefixMs === undefined ? workMs : Math.min(candidate.prefixMs, workMs);

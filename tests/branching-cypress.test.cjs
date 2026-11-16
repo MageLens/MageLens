@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {Bridge} = require('../branching/runners/cypress/bridge.cjs');
-const {bindingsSnapshot} = require('../branching/runners/cypress/native-boundary.cjs');
+const {bindingsSnapshot, interceptState} = require('../branching/runners/cypress/native-boundary.cjs');
 const {install} = require('../branching/runners/cypress/native-plugin.cjs');
 const {open} = require('../branching/runners/cypress/adapter.cjs');
 const {CypressState} = require('../branching/runners/cypress/browser.cjs');
@@ -33,6 +33,15 @@ test('native Cypress still rejects cyclic fixtures and opaque values without inv
     const fixture = {get computed() { accessed = true; return 1; }};
     assert.deepEqual(bindingsSnapshot(() => ({fixture, shared: fixture})), {eligible: false});
     assert.equal(accessed, false);
+});
+
+test('native Cypress treats hook-installed intercepts and aliased history as unverified', () => {
+    const route = {alias: 'from-original-hook', requests: {}};
+    assert.deepEqual(interceptState({}, []), []);
+    assert.deepEqual(interceptState({route}, []), ['active-intercept']);
+    assert.deepEqual(interceptState({}, [{request: {}}]), ['active-intercept']);
+    assert.deepEqual(interceptState(undefined, []), ['unverified-intercept-state']);
+    assert.deepEqual(interceptState({}, undefined), ['unverified-intercept-state']);
 });
 
 test('native Cypress publishes the last retry outcome when browser observations end at spec teardown', async t => {
