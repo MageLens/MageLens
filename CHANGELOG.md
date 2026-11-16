@@ -8,6 +8,7 @@ License: see LICENSE in the repository root.
 
 ## 1.9.4 - 2026-11-14
 
+- Update Composer in the PHP image to 2.11.2 for archive extraction and credential-handling security fixes.
 - Update browser runner runtimes to Node.js 24.22.3 with the November security fixes; install Cypress’s required system libraries on the official multiarch Node base.
 - Update the shared Chrome for Testing browser to 157.0.8103.78 with verified x64 and ARM64 archives and the latest security fixes.
 - Update PHP code coverage to 14.5.2 to correct nested match executable lines and merged match coverage.

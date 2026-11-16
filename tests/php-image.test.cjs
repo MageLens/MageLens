@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -10,6 +10,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const packages = ['redis-6.3.0', 'ssh2-1.5.0', 'swoole-6.2.1', 'imagick-3.8.1'];
+const composerInstall = 'RUN curl -sS https://getcomposer.org/installer | php -- --version=2.9.8 --install-dir=/usr/local/bin --filename=composer';
 
 function workspace(t, buildExit = 0) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-php-image-'));
@@ -22,7 +23,7 @@ function workspace(t, buildExit = 0) {
     const series = pins.match(/^PHP_IMAGE: "php:(\d+\.\d+)\./m)[1];
     const recipe = path.join(directory, '.runtime/docker-magento/images/php', series, 'Dockerfile');
     fs.mkdirSync(path.dirname(recipe), {recursive: true});
-    fs.writeFileSync(recipe, `FROM php:${series}-fpm-bookworm AS base\n\nRUN pecl channel-update pecl.php.net && pecl install \\\n${packages.map(name => `    ${name} \\`).join('\n')}\n  && pecl clear-cache\n\nFROM base AS xdebug\n`);
+    fs.writeFileSync(recipe, `FROM php:${series}-fpm-bookworm AS base\n\nRUN pecl channel-update pecl.php.net && pecl install \\\n${packages.map(name => `    ${name} \\`).join('\n')}\n  && pecl clear-cache\n\n${composerInstall}\n\nFROM base AS xdebug\n`);
     const commands = path.join(directory, 'commands');
     fs.mkdirSync(commands);
     fs.mkdirSync(path.join(directory, 'extensions'));

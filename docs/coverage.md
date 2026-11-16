@@ -140,7 +140,7 @@ Reports and raw artifacts are ignored by Git. The SVGs in `coverage/badges/` can
 
 XML configuration consumption appears separately in `coverage/xml/index.html`, with source directories preserved. Supported `config.xml` leaves turn green when a runtime read consumes their effective value at default, website or store scope. Supported `system.xml` fields turn green when Admin renders them; unopened fields and unread values remain red. Loading XML grants no credit. Unsupported XML and ambiguous field origins are shown as unmeasured. The collector uses OpenTelemetry runtime hooks without adding Magento modules, changing DI or rewriting application sources. Existing installations must rerun installation with their saved platform, theme and runner selections to install the hook extension.
 
-Configuration coverage includes Backend value and flag reads and Magento's lowercase aliases for store codes. It follows the native configuration value before plugins decorate the result; replacements that bypass the native getter provide no XML evidence. Empty-node conflicts and empty CDATA whose exact ownership cannot be preserved are shown as unmeasured.
+Configuration coverage includes Backend value and flag reads and Magento's lowercase aliases for store codes. Explicit paths and subtrees requested through these accessors earn credit for their native values before plugins decorate the result. Internal storage reads and whole-configuration snapshots, including accessor calls without a path, grant no execution credit. Replacements that bypass the native getter provide no XML evidence. Empty-node conflicts and empty CDATA whose exact ownership cannot be preserved are shown as unmeasured.
 
 ## Use an existing Playwright fixture
 

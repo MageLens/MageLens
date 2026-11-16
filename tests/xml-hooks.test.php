@@ -27,8 +27,10 @@ namespace Magento\Config\App\Config\Type {
     class System {
         public function get($path = '') {
             if ($path === 'default/throws') throw new \LogicException('original exception');
+            if ($path !== '') $this->get(''); // Internal cache/audit snapshot, not a consumer read.
             if ($path === 'default/journal/stale') return '0';
             if ($path === '') return ['default' => ['journal' => ['title' => '1', 'disabled' => '0']]];
+            if ($path === 'default/') return ['journal' => ['title' => '1', 'disabled' => '0']];
             if ($path === 'default/journal') return ['title' => '1', 'disabled' => '0'];
             return str_ends_with($path, '/disabled') ? '0' : '1';
         }
@@ -115,8 +117,12 @@ namespace {
     verifyHook(!in_array('replacement', array_column($beforeRendering['events'], 'id'), true), 'A bypassed native getter cannot invent XML consumption');
     foreach (['backend-value', 'backend-flag'] as $id) verifyHook(in_array($id, array_column($beforeRendering['events'], 'id'), true), 'Backend-only reads must have their own evidence');
     $config->getValue('journal');
+    $beforeBulk = Recorder::finish()['events'];
     (new \Magento\Config\App\Config\Type\System)->get('');
-    verifyHook(array_column(Recorder::finish()['events'], null, 'id')['title']['hits'] === 5, 'Scalar, subtree and whole-system reads use the same provenance checks');
+    (new \Magento\Config\App\Config\Type\System)->get('default/journal/title');
+    $backend->getValue('');
+    verifyHook(Recorder::finish()['events'] === $beforeBulk, 'Bulk and direct storage reads outside accessors grant no execution credit');
+    verifyHook(array_column(Recorder::finish()['events'], null, 'id')['title']['hits'] === 4, 'Scalar and explicit subtree reads use the same provenance checks');
     $beforeRendering = Recorder::finish();
     $element = new class {
         public function getFieldConfig() { return ['path' => 'journal/display', 'id' => 'title']; }

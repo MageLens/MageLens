@@ -152,6 +152,7 @@ function xmlManifest($om, array $run): array
     ksort($providers); ksort($files);
     // Public method shape guards. Unsupported versions fail preparation explicitly.
     foreach ([\Magento\Framework\App\Config::class => ['getValue', 'isSetFlag'],
+        \Magento\Backend\App\Config::class => ['getValue', 'isSetFlag'],
         \Magento\Config\App\Config\Type\System::class => ['get'],
         \Magento\Config\Model\Config\Structure\AbstractElement::class => ['getData'],
         \Magento\Config\Block\System\Config\Form\Field::class => ['render']] as $class => $methods) {

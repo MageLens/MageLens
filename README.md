@@ -165,6 +165,7 @@ This is the single place to choose the main dependency versions:
 | Mage-OS | `MAGEOS_VERSION` |
 | Mark Shust Docker Magento PHP recipe and service images | `MARKSHUST_DOCKER_MAGENTO_VERSION` |
 | Official PHP base image | `PHP_IMAGE` |
+| Composer in the PHP image | `COMPOSER_VERSION` |
 | [PCOV fork](https://github.com/VitaliyBoyko/pcov) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |

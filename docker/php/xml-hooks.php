@@ -21,7 +21,7 @@ function startXmlHooks(string $run): void
                 // Framework and Backend accessors share this native getter.
                 // Observe its source value before defaults, flags or plugins
                 // decorate it, excluding callbacks for overriding methods.
-                if (!$error && $class === 'Magento\\Config\\App\\Config\\Type\\System') Recorder::systemRead($result, $params[0] ?? '');
+                if (!$error && $class === 'Magento\\Config\\App\\Config\\Type\\System') Recorder::accessorRead($result, $params[0] ?? '');
             }],
         ['Magento\\Config\\Model\\Config\\Structure\\AbstractElement', 'getData', null,
             static function ($subject, array $params, $result, ?Throwable $error, string $class) {
@@ -34,6 +34,15 @@ function startXmlHooks(string $run): void
                 if (!$error && $result !== '' && isset($params[0])) Recorder::render($params[0]);
             }],
     ];
+    foreach (['Magento\\Framework\\App\\Config' => ['getValue'], 'Magento\\Backend\\App\\Config' => ['getValue', 'isSetFlag']] as $accessor => $methods) {
+        foreach ($methods as $method) $hooks[] = [$accessor, $method,
+            static function ($subject, array $params, string $class) use ($accessor) {
+                if ($class === $accessor) Recorder::enterAccessor($params[0] ?? '');
+            },
+            static function ($subject, array $params, $result, ?Throwable $error, string $class) use ($accessor) {
+                if ($class === $accessor) Recorder::leaveAccessor();
+            }];
+    }
     foreach (['save', 'delete'] as $method) $hooks[] = ['Magento\\Framework\\App\\Config\\Storage\\Writer', $method,
         static function ($subject, array $params) { Recorder::mutation(); }, null];
     foreach ($hooks as [$class, $method, $pre, $post]) {

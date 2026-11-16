@@ -13,6 +13,7 @@ final class Recorder
     private static array $events = [];
     private static array $errors = [];
     private static array $fieldSources = [];
+    private static array $accessors = [];
     private static bool $busy = false;
     private static bool $readHook = false;
     private static bool $renderHook = false;
@@ -52,23 +53,35 @@ final class Recorder
         }
         self::event($id, 'config-read', $scope);
     }
-    public static function systemRead($result, $path): void
+    public static function enterAccessor($path): void
+    {
+        $path = trim((string) $path, '/');
+        self::$accessors[] = $path !== '' && isset(self::$manifest['paths'][$path]) ? $path : null;
+    }
+    public static function leaveAccessor(): void
+    {
+        array_pop(self::$accessors);
+    }
+    public static function accessorRead($result, $path): void
+    {
+        if (!self::$manifest || self::$busy || !self::$accessors) return;
+        self::$readHook = true;
+        $expected = self::$accessors[array_key_last(self::$accessors)];
+        if ($expected === null) return;
+        $path = trim((string) $path, '/');
+        $parts = explode('/', $path, 3);
+        if ($parts[0] === 'default') $leaf = substr($path, 8);
+        elseif (in_array($parts[0], ['stores', 'websites'], true) && isset($parts[1])) $leaf = $parts[2] ?? '';
+        else return;
+        // Cache population and audit snapshots can fetch entire scopes while
+        // an accessor is running. Only its requested subtree is consumption.
+        if ($leaf === $expected) self::systemRead($result, $path);
+    }
+    private static function systemRead($result, $path): void
     {
         if (!self::$manifest || self::$busy) return;
         self::$readHook = true;
         $path = trim((string) $path, '/');
-        // Whole-system and scope-group reads return every contained leaf.
-        if ($path === '' || $path === 'stores' || $path === 'websites') {
-            if (!is_array($result)) return;
-            foreach (self::$manifest['originScopes'] as $prefix => $origins) {
-                $parts = explode('/', $prefix, 2);
-                if ($path !== '' && $parts[0] !== $path) continue;
-                $value = $path === '' ? ($result[$parts[0]] ?? null) : $result;
-                if (isset($parts[1])) $value = $value[$parts[1]] ?? null;
-                if (is_array($value)) self::read($value, '', $parts[0], $parts[1] ?? '');
-            }
-            return;
-        }
         $parts = explode('/', $path, 3);
         if ($parts[0] === 'default') self::read($result, substr($path, 8), 'default', '');
         elseif (in_array($parts[0], ['stores', 'websites'], true) && isset($parts[1])) {

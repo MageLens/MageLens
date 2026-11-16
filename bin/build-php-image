@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -14,9 +14,13 @@ expected="FROM php:$series-fpm-bookworm AS base"
     || fail "The selected Mark Shust release has no compatible PHP $series Bookworm base recipe."
 mkdir -p "$ROOT/.runtime"
 generated="$ROOT/.runtime/php-base.Dockerfile"
-awk -v expected="$expected" -v image="$PHP_IMAGE" \
+awk -v expected="$expected" -v image="$PHP_IMAGE" -v composer="$COMPOSER_VERSION" \
     '
     $0 == expected { print "FROM " image " AS base"; next }
+    /--version=[0-9]+\.[0-9]+\.[0-9]+ --install-dir=\/usr\/local\/bin --filename=composer$/ {
+        sub(/--version=[0-9]+\.[0-9]+\.[0-9]+/, "--version=" composer)
+        composerInstallations++
+    }
     /^RUN pecl channel-update pecl.php.net && pecl install \\$/ {
         # PECL can return success for a batch when one package was not installed.
         # Check each pinned extension in the same layer, before it can be cached.
@@ -31,7 +35,13 @@ awk -v expected="$expected" -v image="$PHP_IMAGE" \
     extensions && /^  && pecl clear-cache/ { extensions = 0 }
     extensions { print "Unsupported upstream PECL installation recipe" > "/dev/stderr"; exit 1 }
     { print }
-    END { if (extensions) exit 1 }
+    END {
+        if (extensions) exit 1
+        if (composerInstallations != 1) {
+            print "Unsupported upstream Composer installation recipe" > "/dev/stderr"
+            exit 1
+        }
+    }
     ' "$recipe" > "$generated"
 say "Rebuilding Mark Shust PHP $series with official PHP $PHP_VERSION"
 docker build --pull --target base --file "$generated" \
