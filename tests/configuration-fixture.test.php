@@ -40,7 +40,10 @@ namespace Magento\Framework\Controller\Result {
     class JsonFactory { public function create() { return new Json; } }
 }
 namespace {
-    require __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/Controller/Index/Configuration.php';
+    $fixtures = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures';
+    require $fixtures . '/Model/JournalPluginSubjectInterface.php';
+    require $fixtures . '/Model/JournalPluginSubject.php';
+    require $fixtures . '/Controller/Index/Configuration.php';
     $request = new class implements \Magento\Framework\App\RequestInterface {
         public string $scenario = 'warmup-only';
         public function getParam($name, $default = null) { return $name === 'case' ? $this->scenario : $default; }
@@ -62,8 +65,12 @@ namespace {
         public array $names = [];
         public function dispatch($eventName, array $data = []) { $this->names[] = $eventName; }
     };
+    $pluginSubject = new class extends \Application\Blog\Model\JournalPluginSubject {
+        public int $warmups = 0;
+        public function warm(): string { $this->warmups++; return 'warm-plugin'; }
+    };
     $controller = new \Application\Blog\Controller\Index\Configuration($config, $request,
-        new \Magento\Framework\Controller\Result\JsonFactory, new \Magento\Framework\Controller\Result\RawFactory, $stores, $backend, $events);
+        new \Magento\Framework\Controller\Result\JsonFactory, new \Magento\Framework\Controller\Result\RawFactory, $stores, $backend, $events, $pluginSubject);
     $response = $controller->execute();
     if (!$response instanceof \Magento\Framework\Controller\Result\Raw
         || $response->headers['Content-Type'] !== 'text/html; charset=UTF-8'
@@ -71,6 +78,7 @@ namespace {
         || !str_contains($response->contents, '<html lang="en">')
         || !str_contains($response->contents, '&lt;img src=x')
         || str_contains($response->contents, '<img')
+        || $pluginSubject->warmups !== 1
         || $events->names !== ['magelens_journal_warmup']
         || $config->reads !== ['application_blog/display/unused']) {
         throw new \RuntimeException('Warm-up must render escaped HTML while consuming only its fixture setting');

@@ -75,6 +75,9 @@ function template(value) {
                 targets: sort(array(fragment.targets).map(target => fileKey(target.path)))})))})))
     };
 }
+function pluginIdentity({subject, method, phase}) {
+    return [digest(subject), digest(method), phase];
+}
 function snapshot(directory) {
     const run = read(directory, 'run.json');
     const php = read(directory, 'php/coverage-summary.json');
@@ -100,6 +103,7 @@ function snapshot(directory) {
         metrics: Object.fromEntries(['php', 'js', 'templates', 'xml'].map(key => [key, summary.metrics[key].percent])),
         xml: {totals: totals({total: xml.total, covered: xml.covered, percent: xml.percent}),
             observers: {total: count(xml.observers?.total), covered: count(xml.observers?.covered)},
+            plugins: {total: count(xml.plugins?.total ?? 0), covered: count(xml.plugins?.covered ?? 0)},
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
@@ -113,9 +117,18 @@ function snapshot(directory) {
                         areas: sort(Object.entries(object(item.areas)).map(([area, outcome]) =>
                             [area, outcome.status, outcome.state, hit(outcome.hits), digest(outcome.reason || '')]))
                     } : {}),
+                    ...(item.family === 'plugins' ? {
+                        plugin: [digest(item.registration.target), digest(item.registration.name)],
+                        pluginAreas: sort(Object.entries(object(item.areas)).map(([area, outcome]) =>
+                            [area, outcome.status, outcome.state, hit(outcome.hits), digest(outcome.reason || ''),
+                                sort(Object.values(outcome.callbacks).map(callback =>
+                                    [...pluginIdentity(callback), callback.state, hit(callback.hits), Boolean(callback.ambiguousEntry)]))]))
+                    } : {}),
                     evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(event.type === 'observer-execute'
                         ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
-                        : [event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
+                        : event.type === 'plugin-execute'
+                            ? [event.type, event.area, digest(event.registration.target), digest(event.registration.name), ...pluginIdentity(event.callback)]
+                            : [event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
                 })))
             }))},
         php: {totals: totals({total: php.total, covered: php.covered, percent: php.percent}),
@@ -148,10 +161,33 @@ function validateSnapshot(value, run, summary) {
     totals(value.xml.totals);
     array(value.xml.warnings);
     const observerTotals = {total: 0, covered: 0};
+    const pluginTotals = {total: 0, covered: 0};
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
         object(file.lines);
         for (const item of array(file.declarations)) {
+            if (item.plugin) {
+                assert.equal(array(item.plugin).length, 2);
+                for (const part of item.plugin) assert.match(part, /^[a-f0-9]{64}$/);
+                for (const [area, status, state, executed, reason, callbacks] of array(item.pluginAreas)) {
+                    assert.equal(typeof area, 'string');
+                    assert.ok(['eligible', 'disabled', 'overridden', 'ambiguous', 'unsupported'].includes(status));
+                    assert.equal(typeof executed, 'boolean');
+                    assert.match(reason, /^[a-f0-9]{64}$/);
+                    assert.equal(array(callbacks).length > 0, status === 'eligible');
+                    assert.equal(executed, callbacks.some(callback => callback[4]));
+                    assert.equal(state, status === 'eligible' ? (executed ? 'covered' : 'uncovered') : 'unmeasured');
+                    for (const [subject, method, phase, callbackState, covered, uncertain] of callbacks) {
+                        for (const part of [subject, method]) assert.match(part, /^[a-f0-9]{64}$/);
+                        assert.ok(['before', 'around', 'after'].includes(phase));
+                        assert.equal(typeof covered, 'boolean');
+                        assert.equal(typeof uncertain, 'boolean');
+                        assert.equal(callbackState, covered ? 'covered' : 'uncovered');
+                    }
+                    if (status === 'eligible') pluginTotals.total++;
+                    if (executed) pluginTotals.covered++;
+                }
+            }
             if (!item.registration) continue;
             assert.equal(array(item.registration).length, 2);
             for (const part of item.registration) assert.match(part, /^[a-f0-9]{64}$/);
@@ -171,6 +207,7 @@ function validateSnapshot(value, run, summary) {
         for (const state of Object.values(file.lines)) assert.ok(['covered', 'uncovered', 'unmeasured'].includes(state));
     }
     assert.deepEqual(value.xml.observers, observerTotals, 'Incomplete observer coverage inventory');
+    assert.deepEqual(value.xml.plugins, pluginTotals, 'Incomplete plugin coverage inventory');
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
         assert.match(line, /^[1-9]\d*$/, 'Invalid PHP line');

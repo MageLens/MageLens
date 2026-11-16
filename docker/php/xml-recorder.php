@@ -33,6 +33,16 @@ final class Recorder
         self::$events[$key] = ['id' => $id, 'type' => 'observer-execute', 'area' => $area,
             'registration' => ['event' => $event, 'observer' => $observer], 'hits' => (self::$events[$key]['hits'] ?? 0) + 1];
     }
+    public static function pluginTargets(): array
+    {
+        return self::$manifest['plugins'] ?? [];
+    }
+    public static function plugin(string $id, string $area, string $name, array $callback): void
+    {
+        $key = "$id\0plugin-execute\0$area\0" . PluginManifest::callbackKey($callback);
+        self::$events[$key] = ['id' => $id, 'type' => 'plugin-execute', 'area' => $area, 'name' => $name,
+            'callback' => $callback, 'hits' => (self::$events[$key]['hits'] ?? 0) + 1];
+    }
     public static function mutation(): void
     {
         if (self::$manifest) self::$errors[] = 'Configuration changed during collection';
@@ -165,6 +175,7 @@ final class Recorder
         if (self::$errors) throw new \RuntimeException(implode('; ', array_unique(self::$errors)));
         $data = ['run' => self::$manifest['run'], 'manifest' => self::$manifest['id'], 'readHook' => self::$readHook,
             'renderHook' => self::$renderHook, 'observerHook' => Observers::finish(), 'events' => array_values(self::$events)];
+        [$data['pluginHook'], $data['ambiguousPlugins']] = class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
         return $data;
     }
 }

@@ -150,6 +150,10 @@ Configuration coverage includes Backend value and flag reads and Magento's lower
 
 The XML report also shows synchronous HTTP `events.xml` observer execution for global, frontend and adminhtml configuration. An observer earns credit when Magento reaches its underlying `execute()` method. The report links each registration to its original lines and shows covered and uncovered outcomes by area, even for observers that share a PHP class. Disabled, overridden, ambiguous and unsupported registrations are outside the observer totals for the affected area. Browser warm-up contributes no observer hits. If the collector reports stale event configuration, rerun `./bin/run-coverage --refresh-cache`.
 
+The XML report measures `di.xml` plugin callbacks during authorized developer-mode HTTP requests in global, frontend and adminhtml configuration. A hit means Magento reached the registered before, around or after callback body. Around callbacks earn credit even when they short-circuit, and any enclosing after callbacks that actually run also earn credit. The source view links inherited registrations to their original declarations where the origin is unique. It shows the effective subject, intercepted method, phase, and registration outcomes by area.
+
+Plugin totals count each declaration once per eligible area. A declaration's source highlight summarizes its areas, and plugin entries are excluded from the XML line totals. Warm-up, compiled DI, custom plugin lists, and DI declarations other than plugins are outside this measurement. Effective subjects come from configured targets, their DI-selected implementations, and conventional classes in the inventoried application modules. Other concrete descendants are unmeasured. A TypeError at a callback declaration can leave body entry unconfirmed and is shown as a warning. Regenerate stale generated interceptors in developer mode. If the report detects stale DI configuration, rerun `./bin/run-coverage --refresh-cache`.
+
 ## Use an existing Playwright fixture
 
 MageLens supplies Playwright and the coverage collectors. To preserve a suite's

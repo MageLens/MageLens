@@ -17,7 +17,8 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         private \Magento\Framework\Controller\Result\RawFactory $raw,
         private \Magento\Store\Model\StoreManagerInterface $stores,
         private \Magento\Backend\App\ConfigInterface $backend,
-        private \Magento\Framework\Event\ManagerInterface $events
+        private \Magento\Framework\Event\ManagerInterface $events,
+        private \Application\Blog\Model\JournalPluginSubject $pluginSubject
     ) {}
     public function execute()
     {
@@ -45,9 +46,10 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
             case 'observer-dispatch':
                 $counter = new \Magento\Framework\DataObject(['hits' => 0]);
                 $this->events->dispatch('MageLens_Journal_Observers', ['counter' => $counter]);
-                $result = $counter->getData();
+                $result = $counter->getData() + ['plugin' => $this->pluginSubject->probe('start')];
                 break;
             case 'warmup-only':
+                if ($this->pluginSubject->warm() !== 'warm-plugin') throw new \RuntimeException('Warm-up plugin did not execute');
                 $counter = new \Magento\Framework\DataObject(['hits' => 0]);
                 $this->events->dispatch('magelens_journal_warmup', ['counter' => $counter]);
                 $preview = htmlspecialchars((string) $this->config->getValue($path . 'unused'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

@@ -163,3 +163,49 @@ test('reports exact observer declarations and scoped execution through Magento',
         assert.ok(events.every(event => event.hits === 1 && event.area === 'frontend'));
     }
 });
+
+test('reports original DI registrations and the actual frontend and Admin plugin chains', () => {
+    const result = report();
+    const root = 'app/code/Application/Blog/etc/';
+    const declarations = scope => Object.fromEntries(result.files.find(file => file.path === root + scope + 'di.xml')
+        .declarations.map(item => [item.registration.name, item]));
+    const global = declarations(''), frontend = declarations('frontend/'), admin = declarations('adminhtml/');
+    const subject = 'Application\\Blog\\Model\\JournalPluginSubject';
+    const assertCallback = (item, area, method, phase, state) => {
+        assert.equal(item.areas[area].status, 'eligible');
+        const callback = Object.values(item.areas[area].callbacks).find(entry => entry.method === method && entry.phase === phase);
+        assert.deepEqual({subject: callback.subject, method: callback.method, phase: callback.phase, state: callback.state},
+            {subject, method, phase, state});
+        return callback.hits;
+    };
+    assert.deepEqual(result.plugins, {total: 24, covered: 12, hook: true});
+    assert.deepEqual([global.journal_shared.startLine, global.journal_shared.endLine], [9, 10]);
+    assert.equal(global.journal_shared.registration.target, subject + 'Interface');
+    assert.deepEqual([global.journal_duplicate.startLine, global.journal_duplicate.endLine], [14, 14]);
+    assert.equal(global.journal_duplicate.registration.target, subject);
+    assert.equal(assertCallback(global.journal_shared, 'frontend', 'probe', 'before', 'covered'), 2);
+    assert.equal(assertCallback(global.journal_duplicate, 'frontend', 'probe', 'before', 'covered'), 2);
+    assert.equal(assertCallback(global.journal_short, 'frontend', 'probe', 'around', 'covered'), 2);
+    assert.equal(assertCallback(global.journal_outer_after, 'frontend', 'probe', 'after', 'covered'), 2);
+    assert.equal(assertCallback(global.journal_inner_after, 'frontend', 'probe', 'after', 'uncovered'), 0);
+    assert.equal(assertCallback(global.journal_warm, 'frontend', 'warm', 'after', 'uncovered'), 0);
+    assert.equal(assertCallback(global.journal_warm, 'frontend', 'unused', 'before', 'uncovered'), 0);
+    assert.equal(global.journal_disabled.areas.frontend.status, 'disabled');
+    assert.equal(frontend.journal_disabled.areas.frontend.status, 'disabled');
+    assert.equal(global.journal_external.areas.frontend.status, 'overridden');
+    assert.equal(global.journal_shared.areas.global.state, 'uncovered');
+    assert.deepEqual([frontend.journal_frontend.startLine, frontend.journal_frontend.endLine], [10, 10]);
+    assert.deepEqual([admin.journal_admin.startLine, admin.journal_admin.endLine], [9, 9]);
+    assertCallback(frontend.journal_frontend, 'frontend', 'probe', 'before', 'covered');
+    assertCallback(admin.journal_admin, 'adminhtml', 'probe', 'after', 'covered');
+    for (const name of ['observer-dispatch', 'observer-dispatch-warm']) {
+        const events = request(result, name).events.filter(event => event.type === 'plugin-execute');
+        assert.deepEqual(events.map(event => [event.name, event.callback.phase, event.area, event.callback.subject, event.hits]), [
+            ['journal_shared', 'before', 'frontend', subject, 1],
+            ['journal_duplicate', 'before', 'frontend', subject, 1],
+            ['journal_frontend', 'before', 'frontend', subject, 1],
+            ['journal_short', 'around', 'frontend', subject, 1],
+            ['journal_outer_after', 'after', 'frontend', subject, 1]
+        ]);
+    }
+});
