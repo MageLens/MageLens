@@ -5,6 +5,11 @@
 // Shared real HTTP expectations for both pinned browser runners.
 const journeys = [
     ['baseline', {}],
+    ['preference-resolution', {shared: true, fresh: true, failed: true,
+        area: 'Application\\Blog\\Model\\JournalFrontendPreference',
+        external: 'Application\\Blog\\Model\\JournalFrontendPreference',
+        virtual: 'Application\\Blog\\Model\\JournalPreferenceProbe',
+        lookup: 'Application\\Blog\\Model\\JournalPreferenceProbe'}],
     ['observer-dispatch', {hits: 2, external: true, plugin: 'short:startbbxb|after'}],
     ['default-read', {heading: 'Journal'}],
     ['backend-reads', {heading: 'Backend journal', enabled: true}],

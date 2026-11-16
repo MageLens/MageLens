@@ -168,7 +168,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
     const result = report();
     const root = 'app/code/Application/Blog/etc/';
     const declarations = scope => Object.fromEntries(result.files.find(file => file.path === root + scope + 'di.xml')
-        .declarations.map(item => [item.registration.name, item]));
+        .declarations.filter(item => item.family === 'plugins').map(item => [item.registration.name, item]));
     const global = declarations(''), frontend = declarations('frontend/'), admin = declarations('adminhtml/');
     const subject = 'Application\\Blog\\Model\\JournalPluginSubject';
     const assertCallback = (item, area, method, phase, state) => {
@@ -208,4 +208,67 @@ test('reports original DI registrations and the actual frontend and Admin plugin
             ['journal_outer_after', 'after', 'frontend', subject, 1]
         ]);
     }
+});
+
+test('reports preference resolution by native binding and original configuration area', () => {
+    const result = report();
+    assert.deepEqual(result.preferences, {total: 26, covered: 6, hook: true});
+    const root = 'app/code/Application/Blog/etc/';
+    const globalFile = result.files.find(file => file.path === root + 'di.xml');
+    assert.deepEqual([globalFile.covered, globalFile.total], [0, 0]);
+    assert.equal(globalFile.lines[30], undefined, 'Virtual type declaration remains outside XML totals');
+    const model = 'Application\\Blog\\Model\\Journal';
+    const bind = (name, scope = 'global') => declaration(result,
+        root + (scope === 'global' ? '' : scope + '/') + 'di.xml', model + name, scope);
+    const first = bind('First'), second = bind('Second'), chain = bind('Chain'), virtual = bind('VirtualPreference');
+    const frontend = bind('AreaPreference', 'frontend'), admin = bind('AreaPreference', 'adminhtml');
+    const base = bind('AreaPreference'), external = bind('ExternalPreference');
+    const cases = [
+        [first, 21, 22, model + 'PreferenceProbe', model + 'PreferenceProbe'],
+        [second, 23, 23, model + 'PreferenceProbe', model + 'PreferenceProbe'],
+        [chain, 24, 24, model + 'First', model + 'PreferenceProbe'],
+        [virtual, 29, 29, model + 'VirtualTarget', model + 'PreferenceProbe'],
+        [frontend, 12, 12, model + 'FrontendPreference', model + 'FrontendPreference'],
+        [admin, 11, 11, model + 'PluginSubject', model + 'PluginSubject']
+    ];
+    for (const [item, start, end, replacement, resolved] of cases) {
+        assert.deepEqual([item.startLine, item.endLine], [start, end]);
+        assert.equal(item.binding.replacement, replacement);
+        const area = item === admin ? 'adminhtml' : 'frontend';
+        const outcome = item.areas[area];
+        assert.equal(outcome.state, 'covered');
+        assert.equal(outcome.origin.id, item.id);
+        assert.deepEqual([outcome.origin.startLine, outcome.origin.endLine], [start, end]);
+        assert.equal(outcome.resolved, resolved);
+        assert.ok(item.evidence.every(entry => entry.type === 'preference-resolved' && entry.area === area
+            && entry.run === result.run && entry.resolved === resolved));
+    }
+    assert.equal(base.areas.global.state, 'uncovered');
+    assert.equal(base.areas.frontend.status, 'overridden');
+    assert.equal(base.areas.frontend.origin.id, frontend.id);
+    assert.equal(base.areas.adminhtml.status, 'overridden');
+    assert.equal(base.areas.adminhtml.origin.id, admin.id);
+    assert.equal(frontend.areas.adminhtml.status, 'inactive');
+    assert.equal(admin.areas.frontend.status, 'inactive');
+    const externalOutcome = external.areas.frontend;
+    assert.equal(externalOutcome.status, 'overridden');
+    assert.equal(externalOutcome.origin.path, 'app/code/MageLens/Compatibility/Test/ObserverOverride/etc/frontend/di.xml');
+    assert.equal(externalOutcome.origin.startLine, 11);
+    assert.ok(!result.files.some(file => file.path === externalOutcome.origin.path));
+    for (const name of ['UnusedPreference', 'WarmPreference', 'FailedPreference']) {
+        const item = bind(name);
+        assert.equal(item.areas.frontend.state, 'uncovered');
+        assert.deepEqual(item.evidence, []);
+    }
+    for (const name of ['preference-resolution', 'preference-resolution-warm']) {
+        const events = request(result, name).events.filter(event => event.type === 'preference-resolved');
+        const expected = [[first, 'First', 2], [second, 'Second', 1], [chain, 'Chain', 1], [first, 'Chain', 1],
+            [frontend, 'AreaPreference', 1], [virtual, 'VirtualPreference', 1]];
+        assert.deepEqual(events.map(event => [event.id, event.requested, event.hits]).sort(),
+            expected.map(([item, requested, hits]) => [item.id, model + requested, hits]).sort());
+    }
+    const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
+    assert.match(html, /Preference usage/);
+    assert.match(html, /6\/26 eligible declaration–area pairs resolved/);
+    assert.match(html, /href="app\/code\/Application\/Blog\/etc\/di.xml.html#L21"/);
 });

@@ -10,7 +10,9 @@ require_once __DIR__ . '/xml-recorder.php';
 require_once __DIR__ . '/xml-observers.php';
 require_once __DIR__ . '/xml-plugin-manifest.php';
 require_once __DIR__ . '/xml-plugins.php';
-use MageLens\XmlCoverage\{Recorder, Observers, Plugins};
+require_once __DIR__ . '/xml-preference-manifest.php';
+require_once __DIR__ . '/xml-preferences.php';
+use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences};
 
 function startXmlHooks(string $run): void
 {
@@ -48,7 +50,8 @@ function startXmlHooks(string $run): void
     }
     foreach (['save', 'delete'] as $method) $hooks[] = ['Magento\\Framework\\App\\Config\\Storage\\Writer', $method,
         static function ($subject, array $params) { Recorder::mutation(); }, null];
-    $hooks = array_merge($hooks, Observers::hooks(Recorder::observerTargets()), Plugins::hooks(Recorder::pluginTargets()));
+    $hooks = array_merge($hooks, Observers::hooks(Recorder::observerTargets()), Plugins::hooks(Recorder::pluginTargets()),
+        Preferences::hooks(Recorder::preferenceTargets()));
     foreach ($hooks as [$class, $method, $pre, $post]) {
         if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register XML runtime hook');
     }

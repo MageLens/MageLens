@@ -202,3 +202,52 @@ test('plugin equivalence preserves phase, registration and outcomes while normal
     write('xml/coverage.json', xml);
     assert.throws(() => snapshot(directory), /Incomplete plugin coverage inventory/);
 });
+
+test('preference equivalence retains binding, original provider and per-area resolution', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json'), [file] = xml.files;
+    const id = '1'.repeat(64);
+    const binding = {requested: 'SECRET\\Contract', replacement: 'SECRET\\Virtual'};
+    const resolved = 'SECRET\\Concrete';
+    const origin = {id, path: file.path, startLine: 4, endLine: 6, fingerprint: file.sourceFingerprint};
+    const external = {...origin, id: '2'.repeat(64), path: '/shop/vendor/SECRET/other/etc/di.xml'};
+    const eligible = {status: 'eligible', state: 'uncovered', hits: 0, origin, effectiveReplacement: binding.replacement, resolved};
+    const selected = {type: 'preference-resolved', area: 'frontend', requested: 'SECRET\\RootAlias', binding, resolved};
+    const item = {id, family: 'preferences', path: binding.requested, declaredScope: {type: 'global', code: ''},
+        startLine: 4, endLine: 6, supported: true, effective: true, state: 'covered', binding, evidence: [selected],
+        areas: {global: eligible, frontend: {...eligible, state: 'covered', hits: 1},
+            adminhtml: {status: 'overridden', state: 'unmeasured', hits: 0, origin: external,
+                resolved: 'SECRET\\Admin', effectiveReplacement: 'SECRET\\Admin', reason: 'SECRET provider'}}};
+    file.declarations.push(item);
+    xml.preferences = {total: 2, covered: 1, hook: true};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    item.areas.frontend.hits = 90;
+    item.evidence.push({...selected, request: 'second'});
+    external.path = 'D:\\workspace\\vendor\\SECRET\\other\\etc\\di.xml';
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    for (const update of [
+        item => { item.binding.requested += 'Renamed'; },
+        item => { item.areas.adminhtml.origin.endLine++; },
+        item => { item.areas.adminhtml.origin.fingerprint = '3'.repeat(64); },
+        item => { item.areas.frontend.resolved += 'Changed'; },
+        (item, report) => {
+            item.areas.frontend.hits = 0;
+            item.areas.frontend.state = item.state = 'uncovered';
+            item.evidence = [];
+            report.preferences.covered = 0;
+        }
+    ]) {
+        const changed = structuredClone(xml);
+        update(changed.files[0].declarations.at(-1), changed);
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+    xml.preferences.total = 3;
+    write('xml/coverage.json', xml);
+    assert.throws(() => snapshot(directory), /Incomplete preference coverage inventory/);
+});

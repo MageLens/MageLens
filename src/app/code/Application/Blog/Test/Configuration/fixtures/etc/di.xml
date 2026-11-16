@@ -18,4 +18,15 @@ License: see LICENSE in the repository root.
         <plugin name="journal_inner_after" type="Application\Blog\Plugin\JournalAfter" sortOrder="40"/>
         <plugin name="journal_warm" type="Application\Blog\Plugin\JournalWarm"/>
     </type>
+    <preference for="Application\Blog\Model\JournalFirst"
+                type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalSecond" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalChain" type="Application\Blog\Model\JournalFirst"/>
+    <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalExternalPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalUnusedPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalWarmPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalVirtualPreference" type="Application\Blog\Model\JournalVirtualTarget"/>
+    <virtualType name="Application\Blog\Model\JournalVirtualTarget" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalFailedPreference" type="Application\Blog\Model\JournalNoSuchImplementation"/>
 </config>

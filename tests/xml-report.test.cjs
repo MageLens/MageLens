@@ -142,3 +142,48 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     delete manifest.plugins.frontend[before.subject].targets.shared.save.before;
     assert.throws(() => merge(manifest, [{...healthy, events: [hit]}], sources), /does not match effective provenance/);
 });
+
+test('preference reports validate effective routes and publish healthy zero-hit areas', t => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/di.xml';
+    const source = Buffer.from('<config>\n<preference for="Acme\\Container\\Contract"\n type="Acme\\Concrete"/>\n</config>');
+    sources[file] = source;
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const binding = {requested: 'Acme\\Container\\Contract', replacement: 'Acme\\Concrete'};
+    const origin = {id: 'binding', path: file, startLine: 2, endLine: 3, fingerprint: sourceHash};
+    const eligible = {status: 'eligible', reason: null, origin, resolved: binding.replacement, effectiveReplacement: binding.replacement};
+    const overridden = {status: 'overridden', reason: 'A different declaration supplies the binding',
+        origin: {...origin, id: 'external', path: 'app/code/Acme/External/etc/adminhtml/di.xml'},
+        resolved: 'Acme\\Admin', effectiveReplacement: 'Acme\\Admin'};
+    manifest.files.push({path: file, family: 'plugins', sourceHash, declarations: [{
+        id: origin.id, path: binding.requested, family: 'preferences', declaredScope: {type: 'global', code: ''},
+        startLine: 2, endLine: 3, supported: true, binding, areas: {global: eligible, frontend: {...eligible}, adminhtml: overridden}
+    }]});
+    const requested = 'Acme\\Alias';
+    manifest.preferences = {frontend: {routes: {[requested]: {ids: [origin.id], resolved: binding.replacement}}}};
+    const request = {...record, preferenceHook: true};
+    const event = {id: origin.id, type: 'preference-resolved', requested, area: 'frontend', hits: 12};
+    const zero = merge(manifest, [request], sources);
+    const result = merge(manifest, [{...request, events: [...request.events, event]}], sources);
+    assert.deepEqual(zero.preferences, {total: 2, covered: 0, hook: true});
+    assert.deepEqual(result.preferences, {total: 2, covered: 1, hook: true});
+    assert.equal(result.total, zero.total);
+    const [item] = result.files[1].declarations;
+    assert.deepEqual(item.evidence[0], {run: 'fresh', request: 'request', type: event.type, area: event.area,
+        requested, binding, resolved: eligible.resolved});
+    assert.equal(item.areas.global.state, 'uncovered');
+    assert.equal(item.areas.adminhtml.state, 'unmeasured');
+    assert.equal(item.areas.frontend.hits, 12);
+    assert.equal(result.files[1].lines[3].state, 'covered');
+    assert.throws(() => merge(manifest, [{...request, preferenceHook: false}], sources), /No functioning XML preference/);
+    for (const update of [{requested: binding.replacement}, {area: 'adminhtml'}, {area: 'global'}, {requested: '__proto__'}]) {
+        assert.throws(() => merge(manifest, [{...request, events: [{...event, ...update}]}], sources), /provenance|ineligible/);
+    }
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-preference-report-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    writeReport(result, sources, root);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /1\/2 eligible declaration–area pairs resolved/);
+    assert.match(fs.readFileSync(path.join(root, file + '.html'), 'utf8'), /id="L3" class="line covered"/);
+    writeReport(zero, sources, root);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /0\/2 eligible declaration–area pairs resolved/);
+});

@@ -35,6 +35,9 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
         };
         switch ($case) {
             case 'baseline': break;
+            case 'preference-resolution':
+                $result = \Application\Blog\Model\JournalPreferenceProbe::exercise();
+                break;
             case 'backend-reads':
                 $result['heading'] = $this->backend->getValue('application_blog/backend/heading');
                 $result['enabled'] = $this->backend->isSetFlag('application_blog/backend/enabled');
@@ -49,6 +52,8 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
                 $result = $counter->getData() + ['plugin' => $this->pluginSubject->probe('start')];
                 break;
             case 'warmup-only':
+                $warm = \Magento\Framework\App\ObjectManager::getInstance()->get('Application\Blog\Model\JournalWarmPreference');
+                if (!$warm instanceof \Application\Blog\Model\JournalPreferenceProbe) throw new \RuntimeException('Warm-up preference did not resolve');
                 if ($this->pluginSubject->warm() !== 'warm-plugin') throw new \RuntimeException('Warm-up plugin did not execute');
                 $counter = new \Magento\Framework\DataObject(['hits' => 0]);
                 $this->events->dispatch('magelens_journal_warmup', ['counter' => $counter]);

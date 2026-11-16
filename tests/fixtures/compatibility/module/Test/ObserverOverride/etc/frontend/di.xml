@@ -8,4 +8,5 @@ License: see LICENSE in the repository root.
     <type name="Application\Blog\Model\JournalPluginSubject">
         <plugin name="journal_external" type="MageLens\ObserverOverride\ExternalPlugin" sortOrder="22"/>
     </type>
+    <preference for="Application\Blog\Model\JournalExternalPreference" type="Application\Blog\Model\JournalFrontendPreference"/>
 </config>

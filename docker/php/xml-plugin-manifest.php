@@ -27,7 +27,7 @@ final class PluginManifest
     private const ORIGIN = 'magelens-origin-';
 
     /** Run the installed reader on original and annotated snapshots in resolver order. */
-    public static function sources(Dom $reader, array $known): array
+    public static function sources(Dom $reader, array $known, bool $preferences = false): array
     {
         $resolver = new \ReflectionProperty(Dom::class, '_fileResolver');
         $converter = new \ReflectionProperty(Dom::class, '_converter');
@@ -58,7 +58,7 @@ final class PluginManifest
             }
         };
         $converter->setValue($annotated, $capture);
-        $config = $tagged = $sources = $providers = [];
+        $config = $tagged = $sources = $providers = $bindings = [];
         foreach (['primary', ...self::AREAS] as $scope) {
             $input->files = [];
             foreach ($original->get('di.xml', $scope) as $file => $bytes) {
@@ -66,6 +66,7 @@ final class PluginManifest
                 $sources[$scope][$file] = $providers[$file] = hash('sha256', $bytes);
             }
             $config[$scope] = $reader->read($scope);
+            $locations = [];
             foreach ($input->files as $file => &$bytes) {
                 $document = Xml::document($bytes);
                 foreach (self::nodes($document) as $node) {
@@ -76,6 +77,19 @@ final class PluginManifest
                         if ($node->hasAttribute($attribute)) $node->setAttribute(self::ORIGIN . $attribute, $id);
                     }
                 }
+                if ($preferences) {
+                    $nodes = (new \DOMXPath($document))->query('/config/preference');
+                    $ranges = $nodes->length ? Xml::ranges($bytes, $document) : [];
+                    $path = str_starts_with($file, BP . '/') ? substr($file, strlen(BP) + 1) : $file;
+                    $fingerprint = $nodes->length ? hash('sha256', str_replace("\r\n", "\n", $bytes)) : null;
+                    foreach ($nodes as $node) {
+                        $nodePath = $node->getNodePath();
+                        $id = $known[$file][$nodePath] ?? hash('sha256', "$path\0$nodePath");
+                        $node->setAttribute(self::ORIGIN . 'preference', $id);
+                        $locations[$id] = ['id' => $id, 'path' => $path, ...$ranges[$nodePath],
+                            'fingerprint' => $fingerprint];
+                    }
+                }
                 $bytes = $document->saveXML();
             }
             unset($bytes);
@@ -84,8 +98,18 @@ final class PluginManifest
                 throw new \RuntimeException('Cannot reproduce Magento DI reader provenance');
             }
             $tagged[$scope] = self::tag($config[$scope], $capture->document);
+            if ($preferences && $capture->document) {
+                $origins = [];
+                foreach ((new \DOMXPath($capture->document))->query('/config/preference') as $node) {
+                    $origins[$node->getAttribute('for')] = $locations[$node->getAttribute(self::ORIGIN . 'preference')] ?? null;
+                }
+                if (array_keys($origins) !== array_keys($config[$scope]['preferences'] ?? [])) {
+                    throw new \RuntimeException('Cannot reproduce Magento preference conversion order');
+                }
+                foreach ($origins as $name => $origin) $bindings[$scope][ltrim($name, '\\')] = $origin;
+            }
         }
-        return [$config, $tagged, $sources, $providers];
+        return [$config, $tagged, $sources, $providers, $bindings];
     }
 
     private static function nodes(\DOMDocument $document): \DOMNodeList
@@ -217,12 +241,13 @@ final class PluginManifest
         return $segments;
     }
 
-    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source'): array
+    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source', ?array $snapshots = null): array
     {
         $known = $items = $sourcePaths = $sourceHashes = [];
         foreach ($files as $path => &$file) {
             if ($file['family'] !== 'plugins') continue;
             foreach ($file['declarations'] as &$item) {
+                if ($item['family'] !== 'plugins') continue;
                 $known[BP . '/' . $path][$item['node']] = $item['id'];
                 $items[$item['id']] = &$item;
                 $sourcePaths[$item['id']] = BP . '/' . $path;
@@ -233,7 +258,7 @@ final class PluginManifest
         unset($file);
         if (!$items) return [[], []];
 
-        [$configs, $tagged, $sources, $providers] = self::sources($om->get(Dom::class), $known);
+        [$configs, $tagged, $sources, $providers] = $snapshots ?? self::sources($om->get(Dom::class), $known);
         $active = [];
         foreach ($items as $id => $item) {
             $scope = $item['declaredScope']['type'];

@@ -9,4 +9,5 @@ License: see LICENSE in the repository root.
         <plugin name="journal_disabled" disabled="true"/>
         <plugin name="journal_frontend" type="Application\Blog\Plugin\JournalBefore" sortOrder="23"/>
     </type>
+    <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalFrontendPreference"/>
 </config>

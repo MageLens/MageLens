@@ -8,4 +8,5 @@ License: see LICENSE in the repository root.
     <type name="Application\Blog\Model\JournalPluginSubject">
         <plugin name="journal_admin" type="Application\Blog\Plugin\JournalAfter" sortOrder="8"/>
     </type>
+    <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalPluginSubject"/>
 </config>

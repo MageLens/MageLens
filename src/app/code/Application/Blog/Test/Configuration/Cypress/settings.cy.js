@@ -47,6 +47,7 @@ describe('Blog configuration', () => {
         cy.reload();
         cy.wait('@reloadSettings').its('response.headers').should('include', {
             'x-magelens-admin-observer': 'executed',
+            'x-magelens-admin-preference': 'resolved',
             'x-magelens-admin-plugin': 'short:startbbbb|after|after'
         });
         cy.get('#application_blog_display_heading').should('be.visible').and('have.value', 'Journal');

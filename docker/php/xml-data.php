@@ -136,11 +136,27 @@ final class Xml
             'config' => 'urn:magento:module:Magento_Store:etc/config.xsd',
             'system' => 'urn:magento:module:Magento_Config:etc/system_file.xsd',
             'events' => 'urn:magento:framework:Event/etc/events.xsd',
-            'plugins' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
+            'plugins', 'preferences' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
         };
         if ($dom->documentElement->tagName !== 'config' || $schema !== $expected) return [];
         $ranges = self::ranges($source, $dom);
         $xpath = new \DOMXPath($dom);
+        if ($family === 'preferences') {
+            $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
+            $result = []; $seen = [];
+            foreach ($xpath->query('/config/preference[@for and @type]') as $node) {
+                $requested = ltrim($node->getAttribute('for'), '\\');
+                $replacement = ltrim($node->getAttribute('type'), '\\');
+                $index = $seen[$requested] ?? 0;
+                $seen[$requested] = $index + 1;
+                $result[] = ['id' => hash('sha256', "$path\0preferences\0$requested\0$index"),
+                    'path' => $requested, 'family' => $family, 'declaredScope' => ['type' => $scope, 'code' => ''],
+                    ...$ranges[$node->getNodePath()], 'node' => $node->getNodePath(),
+                    'binding' => ['requested' => $requested, 'replacement' => $replacement],
+                    'supported' => false, 'reason' => null];
+            }
+            return $result;
+        }
         if ($family === 'plugins') {
             $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
             $result = []; $seen = [];

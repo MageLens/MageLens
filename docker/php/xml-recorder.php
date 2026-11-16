@@ -43,6 +43,17 @@ final class Recorder
         self::$events[$key] = ['id' => $id, 'type' => 'plugin-execute', 'area' => $area, 'name' => $name,
             'callback' => $callback, 'hits' => (self::$events[$key]['hits'] ?? 0) + 1];
     }
+    public static function preferenceTargets(): array
+    {
+        return self::$manifest['preferences'] ?? [];
+    }
+    public static function preference(string $id, string $area, string $requested): void
+    {
+        $key = "$id\0preference-resolved\0$area\0$requested";
+        self::$events[$key] ??= ['id' => $id, 'type' => 'preference-resolved', 'area' => $area,
+            'requested' => $requested, 'hits' => 0];
+        self::$events[$key]['hits']++;
+    }
     public static function mutation(): void
     {
         if (self::$manifest) self::$errors[] = 'Configuration changed during collection';
@@ -176,6 +187,7 @@ final class Recorder
         $data = ['run' => self::$manifest['run'], 'manifest' => self::$manifest['id'], 'readHook' => self::$readHook,
             'renderHook' => self::$renderHook, 'observerHook' => Observers::finish(), 'events' => array_values(self::$events)];
         [$data['pluginHook'], $data['ambiguousPlugins']] = class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
+        $data['preferenceHook'] = class_exists(Preferences::class, false) && Preferences::finish();
         return $data;
     }
 }
