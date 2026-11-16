@@ -258,6 +258,44 @@ test('a failed native capture retains its cost and the completed prefix outcome'
     assert.equal(report.cleanup.storageReleased, true);
 });
 
+for (const failure of ['release', 'continuation']) {
+    test(`native restore stays failed when ${failure} prevents the original suffix`, async t => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-restore-failure-'));
+        t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+        const {NativeSession} = require('../branching/runners/cypress/native-session.cjs');
+        const bindings = {eligible: true, value: []};
+        const events = [], continuations = [];
+        let time = 0;
+        const session = new NativeSession({directory, run: 'restore-failure', now: () => time, verifySources() {},
+            plan: [{id: 'prefix', identity: 'checked-prefix', consumers: ['first', 'second']}],
+            emit: (type, event) => events.push({type, ...event}),
+            bridge: {call: () => bindings, continue({restored}) {
+                if (restored && failure === 'continuation') throw Error('continuation failed');
+                continuations.push(restored);
+            }},
+            provider: {identity: {}, entryState: () => ({}), assertBoundary() {}, abandon() {}, captureBarrier() {},
+                capture(payload) { fs.writeFileSync(path.join(payload, 'fixture.json'), '{}'); },
+                normalizedState: () => ({}), resumeCapture() {}, restore() { time += 10; }, cleanup() {}}});
+        const enter = consumer => session.boundary({phase: 'enter', checkpoint: 'prefix', consumer, bindings});
+        await enter('first');
+        time += 60000;
+        await session.boundary({phase: 'complete', checkpoint: 'prefix', consumer: 'first', bindings, workMs: 60000});
+        const [{id: checkpoint}] = session.report.checkpoints;
+        if (failure === 'release') {
+            const release = session.store.release.bind(session.store);
+            session.store.release = () => { session.store.release = release; throw Error('release failed'); };
+        }
+        await assert.rejects(enter('second'), new RegExp(`${failure} failed`));
+        const report = await session.close({passed: true});
+        assert.equal(report.status, 'failed');
+        assert.deepEqual(continuations, [false, false]);
+        assert.deepEqual(report.restores, []);
+        assert.equal(report.cleanup.storageReleased, true);
+        const restores = events.filter(event => event.type === 'node-end' && event.operation === 'restore');
+        assert.deepEqual(restores.map(({status, checkpoint}) => [status, checkpoint]), [['failed', checkpoint]]);
+    });
+}
+
 test('native cleanup releases independent checkpoints and reports retained state after a failure', async t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-cleanup-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));

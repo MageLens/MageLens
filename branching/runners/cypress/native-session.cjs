@@ -130,15 +130,15 @@ class NativeSession {
                     await this.verifySources();
                     await this.provider.beginSegment?.();
                     const ms = this.now() - time;
-                    this.economics.observe('restoreMs', ms, candidate.id);
-                    this.report.restores.push({checkpoint: ref.id, consumer, ms});
-                    this.emit('node-end', {node: candidate.id, checkpoint: ref.id, operation: 'restore', status: 'passed', ms});
                     if (candidate.remaining > 1) this.startPrefetch(candidate, ref);
                     await this.consumed(candidate, consumer);
                     this.bridge.continue({restored: true});
+                    this.economics.observe('restoreMs', ms, candidate.id);
+                    this.report.restores.push({checkpoint: ref.id, consumer, ms});
+                    this.emit('node-end', {node: candidate.id, checkpoint: ref.id, operation: 'restore', status: 'passed', ms});
                     return;
                 } catch (error) {
-                    this.emit('node-end', {node: candidate.id, operation: 'restore', status: 'failed', ms: this.now() - time});
+                    this.emit('node-end', {node: candidate.id, checkpoint: ref.id, operation: 'restore', status: 'failed', ms: this.now() - time});
                     // A partially restored application must never continue the
                     // original callback or turn a failed restore into a pass.
                     throw error;
