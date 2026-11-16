@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+const {observeStorefrontReadiness, lumaMessagesReady} = require('../storefront-readiness.cjs');
 Cypress.on('window:before:load', observeStorefrontReadiness);
 
 export const fixtures = () => Cypress.expose('projectFixtures').Application_Blog;
@@ -11,6 +11,8 @@ export const get = (name) => cy.get(`[data-cy="${name}"]`);
 export function waitForStorefront() {
     if (fixtures().themePaths[0] === 'Hyva/default-csp') {
         cy.window().its('__magelensStorefrontReady').should('deep.equal', {messages: true, privateContent: true});
+    } else {
+        cy.window().should(win => expect(lumaMessagesReady(win), 'Luma cookie messages initialized').to.equal(true));
     }
 }
 export function storefrontMessage(type, text) {
@@ -47,19 +49,31 @@ export function login(username = 'application', password = 'ApplicationOnly12345
 export function navigateAdminMenu(parent, child) {
     // The sidebar HTML is visible before Magento binds its click handlers.
     cy.get('.admin__menu-overlay', {timeout: Cypress.config('pageLoadTimeout')}).should('exist');
-    const clickMenu = selector => cy.get(selector).should('be.visible').then(link => {
-        const element = link[0], win = element.ownerDocument.defaultView;
-        element.scrollIntoView({block: 'nearest', inline: 'nearest'});
-        const box = element.getBoundingClientRect();
-        // Mage-OS's fixed sidebar can extend below the viewport. Click the
-        // visible part of the link, keeping Cypress's normal hit-testing.
-        const left = Math.max(0, box.left), right = Math.min(win.innerWidth, box.right);
-        const top = Math.max(0, box.top), bottom = Math.min(win.innerHeight, box.bottom);
-        expect(right, 'menu link visible width').to.be.greaterThan(left);
-        expect(bottom, 'menu link visible height').to.be.greaterThan(top);
-        return cy.wrap(link).click((left + right) / 2 - box.left, (top + bottom) / 2 - box.top,
-            {scrollBehavior: false});
-    });
+    const clickMenu = selector => {
+        cy.get(selector).should('be.visible').then(([element]) => {
+            element.scrollIntoView({block: 'nearest', inline: 'nearest'});
+        });
+        // Magento makes the submenu visible while it is still sliding in.
+        // Wait for a clickable portion of the link before computing its offset.
+        const visibleBounds = element => {
+            const box = element.getBoundingClientRect();
+            const win = element.ownerDocument.defaultView;
+            return {
+                box,
+                left: Math.max(0, box.left), right: Math.min(win.innerWidth, box.right),
+                top: Math.max(0, box.top), bottom: Math.min(win.innerHeight, box.bottom)
+            };
+        };
+        return cy.get(selector).should(([element]) => {
+            const {left, right, top, bottom} = visibleBounds(element);
+            expect(right, 'menu link visible width').to.be.greaterThan(left);
+            expect(bottom, 'menu link visible height').to.be.greaterThan(top);
+        }).then(link => {
+            const {box, left, right, top, bottom} = visibleBounds(link[0]);
+            return cy.wrap(link).click((left + right) / 2 - box.left, (top + bottom) / 2 - box.top,
+                {scrollBehavior: false});
+        });
+    };
     clickMenu(parent);
     clickMenu(child);
 }

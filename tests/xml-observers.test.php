@@ -126,6 +126,8 @@ try {
     $cold = $manager();
     $observer->shortCircuit = true;
     $cold->dispatch($runtimeEvent);
+    $empty = Recorder::finish();
+    requireObserver($empty['observerHook'] && !$empty['events'], 'A healthy request may have zero observer execution');
     $observer->shortCircuit = false;
     JournalObserverForTest::$actions = [
         static function () use ($cold) { $cold->dispatch('OBSERVER_HOOK_NESTED'); throw new LogicException('observer test exception'); },
