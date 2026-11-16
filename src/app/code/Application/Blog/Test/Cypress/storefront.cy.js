@@ -73,7 +73,7 @@ describe('Blog storefront', () => {
                 .its('status').should('equal', 404);
         }
         cy.visit('/blog/post/view/slug/' + f.prefix + 'article-1');
-        waitForStorefront();
+        waitForStorefront({lumaMessages: true});
         get('comment-form').invoke('attr', 'action').then(url => {
             cy.intercept('POST', url).as('rejectedComment');
         });

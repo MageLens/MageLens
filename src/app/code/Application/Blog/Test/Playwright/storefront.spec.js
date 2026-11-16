@@ -68,7 +68,7 @@ test.describe('Blog storefront', () => {
             expect((await page.request.get('/blog/post/view/slug/' + f.prefix + slug, {headers: headers()})).status()).toBe(404);
         }
         await page.goto('/blog/post/view/slug/' + f.prefix + 'article-1');
-        await waitForStorefront(page);
+        await waitForStorefront(page, {lumaMessages: true});
         const action = await get(page, 'comment-form').getAttribute('action');
         // Keep the forged POST, redirect and rejection cookie in one browser navigation.
         const response = page.waitForResponse(response => response.url() === action && response.request().method() === 'POST');

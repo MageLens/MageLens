@@ -17,11 +17,11 @@ const fixtures = () => JSON.parse(fs.readFileSync('coverage/project-fixtures.jso
 const headers = () => ({'x-application-coverage': JSON.parse(fs.readFileSync('coverage/run.json')).id});
 const get = (page, name) => page.locator(`[data-cy="${name}"]`);
 const message = (page, type) => page.locator(`.message-${type}, [ui-id="message-${type}"]`);
-async function waitForStorefront(page) {
+async function waitForStorefront(page, {lumaMessages = false} = {}) {
     if (fixtures().themePaths[0] === 'Hyva/default-csp') {
         await expect.poll(() => page.evaluate(() => window.__magelensStorefrontReady),
             {message: 'Hyva cookie messages and private content initialized'}).toEqual({messages: true, privateContent: true});
-    } else {
+    } else if (lumaMessages) {
         await page.waitForFunction(lumaMessagesReady);
     }
 }
