@@ -6,6 +6,14 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
+## 1.10.0 - Unreleased
+
+- Add a separate XML configuration coverage report in `coverage/xml/` for scoped `config.xml` reads and rendered `system.xml` fields, preserving source directories and identifying measurement limitations.
+- Add Blog Journal settings scenarios for Cypress and Playwright to exercise configuration consumption across default, website and store scopes.
+- Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
+
+Rerun installation with your saved platform, theme and runner selections to install the XML collector extension, then regenerate reports with `./bin/run-coverage`.
+
 ## 1.9.4 - 2026-11-14
 
 - Update Composer in the PHP image to 2.11.2 for archive extraction and credential-handling security fixes.

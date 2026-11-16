@@ -48,8 +48,7 @@
 /policies.json
 /node_modules/
 /.nyc_output/
-/coverage/*
-!/coverage/badges/
+/coverage/
 /cypress/screenshots/
 /cypress/videos/
 /.idea/
