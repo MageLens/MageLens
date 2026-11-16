@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -82,6 +82,11 @@ function snapshot(directory) {
     const scope = read(directory, 'javascript-scope.json');
     const templates = read(directory, 'templates/coverage-summary.json');
     const summary = read(directory, 'summary.json');
+    const xml = read(directory, 'xml/coverage.json');
+    assert.equal(xml.run, run.id, 'Stale XML coverage');
+    assert.equal(xml.complete, true);
+    assert.equal(xml.sourcesUnchanged, true);
+    assert.deepEqual(xml.collectorErrors, []);
     for (const report of [php, js, scope, summary]) assert.equal(report.run, run.id, 'Stale coverage summary');
     assert.equal(templates.schemaVersion, 2);
     const groups = files(array(scope.included).map(entry => [entry.path, entry]), entry => {
@@ -92,7 +97,19 @@ function snapshot(directory) {
     assert.deepEqual(Object.keys(groups).sort(), Object.keys(files(Object.entries(javascript), () => true)).sort(), 'Incomplete JavaScript source inventory');
     const result = {
         schema: 1, run: run.id,
-        metrics: Object.fromEntries(['php', 'js', 'templates'].map(key => [key, summary.metrics[key].percent])),
+        metrics: Object.fromEntries(['php', 'js', 'templates', 'xml'].map(key => [key, summary.metrics[key].percent])),
+        xml: {totals: totals({total: xml.total, covered: xml.covered, percent: xml.percent}),
+            warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), digest(item.reason)])),
+            files: files(array(xml.files).map(file => [file.path, file]), file => ({
+                source: file.sourceFingerprint, reason: digest(file.reason || ''),
+                lines: Object.fromEntries(Object.entries(object(file.lines)).map(([line, value]) => [line, value.state])),
+                declarations: sort(array(file.declarations).map(item => ({
+                    id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],
+                    range: [item.startLine, item.endLine], supported: item.supported, effective: item.effective,
+                    state: item.state, reason: digest(item.reason || ''),
+                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify([event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
+                })))
+            }))},
         php: {totals: totals({total: php.total, covered: php.covered, percent: php.percent}),
             files: files(Object.entries(read(directory, 'php/line-coverage.json')), lines =>
                 Object.fromEntries(Object.entries(object(lines)).map(([line, value]) => [line, hit(value)])))},
@@ -116,9 +133,16 @@ function snapshot(directory) {
 function validateSnapshot(value, run, summary) {
     assert.equal(value.schema, 1, 'Missing complete coverage snapshot');
     assert.equal(value.run, run, 'Stale complete coverage snapshot');
-    for (const type of ['php', 'js', 'templates']) {
+    for (const type of ['php', 'js', 'templates', 'xml']) {
         assert.ok(Object.keys(object(value[type]?.files)).length, `Empty ${type} inventory`);
         assert.equal(value.metrics[type], summary.metrics[type].percent, `Mismatched ${type} summary`);
+    }
+    totals(value.xml.totals);
+    array(value.xml.warnings);
+    for (const file of Object.values(value.xml.files)) {
+        assert.match(file.source, /^[a-f0-9]{64}$/);
+        object(file.lines); array(file.declarations);
+        for (const state of Object.values(file.lines)) assert.ok(['covered', 'uncovered', 'unmeasured'].includes(state));
     }
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
@@ -151,7 +175,7 @@ function compareThemes(reports, expected) {
         const differences = [];
         const baseline = entries[0];
         for (const report of entries.slice(1)) {
-            for (const section of ['metrics', 'php', 'js', 'templates']) {
+            for (const section of ['metrics', 'php', 'js', 'templates', 'xml']) {
                 const left = baseline.snapshot[section], right = report.snapshot[section];
                 if (isDeepStrictEqual(left, right)) continue;
                 if (section === 'metrics') differences.push({case: report.id, section});

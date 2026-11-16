@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -15,9 +15,10 @@ const expected = [
     'searches, filters, paginates, reads articles, and retains favorites',
     'rejects invalid filters and keeps draft, scheduled, and inactive-category posts private',
     'collects real PHP, JavaScript and template execution',
-    'starts the next test with fresh state'
+    'starts the next test with fresh state',
+    'uses inherited journal settings and shows the selected Admin fields'
 ].sort();
-assert.equal(results.totalTests, expected.length, 'Every installation must run all five Blog scenarios and both coverage probes');
+assert.equal(results.totalTests, expected.length, 'Every installation must run all six Blog scenarios and both coverage probes');
 assert.equal(results.totalPassed, expected.length);
 assert.equal(results.totalFailed, 0);
 assert.equal(results.totalSkipped, 0);

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -45,10 +45,11 @@ const runs = directories.map(directory => {
     const templateHits = Object.fromEntries(templates.templates.filter(entry => blog(entry.path)).sort((a, b) => a.path.localeCompare(b.path)).map(entry =>
         [entry.path, entry.statements.map(statement => ({start: statement.start, syntax: statement.syntax, covered: statement.hits > 0}))]));
     const sharedPhp = lines(php, file => blog(file) && !/\/templates\/blog(?:-hyva)?\.phtml$/.test(file));
+    const sharedXml = Object.fromEntries(Object.entries(read('xml/coverage-summary.json').files).filter(([file]) => blog('/' + file)));
     const sharedJs = lines(js, file => blog(file) && file.includes('/view/adminhtml/'));
     assert.ok(Object.keys(sharedPhp).length > 10 && Object.keys(sharedJs).length >= 2, 'Missing shared application sources');
     return {platform, version: installation.version, theme, runner, directory, passedTests: read(`${runner}-results.json`).totalPassed, metrics: read('summary.json').metrics,
-        sharedPhp, sharedJs, php: lines(php, blog), js: lines(js, blog), templateHits};
+        sharedPhp, sharedJs, sharedXml, php: lines(php, blog), js: lines(js, blog), templateHits};
 });
 assert.deepEqual(runs.map(run => `${run.platform}/${run.theme}/${run.runner}`).sort(),
     ['magento', 'mageos'].flatMap(platform => ['luma', 'hyva'].flatMap(theme =>
@@ -60,6 +61,7 @@ function compare(label, left, right) {
     }
 }
 for (const run of runs.slice(1)) {
+    compare(`Shared XML: ${runs[0].platform}/${runs[0].theme}/${runs[0].runner} vs ${run.platform}/${run.theme}/${run.runner}`, runs[0].sharedXml, run.sharedXml);
     compare(`Shared PHP: ${runs[0].platform}/${runs[0].theme}/${runs[0].runner} vs ${run.platform}/${run.theme}/${run.runner}`, runs[0].sharedPhp, run.sharedPhp);
     compare(`Shared Admin JavaScript: ${runs[0].platform}/${runs[0].theme}/${runs[0].runner} vs ${run.platform}/${run.theme}/${run.runner}`, runs[0].sharedJs, run.sharedJs);
 }

@@ -31,12 +31,17 @@ for kind in php runner-cypress runner-playwright; do
         docker build --target portable --file docker/php/Dockerfile --tag "$image" \
             --label "org.magelens.inputs=$fingerprint" --label "org.opencontainers.image.source=$release_source" \
             --build-arg "PHP_IMAGE=$APPLICATION_PHP_IMAGE" --build-arg "EXPECTED_PHP_VERSION=$PHP_VERSION" \
-            --build-arg "PIE_VERSION=$PIE_VERSION" --build-arg "PCOV_VERSION=$PCOV_VERSION" .
+            --build-arg "OPENTELEMETRY_VERSION=$OPENTELEMETRY_VERSION" --build-arg "PIE_VERSION=$PIE_VERSION" --build-arg "PCOV_VERSION=$PCOV_VERSION" .
         docker run --rm --entrypoint php \
             --mount "type=bind,source=$ROOT/tests,target=/tests,readonly" \
             --mount "type=bind,source=$ROOT/docker/php,target=/application/docker/php,readonly" \
             --env MAGELENS_REPORT_DATA=/application/docker/php/report-data.php \
             "$image" -d pcov.directory=/tmp -d pcov.exclude= /tests/php-report.test.php
+        docker run --rm --network none --memory 256m --cpus 1 --user root --entrypoint sh \
+            --mount "type=bind,source=$ROOT/tests,target=/workspace/tests,readonly" \
+            --mount "type=bind,source=$ROOT/docker/php,target=/workspace/docker/php,readonly" \
+            --mount "type=bind,source=$ROOT/src/app/code/Application/Blog/Test/Configuration,target=/workspace/src/app/code/Application/Blog/Test/Configuration,readonly" \
+            "$image" -c 'php /workspace/tests/xml.test.php && php /workspace/tests/xml-hooks.test.php'
     else
         export MAGELENS_RUNNER=${kind#runner-} TEMPLATE_COVERAGE_PACKAGE=''
         source "$ROOT/bin/sync-runner-dependencies"

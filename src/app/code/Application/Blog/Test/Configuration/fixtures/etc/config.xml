@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <application_blog>
+            <display>
+                <heading>Journal</heading>
+                <enabled>0</enabled>
+                <empty/>
+                <unused>Unvisited setting</unused>
+                <overridden>Default editorial notice</overridden>
+                <alias>Read more from our journal</alias>
+                <multiline><![CDATA[
+First line
+Second line
+                ]]></multiline>
+            </display>
+            <subtree>
+                <first>First returned leaf</first>
+                <second>Second returned leaf</second>
+            </subtree>
+            <backend>
+                <heading>Backend journal</heading>
+                <enabled>1</enabled>
+            </backend>
+        </application_blog>
+    </default>
+    <websites>
+        <journal_website>
+            <application_blog>
+                <display>
+                    <heading>Website journal</heading>
+                </display>
+            </application_blog>
+        </journal_website>
+    </websites>
+    <stores>
+        <journal_store>
+            <application_blog>
+                <display>
+                    <heading>Store journal</heading>
+                </display>
+            </application_blog>
+        </journal_store>
+    </stores>
+</config>

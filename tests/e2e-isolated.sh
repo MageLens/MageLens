@@ -98,6 +98,12 @@ cp tests/php-report.test.php "$scratch/docker/php/e2e/"
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
 cp -a src/app/code/Application "$scratch/src/app/code/"
+# XML acceptance declarations/routes exist only in this disposable demo checkout.
+cp -a src/app/code/Application/Blog/Test/Configuration/fixtures/. "$scratch/src/app/code/Application/Blog/"
+touch "$scratch/src/app/code/Application/Blog/Test/Configuration/.enabled"
+cp src/app/code/Application/Blog/Test/Configuration/Cypress/settings.cy.js "$scratch/src/app/code/Application/Blog/Test/Cypress/"
+cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js "$scratch/src/app/code/Application/Blog/Test/Playwright/"
+
 cp -a src/app/design/frontend/Application "$scratch/src/app/design/frontend/"
 mkdir -p "$scratch/src/app/code/MageLens"
 cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
@@ -154,6 +160,7 @@ fi
     ./bin/runner node tests/dependencies.test.cjs
     ./bin/application-compose exec -T -e MAGELENS_REPORT_DATA=/application/docker/php/report-data.php phpfpm \
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
+    ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/Application/Blog/Test/Configuration/merge.test.php
     ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
@@ -161,6 +168,7 @@ fi
     ./bin/run-coverage | tee .runtime/coverage-run.log
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
+    ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-e2e.cjs

@@ -37,6 +37,7 @@
 !/bin/javascript-scope.cjs
 !/bin/report-browser.cjs
 !/bin/report-index.cjs
+!/bin/report-xml.cjs
 !/bin/run-browser.cjs
 !/bin/run-playwright.cjs
 !/bin/run-coverage

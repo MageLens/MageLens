@@ -45,6 +45,7 @@ services:
         PHP_IMAGE: ${MAGELENS_PHP_IMAGE:?Run commands through bin/application-compose or install.sh}
         EXPECTED_PHP_VERSION: ${PHP_VERSION:?Missing dependencies.yaml configuration}
         PCOV_VERSION: ${PCOV_VERSION:?Missing dependencies.yaml configuration}
+        OPENTELEMETRY_VERSION: ${OPENTELEMETRY_VERSION:?Missing dependencies.yaml configuration}
         PIE_VERSION: ${PIE_VERSION:?Missing dependencies.yaml configuration}
     image: magelens-php:${MAGENTO_VERSION}-php${PHP_VERSION}-pcov${PCOV_VERSION}-markshust${MARKSHUST_DOCKER_MAGENTO_VERSION}
     volumes: !override

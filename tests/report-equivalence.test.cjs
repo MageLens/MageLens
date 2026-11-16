@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -20,7 +20,7 @@ function reports(value) { return cases.map(entry => ({...entry, snapshot: struct
 test('complete snapshots preserve all measured sources without exposing private contents', t => {
     const {directory} = fixture(t);
     const value = snapshot(directory);
-    for (const section of ['php', 'js', 'templates']) {
+    for (const section of ['php', 'js', 'templates', 'xml']) {
         assert.equal(Object.keys(value[section].files).length, 2);
         assert.ok(Object.keys(value[section].files).some(key => key.startsWith('source-sha256:')));
     }

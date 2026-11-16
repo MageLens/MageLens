@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -34,7 +34,16 @@ function writeCoverage(directory) {
     const totals = createCoverageMap(javascript).getCoverageSummary().toJSON();
     write('javascript-summary.json', {run: 'fresh', groups: {all: totals, application: totals, libraries: createCoverageMap({}).getCoverageSummary().toJSON()},
         excluded: [{path: 'vendor/private/SECRET-excluded.js', reason: 'SECRET'}]});
-    write('equivalence.json', snapshot(directory));
+    const xml = {run: 'fresh', complete: true, sourcesUnchanged: true, collectorErrors: [], total: 2, covered: 1, percent: 50, warnings: [], files: [
+        {path: 'app/code/Application/Blog/etc/config.xml', sourceFingerprint: 'a'.repeat(64), lines: {'11': {state: 'covered'}}, declarations: []},
+        {path: 'vendor/private/SECRET.xml', sourceFingerprint: 'b'.repeat(64), lines: {'12': {state: 'uncovered'}}, declarations: []}
+    ]};
+    write('xml/coverage.json', xml);
+    const summary = JSON.parse(fs.readFileSync(path.join(directory, 'summary.json')));
+    summary.metrics.xml = {percent: 50}; write('summary.json', summary);
+    const complete = snapshot(directory);
+    write('xml/coverage-summary.json', complete.xml);
+    write('equivalence.json', complete);
     return {write, read: file => JSON.parse(fs.readFileSync(path.join(directory, file)))};
 }
 module.exports = {writeCoverage};

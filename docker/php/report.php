@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -19,8 +19,10 @@ $runData = json_decode(file_get_contents('/coverage/run.json'), true, flags: JSO
 $run = $runData['id'];
 $state = json_decode(file_get_contents('/coverage/collector.json'), true, flags: JSON_THROW_ON_ERROR);
 $records = glob("/coverage/raw/php/$run/*.pcov");
-if (!$records || glob("/coverage/raw/php/$run/*.error")) {
-    throw new RuntimeException('Missing or failed PHP collection. Inspect coverage/raw/php and PHP-FPM logs.');
+$errors = glob("/coverage/raw/php/$run/*.error");
+if (!$records || $errors) {
+    throw new RuntimeException('Missing or failed PHP collection. ' . coverageCollectionFailureSummary($errors)
+        . '. Inspect coverage/raw/php and PHP-FPM logs.');
 }
 if (applicationIdentity()['identity']['id'] !== $state['identity']['id']) {
     throw new RuntimeException('Deployment changed during the suite. Rerun coverage against stable sources and configuration.');
@@ -41,7 +43,7 @@ foreach ($records as $path) {
             $merged[$file][$line] = max($merged[$file][$line] ?? -1, $hit);
         }
     }
-    $requests[] = $metadata;
+    $requests[] = array_diff_key($metadata, ['xml' => true]);
 }
 if ($state['manifest']) {
     $result = pcov_manifest_merge($state['manifest'], $records);

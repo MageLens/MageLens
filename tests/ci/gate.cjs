@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -23,7 +23,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.equal(evidence.feasibility?.passed, true, 'Host feasibility not proven');
     assert.equal(evidence.feasibility.sha, context.sha);
     for (const step of ['probe', 'resources', 'isolation', 'e2e', 'cleanup']) assert.equal(evidence.steps[step]?.outcome, 'success', step);
-    assert.deepEqual(evidence.counts, {totalTests: 7, totalPassed: 7, totalFailed: 0, totalSkipped: 0, totalPending: 0});
+    assert.deepEqual(evidence.counts, {totalTests: 8, totalPassed: 8, totalFailed: 0, totalSkipped: 0, totalPending: 0});
     const run = read(path.join(directory, 'run.json'));
     const results = read(path.join(directory, `${entry.runner}-results.json`));
     const summary = read(path.join(directory, 'summary.json'));
@@ -45,7 +45,7 @@ function verifyCase(entry, evidence, directory, context) {
             build: installation.runnerBuild}, 'Incomplete runner regressions or stale source build');
     }
     assert.equal(installation.version, pins[entry.platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION']);
-    for (const type of ['php', 'js', 'templates']) {
+    for (const type of ['php', 'js', 'templates', 'xml']) {
         const percent = summary.metrics[type]?.percent;
         assert.ok(Number.isFinite(percent) && percent >= 0 && percent <= 100, `Invalid ${type} summary`);
     }
@@ -53,6 +53,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.ok(Object.keys(read(path.join(directory, 'js/coverage-final.json'))).length, 'Missing JavaScript coverage');
     assert.ok(read(path.join(directory, 'templates/coverage-summary.json')).templates.length, 'Missing template coverage');
     validateSnapshot(read(path.join(directory, 'equivalence.json')), run.id, summary);
+    assert.deepEqual(read(path.join(directory, 'xml/coverage-summary.json')), read(path.join(directory, 'equivalence.json')).xml, 'Incomplete XML report projection');
     execFileSync(process.execPath, ['tests/verify-scenarios.cjs', directory], {stdio: 'inherit'});
     return run.id;
 }
@@ -78,22 +79,22 @@ function gate() {
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
             themeReports.push({...entry, snapshot: read(path.join(directory, 'equivalence.json'))});
-            if (entry.os === 'ubuntu-latest') reports.push(directory);
+            reports.push(directory);
         } catch (error) { errors.push(`${entry.id}: ${error.message}`); }
     }
-    if (reports.length === 8) {
+    if (reports.length === cases.length) {
         try {
             execFileSync(process.execPath, ['tests/compare-matrix.cjs', ...reports], {stdio: 'inherit',
-                env: {...process.env, MAGELENS_MATRIX_REPORT: 'ci-gate/linux-matrix-comparison.json'}});
-        } catch { errors.push('Eight-way Linux coverage comparison failed'); }
-    } else errors.push(`Linux comparison incomplete: ${reports.length}/8 reports`);
+                env: {...process.env, MAGELENS_MATRIX_REPORT: 'ci-gate/matrix-comparison.json'}});
+        } catch { errors.push('Complete matrix coverage comparison failed'); }
+    } else errors.push(`Matrix comparison incomplete: ${reports.length}/${cases.length} reports`);
     fs.mkdirSync('ci-gate', {recursive: true});
     const themes = compareThemes(themeReports, cases);
     fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');
     errors.push(...themes.errors);
     const report = {sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
         dependencyPreviews: previews,
-        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 7, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
+        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 8, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
     fs.writeFileSync('ci-gate/qualification.json', JSON.stringify(report, null, 2) + '\n');
     const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/${cases.length} complete cases; ${report.expectedAcceptanceTests} acceptance tests required.\n${errors.join('\n')}`;
     console.log(summary);

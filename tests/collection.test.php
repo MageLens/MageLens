@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -37,4 +37,10 @@ file_put_contents('/coverage/run.json', json_encode(['id' => $run]));
 startCoverageCollection();
 check(file_get_contents('/coverage/.active-run') === $run, 'Next run retained the old token');
 stopCoverageCollection();
+file_put_contents('/coverage/known.error', 'Cached Admin structure differs from current XML provenance; use --refresh-cache');
+file_put_contents('/coverage/private.error', 'Exception containing private-password and /private/shop/customer@example.test');
+$failure = coverageCollectionFailureSummary(['/coverage/known.error', '/coverage/private.error']);
+check(str_contains($failure, '2 failed request records') && str_contains($failure, 'Cached Admin structure'), 'Known collection failures must be diagnosable');
+check(str_contains($failure, 'Other collector failures: 1'), 'Unknown failures must remain visible');
+check(!str_contains($failure, 'private-password') && !str_contains($failure, 'customer@example.test') && !str_contains($failure, '/private/shop'), 'Raw collector failures must not leak private data');
 echo "PASS: reporting waits for active requests; closing is idempotent; new runs use fresh tokens.\n";

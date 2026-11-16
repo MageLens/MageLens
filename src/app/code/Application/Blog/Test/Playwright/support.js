@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -58,10 +58,14 @@ async function login(page, username = 'application', password = 'ApplicationOnly
     await page.locator('.action-login').click();
     await expect(page.locator('#nav')).toBeVisible();
 }
-async function section(page, name) {
+async function navigateAdminMenu(page, parent, child) {
+    // The sidebar HTML is visible before Magento binds its click handlers.
     await expect(page.locator('.admin__menu-overlay')).toBeAttached();
-    await page.locator('#menu-application-blog-manage > a').click();
-    await page.locator(`[data-ui-id="menu-application-blog-${name}"] > a`).click();
+    await page.locator(parent).click();
+    await page.locator(child).click();
+}
+async function section(page, name) {
+    await navigateAdminMenu(page, '#menu-application-blog-manage > a', `[data-ui-id="menu-application-blog-${name}"] > a`);
     await expect(get(page, 'blog-admin')).toBeVisible();
 }
 async function findRecord(page, name) {
@@ -92,4 +96,4 @@ async function fillComment(page, name, email, body) {
     const form = get(page, 'comment-form');
     for (const [field, value] of Object.entries({name, email, body})) await form.locator(`[name="${field}"]`).fill(value);
 }
-module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForBlog, visitBlog, search, login, section, findRecord, save, remove, fillPost, fillComment};
+module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForBlog, visitBlog, search, login, navigateAdminMenu, section, findRecord, save, remove, fillPost, fillComment};

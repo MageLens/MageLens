@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -89,7 +89,10 @@ function writeEvidence() {
         }
         report.counts = pick(read(`${directory}/coverage/${entry.runner}-results.json`), ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']);
         report.browser = read(`${directory}/coverage/${entry.runner}-results.json`).browser;
-        fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(snapshot(source)) + '\n');
+        const complete = snapshot(source);
+        fs.mkdirSync(`${directory}/coverage/xml`, {recursive: true});
+        fs.writeFileSync(`${directory}/coverage/xml/coverage-summary.json`, JSON.stringify(complete.xml) + '\n');
+        fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(complete) + '\n');
         execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
         report.passed = !report.diagnostics && !report.previewError && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {
@@ -110,7 +113,7 @@ function writeEvidence() {
         throw new Error(report.incomplete);
     }
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        `## ${entry.id}\n\n${report.passed ? 'PASS: 7/7 acceptance scenarios and all harness checks.' : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
+        `## ${entry.id}\n\n${report.passed ? `PASS: ${report.counts.totalPassed}/${report.counts.totalTests} acceptance scenarios and all harness checks.` : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
     if (report.steps.e2e?.outcome === 'success' && !report.passed) process.exitCode = 1;
 }
 module.exports = {sanitizedCoverage, testResults};
