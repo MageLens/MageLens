@@ -6,13 +6,17 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
-## 1.9.4 - 2026-11-14
+## 1.9.4 - 2026-11-16
 
+- Open the combined coverage report from the URL printed after a successful run. MageLens publishes it through Magento's `pub/media`. ([#52](https://github.com/MageLens/MageLens/pull/52))
+- Retain prebuilt images for the latest release, releases from the last 90 days, the five most recent releases, and pinned releases. Installers supporting the expiration protocol fall back to a source build when a release is confirmed expired. ([#45](https://github.com/MageLens/MageLens/pull/45))
 - Update Composer in the PHP image to 2.11.2 for archive extraction and credential-handling security fixes.
 - Update browser runner runtimes to Node.js 24.22.3 with the November security fixes; install Cypress’s required system libraries on the official multiarch Node base.
 - Update the shared Chrome for Testing browser to 157.0.8103.78 with verified x64 and ARM64 archives and the latest security fixes.
 - Update PHP code coverage to 14.5.2 to correct nested match executable lines and merged match coverage.
 - Update Cypress to 16.3.0 for cookie interception fixes and faster runner startup, retaining source fixes and all eleven runner regressions.
+
+For an existing installation, back up application data and rerun `./install.sh` with your saved platform, theme and runner flags to update dependencies and enable report publication, then run `./bin/run-coverage`.
 
 ## 1.9.3 - 2026-11-09
 
