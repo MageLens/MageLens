@@ -20,7 +20,7 @@ use Magento\Framework\ObjectManager\ConfigLoaderInterface;
 final class ObserverManifest
 {
     public const AREAS = ['global', 'frontend', 'adminhtml'];
-    private const ATTRIBUTES = ['instance', 'disabled', 'shared', 'method'];
+    private const DEFAULTS = ['disabled' => false, 'shared' => true];
 
     /** Replay the installed reader over a single snapshot, retaining per-attribute origins. */
     public static function read(Reader $reader, array $known): array
@@ -55,6 +55,7 @@ final class ObserverManifest
         $converterProperty->setValue($annotated, $tracer);
 
         $sources = []; $configs = []; $origins = []; $providers = [];
+        $attributes = ['name', 'instance', 'method', ...array_keys(self::DEFAULTS)];
         foreach ([...self::AREAS, 'primary'] as $area) {
             $capture->files = iterator_to_array((function () use ($resolver, $area) {
                 yield from $resolver->get('events.xml', $area);
@@ -67,8 +68,7 @@ final class ObserverManifest
                 foreach ((new \DOMXPath($dom))->query('/config/event/observer') as $node) {
                     $path = $node->getNodePath();
                     $id = $known[$file][$path] ?? hash('sha256', "$file\0$path");
-                    $node->setAttribute('magelens-origin-name', $id);
-                    foreach (self::ATTRIBUTES as $attribute) {
+                    foreach ($attributes as $attribute) {
                         if ($node->hasAttribute($attribute)) $node->setAttribute("magelens-origin-$attribute", $id);
                     }
                 }
@@ -94,14 +94,33 @@ final class ObserverManifest
             foreach ($eventNode->childNodes as $node) {
                 if (!$node instanceof \DOMElement || $node->tagName !== 'observer') continue;
                 $name = $node->getAttribute('name');
+                $config = $converted[$event][$name] ?? null;
                 $result[$event][$name] = [];
-                foreach ($converted[$event][$name] ?? [] as $key => $value) {
+                if ($config === null) continue;
+                // Conversion omits default values even when XML supplied them explicitly.
+                foreach (array_keys($config + self::DEFAULTS) as $key) {
                     $origin = $node->getAttribute("magelens-origin-$key");
                     if ($origin !== '') $result[$event][$name][$key] = $origin;
                 }
             }
         }
         return $result;
+    }
+
+    public static function mergeOrigins(array $global, array $area, array $globalOrigins, array $areaOrigins): array
+    {
+        foreach ($area as $event => $observers) {
+            foreach ($observers as $name => $config) {
+                // Scoped configuration merges converted arrays. An omitted area
+                // default has no effect on a key that survives from global.
+                $retainedGlobal = array_diff_key($global[$event][$name] ?? [], $config);
+                $globalOrigins[$event][$name] = array_replace(
+                    array_diff_key($globalOrigins[$event][$name] ?? [], $config),
+                    array_diff_key($areaOrigins[$event][$name] ?? [], $retainedGlobal)
+                );
+            }
+        }
+        return $globalOrigins;
     }
 
     public static function registration(array $config, array $origins, string $id, bool $active, callable $implementation): array
@@ -111,7 +130,7 @@ final class ObserverManifest
         unset($origins['name']);
         $contributors = array_unique($origins ?: [$nameOrigin]);
         if (!in_array($id, $contributors, true)) return ['overridden', 'Superseded by another declaration', null];
-        if (($config['disabled'] ?? false) === true) return ['disabled', 'Effective Magento registration is disabled', null];
+        if (($config['disabled'] ?? self::DEFAULTS['disabled']) === true) return ['disabled', 'Effective Magento registration is disabled', null];
         if (count($contributors) !== 1) return ['ambiguous', 'Multiple declarations supply the effective observer attributes', null];
         $class = $implementation($config['instance'] ?? '');
         return $class ? ['eligible', null, $class] : ['unsupported', 'Observer implementation or invoker is unsupported', null];
@@ -130,7 +149,7 @@ final class ObserverManifest
         foreach (self::AREAS as $area) {
             // Config\Data\Scoped loads 'global' first, then the current scope.
             $effective = array_replace_recursive($configs['global'], $configs[$area]);
-            $owners = array_replace_recursive($origins['global'], $origins[$area]);
+            $owners = self::mergeOrigins($configs['global'], $configs[$area], $origins['global'], $origins[$area]);
             $di = clone $om->get(ConfigInterface::class);
             if ($area !== 'global') $di->extend($om->get(ConfigLoaderInterface::class)->load($area));
             $invoker = self::nativeClass($di->getInstanceType($di->getPreference(InvokerInterface::class)));

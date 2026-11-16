@@ -28,9 +28,18 @@ final class Observers
     public static function hooks(array $targets): array
     {
         self::$targets = $targets;
-        foreach ($targets as $area) self::$events += $area;
+        self::$events = [];
         if (!$targets) return [];
-        return [
+        $executeClasses = [ObserverInterface::class => true]; // The no-op self-check implements the interface.
+        foreach ($targets as $area) {
+            self::$events += $area;
+            foreach ($area as $event) {
+                foreach ($event['targets'] ?? [] as $target) {
+                    $executeClasses[$target['class']] = true;
+                }
+            }
+        }
+        $hooks = [
             [Manager::class, 'dispatch',
                 static function ($subject, array $args, string $class) {
                     if ($class !== Manager::class) return;
@@ -62,11 +71,15 @@ final class Observers
                 static function ($subject, array $args, $result, ?\Throwable $error, string $class) {
                     if ($class === InvokerDefault::class) array_pop(self::$calls);
                 }],
-            [ObserverInterface::class, 'execute',
-                static function ($subject, array $args, string $class) {
-                    self::execute($subject, $class);
-                }, null],
         ];
+        // The declaring class of an inherited execute() can lack ObserverInterface.
+        $execute = static function ($subject, array $args, string $class) {
+            self::execute($subject, $class);
+        };
+        foreach (array_keys($executeClasses) as $class) {
+            $hooks[] = [$class, 'execute', $execute, null];
+        }
+        return $hooks;
     }
 
     private static function error(string $message): void

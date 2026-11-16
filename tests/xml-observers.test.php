@@ -26,6 +26,39 @@ $schemaPath = (new ReflectionClass(Observer::class))->getFileName();
 $schema = dirname($schemaPath) . '/etc/events.xsd';
 $global = file_get_contents($root . '/etc/events.xml');
 $frontend = file_get_contents($root . '/etc/frontend/events.xml');
+$defaultXml = static fn(string $observers) => <<<XML
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <event name="default_observers">
+$observers
+    </event>
+</config>
+XML;
+$files = [
+    'global' => [
+        'global' => $global,
+        'defaults_before' => $defaultXml(<<<'XML'
+    <observer name="enabled" instance="Probe" disabled="true"/>
+    <observer name="shared" instance="Probe" shared="false"/>
+    <observer name="cross_area" instance="Probe" disabled="true" shared="false"/>
+XML),
+        'defaults_after' => $defaultXml(<<<'XML'
+    <observer name="enabled" disabled="false"/>
+    <observer name="shared" shared="true"/>
+XML),
+    ],
+    'frontend' => [
+        'frontend' => $frontend,
+        'external' => str_replace(
+            '<observer name="disabled_in_frontend" disabled="true"/>',
+            '<observer name="external_override" instance="External"/><observer name="global_journal" shared="false"/>',
+            str_replace('frontend_journal', 'external_earlier', $frontend)
+        ),
+        'frontend_defaults' => $defaultXml(<<<'XML'
+    <observer name="cross_area" disabled="false" shared="true"/>
+XML),
+    ],
+];
 $ids = [];
 foreach (['global' => $global, 'frontend' => $frontend] as $scope => $source) {
     $path = $scope === 'global' ? 'etc/events.xml' : 'etc/frontend/events.xml';
@@ -34,18 +67,18 @@ foreach (['global' => $global, 'frontend' => $frontend] as $scope => $source) {
         'Observer IDs and ranges must agree on CRLF');
     foreach ($items as $item) $ids[$scope][$item['node']] = $item['id'];
 }
-$resolver = new class($global, $frontend) implements FileResolverInterface {
-    public function __construct(private string $global, private string $frontend) {}
+$defaultIds = [];
+foreach (['defaults_before', 'defaults_after', 'frontend_defaults'] as $file) {
+    $scope = $file === 'frontend_defaults' ? 'frontend' : 'global';
+    foreach (Xml::declarations("$file/etc/events.xml", $files[$scope][$file], 'events') as $item) {
+        $ids[$file][$item['node']] = $defaultIds[$file][$item['registration']['observer']] = $item['id'];
+    }
+}
+$resolver = new class($files) implements FileResolverInterface {
+    public function __construct(private array $files) {}
     public function get($filename, $scope = null)
     {
-        return match ($scope) {
-            'global' => ['global' => $this->global],
-            'frontend' => ['frontend' => $this->frontend, 'external' => str_replace(
-                '<observer name="disabled_in_frontend" disabled="true"/>',
-                '<observer name="external_override" instance="External"/><observer name="global_journal" shared="false"/>',
-                str_replace('frontend_journal', 'external_earlier', $this->frontend))],
-            default => [],
-        };
+        return $this->files[$scope] ?? [];
     }
 };
 $schemaLocator = new class($schema) extends SchemaLocator {
@@ -60,13 +93,33 @@ $reader = new Reader($resolver, new Converter(), $schemaLocator, $validation);
 [$configs, $owners] = ObserverManifest::read($reader, $ids);
 $event = 'magelens_journal_observers';
 $merged = array_replace_recursive($configs['global'], $configs['frontend'])[$event];
-$origins = array_replace_recursive($owners['global'], $owners['frontend'])[$event];
+$scopedOwners = ObserverManifest::mergeOrigins($configs['global'], $configs['frontend'], $owners['global'], $owners['frontend']);
+$origins = $scopedOwners[$event];
 $globalItems = array_values($ids['global']);
 foreach (['global_journal' => [0, 'ambiguous'], 'disabled_in_frontend' => [1, 'disabled'], 'external_override' => [2, 'overridden']] as $name => [$index, $status]) {
     [$actual] = ObserverManifest::registration($merged[$name], $origins[$name], $globalItems[$index], true, static fn() => 'Probe');
     requireObserver($actual === $status, "Incorrect provenance for $name: $actual");
 }
 requireObserver($configs['global'][$event]['global_journal']['name'] === 'global_journal', 'Native reader did not convert normalized identity');
+
+$defaults = $configs['global']['default_observers'];
+$defaultOrigins = $owners['global']['default_observers'];
+$implementation = static fn() => 'Probe';
+foreach (['enabled' => 'disabled', 'shared' => 'shared'] as $name => $attribute) {
+    requireObserver(!array_key_exists($attribute, $defaults[$name]), "Native converter retained default '$attribute'");
+    foreach (['defaults_before', 'defaults_after'] as $file) {
+        [$status] = ObserverManifest::registration($defaults[$name], $defaultOrigins[$name], $defaultIds[$file][$name], true, $implementation);
+        requireObserver($status === 'ambiguous', "Incorrect provenance for '$name' in '$file': $status");
+    }
+}
+$crossArea = 'cross_area';
+$crossAreaConfig = array_replace($defaults[$crossArea], $configs['frontend']['default_observers'][$crossArea]);
+$crossAreaOrigins = $scopedOwners['default_observers'][$crossArea];
+foreach (['disabled' => true, 'shared' => false] as $attribute => $value) {
+    requireObserver($crossAreaConfig[$attribute] === $value, "Scoped configuration lost the global '$attribute' value");
+    requireObserver($crossAreaOrigins[$attribute] === $defaultIds['defaults_before'][$crossArea],
+        "Scoped provenance lost the global '$attribute' owner");
+}
 
 class JournalObserverForTest implements ObserverInterface
 {
@@ -77,11 +130,27 @@ class JournalObserverForTest implements ObserverInterface
         if ($action) $action();
     }
 }
+
+class BaseObserverForTest
+{
+    public int $executions = 0;
+
+    public function execute(Observer $observer): void
+    {
+        $this->executions++;
+    }
+}
+
+class InheritedObserverForTest extends BaseObserverForTest implements ObserverInterface
+{
+}
+
 require __DIR__ . '/xml-observer-interceptor.php';
 $observer = new \JournalObserverForTest\Interceptor();
-$factory = new class($observer) extends ObserverFactory {
-    public function __construct(private ObserverInterface $observer) {}
-    public function get($className) { return $this->observer; }
+$inherited = new InheritedObserverForTest();
+$factory = new class([JournalObserverForTest::class => $observer, InheritedObserverForTest::class => $inherited]) extends ObserverFactory {
+    public function __construct(private array $observers) {}
+    public function get($className) { return $this->observers[$className]; }
 };
 $scope = new class implements \Magento\Framework\Config\ScopeInterface {
     public function getCurrentScope() { return 'frontend'; }
@@ -101,9 +170,14 @@ $state = (new ReflectionClass(\Magento\Framework\App\State::class))->newInstance
 $invoker = new InvokerDefault($factory, $state, new \Psr\Log\NullLogger());
 $runtimeEvent = 'observer_hook_test';
 $nestedEvent = 'observer_hook_nested';
+$inheritedEvent = 'observer_hook_inherited';
 $eventList = static fn(string ...$names) => array_combine($names, array_map(
     static fn($name) => ['name' => $name, 'instance' => JournalObserverForTest::class], $names));
-$runtimeConfig = [$runtimeEvent => $eventList('first', 'second'), $nestedEvent => $eventList('nested')];
+$runtimeConfig = [
+    $runtimeEvent => $eventList('first', 'second'),
+    $nestedEvent => $eventList('nested'),
+    $inheritedEvent => ['inherited' => ['name' => 'inherited', 'instance' => InheritedObserverForTest::class]],
+];
 $runtimeReader = new class($runtimeConfig) extends Reader {
     public function __construct(private array $config) {}
     public function read($scope = null) { return $scope === 'frontend' ? $this->config : []; }
@@ -113,9 +187,12 @@ $targets = [];
 foreach ($runtimeConfig as $name => $registrations) {
     $targets[$name]['hash'] = ObserverManifest::signature($registrations);
     foreach ($registrations as $key => $config) {
-        // A real generated interceptor has a parent observer method. This test
-        // intentionally uses the real interception trait's ___callParent path.
-        $targets[$name]['targets'][$key] = ['id' => $key, 'class' => JournalObserverForTest::class, 'hash' => ObserverManifest::signature($config)];
+        $method = new ReflectionMethod($config['instance'], 'execute');
+        $targets[$name]['targets'][$key] = [
+            'id' => $key,
+            'class' => $method->getDeclaringClass()->getName(),
+            'hash' => ObserverManifest::signature($config),
+        ];
     }
 }
 $manifestPath = '/coverage/xml-collector.json';
@@ -146,6 +223,10 @@ try {
     requireObserver($record['observerHook'], 'Native observer hook self-check failed');
     requireObserver(array_column($record['events'], 'hits', 'id') === ['first' => 2, 'nested' => 1, 'second' => 1],
         'Short circuit, nesting, shared classes, or exception cleanup misattributed: ' . json_encode($record));
+    $warm->dispatch($inheritedEvent);
+    requireObserver($inherited->executions === 1, 'The inherited observer did not execute');
+    $hits = array_column(Recorder::finish()['events'], 'hits', 'id');
+    requireObserver(($hits['inherited'] ?? 0) === 1, 'The inherited observer must receive exactly one execution hit');
     $key = 'frontend::observer-hook-test';
     $cache->data[$key] = json_encode([$runtimeEvent => $eventList('second')], JSON_THROW_ON_ERROR);
     $manager()->dispatch($runtimeEvent);
