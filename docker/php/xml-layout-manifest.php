@@ -53,6 +53,8 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    $fileType === 'page' && $attribute->nodeName === 'remove' && $element !== ''
+                        && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $namedBlock && $attribute->nodeName === 'template' && $attribute->nodeValue !== '' => 'template',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'layout'
                         && $attribute->nodeValue !== '' => 'wireframe-selection',
@@ -61,7 +63,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'include', 'move', 'wireframe', 'wireframe-selection'], true);
+                $supported = in_array($kind, ['block', 'template', 'include', 'move', 'removal', 'wireframe', 'wireframe-selection'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),

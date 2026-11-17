@@ -14,6 +14,7 @@ use Magento\Framework\View\Layout;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
 use Magento\Framework\View\Layout\GeneratorPool;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
+use Magento\Framework\View\Layout\Reader\Container as ContainerReader;
 use Magento\Framework\View\Layout\Reader\Move as MoveReader;
 use Magento\Framework\View\Layout\ScheduledStructure;
 use Magento\Framework\View\Model\Layout\Merge;
@@ -34,6 +35,9 @@ final class LayoutCoverage
     private array $contexts = [];
     private \WeakMap $structures;
     private \WeakMap $moves;
+    private \WeakMap $removals;
+    private array $removalChanges = [];
+    private array $removing = [];
     private array $moving = [];
     private array $generating = [];
     private \WeakMap $blocks;
@@ -48,6 +52,7 @@ final class LayoutCoverage
         $this->merges = new \WeakMap();
         $this->structures = new \WeakMap();
         $this->moves = new \WeakMap();
+        $this->removals = new \WeakMap();
         $this->blocks = new \WeakMap();
     }
 
@@ -85,7 +90,10 @@ final class LayoutCoverage
             [BlockReader::class, 'scheduleReference', null, $this->scheduleReference(...)],
             [MoveReader::class, 'scheduleMove', null, $this->scheduleMove(...)],
             [GeneratorPool::class, 'moveElementInStructure', $this->beginMove(...), $this->completeMove(...)],
-            [GeneratorPool::class, 'buildStructure', null, $this->finishMoves(...)],
+            [ScheduledStructure::class, 'setElementToRemoveList', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
+            [ScheduledStructure::class, 'unsetElementFromListToRemove', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
+            [GeneratorPool::class, 'removeElement', $this->beginRemoval(...), $this->completeRemoval(...)],
+            [GeneratorPool::class, 'buildStructure', null, $this->finishStructure(...)],
             [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
@@ -494,16 +502,83 @@ final class LayoutCoverage
         $this->moves[$schedule] = $moves;
     }
 
-    private function finishMoves($pool, array $params, $result, ?\Throwable $error, string $class): void
+    private function finishStructure($pool, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($error || $class !== GeneratorPool::class || !isset($this->moves[$params[0]])) return;
+        if ($error || $class !== GeneratorPool::class) return;
         [$schedule, $structure] = $params;
-        foreach ($this->moves[$schedule] as $name => $move) {
+        foreach ($this->moves[$schedule] ?? [] as $name => $move) {
             if ($move['data'] !== $schedule->getElementToMove($name)) continue;
             $effect = $move['effect'];
             if ($effect === null) $effect = $structure->hasElement($name) ? 'unresolved' : 'target-missing';
             if ($effect === 'applied' && !$schedule->hasElement($name)) $effect = 'removed';
             $this->event($move['id'], 'layout-move-' . $effect, $move['context']);
+        }
+        foreach ($this->removals[$schedule] ?? [] as $name => $entry) {
+            foreach ($entry['canceled'] ?? [] as $id => $context) $this->event($id, 'layout-removal-canceled', $context);
+            if (isset($entry['restore']) && $schedule->hasElement($name)) {
+                $this->event($entry['restore']['id'], 'layout-removal-restored', $entry['restore']['context']);
+            }
+        }
+    }
+
+    private static function removalQueued($schedule, string $name): bool
+    {
+        static $property;
+        $property ??= new \ReflectionProperty(ScheduledStructure::class, 'scheduledRemoves');
+        return isset($property->getValue($schedule)[$name]);
+    }
+
+    private function beginRemovalChange($schedule, array $params, string $class): void
+    {
+        if ($class === ScheduledStructure::class) $this->removalChanges[] = self::removalQueued($schedule, $params[0]);
+    }
+
+    private function completeRemovalChange($schedule, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== ScheduledStructure::class) return;
+        $before = array_pop($this->removalChanges);
+        $name = $params[0];
+        $queued = self::removalQueued($schedule, $name);
+        if ($error || $queued === $before) return;
+
+        // Associate only the two native reference readers with an XML source.
+        $caller = debug_backtrace(0, 3)[2] ?? [];
+        $method = [$caller['class'] ?? null, $caller['function'] ?? null];
+        $reference = in_array($method, [[BlockReader::class, 'scheduleReference'], [ContainerReader::class, 'containerReference']], true);
+        $xml = $reference ? ($caller['args'][1] ?? null) : null;
+        [$origin, $context] = $xml instanceof Layout\Element ? $this->origin($xml) : [[], null];
+        $id = $origin['removal'] ?? null;
+
+        $removals = $this->removals[$schedule] ?? [];
+        $entry = $removals[$name] ?? [];
+        if ($queued) {
+            unset($entry['restore']);
+            $entry['remove'] = $id === null ? null : ['id' => $id, 'context' => $context];
+        } elseif ($reference) {
+            if (isset($entry['remove'])) $entry['canceled'][$entry['remove']['id']] = $entry['remove']['context'];
+            unset($entry['remove']);
+            $entry['restore'] = $id === null ? null : ['id' => $id, 'context' => $context];
+        } else {
+            unset($entry['remove'], $entry['restore']);
+        }
+        $removals[$name] = $entry;
+        $this->removals[$schedule] = $removals;
+    }
+
+    private function beginRemoval($pool, array $params, string $class): void
+    {
+        if ($class !== GeneratorPool::class) return;
+        [$schedule, , $name] = $params;
+        $this->removing[] = !($params[3] ?? false) && $schedule->hasElement($name) && self::removalQueued($schedule, $name)
+            ? ($this->removals[$schedule][$name]['remove'] ?? null) : null;
+    }
+
+    private function completeRemoval($pool, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== GeneratorPool::class) return;
+        $removal = array_pop($this->removing);
+        if (!$error && $removal && !$params[0]->hasElement($params[2])) {
+            $this->event($removal['id'], 'layout-removal-applied', $removal['context']);
         }
     }
 
@@ -518,7 +593,7 @@ final class LayoutCoverage
     {
         if ($class !== Layout::class) return;
         $structure = self::readerContext($layout)?->getScheduledStructure();
-        if ($structure !== null) unset($this->structures[$structure], $this->moves[$structure]);
+        if ($structure !== null) unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
     }
 
     private function generateElements($layout, array $params, $result, ?\Throwable $error, string $class): void
@@ -541,17 +616,18 @@ final class LayoutCoverage
     {
         if ($class !== Layout::class) return;
         $source = self::readerContext($layout)->getScheduledStructure();
-        $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? []];
+        $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? [], $this->removals[$source] ?? []];
     }
 
     private function mirrorContext($layout, array $params, $context, ?\Throwable $error, string $class): void
     {
         if ($class !== Layout::class) return;
-        [$blocks, $moves] = array_pop($this->contexts);
+        [$blocks, $moves, $removals] = array_pop($this->contexts);
         if ($error) return;
         $schedule = $context->getScheduledStructure();
         if ($blocks) $this->structures[$schedule] = $blocks;
         if ($moves) $this->moves[$schedule] = $moves;
+        if ($removals) $this->removals[$schedule] = $removals;
     }
 
     private function beginBlock($generator, array $params, string $class): void

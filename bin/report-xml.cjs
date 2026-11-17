@@ -28,12 +28,14 @@ const diFamilies = {
 const layoutEvents = {
     block: ['layout-block-created', 'layout-block-rendered'],
     wireframe: ['layout-wireframe-selected'],
+    removal: ['layout-removal-applied', 'layout-removal-canceled', 'layout-removal-restored'],
     move: ['layout-move-applied', 'layout-move-removed', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved'],
     'wireframe-selection': ['layout-wireframe-selected', 'layout-wireframe-origin-unconfirmed'],
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced'],
 };
 const layoutDecisions = {
+    'layout-removal-canceled': 'Magento canceled this scheduled removal before generating the structure.',
     'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
     'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',
     'layout-move-unresolved': 'The scheduled move did not establish the requested parent.',
