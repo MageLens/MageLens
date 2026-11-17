@@ -68,7 +68,7 @@ final class LayoutManifest
                 $fileType === 'page' && $node->tagName === 'argument' && $element !== ''
                     && $node->parentNode->nodeName === 'action' => 'action-argument',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
-                $fileType === 'page' && self::scalarArgument($node) => 'argument',
+                $fileType === 'page' && self::blockArgument($node) => 'argument',
                 $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
                 $fileType === 'wireframe' && $index === 0 => 'wireframe',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
@@ -144,12 +144,12 @@ final class LayoutManifest
         return $result;
     }
 
-    private static function scalarArgument(\DOMElement $node): bool
+    private static function blockArgument(\DOMElement $node): bool
     {
         $type = static fn($element) => $element->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type');
         if (!in_array($node->tagName, ['argument', 'item'], true) || !$node->hasAttribute('name')
-            || !in_array($type($node), ['string', 'number', 'boolean', 'null', 'const', 'serviceUrl'], true)
-            || $node->getElementsByTagName('updater')->length) return false;
+            || !in_array($type($node), ['string', 'number', 'boolean', 'null', 'const', 'serviceUrl',
+                'array', 'object', 'options', 'url', 'helper', 'configurableObject'], true)) return false;
         while ($node->tagName === 'item') {
             $node = $node->parentNode;
             if (!$node instanceof \DOMElement || !in_array($node->tagName, ['argument', 'item'], true)

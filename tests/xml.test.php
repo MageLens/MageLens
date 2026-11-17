@@ -23,6 +23,25 @@ try {
 }
 checkXml(Xml::scalarTreeSignature(['value' => ['false' => false, 'null' => null]]) !== null,
     'Runtime signatures preserve nested scalar types');
+require_once __DIR__ . '/../docker/php/xml-layout.php';
+$fingerprint = new ReflectionMethod(\MageLens\XmlCoverage\LayoutCoverage::class, 'valueFingerprint');
+$matches = new ReflectionMethod(\MageLens\XmlCoverage\LayoutCoverage::class, 'matchesFingerprint');
+$objectIdentity = $fingerprint->invoke(null, $unsafe);
+checkXml($matches->invoke(null, $objectIdentity, $unsafe)
+    && !$matches->invoke(null, $objectIdentity, clone $unsafe), 'Object identity preserves shared and fresh lifetimes without serialization');
+checkXml($fingerprint->invoke(null, $cycle) === null
+    && $fingerprint->invoke(null, array_fill(0, 1025, 'value')) === null
+    && $fingerprint->invoke(null, str_repeat('x', 65537)) === null, 'Argument identity tracing is bounded by depth, nodes and bytes');
+$arrayIdentity = $fingerprint->invoke(null, ['value' => false, 'object' => $unsafe]);
+checkXml($matches->invoke(null, $arrayIdentity, ['value' => false, 'object' => $unsafe])
+    && !$matches->invoke(null, $arrayIdentity, ['object' => $unsafe, 'value' => false])
+    && !$matches->invoke(null, $arrayIdentity, ['value' => 0, 'object' => $unsafe]), 'Array identities preserve order, keys and scalar types');
+$stream = fopen('php://temp', 'w+');
+$streamIdentity = $fingerprint->invoke(null, $stream);
+checkXml($matches->invoke(null, $streamIdentity, $stream), 'Open resource identity requires the native handle');
+fclose($stream);
+checkXml(!$matches->invoke(null, $streamIdentity, $stream) && $fingerprint->invoke(null, $stream) === null,
+    'Closed resources cannot retain a live argument identity');
 $config = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/etc/config.xml';
 $source = file_get_contents($config);
 $items = Xml::declarations('app/code/Application/Blog/etc/config.xml', $source, 'config');
@@ -82,8 +101,8 @@ $arraySource = file_get_contents($layoutDirectory . 'coverageprobe_layout_argume
 $arrayItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_layout_arguments.xml', $arraySource);
 $leaves = array_values(array_filter($arrayItems, static fn($item) =>
     $item['layout']['instruction'] === 'item' && $item['supported']));
-checkXml(count($leaves) === 3 && count(array_unique(array_column($leaves, 'id'))) === 3,
-    'Scalar array leaves retain separate original declarations');
+checkXml(count($leaves) === 4 && count(array_unique(array_column($leaves, 'id'))) === 4,
+    'Array parents and leaves retain separate original declarations');
 foreach ($leaves as $leaf) {
     checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),
         'Array leaf evidence uses the layout argument application boundary');

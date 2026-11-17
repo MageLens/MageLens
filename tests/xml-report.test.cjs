@@ -367,7 +367,12 @@ test('layout structural and page-value reports require the correct native effect
         const empty = merge(manifest, [{...record, layoutHook: true}], sources);
         assert.equal(empty.files[1].declarations[0].state, 'uncovered', kind);
         const event = {id: 'effect', type, area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
-        const covered = merge(manifest, [{...record, layoutHook: true, events: [event]}], sources);
+        if (type === 'layout-argument-read') {
+            assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [event]}], sources),
+                /Argument read without native application evidence/);
+        }
+        const events = type === 'layout-argument-read' ? [{...event, type: 'layout-argument-applied'}, event] : [event];
+        const covered = merge(manifest, [{...record, layoutHook: true, events}], sources);
         assert.equal(covered.files[1].declarations[0].state, 'covered', kind);
         const displaced = merge(manifest, [{...record, layoutHook: true,
             events: [{...event, type: 'layout-file-overridden'}]}], sources).files[1].declarations[0];

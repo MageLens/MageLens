@@ -45,6 +45,7 @@ final class LayoutCoverage
     private \WeakMap $actionReads;
     private \WeakMap $argumentReads;
     private \WeakMap $argumentBindings;
+    private array $argumentSchedules = [];
     private \WeakMap $moves;
     private \WeakMap $removals;
     private array $removalChanges = [];
@@ -106,8 +107,8 @@ final class LayoutCoverage
             [Merge::class, 'getPageLayout', null, $this->readSelection(...)],
             [PageBuilder::class, 'readPageLayout', $this->beginPageRead(...), $this->completePageRead(...)],
             [WireframeReader::class, 'read', $this->beginWireframe(...), $this->completeWireframe(...)],
-            [BlockReader::class, 'scheduleBlock', null, $this->scheduleBlock(...)],
-            [BlockReader::class, 'scheduleReference', null, $this->scheduleReference(...)],
+            [BlockReader::class, 'scheduleBlock', $this->beginArgumentSchedule(...), $this->scheduleBlock(...)],
+            [BlockReader::class, 'scheduleReference', $this->beginArgumentSchedule(...), $this->scheduleReference(...)],
             [BlockReader::class, 'getActions', null, $this->readActions(...)],
             [BlockReader::class, 'getArguments', null, $this->readArguments(...)],
             [MoveReader::class, 'scheduleMove', null, $this->scheduleMove(...)],
@@ -119,6 +120,7 @@ final class LayoutCoverage
             [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
+            [BlockGenerator::class, 'evaluateArguments', null, $this->evaluatedArguments(...)],
             [BlockGenerator::class, 'getBlockInstance', $this->beginClass(...), $this->constructedClass(...)],
             [DataStructure::class, 'addToParentGroup', null, $this->registeredGroup(...)],
             [DataObject::class, 'setData', null, $this->assignedTtl(...)],
@@ -517,19 +519,35 @@ final class LayoutCoverage
             'context' => ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]];
     }
 
+    private function beginArgumentSchedule($reader, array $params, string $class): void
+    {
+        if ($class !== BlockReader::class) return;
+        $data = $params[0]->getStructureElementData($params[1]->getAttribute('name'), []);
+        $this->argumentSchedules[] = array_fill_keys(array_keys($data['arguments'] ?? []), true);
+    }
+
     private function scheduleBlock($reader, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if (!$error && $class === BlockReader::class) $this->schedule($params[0], $params[1], true);
+        if ($class !== BlockReader::class) return;
+        $existing = array_pop($this->argumentSchedules);
+        if ($error) {
+            [$ids, $context] = $this->origin($params[1]);
+            if ($context) $this->event($ids['block'] ?? null, 'layout-block-reading-failed', $context);
+            return;
+        }
+        $this->schedule($params[0], $params[1], true, $existing);
     }
 
     private function scheduleReference($reader, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if (!$error && $class === BlockReader::class && !filter_var($params[1]->getAttribute('remove'), FILTER_VALIDATE_BOOLEAN)) {
-            $this->schedule($params[0], $params[1], false);
+        if ($class !== BlockReader::class) return;
+        $existing = array_pop($this->argumentSchedules);
+        if (!$error && !filter_var($params[1]->getAttribute('remove'), FILTER_VALIDATE_BOOLEAN)) {
+            $this->schedule($params[0], $params[1], false, $existing);
         }
     }
 
-    private function schedule($structure, $xml, bool $declaration): void
+    private function schedule($structure, $xml, bool $declaration, array $existing): void
     {
         $name = $xml->getAttribute('name');
         if ($name === '') return;
@@ -550,7 +568,7 @@ final class LayoutCoverage
             }
         }
         $block['actions'] = $this->bindActions($xml, $data['actions'] ?? [], $block['actions'] ?? []);
-        $block['arguments'] = $this->bindArguments($xml, $data['arguments'] ?? [], $block['arguments'] ?? []);
+        $block['arguments'] = $this->bindArguments($xml, $data['arguments'] ?? [], $block['arguments'] ?? [], $existing);
         $actual = $data['attributes']['template'] ?? null;
         if (isset($xml['template']) || ($declaration && $actual === '')) {
             $value = (string) $xml['template'];
@@ -617,6 +635,7 @@ final class LayoutCoverage
         $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
         if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
+        if ((new \ReflectionMethod($reader, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
         $xml = $params[0];
         $origins = [];
         foreach ($xml->arguments[0]->argument ?? [] as $node) {
@@ -628,34 +647,47 @@ final class LayoutCoverage
     private function argumentOrigins($node): array
     {
         [$origin] = $this->origin($node);
-        if (isset($origin['argument'])) return ['id' => $origin['argument']];
+        $result = isset($origin['argument']) ? ['id' => $origin['argument']] : [];
         if ((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'array'
-            || isset($node->updater)) return [];
+            || isset($node->updater)) return $result;
         $children = [];
         foreach ($node->item as $item) $children[$item->getAttribute('name')] = $this->argumentOrigins($item);
-        return ['children' => $children];
+        return [...$result, 'children' => $children];
     }
 
-    private function bindArguments($xml, array $values, array $previous): array
+    private function bindArguments($xml, array $values, array $previous, array $existing): array
     {
         $read = $this->argumentReads[$xml] ?? null;
         unset($this->argumentReads[$xml]);
         if ($read === null) return [];
-        return $this->bindArgumentLeaves($read, $values, $previous);
+        return $this->bindArgumentLeaves($read, $values, $previous, $existing);
     }
 
-    private function bindArgumentLeaves(array $read, array $values, array $previous): array
+    private function bindArgumentLeaves(array $read, array $values, array $previous, array $existing): array
     {
         foreach ($read as $name => $origin) {
+            $before = $previous[$name] ?? [];
+            $entry = ['overridden' => $before['overridden'] ?? [], 'mixed' => $before['mixed'] ?? []];
             if (isset($origin['children']) && isset($values[$name]) && is_array($values[$name])) {
-                $previous[$name] = ['children' => $this->bindArgumentLeaves($origin['children'], $values[$name], $previous[$name]['children'] ?? [])];
-                continue;
+                $nested = isset($existing[$name]) ? array_fill_keys(array_keys($values[$name]), true) : [];
+                $entry['children'] = $this->bindArgumentLeaves($origin['children'], $values[$name], $before['children'] ?? [], $nested);
             }
-            unset($previous[$name]);
-            if (isset($origin['id']) && array_key_exists($name, $values)
-                && (is_scalar($values[$name]) || $values[$name] === null)) {
-                $previous[$name] = ['id' => $origin['id'], 'digest' => self::digest([$values[$name]])];
+            if (isset($origin['id']) && array_key_exists($name, $values)) {
+                if (is_scalar($values[$name]) || $values[$name] === null) {
+                    $entry['id'] = $origin['id'];
+                    $entry['digest'] = self::digest([$values[$name]]);
+                    $entry['overridden'] = [...$entry['overridden'], ...self::argumentRootIds($before)];
+                } elseif (!isset($existing[$name])) {
+                    $identity = self::valueFingerprint($values[$name]);
+                    if ($identity) $entry['pending'] = ['id' => $origin['id'], 'input' => $identity];
+                    else $entry['limited'] = [$origin['id']];
+                } else {
+                    $entry['mixed'] = [...$entry['mixed'], ...self::argumentRootIds($before), $origin['id']];
+                }
             }
+            $entry['overridden'] = array_values(array_unique(array_diff($entry['overridden'], [$origin['id'] ?? null])));
+            $entry['mixed'] = array_values(array_unique($entry['mixed']));
+            $previous[$name] = array_filter($entry, static fn($value) => $value !== []);
         }
         return $this->matchingArguments($previous, $values);
     }
@@ -666,14 +698,78 @@ final class LayoutCoverage
         foreach ($origins as $name => $origin) {
             if (!array_key_exists($name, $values)) continue;
             $value = $values[$name];
+            $entry = array_intersect_key($origin, array_flip(['mixed', 'overridden', 'limited']));
             if (isset($origin['children']) && is_array($value)) {
-                $matched[$name] = ['children' => $this->matchingArguments($origin['children'], $value)];
-            } elseif (isset($origin['digest']) && (is_scalar($value) || $value === null)
-                && self::digest([$value]) === $origin['digest']) {
-                $matched[$name] = $origin;
+                $entry['children'] = $this->matchingArguments($origin['children'], $value);
             }
+            if (isset($origin['digest']) && (is_scalar($value) || $value === null)
+                && self::digest([$value]) === $origin['digest']) {
+                $entry += array_intersect_key($origin, array_flip(['id', 'digest']));
+            }
+            if (isset($origin['value']) && self::matchesFingerprint($origin['value'], $value)) {
+                $entry += array_intersect_key($origin, array_flip(['id', 'value']));
+            }
+            if (isset($origin['pending']) && self::matchesFingerprint($origin['pending']['input'], $value)) {
+                $entry['pending'] = $origin['pending'];
+            }
+            $entry = array_filter($entry, static fn($value) => $value !== []);
+            if ($entry) $matched[$name] = $entry;
         }
         return $matched;
+    }
+
+    private static function argumentRootIds(array $origin): array
+    {
+        return array_values(array_filter([$origin['id'] ?? null, $origin['pending']['id'] ?? null]));
+    }
+
+    private static function valueFingerprint($value): ?array
+    {
+        $nodes = 1024;
+        $bytes = 65536;
+        return self::fingerprintValue($value, $nodes, $bytes, 0);
+    }
+
+    private static function fingerprintValue($value, int &$nodes, int &$bytes, int $depth): ?array
+    {
+        if (--$nodes < 0 || $depth > 32) return null;
+        if (is_object($value)) return ['object' => \WeakReference::create($value)];
+        if (is_resource($value)) return ['resource' => get_resource_id($value), 'type' => get_resource_type($value)];
+        if (is_array($value)) {
+            $items = [];
+            foreach ($value as $key => $child) {
+                $length = is_string($key) ? strlen($key) : 0;
+                $bytes -= $length;
+                if ($bytes < 0) return null;
+                $identity = self::fingerprintValue($child, $nodes, $bytes, $depth + 1);
+                if (!$identity) return null;
+                $items[] = ['key' => self::digest([$key]), 'bytes' => $length, 'value' => $identity];
+            }
+            return ['items' => $items];
+        }
+        if (!is_scalar($value) && $value !== null) return null;
+        $length = is_string($value) ? strlen($value) : 0;
+        $bytes -= $length;
+        return $bytes < 0 ? null : ['digest' => self::digest([$value]), 'bytes' => $length];
+    }
+
+    private static function matchesFingerprint(array $identity, $value): bool
+    {
+        if (isset($identity['object'])) return is_object($value) && $identity['object']->get() === $value;
+        if (isset($identity['resource'])) return is_resource($value)
+            && $identity['resource'] === get_resource_id($value) && $identity['type'] === get_resource_type($value);
+        if (isset($identity['items'])) {
+            if (!is_array($value) || count($value) !== count($identity['items'])) return false;
+            $index = 0;
+            foreach ($value as $key => $child) {
+                $item = $identity['items'][$index++];
+                if ((is_string($key) ? strlen($key) : 0) !== $item['bytes'] || self::digest([$key]) !== $item['key']
+                    || !self::matchesFingerprint($item['value'], $child)) return false;
+            }
+            return true;
+        }
+        return (is_scalar($value) || $value === null) && (is_string($value) ? strlen($value) : 0) === $identity['bytes']
+            && self::digest([$value]) === $identity['digest'];
     }
 
     private function appliedArgumentIds(array $origins): array
@@ -911,7 +1007,57 @@ final class LayoutCoverage
     {
         if ($class !== BlockGenerator::class) return;
         $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
-            'generator' => get_class($generator), 'applied' => [], 'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
+            'generator' => get_class($generator), 'applied' => [], 'arguments' => [],
+            'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
+    }
+
+    private function evaluatedArguments($generator, array $params, $values, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($error || $class !== BlockGenerator::class || $index === null) return;
+        $caller = self::nativeCaller($generator, 'evaluateArguments');
+        if (($caller['class'] ?? null) !== BlockGenerator::class || ($caller['function'] ?? null) !== 'generateBlock'
+            || (new \ReflectionMethod($generator, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
+        $frame = $this->generating[$index];
+        $origins = $this->resolveArgumentValues($frame['source']['arguments'] ?? [], $params[0], $values);
+        $this->generating[$index]['arguments'] = $origins;
+        if (!empty($frame['source']['context'])) $this->argumentEvaluationEvents($origins, $frame['source']['context']);
+    }
+
+    private function resolveArgumentValues(array $origins, array $input, array $values): array
+    {
+        $validated = $this->matchingArguments($origins, $input);
+        $resolved = $this->matchingArguments($validated, $values);
+        foreach ($validated as $name => $origin) {
+            if (!array_key_exists($name, $values)) continue;
+            if (isset($origin['pending'])) {
+                $identity = self::valueFingerprint($values[$name]);
+                $resolved[$name]['evaluated'] = [$origin['pending']['id']];
+                if ($identity) {
+                    $resolved[$name]['id'] = $origin['pending']['id'];
+                    $resolved[$name]['value'] = $identity;
+                } else {
+                    $resolved[$name]['limited'][] = $origin['pending']['id'];
+                }
+            }
+            if (isset($origin['children']) && isset($input[$name]) && is_array($input[$name]) && is_array($values[$name])) {
+                $resolved[$name]['children'] = $this->resolveArgumentValues($origin['children'], $input[$name], $values[$name]);
+            }
+        }
+        return $resolved;
+    }
+
+    private function argumentEvaluationEvents(array $origins, array $context): void
+    {
+        foreach ($origins as $origin) {
+            foreach (array_unique([...self::argumentRootIds($origin), ...($origin['evaluated'] ?? [])]) as $id) {
+                $this->event($id, 'layout-argument-evaluated', $context);
+            }
+            foreach ($origin['mixed'] ?? [] as $id) $this->event($id, 'layout-argument-mixed-origin', $context);
+            foreach ($origin['overridden'] ?? [] as $id) $this->event($id, 'layout-argument-overridden', $context);
+            foreach ($origin['limited'] ?? [] as $id) $this->event($id, 'layout-argument-identity-unconfirmed', $context);
+            if (isset($origin['children'])) $this->argumentEvaluationEvents($origin['children'], $context);
+        }
     }
 
     private function beginClass($generator, array $params, string $class): void
@@ -968,7 +1114,7 @@ final class LayoutCoverage
         $this->invalidateArgumentData($block, is_array($key) ? null : [$key]);
         if ($index === null) return;
         $frame = $this->generating[$index];
-        $origins = $frame['source']['arguments'] ?? [];
+        $origins = $frame['arguments'];
         if (!$origins) return;
         $expected = [
             [DataObject::class, 'setData', get_class($block)],
@@ -1051,8 +1197,10 @@ final class LayoutCoverage
             $origin = $origins[$part] ?? null;
             $origins = $origin['children'] ?? [];
         }
-        if (isset($origin['id'], $origin['digest']) && (is_scalar($value) || $value === null)
-            && self::digest([$value]) === $origin['digest']) {
+        $matched = isset($origin['digest']) && (is_scalar($value) || $value === null)
+            && self::digest([$value]) === $origin['digest'];
+        $matched = $matched || (isset($origin['value']) && self::matchesFingerprint($origin['value'], $value));
+        if (isset($origin['id']) && $matched) {
             $this->event($origin['id'], 'layout-argument-read', $binding['context']);
         }
     }

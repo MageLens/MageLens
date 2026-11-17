@@ -55,10 +55,11 @@ const layoutEvents = {
     'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
     'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden'],
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
-    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-generation-failed'],
+    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous'],
-    argument: ['layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced'],
+    argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
+        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed'],
     'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
     'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
@@ -74,6 +75,10 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden');
 const layoutDecisions = {
+    'layout-block-reading-failed': 'The native block reader failed before completing scheduling and argument interpretation.',
+    'layout-argument-mixed-origin': 'The assembled argument retains multiple or unconfirmed XML contributors, so its parent has no unique application origin.',
+    'layout-argument-overridden': 'A later XML value replaced this argument before native value generation.',
+    'layout-argument-identity-unconfirmed': 'Value correlation is bounded to 1024 nodes, 32 nested levels and 64 KiB of string/key bytes; closed resources lack a supported identity.',
     'layout-file-override-unconfirmed': 'The override source was selected without an attributable native file-list replacement.',
     'layout-file-overridden': 'A selected native file-list replacement displaced this source in the effective theme.',
     'layout-asset-attributes-discarded': 'The native font renderer supplied its fixed preload attributes and discarded these XML attributes.',
@@ -160,6 +165,8 @@ function merge(manifest, records, sources) {
         let scenario = url.searchParams.get('case');
         if (!/\/blog\/index\/configuration\/?$/.test(url.pathname) || !cases.has((scenario || '').replace(/-warm$/, ''))) scenario = null;
         const events = [];
+        const argumentApplications = new Set(record.events.filter(event => event.type === 'layout-argument-applied')
+            .map(event => JSON.stringify([event.id, event.area, event.theme])));
         for (const limitation of record.layoutLimitations || []) {
             assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
             requestLimitations.add(limitation);
@@ -221,6 +228,10 @@ function merge(manifest, records, sources) {
                 assert.ok(typeof event.theme === 'string' && event.theme.startsWith(event.area + '/'), 'Unexpected layout theme');
                 assert.equal(manifest.layoutSources?.[source]?.targets[item.layout.ordinal]?.ids[item.layout.kind],
                     item.id, 'Layout evidence does not match manifest provenance');
+                if (event.type === 'layout-argument-read') {
+                    assert.ok(argumentApplications.has(JSON.stringify([event.id, event.area, event.theme])),
+                        'Argument read without native application evidence');
+                }
                 Object.assign(evidence, {area: event.area, theme: event.theme});
             } else if (item.family === 'plugins') {
                 assert.equal(record.pluginHook, true, 'Plugin evidence without a functioning request hook');

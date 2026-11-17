@@ -1,0 +1,36 @@
+// Copyright (c)  MageLens
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const file = report.files.find(file => file.path.endsWith('/layout/coverageprobe_layout_arguments.xml'));
+for (const name of ['shared_first', 'shared_second', 'fresh_first', 'fresh_second', 'options', 'helper',
+    'route', 'updatable', 'text_with_updater']) {
+    const item = file?.declarations.find(item => item.layout.kind === 'argument' && item.layout.element === name);
+    assert.equal(item?.state, 'covered', name);
+    assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(),
+        ['layout-argument-applied', 'layout-argument-evaluated', 'layout-argument-read'], name);
+}
+for (const [handle, node] of [
+    ['arguments', '/page/body/referenceContainer/block/arguments/argument[5]'],
+    ['arguments', '/page/body/referenceContainer/block/arguments/argument[5]/item[1]'],
+    ['arguments_overlay', '/page/body/referenceBlock/arguments/argument'],
+    ['arguments_overlay', '/page/body/referenceBlock/arguments/argument/item[1]'],
+]) {
+    const source = report.files.find(file => file.path.endsWith(`/layout/coverageprobe_layout_${handle}.xml`));
+    const item = source?.declarations.find(item => item.node === node);
+    assert.equal(item?.state, 'unmeasured', `${handle}/${node}`);
+    assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-argument-mixed-origin']);
+}
+const constant = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_constarray.xml'));
+const value = constant?.declarations.find(item => item.layout.kind === 'argument');
+assert.equal(value?.state, 'covered');
+assert.deepEqual([...new Set(value.evidence.map(event => event.type))].sort(),
+    ['layout-argument-applied', 'layout-argument-evaluated', 'layout-argument-read']);
+const failure = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_configuredarray.xml'));
+const failedBlock = failure?.declarations.find(item => item.layout.kind === 'block');
+assert.equal(failedBlock?.state, 'unmeasured');
+assert.deepEqual([...new Set(failedBlock.evidence.map(event => event.type))], ['layout-block-reading-failed']);
+console.log('Verified native value evaluation, object identities, complex application/read boundaries, mixed parents and native reader failure.');

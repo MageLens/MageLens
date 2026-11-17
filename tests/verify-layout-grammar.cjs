@@ -10,7 +10,8 @@ for (const handle of ['const', 'serviceurl']) {
     assert.ok(file, `Missing ${handle} fixture`);
     const argument = file.declarations.find(item => item.layout.instruction === 'argument' && item.layout.attribute === null);
     assert.equal(argument?.state, 'covered', handle);
-    assert.deepEqual([...new Set(argument.evidence.map(event => event.type))].sort(), ['layout-argument-applied', 'layout-argument-read']);
+    assert.deepEqual([...new Set(argument.evidence.map(event => event.type))].sort(),
+        ['layout-argument-applied', 'layout-argument-evaluated', 'layout-argument-read']);
 }
 const failure = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_configurable.xml'));
 const block = failure?.declarations.find(item => item.layout.kind === 'block');
