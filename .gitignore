@@ -26,6 +26,7 @@
 !/bin/common
 !/bin/compose-project
 !/bin/dependencies
+!/bin/deploy-production
 !/bin/expose-tools
 !/bin/finalize.cjs
 !/bin/install

@@ -107,14 +107,15 @@ elif [[ -e "$report_link" || -L "$report_link" ]]; then
     fail "Cannot publish coverage: $report_link already exists and is not the MageLens report symlink. Move it aside first."
 fi
 mkdir -p src/pub/media
-if (( refresh_assets )); then
-    dc exec -T phpfpm bash /application/docker/php/refresh-assets.sh
-elif (( refresh_cache )); then
+if (( refresh_cache && !refresh_assets )); then
     dc exec -T phpfpm php bin/magento cache:clean
 fi
 say 'Preparing fresh coverage'
 dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
 dc exec -T -e MAGELENS_RUNNER="$runner" runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json ${readme_options[@]+"${readme_options[@]}"}
+if (( refresh_assets )); then
+    dc exec -T phpfpm bash /application/docker/php/refresh-assets.sh
+fi
 touch .runtime/hooks-active
 dc exec -T phpfpm php /application/docker/php/project-hooks.php before
 dc exec -T phpfpm php /application/docker/php/project-hooks.php prepare > coverage/project-fixtures.json

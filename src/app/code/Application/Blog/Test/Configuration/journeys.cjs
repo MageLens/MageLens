@@ -5,6 +5,13 @@
 // Shared real HTTP expectations for both pinned browser runners.
 const journeys = [
     ['baseline', {}],
+    ['preference-resolution', {shared: true, fresh: true, failed: true,
+        area: 'Application\\Blog\\Model\\JournalFrontendPreference',
+        external: 'Application\\Blog\\Model\\JournalFrontendPreference',
+        virtual: 'Application\\Blog\\Model\\JournalPreferenceProbe',
+        lookup: 'Application\\Blog\\Model\\JournalPreferenceProbe',
+        arguments: {label: 'frontend label', shared: true, options: {enabled: true},
+            override: 'caller', concrete: 'global label', failed: true, dependency: true}}],
     ['observer-dispatch', {hits: 2, external: true, plugin: 'short:startbbxb|after'}],
     ['default-read', {heading: 'Journal'}],
     ['backend-reads', {heading: 'Backend journal', enabled: true}],
@@ -19,4 +26,10 @@ const journeys = [
     ['subtree-read', {data: {first: 'First returned leaf', second: 'Second returned leaf'}}],
     ['missing-read', {missing: null}]
 ];
-module.exports = {journeys};
+const result = label => ['Application\\Blog\\Model\\JournalFrontendPreference', label, '1', 'warm-plugin'];
+const query = encodeURIComponent('query MageLensAreaProbe { mageLensAreaProbe }');
+const apiJourneys = [
+    ['/rest/default/V1/magelens/area-probe', result('REST label')],
+    ['/graphql?operationName=MageLensAreaProbe&query=' + query, {data: {mageLensAreaProbe: result('GraphQL label')}}]
+];
+module.exports = {journeys, apiJourneys};

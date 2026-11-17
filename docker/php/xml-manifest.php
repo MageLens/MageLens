@@ -8,7 +8,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/xml-data.php';
 require_once __DIR__ . '/xml-observer-manifest.php';
 require_once __DIR__ . '/xml-plugin-manifest.php';
-use MageLens\XmlCoverage\{Xml, ObserverManifest, PluginManifest};
+require_once __DIR__ . '/xml-preference-manifest.php';
+use MageLens\XmlCoverage\{Xml, ObserverManifest, PluginManifest, PreferenceManifest};
 
 function xmlFingerprint($om): string
 {
@@ -41,6 +42,9 @@ function prepareXmlManifests($om, array $run): array
             default => null,
         };
         $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
+        if ($family === 'plugins') foreach (['preferences', 'virtual-types', 'arguments', 'lifecycles'] as $diFamily) {
+            $declarations = array_merge($declarations, Xml::declarations($path, $bytes, $diFamily));
+        }
         $files[$path] = ['path' => $path, 'sourceHash' => $hash, 'family' => $family,
             'reason' => $declarations ? null : 'Unsupported XML family, location or schema', 'declarations' => $declarations];
         if ($family === 'config') foreach ($declarations as $item) $ids[$item['id']] = true;
@@ -151,7 +155,8 @@ function prepareXmlManifests($om, array $run): array
         $item['effective'] = $file['family'] === 'system' ? $item['supported'] : isset($effectiveIds[$item['id']]);
     }
     unset($file, $item);
-    [$observers, $eventProviders] = ObserverManifest::prepare($om, $files);
+    $areas = Xml::enabledHttpAreas($om->get(\Magento\Framework\App\AreaList::class)->getCodes());
+    [$observers, $eventProviders] = ObserverManifest::prepare($om, $files, $areas);
     $providers += $eventProviders;
     $scopes = ['default' => ['' => '']];
     $stores = $om->get(\Magento\Store\Model\StoreManagerInterface::class);
@@ -159,7 +164,9 @@ function prepareXmlManifests($om, array $run): array
     foreach ($stores->getStores(true) as $store) $scopes['stores'][(string) $store->getId()] = $store->getCode();
     $scopeCodes = [];
     foreach (['websites', 'stores'] as $type) $scopeCodes[$type] = array_fill_keys(array_keys($fresh[$type] ?? []), true);
-    [$plugins, $pluginProviders] = PluginManifest::prepare($om, $files, array_keys($run['sources']));
+    [$preferences, $snapshots] = PreferenceManifest::prepare($om, $files, $areas);
+    [$plugins, $pluginProviders] = PluginManifest::prepare($om, $files, array_keys($run['sources']), snapshots: $snapshots, areas: $areas);
+    $providers += $snapshots[3] ?? [];
     $providers += $pluginProviders;
     ksort($providers); ksort($files);
     // Public method shape guards. Unsupported versions fail preparation explicitly.
@@ -175,6 +182,7 @@ function prepareXmlManifests($om, array $run): array
             'run' => $run['id'],
             'observers' => $observers,
             'plugins' => $plugins,
+            'preferences' => $preferences,
             'scopes' => $scopes,
             'scopeCodes' => $scopeCodes,
             'fieldHashes' => $fieldHashes,

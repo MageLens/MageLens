@@ -202,3 +202,101 @@ test('plugin equivalence preserves phase, registration and outcomes while normal
     write('xml/coverage.json', xml);
     assert.throws(() => snapshot(directory), /Incomplete plugin coverage inventory/);
 });
+
+test('preference equivalence retains binding, original provider and per-area resolution', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json'), [file] = xml.files;
+    const id = '1'.repeat(64);
+    const binding = {requested: 'SECRET\\Contract', replacement: 'SECRET\\Virtual'};
+    const resolved = 'SECRET\\Concrete';
+    const origin = {id, path: file.path, startLine: 4, endLine: 6, fingerprint: file.sourceFingerprint};
+    const external = {...origin, id: '2'.repeat(64), path: '/shop/vendor/SECRET/other/etc/di.xml'};
+    const eligible = {status: 'eligible', state: 'uncovered', hits: 0, origin, effectiveReplacement: binding.replacement, resolved};
+    const selected = {type: 'preference-resolved', area: 'frontend', requested: 'SECRET\\RootAlias', binding, resolved};
+    const rest = {...selected, area: 'webapi_rest'};
+    const item = {id, family: 'preferences', path: binding.requested, declaredScope: {type: 'global', code: ''},
+        startLine: 4, endLine: 6, supported: true, effective: true, state: 'covered', binding, evidence: [selected, rest],
+        areas: {global: eligible, frontend: {...eligible, state: 'covered', hits: 1},
+            webapi_rest: {...eligible, state: 'covered', hits: 1}, graphql: {...eligible},
+            adminhtml: {status: 'overridden', state: 'unmeasured', hits: 0, origin: external,
+                resolved: 'SECRET\\Admin', effectiveReplacement: 'SECRET\\Admin', reason: 'SECRET provider'}}};
+    file.declarations.push(item);
+    xml.preferences = {total: 4, covered: 2, hook: true};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    item.areas.frontend.hits = 90;
+    item.evidence.push({...selected, request: 'second'});
+    external.path = 'D:\\workspace\\vendor\\SECRET\\other\\etc\\di.xml';
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    for (const update of [
+        item => { item.binding.requested += 'Renamed'; },
+        item => { item.areas.adminhtml.origin.endLine++; },
+        item => { item.areas.adminhtml.origin.fingerprint = '3'.repeat(64); },
+        item => { item.areas.frontend.resolved += 'Changed'; },
+        item => { item.areas.graphql.resolved += 'Changed'; },
+        (item, report) => {
+            item.areas.webapi_rest.hits = 0;
+            item.areas.webapi_rest.state = 'uncovered';
+            item.evidence = item.evidence.filter(event => event.area !== 'webapi_rest');
+            report.preferences.covered = 1;
+        }
+    ]) {
+        const changed = structuredClone(xml);
+        update(changed.files[0].declarations.at(-1), changed);
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+    xml.preferences.total = 3;
+    write('xml/coverage.json', xml);
+    assert.throws(() => snapshot(directory), /Incomplete preference coverage inventory/);
+});
+
+test('factory DI equivalence retains virtual routes and inherited parameter identities', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json'), file = xml.files[0];
+    const resolved = 'SECRET\\Concrete';
+    const add = (family, id, binding, type, expected) => {
+        const origin = {id, path: file.path, startLine: 4, endLine: 5, fingerprint: file.sourceFingerprint};
+        const eligible = {status: 'eligible', origin, resolved: expected, effectiveReplacement: expected, state: 'uncovered', hits: 0};
+        const item = {id, path: 'SECRET declared path', family, binding, declaredScope: {type: 'global', code: ''},
+            startLine: 4, endLine: 5, supported: true, effective: true, state: 'covered',
+            areas: {global: eligible, frontend: {...eligible, state: 'covered', hits: 1},
+                adminhtml: {status: 'ambiguous', state: 'unmeasured', hits: 0, reason: 'SECRET conflicting provider'}},
+            evidence: [{type, binding, area: 'frontend', resolved: expected, request: 'SECRET request', requested: 'SECRET\\AliasChain'}]};
+        file.declarations.push(item);
+        return item;
+    };
+    const alias = add('virtual-types', 'a'.repeat(64), {requested: 'SECRET\\Alias', replacement: resolved}, 'virtual-type-resolved', resolved);
+    const lifetime = add('lifecycles', 'c'.repeat(64), {declaringType: resolved, shared: false}, 'lifetime-applied', null);
+    const argument = add('arguments', 'b'.repeat(64), {declaringType: resolved, argument: 'SECRET parameter', items: ['SECRET item']}, 'argument-applied', null);
+    xml.virtualTypes = {total: 2, covered: 1, hook: true};
+    xml.arguments = {total: 2, covered: 1, hook: true};
+    xml.lifecycles = {total: 2, covered: 1, hook: true};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    alias.areas.frontend.hits = argument.areas.frontend.hits = lifetime.areas.frontend.hits = 60;
+    argument.evidence.push({...argument.evidence[0], request: 'another'});
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    const last = report => report.files[0].declarations.at(-1);
+    for (const alter of [
+        value => { last(value).binding.argument = 'changed'; },
+        value => { last(value).binding.items = ['changed']; },
+        value => { value.files[0].declarations.find(item => item.family === 'lifecycles').binding.shared = true; },
+        value => { last(value).evidence[0].requested = 'different requester'; },
+        value => { last(value).areas.global.origin.fingerprint = 'f'.repeat(64); },
+        value => { last(value).areas.frontend.hits = 0; last(value).areas.frontend.state = 'uncovered'; value.arguments.covered = 0; }
+    ]) {
+        const changed = structuredClone(xml);
+        alter(changed);
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+});

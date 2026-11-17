@@ -142,3 +142,101 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     delete manifest.plugins.frontend[before.subject].targets.shared.save.before;
     assert.throws(() => merge(manifest, [{...healthy, events: [hit]}], sources), /does not match effective provenance/);
 });
+
+test('preference reports validate effective routes and publish healthy zero-hit areas', t => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/di.xml';
+    const source = Buffer.from('<config>\n<preference for="Acme\\Container\\Contract"\n type="Acme\\Concrete"/>\n</config>');
+    sources[file] = source;
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const binding = {requested: 'Acme\\Container\\Contract', replacement: 'Acme\\Concrete'};
+    const origin = {id: 'binding', path: file, startLine: 2, endLine: 3, fingerprint: sourceHash};
+    const eligible = {status: 'eligible', reason: null, origin, resolved: binding.replacement, effectiveReplacement: binding.replacement};
+    const overridden = {status: 'overridden', reason: 'A different declaration supplies the binding',
+        origin: {...origin, id: 'external', path: 'app/code/Acme/External/etc/adminhtml/di.xml'},
+        resolved: 'Acme\\Admin', effectiveReplacement: 'Acme\\Admin'};
+    manifest.files.push({path: file, family: 'plugins', sourceHash, declarations: [{
+        id: origin.id, path: binding.requested, family: 'preferences', declaredScope: {type: 'global', code: ''},
+        startLine: 2, endLine: 3, supported: true, binding, areas: {global: eligible, frontend: {...eligible}, adminhtml: overridden}
+    }]});
+    const requested = 'Acme\\Alias';
+    manifest.preferences = {frontend: {routes: {[requested]: {ids: [origin.id], resolved: binding.replacement}}}};
+    const request = {...record, preferenceHook: true};
+    const event = {id: origin.id, type: 'preference-resolved', requested, area: 'frontend', hits: 12};
+    const zero = merge(manifest, [request], sources);
+    const result = merge(manifest, [{...request, events: [...request.events, event]}], sources);
+    assert.deepEqual(zero.preferences, {total: 2, covered: 0, hook: true});
+    assert.deepEqual(result.preferences, {total: 2, covered: 1, hook: true});
+    assert.equal(result.total, zero.total);
+    const [item] = result.files[1].declarations;
+    assert.deepEqual(item.evidence[0], {run: 'fresh', request: 'request', type: event.type, area: event.area,
+        requested, binding, resolved: eligible.resolved});
+    assert.equal(item.areas.global.state, 'uncovered');
+    assert.equal(item.areas.adminhtml.state, 'unmeasured');
+    assert.equal(item.areas.frontend.hits, 12);
+    assert.equal(result.files[1].lines[3].state, 'covered');
+    assert.throws(() => merge(manifest, [{...request, preferenceHook: false}], sources), /No functioning XML preference/);
+    for (const update of [{requested: binding.replacement}, {area: 'adminhtml'}, {area: 'global'}, {requested: '__proto__'}]) {
+        assert.throws(() => merge(manifest, [{...request, events: [{...event, ...update}]}], sources), /provenance|ineligible/);
+    }
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-preference-report-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    writeReport(result, sources, root);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /1\/2 eligible declaration–area pairs resolved/);
+    assert.match(fs.readFileSync(path.join(root, file + '.html'), 'utf8'), /id="L3" class="line covered"/);
+    writeReport(zero, sources, root);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /0\/2 eligible declaration–area pairs resolved/);
+});
+
+test('virtual and constructor usage require live evidence and preserve independent totals and source highlights', t => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/di.xml';
+    sources[file] = Buffer.from('<config>\n<virtualType name="AcmeAlias" type="AcmeType">\n <argument/>\n</virtualType>\n</config>');
+    const fingerprint = createHash('sha256').update(sources[file]).digest('hex');
+    const virtual = {id: 'virtual', family: 'virtual-types', binding: {requested: 'AcmeAlias', replacement: 'AcmeType'},
+        path: 'AcmeAlias', startLine: 2, endLine: 4, highlightEndLine: 2};
+    const argument = {id: 'argument', family: 'arguments', binding: {declaringType: 'AcmeAlias', argument: 'unused'},
+        path: 'AcmeAlias/unused', startLine: 3, endLine: 3};
+    const arrayItem = {id: 'item', family: 'arguments', binding: {declaringType: 'AcmeAlias', argument: 'items', items: ['nested', 'key']},
+        path: 'AcmeAlias/items[nested][key]', startLine: 3, endLine: 3};
+    const lifetime = {id: 'lifetime', family: 'lifecycles', binding: {declaringType: 'AcmeAlias', shared: false},
+        path: 'AcmeAlias', startLine: 2, endLine: 2};
+    for (const item of [virtual, argument, arrayItem, lifetime]) {
+        Object.assign(item, {declaredScope: {type: 'frontend', code: ''}, supported: true, areas: {frontend: {
+            status: 'eligible', origin: {id: item.id, path: file, startLine: item.startLine, endLine: item.endLine, fingerprint},
+            resolved: item === virtual ? 'AcmeType' : null
+        }}});
+    }
+    const diUsage = {eligible: {'virtual-types': {virtual: true}, arguments: {argument: true, item: true}, lifecycles: {lifetime: true}},
+        virtualRoutes: {AcmeAlias: {ids: ['virtual'], resolved: 'AcmeType'}}};
+    manifest.preferences = {frontend: {routes: {}, diUsage}};
+    manifest.files.push({path: file, family: 'plugins', sourceHash: fingerprint, declarations: [virtual, argument, arrayItem, lifetime]});
+    const healthy = {...record, preferenceHook: true, diUsageHooks: {'virtual-types': true, arguments: true, lifecycles: true}};
+    const resolution = {id: 'virtual', type: 'virtual-type-resolved', area: 'frontend', requested: 'AcmeAlias', hits: 1};
+    const report = merge(manifest, [{...healthy, events: [...record.events, resolution]}], sources);
+    assert.deepEqual(report.virtualTypes, {total: 1, covered: 1, hook: true});
+    assert.deepEqual(report.arguments, {total: 2, covered: 0, hook: true});
+    assert.deepEqual(report.lifecycles, {total: 1, covered: 0, hook: true});
+    assert.equal(report.files[1].lines[2].state, 'covered');
+    assert.equal(report.files[1].lines[3].state, 'uncovered');
+    assert.equal(report.files[1].lines[4], undefined);
+    assert.equal(report.files[1].total, 0);
+    assert.throws(() => merge(manifest, [{...healthy, diUsageHooks: {'virtual-types': true}}], sources), /constructor argument usage hook/);
+    assert.throws(() => merge(manifest, [{...healthy, events: [{...resolution, requested: 'AcmeType'}]}], sources), /factory route/);
+    const applied = {id: 'argument', type: 'argument-applied', area: 'frontend', requested: 'AcmeAlias', hits: 3};
+    assert.throws(() => merge(manifest, [{...healthy, events: [{...applied, value: 'secret'}]}], sources));
+    const policy = {id: 'lifetime', type: 'lifetime-applied', area: 'frontend', requested: 'AcmeAlias', hits: 1};
+    const populated = merge(manifest, [{...healthy, events: [applied, {...applied, id: 'item'}, policy]}], sources);
+    assert.deepEqual(populated.arguments, {total: 2, covered: 2, hook: true});
+    assert.deepEqual(populated.lifecycles, {total: 1, covered: 1, hook: true});
+    assert.throws(() => merge(manifest, [{...healthy, events: [{...policy, id: 'item'}]}], sources));
+    const output = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-di-usage-'));
+    t.after(() => fs.rmSync(output, {recursive: true, force: true}));
+    writeReport(report, sources, output);
+    const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+    assert.match(index, /Virtual type usage/);
+    assert.match(index, /Constructor argument usage/);
+    assert.match(index, /\$items\[&quot;nested&quot;\]\[&quot;key&quot;\]/);
+    assert.match(index, /Object lifetime usage/);
+    assert.match(index, /New instance/);
+});

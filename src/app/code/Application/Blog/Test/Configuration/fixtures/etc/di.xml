@@ -18,4 +18,30 @@ License: see LICENSE in the repository root.
         <plugin name="journal_inner_after" type="Application\Blog\Plugin\JournalAfter" sortOrder="40"/>
         <plugin name="journal_warm" type="Application\Blog\Plugin\JournalWarm"/>
     </type>
+    <preference for="Application\Blog\Model\JournalFirst"
+                type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalSecond" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalChain" type="Application\Blog\Model\JournalFirst"/>
+    <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalExternalPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalUnusedPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalWarmPreference" type="Application\Blog\Model\JournalPreferenceProbe"/>
+    <preference for="Application\Blog\Model\JournalVirtualPreference" type="Application\Blog\Model\JournalVirtualTarget"/>
+    <virtualType name="Application\Blog\Model\JournalVirtualTarget" type="Application\Blog\Model\JournalPreferenceProbe" shared="true"/>
+    <preference for="Application\Blog\Model\JournalFailedPreference" type="Application\Blog\Model\JournalFailingImplementation"/>
+    <type name="Application\Blog\Model\JournalArgumentProbe">
+        <arguments>
+            <argument name="label" xsi:type="string">global label</argument>
+            <argument name="options" xsi:type="array">
+                <item name="enabled" xsi:type="boolean">true</item>
+            </argument>
+            <argument name="service" xsi:type="object">Application\Blog\Model\JournalVirtualTarget</argument>
+            <argument name="ignored" xsi:type="string">not a constructor parameter</argument>
+        </arguments>
+    </type>
+    <virtualType name="Application\Blog\Model\JournalArgumentAlias"
+                 type="Application\Blog\Model\JournalArgumentProbe">
+        <arguments><argument name="label" xsi:type="string">alias label</argument></arguments>
+    </virtualType>
+    <virtualType name="Application\Blog\Model\JournalArgumentChain" type="Application\Blog\Model\JournalArgumentAlias"/>
 </config>

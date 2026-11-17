@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 import {fixtures, headers, login, navigateAdminMenu} from './support';
-const {journeys} = require('../Configuration/journeys.cjs');
+const {journeys, apiJourneys} = require('../Configuration/journeys.cjs');
 
 describe('Blog configuration', () => {
     it('uses inherited journal settings and shows the selected Admin fields', () => {
@@ -16,6 +16,12 @@ describe('Blog configuration', () => {
                 if (response.body.heading) for (const key of ['numeric', 'object', 'current']) {
                     if (key in response.body) expect(response.body[key]).to.equal(response.body.heading);
                 }
+            });
+        }
+        for (const [url, body] of apiJourneys) {
+            cy.request({url, headers: headers()}).then(response => {
+                expect(response.status).to.equal(200);
+                expect(response.body).to.deep.equal(body);
             });
         }
         login();
@@ -47,6 +53,8 @@ describe('Blog configuration', () => {
         cy.reload();
         cy.wait('@reloadSettings').its('response.headers').should('include', {
             'x-magelens-admin-observer': 'executed',
+            'x-magelens-admin-preference': 'resolved',
+            'x-magelens-admin-argument': 'admin label',
             'x-magelens-admin-plugin': 'short:startbbbb|after|after'
         });
         cy.get('#application_blog_display_heading').should('be.visible').and('have.value', 'Journal');

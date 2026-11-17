@@ -22,7 +22,20 @@ namespace Magento\Framework\App\Config {
         public function isSetFlag($path, $scope = 'default', $code = null);
     }
 }
-namespace Magento\Framework\App { interface RequestInterface { public function getParam($name, $default = null); } }
+namespace Magento\Framework\App {
+    interface RequestInterface { public function getParam($name, $default = null); }
+    class ObjectManager {
+        public static array $requests = [];
+        public static function getInstance(): self { return new self; }
+        public function get(string $type): object {
+            self::$requests[] = $type;
+            return match ($type) {
+                'Application\Blog\Model\JournalWarmPreference' => new \Application\Blog\Model\JournalPreferenceProbe(),
+                default => throw new \LogicException("Unexpected fixture preference $type"),
+            };
+        }
+    }
+}
 namespace Magento\Store\Model { interface StoreManagerInterface {} }
 namespace Magento\Backend\App { interface ConfigInterface {} }
 namespace Magento\Framework\Controller\Result {
@@ -43,6 +56,7 @@ namespace {
     $fixtures = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures';
     require $fixtures . '/Model/JournalPluginSubjectInterface.php';
     require $fixtures . '/Model/JournalPluginSubject.php';
+    require $fixtures . '/Model/JournalPreferenceProbe.php';
     require $fixtures . '/Controller/Index/Configuration.php';
     $request = new class implements \Magento\Framework\App\RequestInterface {
         public string $scenario = 'warmup-only';
@@ -78,6 +92,7 @@ namespace {
         || !str_contains($response->contents, '<html lang="en">')
         || !str_contains($response->contents, '&lt;img src=x')
         || str_contains($response->contents, '<img')
+        || \Magento\Framework\App\ObjectManager::$requests !== ['Application\Blog\Model\JournalWarmPreference']
         || $pluginSubject->warmups !== 1
         || $events->names !== ['magelens_journal_warmup']
         || $config->reads !== ['application_blog/display/unused']) {

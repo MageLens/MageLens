@@ -21,13 +21,13 @@ use Magento\Framework\ObjectManager\InterceptableValidator;
 
 final class PluginManifest
 {
-    public const AREAS = ['global', 'frontend', 'adminhtml'];
+    public const AREAS = Xml::HTTP_AREAS;
     public const PHASES = [DefinitionInterface::LISTENER_BEFORE => 'before', DefinitionInterface::LISTENER_AROUND => 'around',
         DefinitionInterface::LISTENER_AFTER => 'after'];
     private const ORIGIN = 'magelens-origin-';
 
     /** Run the installed reader on original and annotated snapshots in resolver order. */
-    public static function sources(Dom $reader, array $known): array
+    public static function sources(Dom $reader, array $known, bool $preferences = false, bool $diUsage = false): array
     {
         $resolver = new \ReflectionProperty(Dom::class, '_fileResolver');
         $converter = new \ReflectionProperty(Dom::class, '_converter');
@@ -58,7 +58,7 @@ final class PluginManifest
             }
         };
         $converter->setValue($annotated, $capture);
-        $config = $tagged = $sources = $providers = [];
+        $config = $tagged = $sources = $providers = $bindings = $usage = [];
         foreach (['primary', ...self::AREAS] as $scope) {
             $input->files = [];
             foreach ($original->get('di.xml', $scope) as $file => $bytes) {
@@ -66,6 +66,7 @@ final class PluginManifest
                 $sources[$scope][$file] = $providers[$file] = hash('sha256', $bytes);
             }
             $config[$scope] = $reader->read($scope);
+            $locations = [];
             foreach ($input->files as $file => &$bytes) {
                 $document = Xml::document($bytes);
                 foreach (self::nodes($document) as $node) {
@@ -76,6 +77,35 @@ final class PluginManifest
                         if ($node->hasAttribute($attribute)) $node->setAttribute(self::ORIGIN . $attribute, $id);
                     }
                 }
+                if ($preferences || $diUsage) {
+                    $query = $preferences ? '/config/preference' : '';
+                    if ($diUsage) $query .= ($query ? ' | ' : '') . DiUsageManifest::NODES;
+                    $xpath = new \DOMXPath($document);
+                    $nodes = $xpath->query($query);
+                    $sharedNodes = $diUsage ? $xpath->query(DiUsageManifest::SHARED_NODES) : [];
+                    $hasNodes = $nodes->length || count($sharedNodes);
+                    $ranges = $hasNodes ? Xml::ranges($bytes, $document, (bool) count($sharedNodes)) : [];
+                    $path = str_starts_with($file, BP . '/') ? substr($file, strlen(BP) + 1) : $file;
+                    $fingerprint = $hasNodes ? hash('sha256', str_replace("\r\n", "\n", $bytes)) : null;
+                    foreach ($nodes as $node) {
+                        $nodePath = $node->getNodePath();
+                        $id = $known[$file][$nodePath] ?? hash('sha256', "$path\0$nodePath");
+                        if ($node->tagName === 'preference') $node->setAttribute(self::ORIGIN . 'preference', $id);
+                        else DiUsageManifest::annotate($node, $id);
+                        $range = $ranges[$nodePath];
+                        unset($range['highlightEndLine']);
+                        $locations[$id] = ['id' => $id, 'path' => $path, ...$range,
+                            'fingerprint' => $fingerprint];
+                    }
+                    foreach ($sharedNodes as $node) {
+                        $nodePath = $node->getNodePath();
+                        $key = $nodePath . '/@shared';
+                        $id = $known[$file][$key] ?? hash('sha256', "$path\0$key");
+                        DiUsageManifest::annotateShared($node, $id);
+                        $locations[$id] = ['id' => $id, 'path' => $path, 'startLine' => $ranges[$nodePath]['startLine'],
+                            'endLine' => $ranges[$nodePath]['highlightEndLine'], 'fingerprint' => $fingerprint];
+                    }
+                }
                 $bytes = $document->saveXML();
             }
             unset($bytes);
@@ -84,8 +114,21 @@ final class PluginManifest
                 throw new \RuntimeException('Cannot reproduce Magento DI reader provenance');
             }
             $tagged[$scope] = self::tag($config[$scope], $capture->document);
+            if ($diUsage && $capture->document) {
+                $usage[$scope] = DiUsageManifest::origins($capture->document, $config[$scope], $locations);
+            }
+            if ($preferences && $capture->document) {
+                $origins = [];
+                foreach ((new \DOMXPath($capture->document))->query('/config/preference') as $node) {
+                    $origins[$node->getAttribute('for')] = $locations[$node->getAttribute(self::ORIGIN . 'preference')] ?? null;
+                }
+                if (array_keys($origins) !== array_keys($config[$scope]['preferences'] ?? [])) {
+                    throw new \RuntimeException('Cannot reproduce Magento preference conversion order');
+                }
+                foreach ($origins as $name => $origin) $bindings[$scope][ltrim($name, '\\')] = $origin;
+            }
         }
-        return [$config, $tagged, $sources, $providers];
+        return [$config, $tagged, $sources, $providers, $bindings, $usage];
     }
 
     private static function nodes(\DOMDocument $document): \DOMNodeList
@@ -217,12 +260,14 @@ final class PluginManifest
         return $segments;
     }
 
-    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source'): array
+    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source',
+        ?array $snapshots = null, array $areas = self::AREAS): array
     {
         $known = $items = $sourcePaths = $sourceHashes = [];
         foreach ($files as $path => &$file) {
             if ($file['family'] !== 'plugins') continue;
             foreach ($file['declarations'] as &$item) {
+                if ($item['family'] !== 'plugins') continue;
                 $known[BP . '/' . $path][$item['node']] = $item['id'];
                 $items[$item['id']] = &$item;
                 $sourcePaths[$item['id']] = BP . '/' . $path;
@@ -233,7 +278,7 @@ final class PluginManifest
         unset($file);
         if (!$items) return [[], []];
 
-        [$configs, $tagged, $sources, $providers] = self::sources($om->get(Dom::class), $known);
+        [$configs, $tagged, $sources, $providers] = $snapshots ?? self::sources($om->get(Dom::class), $known);
         $active = [];
         foreach ($items as $id => $item) {
             $scope = $item['declaredScope']['type'];
@@ -249,21 +294,26 @@ final class PluginManifest
         $generator = $om->get(PluginListGenerator::class);
         $developer = $loader instanceof \Magento\Framework\App\ObjectManager\ConfigLoader
             && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Developer;
+        $production = $loader instanceof \Magento\Framework\App\ObjectManager\ConfigLoader\Compiled
+            && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Compiled
+            && CompiledProvenance::validate($sources, $areas) !== null;
         $compiled = glob(BP . '/generated/metadata/*|plugin-list.php');
+        $supportedMode = ($developer && !$compiled) || $production;
         $modules = $active ? self::localModules($om) : [];
         $classes = $active ? self::candidateTypes(array_intersect_key($items, $active), $paths, $modules, $sourceRoot) : [];
-        $generatorType = $developer ? InlinePluginManifest::generator($live) : '';
+        $generatorType = $supportedMode ? InlinePluginManifest::generator($live) : '';
         $runtime = [];
         foreach (self::AREAS as $area) {
+            $registered = in_array($area, $areas, true);
             $scopes = $area === 'global' ? ['primary', 'global'] : ['primary', 'global', $area];
-            $di = clone $live;
+            $di = $production ? new \Magento\Framework\Interception\ObjectManager\Config\Developer() : clone $live;
             $data = [];
-            if ($developer) foreach ($scopes as $scope) $di->extend($configs[$scope]);
+            if ($supportedMode) foreach ($scopes as $scope) $di->extend($configs[$scope]);
             foreach (InlinePluginManifest::scopeOrder($generatorType, $scopes) as $scope) {
                 $data = $generator->merge($tagged[$scope], $data);
             }
-            $listType = $developer ? $di->getOriginalInstanceType($di->getPreference(PluginListInterface::class)) : '';
-            $supported = $developer && !$compiled && $listType === PluginList::class
+            $listType = $supportedMode ? $di->getOriginalInstanceType($di->getPreference(PluginListInterface::class)) : '';
+            $supported = $registered && $supportedMode && $listType === PluginList::class
                 && InlinePluginManifest::supported($generatorType) && InlinePluginManifest::generator($di) === $generatorType;
             foreach ($items as $id => &$item) {
                 $scope = $item['declaredScope']['type'];
@@ -272,7 +322,8 @@ final class PluginManifest
                 $registration = $data[$target][$name] ?? [];
                 $origins = self::origins($registration);
                 $item['areas'][$area] = match (true) {
-                    !$supported => self::outcome('unsupported', 'Compiled DI, custom plugin lists or unsupported interceptor generators are unmeasured'),
+                    !$registered => self::outcome('unsupported', 'Configuration area is not registered in the installation'),
+                    !$supported => self::outcome('unsupported', 'Plugin list or interceptor provenance is unavailable'),
                     !isset($active[$id]) => self::outcome('unsupported', 'Declaration is inactive in the installed DI reader'),
                     !in_array($id, $origins, true) => self::outcome('overridden', 'Superseded by another declaration'),
                     !empty($registration['disabled']) => self::outcome('disabled', 'Effective Magento registration is disabled'),
@@ -368,7 +419,7 @@ final class PluginManifest
             }
         }
         if ($runtime) {
-            self::checkCaches($om->get(PluginListInterface::class), $runtime, $loader, $configs);
+            if (!$production) self::checkCaches($om->get(PluginListInterface::class), $runtime, $loader, $configs);
             InlinePluginManifest::prepare($om, $runtime);
         }
         foreach ($items as &$item) {

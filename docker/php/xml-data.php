@@ -9,6 +9,13 @@ namespace MageLens\XmlCoverage;
 
 final class Xml
 {
+    public const HTTP_AREAS = ['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql'];
+
+    public static function enabledHttpAreas(array $registeredAreas): array
+    {
+        return array_values(array_intersect(self::HTTP_AREAS, ['global', ...$registeredAreas]));
+    }
+
     public static function document(string $source): \DOMDocument
     {
         if (preg_match('/<!DOCTYPE|<!ENTITY/i', $source)) throw new \RuntimeException('XML entities and DTDs are unsupported');
@@ -22,7 +29,7 @@ final class Xml
 
     // DOM supplies semantic nodes; this lexical pass retains inclusive original
     // closing lines, including CDATA, comments and quoted > in attributes.
-    public static function ranges(string $source, \DOMDocument $dom): array
+    public static function ranges(string $source, \DOMDocument $dom, bool $opening = false): array
     {
         preg_match_all('~<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|</?[A-Za-z_](?:[^>"\']|"[^"]*"|\'[^\']*\')*>~s', $source, $matches, PREG_OFFSET_CAPTURE);
         $ranges = []; $stack = [];
@@ -37,6 +44,7 @@ final class Xml
             } else {
                 $index = count($ranges);
                 $ranges[] = ['startLine' => $start, 'endLine' => $end];
+                if ($opening) $ranges[$index]['highlightEndLine'] = $end;
                 if (!preg_match('~/\s*>$~', $token)) $stack[] = $index;
             }
         }
@@ -136,11 +144,79 @@ final class Xml
             'config' => 'urn:magento:module:Magento_Store:etc/config.xsd',
             'system' => 'urn:magento:module:Magento_Config:etc/system_file.xsd',
             'events' => 'urn:magento:framework:Event/etc/events.xsd',
-            'plugins' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
+            'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
         };
         if ($dom->documentElement->tagName !== 'config' || $schema !== $expected) return [];
-        $ranges = self::ranges($source, $dom);
+        $ranges = self::ranges($source, $dom, in_array($family, ['virtual-types', 'lifecycles'], true));
         $xpath = new \DOMXPath($dom);
+        if (in_array($family, ['virtual-types', 'arguments', 'lifecycles'], true)) {
+            $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
+            $arguments = '/config/type/arguments/argument | /config/virtualType/arguments/argument'
+                . ' | /config/type/arguments/argument//item | /config/virtualType/arguments/argument//item';
+            $query = match ($family) {
+                'virtual-types' => '/config/virtualType[@name]',
+                'lifecycles' => "($arguments | /config/type | /config/virtualType)[@shared]",
+                default => $arguments,
+            };
+            $result = []; $seen = [];
+            foreach ($xpath->query($query) as $node) {
+                if ($family === 'virtual-types') {
+                    $name = ltrim($node->getAttribute('name'), '\\');
+                    $binding = ['requested' => $name, 'replacement' => ltrim($node->getAttribute('type'), '\\')];
+                    $key = $name;
+                } elseif (in_array($node->tagName, ['type', 'virtualType'], true)) {
+                    $key = ltrim($node->getAttribute('name'), '\\');
+                    $binding = ['declaringType' => $key];
+                } else {
+                    $argument = $node;
+                    $items = [];
+                    while ($argument->tagName === 'item') {
+                        array_unshift($items, $argument->getAttribute('name'));
+                        $argument = $argument->parentNode;
+                    }
+                    $type = ltrim($argument->parentNode->parentNode->getAttribute('name'), '\\');
+                    $name = $argument->getAttribute('name');
+                    $binding = ['declaringType' => $type, 'argument' => $name];
+                    $key = "$type/$name";
+                    if ($items) {
+                        $binding['items'] = $items;
+                        $key .= "\0" . json_encode($items, JSON_THROW_ON_ERROR);
+                    }
+                }
+                $nodePath = $node->getNodePath();
+                $range = $ranges[$nodePath];
+                if ($family === 'lifecycles') {
+                    $binding['shared'] = in_array($node->getAttribute('shared'), ['true', '1'], true);
+                    $range['endLine'] = $range['highlightEndLine'];
+                    unset($range['highlightEndLine']);
+                }
+                $index = $seen[$key] ?? 0;
+                $seen[$key] = $index + 1;
+                $result[] = ['id' => hash('sha256', "$path\0$family\0$key\0$index"),
+                    'path' => isset($binding['argument']) ? "$type/$name" . implode('', array_map(
+                        static fn($part) => '[' . $part . ']', $binding['items'] ?? [])) : $key,
+                    'family' => $family, 'declaredScope' => ['type' => $scope, 'code' => ''],
+                    ...$range, 'node' => $nodePath . ($family === 'lifecycles' ? '/@shared' : ''), 'binding' => $binding,
+                    'supported' => false, 'reason' => null];
+            }
+            return $result;
+        }
+        if ($family === 'preferences') {
+            $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
+            $result = []; $seen = [];
+            foreach ($xpath->query('/config/preference[@for and @type]') as $node) {
+                $requested = ltrim($node->getAttribute('for'), '\\');
+                $replacement = ltrim($node->getAttribute('type'), '\\');
+                $index = $seen[$requested] ?? 0;
+                $seen[$requested] = $index + 1;
+                $result[] = ['id' => hash('sha256', "$path\0preferences\0$requested\0$index"),
+                    'path' => $requested, 'family' => $family, 'declaredScope' => ['type' => $scope, 'code' => ''],
+                    ...$ranges[$node->getNodePath()], 'node' => $node->getNodePath(),
+                    'binding' => ['requested' => $requested, 'replacement' => $replacement],
+                    'supported' => false, 'reason' => null];
+            }
+            return $result;
+        }
         if ($family === 'plugins') {
             $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
             $result = []; $seen = [];
