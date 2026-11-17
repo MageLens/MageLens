@@ -179,7 +179,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
             {subject, method, phase, state});
         return callback.hits;
     };
-    assert.deepEqual(result.plugins, {total: 24, covered: 12, hook: true});
+    assert.deepEqual(result.plugins, {total: 42, covered: 16, hook: true});
     assert.deepEqual([global.journal_shared.startLine, global.journal_shared.endLine], [9, 10]);
     assert.equal(global.journal_shared.registration.target, subject + 'Interface');
     assert.deepEqual([global.journal_duplicate.startLine, global.journal_duplicate.endLine], [14, 14]);
@@ -213,7 +213,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
 
 test('reports preference resolution by native binding and original configuration area', () => {
     const result = report();
-    assert.deepEqual(result.preferences, {total: 26, covered: 6, hook: true});
+    assert.deepEqual(result.preferences, {total: 44, covered: 8, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const globalFile = result.files.find(file => file.path === root + 'di.xml');
     assert.deepEqual([globalFile.covered, globalFile.total], [0, 0]);
@@ -270,15 +270,15 @@ test('reports preference resolution by native binding and original configuration
     }
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Preference usage/);
-    assert.match(html, /6\/26 eligible declaration–area pairs resolved/);
+    assert.match(html, /8\/44 eligible declaration–area pairs resolved/);
     assert.match(html, /href="app\/code\/Application\/Blog\/etc\/di.xml.html#L21"/);
 });
 
 test('reports only factory-resolved virtual types and applied constructor arguments', () => {
     const result = report();
-    assert.deepEqual(result.virtualTypes, {total: 9, covered: 5, hook: true});
-    assert.deepEqual(result.arguments, {total: 18, covered: 9, hook: true});
-    assert.deepEqual(result.lifecycles, {total: 3, covered: 2, hook: true});
+    assert.deepEqual(result.virtualTypes, {total: 15, covered: 9, hook: true});
+    assert.deepEqual(result.arguments, {total: 30, covered: 17, hook: true});
+    assert.deepEqual(result.lifecycles, {total: 5, covered: 4, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
     const site = (type, scope = 'global', argument = '') => declaration(result,
@@ -324,7 +324,45 @@ test('reports only factory-resolved virtual types and applied constructor argume
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Virtual type usage/);
     assert.match(html, /Constructor argument usage/);
-    assert.match(html, /5\/9 eligible declaration–area pairs resolved/);
-    assert.match(html, /9\/18 eligible declaration–area pairs applied/);
-    assert.match(html, /2\/3 eligible declaration–area pairs applied/);
+    assert.match(html, /9\/15 eligible declaration–area pairs resolved/);
+    assert.match(html, /17\/30 eligible declaration–area pairs applied/);
+    assert.match(html, /4\/5 eligible declaration–area pairs applied/);
+});
+
+test('attributes real REST and GraphQL calls to their own DI and observer sources', () => {
+    const result = report();
+    const root = 'app/code/Application/Blog/etc/';
+    const model = 'Application\\Blog\\Model\\Journal';
+    for (const [area, name, other] of [
+        ['webapi_rest', 'rest_probe', 'graphql'],
+        ['graphql', 'graphql_probe', 'webapi_rest']
+    ]) {
+        const file = root + area + '/di.xml';
+        const eventFile = root + area + '/events.xml';
+        const binding = declaration(result, file, model + 'AreaPreference', area);
+        const alias = declaration(result, file, model + 'ArgumentAlias', area, '', 'virtual-types');
+        const label = declaration(result, file, model + 'ArgumentAlias/label', area);
+        const plugin = declaration(result, file, model + 'PluginSubject/' + name, area);
+        const observer = declaration(result, eventFile, 'magelens_api_probe/' + name, area);
+        const expected = [[binding, 8, 8, 'preference-resolved'], [alias, 9, 11, 'virtual-type-resolved'],
+            [label, 10, 10, 'argument-applied'], [plugin, 13, 13, 'plugin-execute'], [observer, 9, 9, 'observer-execute']];
+        const requests = result.requests.filter(entry => entry.events.some(event => event.id === binding.id));
+        assert.equal(requests.length, 1, `One recorded request resolved the ${area} fixture binding`);
+        const [record] = requests;
+        const events = record.events;
+        const selected = new Set(expected.map(([item]) => item.id));
+        assert.deepEqual(events.filter(event => selected.has(event.id)).map(event => [event.id, event.type, event.area, event.hits]).sort(),
+            expected.map(([item, , , kind]) => [item.id, kind, area, 1]).sort());
+        assert.ok(events.every(event => !event.area || event.area === area), 'Only the native API area supplies fixture evidence');
+        for (const [item, start, end] of expected) {
+            assert.deepEqual([item.startLine, item.endLine], [start, end]);
+            assert.equal(item.areas[area].state, 'covered');
+            assert.equal(item.areas[other]?.status ?? 'inactive', 'inactive');
+        }
+        const global = declaration(result, root + 'di.xml', model + 'AreaPreference', 'global');
+        assert.equal(global.areas[area].status, 'overridden');
+        assert.equal(global.areas[area].origin.id, binding.id);
+        assert.equal(binding.areas[area].resolved, model + 'FrontendPreference');
+        assert.match(fs.readFileSync(path.join(directory, 'xml', file + '.html'), 'utf8'), new RegExp(area + ' · Resolved'));
+    }
 });

@@ -27,7 +27,7 @@ use Magento\Framework\ObjectManager\ObjectManager;
 
 final class PreferenceManifest
 {
-    public const AREAS = ['global', 'frontend', 'adminhtml'];
+    public const AREAS = Xml::HTTP_AREAS;
     public const LOOKUP_LINES = ['get' => 71, 'create' => 59];
 
     public static function nativeHooks(bool $compiled = false): bool
@@ -112,7 +112,7 @@ final class PreferenceManifest
         return [array_keys($edges), $terminal, $resolved];
     }
 
-    public static function prepare($om, array &$files): array
+    public static function prepare($om, array &$files, array $areas): array
     {
         $items = $usage = $known = $paths = [];
         foreach ($files as $path => &$file) {
@@ -144,7 +144,7 @@ final class PreferenceManifest
         $loader = $om->get(ConfigLoaderInterface::class);
         $runtimeConfig = (new \ReflectionProperty(ObjectManager::class, '_config'))->getValue($om);
         $runtimeFactory = (new \ReflectionProperty(ObjectManager::class, '_factory'))->getValue($om);
-        $provenance = $compiled && get_class($loader) === CompiledLoader::class ? CompiledProvenance::validate($sources) : null;
+        $provenance = $compiled && get_class($loader) === CompiledLoader::class ? CompiledProvenance::validate($sources, $areas) : null;
         $unsupported = match (true) {
             !$compiled && $mode !== \Magento\Framework\App\State::MODE_DEVELOPER => 'Unsupported application mode',
             !self::nativeManager($om), get_class($loader) !== ($compiled ? CompiledLoader::class : ConfigLoader::class)
@@ -165,6 +165,7 @@ final class PreferenceManifest
         }
         $runtime = [];
         foreach (self::AREAS as $area) {
+            $areaUnsupported = in_array($area, $areas, true) ? $unsupported : 'Configuration area is not registered in the installation';
             $scopes = $area === 'global' ? ['primary', 'global'] : ['primary', 'global', $area];
             $config = new DeveloperConfig();
             $owners = [];
@@ -184,7 +185,7 @@ final class PreferenceManifest
                 [$status, $reason] = match (true) {
                     !$applicable => ['inactive', 'Declared for another configuration area'],
                     !$active[$id] => ['inactive', 'Source is outside the installed DI reader inputs'],
-                    $unsupported !== null => ['unsupported', $unsupported],
+                    $areaUnsupported !== null => ['unsupported', $areaUnsupported],
                     !isset($preferences[$requested]) => ['ambiguous', 'No effective mapping in the installed DI configuration'],
                     !$origin => ['ambiguous', 'The effective provider could not be identified'],
                     $origin['id'] !== $id => ['overridden', 'The effective binding comes from another declaration'],
@@ -208,9 +209,9 @@ final class PreferenceManifest
                 foreach ($edges as $edge) if (isset($bindings[$edge])) $ids[] = $bindings[$edge];
                 if ($resolved !== null && $ids) $routes[$requested] = ['terminal' => $terminal, 'resolved' => $resolved, 'ids' => $ids];
             }
-            $diUsage = DiUsageManifest::prepareArea($usage, $active, $usageOrigins, $config, $scopes, $area, $unsupported,
+            $diUsage = DiUsageManifest::prepareArea($usage, $active, $usageOrigins, $config, $scopes, $area, $areaUnsupported,
                 $nativeArguments, $compiled ? $routes : [], $compiled);
-            if ($unsupported !== null) continue;
+            if ($areaUnsupported !== null) continue;
             $loaded = $loader->load($area);
             if (!$compiled && ($diUsage['names'] ?? [])) {
                 $diUsage['argumentDelta'] = DiUsageManifest::argumentDelta($configs[$area]);
@@ -244,7 +245,7 @@ final class PreferenceManifest
         foreach ($all as &$item) {
             $scope = $item['declaredScope']['type'];
             if (!in_array($scope, self::AREAS, true)) {
-                $item['areas'][$scope] = ['status' => 'unsupported', 'reason' => 'Configuration area is outside synchronous storefront and Admin collection',
+                $item['areas'][$scope] = ['status' => 'unsupported', 'reason' => 'Configuration area is outside supported HTTP collection',
                     'origin' => null, 'effectiveReplacement' => null, 'resolved' => null];
             }
             $item['effective'] = $item['supported'];

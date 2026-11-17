@@ -26,4 +26,10 @@ const journeys = [
     ['subtree-read', {data: {first: 'First returned leaf', second: 'Second returned leaf'}}],
     ['missing-read', {missing: null}]
 ];
-module.exports = {journeys};
+const result = label => ['Application\\Blog\\Model\\JournalFrontendPreference', label, '1', 'warm-plugin'];
+const query = encodeURIComponent('query MageLensAreaProbe { mageLensAreaProbe }');
+const apiJourneys = [
+    ['/rest/default/V1/magelens/area-probe', result('REST label')],
+    ['/graphql?operationName=MageLensAreaProbe&query=' + query, {data: {mageLensAreaProbe: result('GraphQL label')}}]
+];
+module.exports = {journeys, apiJourneys};

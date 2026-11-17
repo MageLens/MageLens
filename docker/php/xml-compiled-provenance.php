@@ -24,10 +24,10 @@ final class CompiledProvenance
         return hash('sha256', serialize([$providers, $application]));
     }
 
-    public static function metadata(): array
+    public static function metadata(array $areas): array
     {
         $files = [];
-        foreach (PreferenceManifest::AREAS as $area) {
+        foreach ($areas as $area) {
             $path = Compiled::getFilePath($area);
             if (!is_file($path)) throw new \RuntimeException("Compiled DI metadata is missing for $area");
             $files[$area] = hash_file('sha256', $path);
@@ -39,12 +39,12 @@ final class CompiledProvenance
         return $files;
     }
 
-    public static function validate(array $providers): ?array
+    public static function validate(array $providers, array $areas): ?array
     {
         $path = BP . '/' . self::STAMP;
         if (!is_file($path)) return null;
         $stamp = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-        if ($stamp !== ['schema' => 1, 'inputs' => self::inputs($providers), 'metadata' => self::metadata()]) {
+        if ($stamp !== ['schema' => 1, 'inputs' => self::inputs($providers), 'metadata' => self::metadata($areas)]) {
             throw new \RuntimeException('Compiled DI provenance is stale. Rerun ./bin/deploy-production for fresh production coverage.');
         }
         return $stamp['metadata'];
@@ -56,14 +56,14 @@ final class CompiledProvenance
         return self::inputs($snapshot[2]);
     }
 
-    public static function publish(string $before, string $after): void
+    public static function publish(string $before, string $after, array $areas): void
     {
         if ($before !== $after) throw new \RuntimeException('DI inputs changed during production deployment');
         $target = BP . '/' . self::STAMP;
         $temporary = tempnam(dirname($target), '.magelens-di-');
         if ($temporary === false) throw new \RuntimeException('Cannot stage compiled DI provenance');
         try {
-            $stamp = json_encode(['schema' => 1, 'inputs' => $after, 'metadata' => self::metadata()], JSON_THROW_ON_ERROR);
+            $stamp = json_encode(['schema' => 1, 'inputs' => $after, 'metadata' => self::metadata($areas)], JSON_THROW_ON_ERROR);
             if (file_put_contents($temporary, $stamp) !== strlen($stamp) || !rename($temporary, $target)) {
                 throw new \RuntimeException('Cannot publish compiled DI provenance');
             }
@@ -81,5 +81,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
     $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
     $inputs = CompiledProvenance::snapshot($manager);
     if ($argc === 1) echo $inputs, PHP_EOL;
-    else CompiledProvenance::publish($argv[1], $inputs);
+    else {
+        $areas = Xml::enabledHttpAreas($manager->get(\Magento\Framework\App\AreaList::class)->getCodes());
+        CompiledProvenance::publish($argv[1], $inputs, $areas);
+    }
 }

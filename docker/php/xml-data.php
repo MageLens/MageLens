@@ -9,6 +9,13 @@ namespace MageLens\XmlCoverage;
 
 final class Xml
 {
+    public const HTTP_AREAS = ['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql'];
+
+    public static function enabledHttpAreas(array $registeredAreas): array
+    {
+        return array_values(array_intersect(self::HTTP_AREAS, ['global', ...$registeredAreas]));
+    }
+
     public static function document(string $source): \DOMDocument
     {
         if (preg_match('/<!DOCTYPE|<!ENTITY/i', $source)) throw new \RuntimeException('XML entities and DTDs are unsupported');

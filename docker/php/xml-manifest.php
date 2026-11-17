@@ -155,7 +155,8 @@ function prepareXmlManifests($om, array $run): array
         $item['effective'] = $file['family'] === 'system' ? $item['supported'] : isset($effectiveIds[$item['id']]);
     }
     unset($file, $item);
-    [$observers, $eventProviders] = ObserverManifest::prepare($om, $files);
+    $areas = Xml::enabledHttpAreas($om->get(\Magento\Framework\App\AreaList::class)->getCodes());
+    [$observers, $eventProviders] = ObserverManifest::prepare($om, $files, $areas);
     $providers += $eventProviders;
     $scopes = ['default' => ['' => '']];
     $stores = $om->get(\Magento\Store\Model\StoreManagerInterface::class);
@@ -163,8 +164,8 @@ function prepareXmlManifests($om, array $run): array
     foreach ($stores->getStores(true) as $store) $scopes['stores'][(string) $store->getId()] = $store->getCode();
     $scopeCodes = [];
     foreach (['websites', 'stores'] as $type) $scopeCodes[$type] = array_fill_keys(array_keys($fresh[$type] ?? []), true);
-    [$preferences, $snapshots] = PreferenceManifest::prepare($om, $files);
-    [$plugins, $pluginProviders] = PluginManifest::prepare($om, $files, array_keys($run['sources']), snapshots: $snapshots);
+    [$preferences, $snapshots] = PreferenceManifest::prepare($om, $files, $areas);
+    [$plugins, $pluginProviders] = PluginManifest::prepare($om, $files, array_keys($run['sources']), snapshots: $snapshots, areas: $areas);
     $providers += $snapshots[3] ?? [];
     $providers += $pluginProviders;
     ksort($providers); ksort($files);

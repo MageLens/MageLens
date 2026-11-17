@@ -21,7 +21,7 @@ use Magento\Framework\ObjectManager\InterceptableValidator;
 
 final class PluginManifest
 {
-    public const AREAS = ['global', 'frontend', 'adminhtml'];
+    public const AREAS = Xml::HTTP_AREAS;
     public const PHASES = [DefinitionInterface::LISTENER_BEFORE => 'before', DefinitionInterface::LISTENER_AROUND => 'around',
         DefinitionInterface::LISTENER_AFTER => 'after'];
     private const ORIGIN = 'magelens-origin-';
@@ -260,7 +260,8 @@ final class PluginManifest
         return $segments;
     }
 
-    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source', ?array $snapshots = null): array
+    public static function prepare($om, array &$files, array $paths, string $sourceRoot = '/source',
+        ?array $snapshots = null, array $areas = self::AREAS): array
     {
         $known = $items = $sourcePaths = $sourceHashes = [];
         foreach ($files as $path => &$file) {
@@ -295,7 +296,7 @@ final class PluginManifest
             && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Developer;
         $production = $loader instanceof \Magento\Framework\App\ObjectManager\ConfigLoader\Compiled
             && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Compiled
-            && CompiledProvenance::validate($sources) !== null;
+            && CompiledProvenance::validate($sources, $areas) !== null;
         $compiled = glob(BP . '/generated/metadata/*|plugin-list.php');
         $supportedMode = ($developer && !$compiled) || $production;
         $modules = $active ? self::localModules($om) : [];
@@ -303,6 +304,7 @@ final class PluginManifest
         $generatorType = $supportedMode ? InlinePluginManifest::generator($live) : '';
         $runtime = [];
         foreach (self::AREAS as $area) {
+            $registered = in_array($area, $areas, true);
             $scopes = $area === 'global' ? ['primary', 'global'] : ['primary', 'global', $area];
             $di = $production ? new \Magento\Framework\Interception\ObjectManager\Config\Developer() : clone $live;
             $data = [];
@@ -311,7 +313,7 @@ final class PluginManifest
                 $data = $generator->merge($tagged[$scope], $data);
             }
             $listType = $supportedMode ? $di->getOriginalInstanceType($di->getPreference(PluginListInterface::class)) : '';
-            $supported = $supportedMode && $listType === PluginList::class
+            $supported = $registered && $supportedMode && $listType === PluginList::class
                 && InlinePluginManifest::supported($generatorType) && InlinePluginManifest::generator($di) === $generatorType;
             foreach ($items as $id => &$item) {
                 $scope = $item['declaredScope']['type'];
@@ -320,6 +322,7 @@ final class PluginManifest
                 $registration = $data[$target][$name] ?? [];
                 $origins = self::origins($registration);
                 $item['areas'][$area] = match (true) {
+                    !$registered => self::outcome('unsupported', 'Configuration area is not registered in the installation'),
                     !$supported => self::outcome('unsupported', 'Plugin list or interceptor provenance is unavailable'),
                     !isset($active[$id]) => self::outcome('unsupported', 'Declaration is inactive in the installed DI reader'),
                     !in_array($id, $origins, true) => self::outcome('overridden', 'Superseded by another declaration'),

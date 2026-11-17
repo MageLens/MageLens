@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const {test, expect, fixtures, headers, login, navigateAdminMenu} = require('./support');
-const {journeys} = require('../Configuration/journeys.cjs');
+const {journeys, apiJourneys} = require('../Configuration/journeys.cjs');
 
 test('uses inherited journal settings and shows the selected Admin fields', async ({page}) => {
     expect(fixtures().configuration, 'isolated settings fixture ownership').toBeTruthy();
@@ -14,6 +14,11 @@ test('uses inherited journal settings and shows the selected Admin fields', asyn
         expect(body).toMatchObject(expected);
         if (name === 'value-reads') expect(body.multiline).toContain('First line\nSecond line');
         if (body.heading) for (const key of ['numeric', 'object', 'current']) if (key in body) expect(body[key]).toBe(body.heading);
+    }
+    for (const [url, body] of apiJourneys) {
+        const response = await page.request.get(url, {headers: headers()});
+        expect(response.status()).toBe(200);
+        expect(await response.json()).toEqual(body);
     }
     await login(page);
     await navigateAdminMenu(page, '#menu-magento-backend-stores > a', '[data-ui-id="menu-magento-config-system-config"] > a');

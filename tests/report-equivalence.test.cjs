@@ -213,13 +213,15 @@ test('preference equivalence retains binding, original provider and per-area res
     const external = {...origin, id: '2'.repeat(64), path: '/shop/vendor/SECRET/other/etc/di.xml'};
     const eligible = {status: 'eligible', state: 'uncovered', hits: 0, origin, effectiveReplacement: binding.replacement, resolved};
     const selected = {type: 'preference-resolved', area: 'frontend', requested: 'SECRET\\RootAlias', binding, resolved};
+    const rest = {...selected, area: 'webapi_rest'};
     const item = {id, family: 'preferences', path: binding.requested, declaredScope: {type: 'global', code: ''},
-        startLine: 4, endLine: 6, supported: true, effective: true, state: 'covered', binding, evidence: [selected],
+        startLine: 4, endLine: 6, supported: true, effective: true, state: 'covered', binding, evidence: [selected, rest],
         areas: {global: eligible, frontend: {...eligible, state: 'covered', hits: 1},
+            webapi_rest: {...eligible, state: 'covered', hits: 1}, graphql: {...eligible},
             adminhtml: {status: 'overridden', state: 'unmeasured', hits: 0, origin: external,
                 resolved: 'SECRET\\Admin', effectiveReplacement: 'SECRET\\Admin', reason: 'SECRET provider'}}};
     file.declarations.push(item);
-    xml.preferences = {total: 2, covered: 1, hook: true};
+    xml.preferences = {total: 4, covered: 2, hook: true};
     write('xml/coverage.json', xml);
     const original = snapshot(directory);
     assert.doesNotMatch(JSON.stringify(original), /SECRET/);
@@ -233,11 +235,12 @@ test('preference equivalence retains binding, original provider and per-area res
         item => { item.areas.adminhtml.origin.endLine++; },
         item => { item.areas.adminhtml.origin.fingerprint = '3'.repeat(64); },
         item => { item.areas.frontend.resolved += 'Changed'; },
+        item => { item.areas.graphql.resolved += 'Changed'; },
         (item, report) => {
-            item.areas.frontend.hits = 0;
-            item.areas.frontend.state = item.state = 'uncovered';
-            item.evidence = [];
-            report.preferences.covered = 0;
+            item.areas.webapi_rest.hits = 0;
+            item.areas.webapi_rest.state = 'uncovered';
+            item.evidence = item.evidence.filter(event => event.area !== 'webapi_rest');
+            report.preferences.covered = 1;
         }
     ]) {
         const changed = structuredClone(xml);

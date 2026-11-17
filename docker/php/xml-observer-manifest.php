@@ -19,7 +19,7 @@ use Magento\Framework\ObjectManager\ConfigLoaderInterface;
 
 final class ObserverManifest
 {
-    public const AREAS = ['global', 'frontend', 'adminhtml'];
+    public const AREAS = Xml::HTTP_AREAS;
     private const DEFAULTS = ['disabled' => false, 'shared' => true];
 
     /** Replay the installed reader over a single snapshot, retaining per-attribute origins. */
@@ -136,7 +136,7 @@ final class ObserverManifest
         return $class ? ['eligible', null, $class] : ['unsupported', 'Observer implementation or invoker is unsupported', null];
     }
 
-    public static function prepare($om, array &$files): array
+    public static function prepare($om, array &$files, array $areas): array
     {
         $known = [];
         foreach ($files as $path => $file) {
@@ -146,7 +146,7 @@ final class ObserverManifest
         if (!$known) return [[], []];
         [$configs, $origins, $sources, $providers] = self::read($om->get(Reader::class), $known);
         $runtime = [];
-        foreach (self::AREAS as $area) {
+        foreach ($areas as $area) {
             // Config\Data\Scoped loads 'global' first, then the current scope.
             $effective = array_replace_recursive($configs['global'], $configs[$area]);
             $owners = self::mergeOrigins($configs['global'], $configs[$area], $origins['global'], $origins[$area]);
@@ -195,7 +195,10 @@ final class ObserverManifest
             foreach ($file['declarations'] as &$item) {
                 $item['effective'] = $item['supported'];
                 if (!isset($item['areas'])) {
-                    $item['areas'] = [$item['declaredScope']['type'] => ['status' => 'unsupported', 'reason' => 'Configuration scope is outside HTTP observer coverage']];
+                    $scope = $item['declaredScope']['type'];
+                    $reason = in_array($scope, self::AREAS, true) ? 'Configuration area is not registered in the installation'
+                        : 'Configuration scope is outside HTTP observer coverage';
+                    $item['areas'] = [$scope => ['status' => 'unsupported', 'reason' => $reason]];
                 }
             }
             unset($item);

@@ -7,7 +7,7 @@
 declare(strict_types=1);
 namespace MageLens\ProductionProof;
 
-use MageLens\XmlCoverage\{CompiledProvenance, DiUsage, DiUsageManifest, PreferenceManifest, Recorder};
+use MageLens\XmlCoverage\{CompiledProvenance, DiUsage, DiUsageManifest, PreferenceManifest, Recorder, Xml};
 use Magento\Framework\App\ObjectManager\ConfigLoader\Compiled as CompiledLoader;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
 use Magento\Framework\Code\Reader\ClassReader;
@@ -103,19 +103,27 @@ function verifyCompiledProvenance(): void
     mkdir($directory . '/app/etc', 0777, true);
     mkdir($directory . '/generated/metadata', 0777, true);
     $files = [$directory . '/app/etc/config.php', $directory . '/composer.lock'];
-    foreach (PreferenceManifest::AREAS as $area) $files[] = CompiledLoader::getFilePath($area);
+    $areas = Xml::enabledHttpAreas(['frontend', 'adminhtml', 'webapi_rest', 'crontab', 'webapi_soap']);
+    check($areas === ['global', 'frontend', 'adminhtml', 'webapi_rest'], 'Only installed HTTP scopes are stamped');
+    foreach ($areas as $area) $files[] = CompiledLoader::getFilePath($area);
     try {
         foreach ($files as $file) file_put_contents($file, 'fixture');
         $providers = ['global' => ['example/etc/di.xml' => hash('sha256', 'original')]];
-        check(CompiledProvenance::validate($providers) === null, 'deployment has no provenance before compilation');
+        check(CompiledProvenance::validate($providers, $areas) === null, 'deployment has no provenance before compilation');
         $before = CompiledProvenance::inputs($providers);
-        CompiledProvenance::publish($before, $before);
-        check(CompiledProvenance::validate($providers) === CompiledProvenance::metadata(), 'compiled provenance round trip');
+        CompiledProvenance::publish($before, $before, $areas);
+        check(CompiledProvenance::validate($providers, $areas) === CompiledProvenance::metadata($areas), 'compiled provenance round trip');
+        try {
+            CompiledProvenance::validate($providers, [...$areas, 'graphql']);
+            throw new \LogicException('Expected missing metadata for the registered area');
+        } catch (\RuntimeException $error) {
+            check(str_contains($error->getMessage(), 'metadata is missing for graphql'), 'Missing active metadata fails explicitly');
+        }
         $edited = ['global' => ['example/etc/di.xml' => hash('sha256', 'edited')]];
         foreach ([$edited, $providers] as $index => $input) {
             if ($index === 1) file_put_contents(CompiledLoader::getFilePath('frontend'), 'changed');
             try {
-                CompiledProvenance::validate($input);
+                CompiledProvenance::validate($input, $areas);
                 throw new \LogicException('Expected stale compiled provenance');
             } catch (\RuntimeException $error) {
                 check(str_contains($error->getMessage(), 'provenance is stale'), 'explicit stale compiled provenance failure');

@@ -12,6 +12,7 @@ License: see LICENSE in the repository root.
 - Report executed HTTP `events.xml` observer registrations by area, with original source links and explicit override and measurement statuses.
 - Report HTTP `di.xml` plugin callback execution by phase and configuration area, with links to the original registrations.
 - Report HTTP `di.xml` preference, virtual type, constructor argument and object lifetime usage in developer and production modes. Use `./bin/deploy-production` to record compiled DI provenance before collecting production coverage.
+- Report DI and observer usage for authorized REST and GraphQL requests by Magento configuration area.
 - Add Blog Journal settings scenarios for Cypress and Playwright to exercise configuration consumption across default, website and store scopes.
 - Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
 
