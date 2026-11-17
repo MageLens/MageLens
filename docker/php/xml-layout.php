@@ -365,14 +365,7 @@ final class LayoutCoverage
         if ($class !== Merge::class) return;
         $count = array_pop($this->appending);
         if ($error || !isset($this->merges[$merge]['pending'])) return;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
-        $caller = $trace[2] ?? [];
-        // Magento's generated no-plugin fallback calls the inherited method
-        // directly. Plugin dispatch inserts its own frames.
-        if (($caller['class'] ?? null) === get_class($merge) && str_ends_with(get_class($merge), '\\Interceptor')
-            && ($caller['function'] ?? null) === 'addUpdate') {
-            $caller = $trace[3] ?? [];
-        }
+        $caller = self::nativeCaller($merge, 'addUpdate');
         if (($caller['class'] ?? null) !== Merge::class || ($caller['function'] ?? null) !== '_fetchPackageLayoutUpdates') return;
         $state = $this->merges[$merge];
         $pending = $state['pending'];
@@ -391,6 +384,20 @@ final class LayoutCoverage
         static $property;
         $property ??= new \ReflectionProperty(Merge::class, 'updates');
         return $property->getValue($merge);
+    }
+
+    private static function nativeCaller(object $subject, string $method): array
+    {
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+        $caller = $trace[3] ?? [];
+        // A generated interceptor calls the parent directly when no plugin
+        // runs. Actual plugin dispatch inserts additional frames.
+        $wrapper = get_class($subject);
+        if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
+            && ($caller['function'] ?? null) === $method) {
+            return $trace[4] ?? [];
+        }
+        return $caller;
     }
 
     // Native append order and deduplication determine which source occupies
@@ -856,7 +863,7 @@ final class LayoutCoverage
     private function assignTemplate($block, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = self::nativeCaller($block, 'setTemplate');
         $generation = array_key_last($this->generating);
         if ($generation !== null && $class === Template::class && ($caller['class'] ?? null) === BlockGenerator::class
             && ($caller['function'] ?? null) === 'generateBlock') {
@@ -900,7 +907,7 @@ final class LayoutCoverage
 
     private function beginTemplate($block, array $params, string $class): void
     {
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = self::nativeCaller($block, 'fetchView');
         $origin = $class === Template::class && ($caller['class'] ?? null) === Template::class
             && ($caller['function'] ?? null) === '_toHtml' ? ($this->blocks[$block]['template'] ?? null) : null;
         static $property;

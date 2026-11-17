@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
 const blog = 'app/code/Application/Blog/view/frontend/layout';
 const probe = 'app/code/MageLens/Compatibility/view/frontend/layout';
+const hyva = 'vendor/hyva-themes/magento2-default-theme-csp';
 
 function verify(directory, handle, element, kind, state, types) {
     const file = report.files.find(item => item.path === `${directory}/${handle}.xml`);
@@ -43,6 +44,18 @@ verify(probe, 'coverageprobe_layout_base', 'magelens.layout.late', 'template', '
     ['layout-template-selected', 'layout-template-replaced']);
 verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'block', 'covered', ['layout-block-created']);
 verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'template', 'covered', ['layout-template-selected']);
+
+for (const [module, handle, element] of [
+    ['Magento_Catalog', 'catalog_list_item', 'product_list_item'],
+    ['Magento_Swatches', 'catalog_list_item', 'category.product.type.details.renderers.configurable'],
+    ['Magento_Wishlist', 'default', 'wishlist_sidebar'],
+]) {
+    const file = report.files.find(item => item.path === `${hyva}/${module}/layout/${handle}.xml`);
+    assert.ok(file, `Missing Hyvä layout source ${module}/${handle}`);
+    const template = file.declarations.find(item => item.layout?.kind === 'template' && item.layout.element === element);
+    assert.ok(template?.evidence.some(evidence => evidence.type === 'layout-template-selected'),
+        `Missing native template selection for ${module}/${element}`);
+}
 for (const kind of ['block', 'template']) {
     verify(probe, 'coverageprobe_layout_unvisited', 'magelens.layout.unvisited', kind, 'uncovered', []);
 }
