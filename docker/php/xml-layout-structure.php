@@ -26,6 +26,7 @@ final class LayoutStructureCoverage
     private array $generating = [];
     private array $wrapping = [];
     private \WeakMap $components;
+    private array $cacheability = [];
 
     public function __construct(private readonly \Closure $origin)
     {
@@ -55,6 +56,9 @@ final class LayoutStructureCoverage
             [DataStructure::class, 'getAttribute', null, $this->readAttribute(...)],
             [Layout::class, '_renderContainer', $this->beginWrapper(...), $this->endWrapper(...)],
             [Layout::class, 'displayElement', null, $this->display(...)],
+            [Layout::class, 'isCacheable', $this->beginCacheability(...), $this->endCacheability(...)],
+            [Layout\Element::class, 'getBlockName', null, $this->cacheableBlock(...)],
+            [DataStructure::class, 'hasElement', null, $this->cacheableTarget(...)],
         ];
     }
 
@@ -216,6 +220,7 @@ final class LayoutStructureCoverage
         if ($error || $class !== DataStructure::class) return;
         [$name, $attribute] = $params;
         $state = $this->structures[$structure] ?? [];
+        $previous = $state[$name][$attribute] ?? null;
         unset($state[$name][$attribute]);
         $frame = $this->generating[array_key_last($this->generating)] ?? null;
         $caller = self::caller($structure, 'setAttribute');
@@ -224,6 +229,8 @@ final class LayoutStructureCoverage
                 [[ContainerGenerator::class, 'generateContainer'], [BlockGenerator::class, 'generateBlock']], true)) {
             $origin = $frame['state'][$name]['attributes'][$attribute] ?? null;
             if ($origin) $state[$name][$attribute] = $origin;
+        } elseif ($previous) {
+            self::record($previous, 'layout-container-attribute-replaced');
         }
         $this->structures[$structure] = $state;
     }
@@ -270,6 +277,49 @@ final class LayoutStructureCoverage
         if ($error || $class !== Layout::class) return;
         $origin = $this->structures[self::structure($layout)][$params[0]]['display'] ?? null;
         if ($origin) self::record($origin, $result ? 'layout-display-allowed' : 'layout-display-denied');
+    }
+
+    private function beginCacheability($layout, array $params, string $class): void
+    {
+        if ($class !== Layout::class) return;
+        static $cached, $enabled;
+        $cached ??= new \ReflectionProperty(Layout::class, 'isCacheableCache');
+        $enabled ??= new \ReflectionProperty(Layout::class, 'cacheable');
+        $this->cacheability[] = ['fresh' => $cached->getValue($layout) === null && $enabled->getValue($layout),
+            'candidate' => null, 'winner' => null, 'missing' => []];
+    }
+
+    private function cacheableBlock($element, array $params, $name, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->cacheability);
+        if ($error || $class !== Layout\Element::class || $index === null || !$this->cacheability[$index]['fresh']) return;
+        $caller = self::caller($element, 'getBlockName');
+        if (($caller['class'] ?? null) !== Layout::class || ($caller['function'] ?? null) !== 'isCacheable') return;
+        [$ids, $context] = ($this->origin)($element);
+        $this->cacheability[$index]['candidate'] = ['name' => $name,
+            'origin' => isset($ids['cacheability']) ? ['id' => $ids['cacheability'], 'context' => $context] : null];
+    }
+
+    private function cacheableTarget($structure, array $params, $exists, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->cacheability);
+        if ($error || $class !== DataStructure::class || $index === null) return;
+        $candidate = $this->cacheability[$index]['candidate'];
+        if (!$candidate || !$candidate['origin'] || $candidate['name'] !== $params[0]) return;
+        $caller = self::caller($structure, 'hasElement');
+        if (($caller['class'] ?? null) !== Layout::class || ($caller['function'] ?? null) !== 'isCacheable') return;
+        if ($exists) $this->cacheability[$index]['winner'] = $candidate['origin'];
+        else $this->cacheability[$index]['missing'][] = $candidate['origin'];
+        $this->cacheability[$index]['candidate'] = null;
+    }
+
+    private function endCacheability($layout, array $params, $cacheable, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Layout::class) return;
+        $frame = array_pop($this->cacheability);
+        if ($error) return;
+        foreach ($frame['missing'] as $origin) self::record($origin, 'layout-cacheability-target-missing');
+        if ($cacheable === false && $frame['winner']) self::record($frame['winner'], 'layout-cacheability-denied');
     }
 
     private static function record(array $origin, string $effect): void

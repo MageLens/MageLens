@@ -166,12 +166,15 @@ final class LayoutPageValuesCoverage
             $target = &$target[$key];
             $source = $source[$key] ?? null;
         }
+        $previous = $target;
         $target = null;
         if ($frame && ($caller['class'] ?? null) === Generator::class && ($caller['function'] ?? null) === $method) {
             $target = $source;
             foreach ($frame['overridden'][$kind] ?? [] as $origin) {
                 self::record($origin, $kind === 'metadata' ? 'layout-metadata-overridden' : 'layout-page-attribute-overridden');
             }
+        } elseif ($previous) {
+            self::record($previous, $kind === 'metadata' ? 'layout-metadata-replaced' : 'layout-page-attribute-replaced');
         }
         $this->configs[$config] = $state;
     }

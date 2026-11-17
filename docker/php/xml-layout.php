@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 use Magento\Framework\DataObject;
+use Magento\Framework\Data\Structure as DataStructure;
 use Magento\Framework\Filesystem\File\Read;
 use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Framework\View\Element\Template;
@@ -46,6 +47,7 @@ final class LayoutCoverage
     private array $removing = [];
     private array $moving = [];
     private array $generating = [];
+    private array $constructing = [];
     private \WeakMap $blocks;
     private array $fetching = [];
     private bool $healthy = false;
@@ -111,6 +113,9 @@ final class LayoutCoverage
             [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
+            [BlockGenerator::class, 'getBlockInstance', $this->beginClass(...), $this->constructedClass(...)],
+            [DataStructure::class, 'addToParentGroup', null, $this->registeredGroup(...)],
+            [DataObject::class, 'setData', null, $this->assignedTtl(...)],
             [BlockGenerator::class, 'generateAction', null, $this->completeAction(...)],
             [DataObject::class, 'setData', null, $this->applyArguments(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
@@ -288,6 +293,8 @@ final class LayoutCoverage
     private function cachedStructure($structure, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== ScheduledStructure::class) return;
+        unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
+        $this->structureCoverage->reset($structure);
         $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'generateElements') {
             $this->limitations['scheduled-layout-cache'] = true;
@@ -467,6 +474,16 @@ final class LayoutCoverage
         if ($context !== null) $block['context'] = $context;
         if ($declaration) $block['block'] = $origin['block'] ?? null;
         $data = $structure->getStructureElementData($name, []);
+        foreach (['class', 'group', 'ttl'] as $attribute) {
+            if (!isset($xml[$attribute])) continue;
+            $previous = $block['attributes'][$attribute] ?? null;
+            $id = $origin['block-' . $attribute] ?? null;
+            if ($previous && $previous['id'] !== $id) $block['overriddenAttributes'][$previous['id']] = true;
+            unset($block['attributes'][$attribute]);
+            if ($id !== null && ($data['attributes'][$attribute] ?? null) === (string) $xml[$attribute]) {
+                $block['attributes'][$attribute] = ['id' => $id, 'value' => (string) $xml[$attribute]];
+            }
+        }
         $block['actions'] = $this->bindActions($xml, $data['actions'] ?? [], $block['actions'] ?? []);
         $block['arguments'] = $this->bindArguments($xml, $data['arguments'] ?? [], $block['arguments'] ?? []);
         $actual = $data['attributes']['template'] ?? null;
@@ -604,7 +621,7 @@ final class LayoutCoverage
         if ($error || $class !== ScheduledStructure::class) return;
         $name = $params[0];
         $state = $this->structures[$schedule] ?? [];
-        if (empty($state[$name]['arguments']) && empty($state[$name]['actions'])) return;
+        if (!isset($state[$name])) return;
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
         $caller = $trace[2] ?? [];
         $wrapper = get_class($schedule);
@@ -617,7 +634,7 @@ final class LayoutCoverage
             || (($caller['class'] ?? null) === SchedulingHelper::class && $caller['function'] === 'scheduleElement')) {
             return;
         }
-        unset($state[$name]['arguments'], $state[$name]['actions']);
+        unset($state[$name]);
         $this->structures[$schedule] = $state;
     }
 
@@ -824,7 +841,53 @@ final class LayoutCoverage
     {
         if ($class !== BlockGenerator::class) return;
         $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
-            'generator' => get_class($generator), 'applied' => []];
+            'generator' => get_class($generator), 'applied' => [], 'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
+    }
+
+    private function beginClass($generator, array $params, string $class): void
+    {
+        if ($class !== BlockGenerator::class) return;
+        $index = array_key_last($this->generating);
+        $origin = $index === null ? null : ($this->generating[$index]['source']['attributes']['class'] ?? null);
+        $caller = self::nativeCaller($generator, 'getBlockInstance');
+        $eligible = $origin && $origin['value'] !== '' && $origin['value'] === $params[0]
+            && ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'createBlock';
+        $this->constructing[] = $eligible ? $index : null;
+    }
+
+    private function constructedClass($generator, array $params, $block, ?\Throwable $error, string $class): void
+    {
+        if ($class !== BlockGenerator::class) return;
+        $index = array_pop($this->constructing);
+        if (!$error && $index !== null && $index === array_key_last($this->generating) && $block instanceof AbstractBlock) {
+            $this->generating[$index]['class'] = $block;
+        }
+    }
+
+    private function registeredGroup($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($error || $class !== DataStructure::class || $index === null || $result !== true) return;
+        $frame = $this->generating[$index];
+        $origin = $frame['source']['attributes']['group'] ?? null;
+        $caller = self::nativeCaller($structure, 'addToParentGroup');
+        if ($origin && $frame['name'] === $params[0] && $origin['value'] === $params[1]
+            && ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'generateBlock') {
+            $this->generating[$index]['group'] = true;
+        }
+    }
+
+    private function assignedTtl($block, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($error || $class !== DataObject::class || $index === null || ($params[0] ?? null) !== 'ttl') return;
+        $origin = $this->generating[$index]['source']['attributes']['ttl'] ?? null;
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
+        if ($origin && (int) $origin['value'] === ($params[1] ?? null)
+            && ($trace[2]['class'] ?? null) === DataObject::class && ($trace[2]['function'] ?? null) === '__call'
+            && ($trace[3]['class'] ?? null) === BlockGenerator::class && ($trace[3]['function'] ?? null) === 'generateBlock') {
+            $this->generating[$index]['ttl'] = $block;
+        }
     }
 
     private function applyArguments($block, array $params, $result, ?\Throwable $error, string $class): void
@@ -862,7 +925,12 @@ final class LayoutCoverage
     {
         if ($class !== BlockGenerator::class) return;
         $frame = array_pop($this->generating);
-        if ($error || !$block instanceof AbstractBlock || empty($frame['source']['context'])) return;
+        if (empty($frame['source']['context'])) return;
+        if ($error) {
+            $this->event($frame['source']['block'] ?? null, 'layout-block-generation-failed', $frame['source']['context']);
+            return;
+        }
+        if (!$block instanceof AbstractBlock) return;
         $source = $frame['source'];
         $context = $source['context'];
         $blockId = $source['block'] ?? null;
@@ -872,6 +940,15 @@ final class LayoutCoverage
         }
         $this->event($blockId, 'layout-block-created', $context);
         $this->event($templateId, 'layout-template-selected', $context);
+        foreach (array_keys($source['overriddenAttributes'] ?? []) as $id) {
+            $this->event($id, 'layout-block-attribute-overridden', $context);
+        }
+        foreach (['class', 'ttl'] as $attribute) {
+            if ($frame[$attribute] === $block) {
+                $this->event($source['attributes'][$attribute]['id'], 'layout-block-' . $attribute . '-applied', $context);
+            }
+        }
+        if ($frame['group']) $this->event($source['attributes']['group']['id'], 'layout-block-group-applied', $context);
         foreach ($frame['applied'] as $id => $target) {
             if ($block === $target) $this->event($id, 'layout-argument-applied', $context);
         }
@@ -975,6 +1052,9 @@ final class LayoutCoverage
     private function completeTemplate($block, array $params, $result, ?\Throwable $error, string $class): void
     {
         $frame = array_pop($this->fetching);
+        if ($error && $frame['origin']) {
+            $this->event($frame['origin'], 'layout-template-failed', $this->blocks[$block]['context']);
+        }
         if (!$error && $frame['origin'] && $frame['executed']) {
             $state = $this->blocks[$block];
             $state['executed'] = $frame['origin'];

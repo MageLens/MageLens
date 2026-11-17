@@ -77,6 +77,10 @@ final class LayoutManifest
                         && in_array($attribute->nodeName, ['htmlTag', 'htmlId', 'htmlClass', 'display'], true) =>
                             'container-' . $attribute->nodeName,
                     $namedBlock && $attribute->nodeName === 'display' => 'block-display',
+                    $namedBlock && in_array($attribute->nodeName, ['class', 'group', 'ttl'], true) =>
+                        'block-' . $attribute->nodeName,
+                    $namedBlock && $node->tagName === 'block' && $attribute->nodeName === 'cacheable'
+                        && $attribute->nodeValue === 'false' => 'cacheability',
                     $fileType === 'page' && $attribute->nodeName === 'remove' && $element !== ''
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
@@ -92,7 +96,8 @@ final class LayoutManifest
                 $supported = in_array($kind, ['block', 'template', 'action', 'argument', 'include', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
-                    'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content'], true);
+                    'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
+                    'block-class', 'block-group', 'block-ttl', 'cacheability'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -118,7 +123,7 @@ final class LayoutManifest
     {
         $type = static fn($element) => $element->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type');
         if (!in_array($node->tagName, ['argument', 'item'], true) || !$node->hasAttribute('name')
-            || !in_array($type($node), ['string', 'number', 'boolean', 'null'], true)
+            || !in_array($type($node), ['string', 'number', 'boolean', 'null', 'const', 'serviceUrl'], true)
             || $node->getElementsByTagName('updater')->length) return false;
         while ($node->tagName === 'item') {
             $node = $node->parentNode;
@@ -143,7 +148,7 @@ final class LayoutManifest
             return 'The removal queue and its cancellations are unmeasured at this reference';
         }
         if ($attribute === 'display') return 'The display decision has no source trace at the element rendering boundary';
-        if ($attribute === 'cacheable') return 'Page cache eligibility is unmeasured at its native layout check';
+        if ($attribute === 'cacheable') return 'The native page-cache selector visits block declarations whose cacheable attribute is the literal false';
         if ($attribute === 'ttl') return 'TTL application and subsequent cache behavior are unmeasured';
         if ($attribute === 'ifconfig' || $attribute === 'aclResource' || $attribute === 'acl') {
             return 'The native permission or configuration decision has no source trace';

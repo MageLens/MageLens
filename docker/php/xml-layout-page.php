@@ -58,7 +58,7 @@ final class LayoutPageCoverage
     {
         $this->values->restore($structure, $origins['values'] ?? []);
         unset($origins['values']);
-        if ($origins) $this->structures[$structure] = $origins;
+        $this->structures[$structure] = $origins;
     }
 
     public function reset(Structure $structure): void

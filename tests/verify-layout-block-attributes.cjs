@@ -15,7 +15,7 @@ for (const [handle, attribute, state, effect] of [
     const file = report.files.find(file => file.path.endsWith(`/layout/coverageprobe_layout_${handle}.xml`));
     const item = file?.declarations.find(item => item.layout?.element === 'magelens.layout.anchor' && item.layout.attribute === attribute);
     assert.ok(item, `Missing original ${attribute} ${handle}`);
-    assert.equal(item.state, state);
+    assert.equal(item.state, state, `${handle}/${attribute}`);
     assert.deepEqual([...new Set(item.evidence.map(event => event.type))], [effect]);
 }
 console.log('Verified independent class, group and TTL application and equal-valued class override ownership.');
