@@ -132,7 +132,8 @@ function snapshot(directory) {
                     state: item.state, reason: digest(item.reason || ''),
                     ...(item.family === 'layout' ? {
                         layout: [item.layout.kind, item.layout.fileType, item.layout.ordinal, digest(item.layout.element),
-                            digest(item.layout.handle), digest(item.layout.instruction), digest(item.layout.attribute || '')]
+                            digest(item.layout.handle), digest(item.layout.instruction), digest(item.layout.attribute || ''),
+                            digest(item.layout.selection || ''), digest(item.layout.destination || '')]
                     } : {}),
                     ...(item.family === 'events' ? {
                         registration: [digest(item.registration.event), digest(item.registration.observer)],
@@ -220,13 +221,13 @@ function validateSnapshot(value, run, summary) {
         for (const item of array(file.declarations)) {
             if (item.layout) {
                 const [kind, fileType, ordinal, ...identity] = array(item.layout);
-                assert.ok(['block', 'template', 'include', 'instruction', 'attribute'].includes(kind));
+                assert.ok(['block', 'template', 'include', 'move', 'wireframe', 'wireframe-selection', 'instruction', 'attribute'].includes(kind));
                 assert.ok(['page', 'generic', 'wireframe', 'custom', 'registry', 'page-types'].includes(fileType));
                 count(ordinal);
-                assert.equal(identity.length, 4);
+                assert.equal(identity.length, 6);
                 for (const part of identity) assert.match(part, /^[a-f0-9]{64}$/);
                 for (const [effect, area, theme] of array(item.evidence)) {
-                    assert.match(effect, /^layout-(block-(created|rendered)|include-(traversed|duplicate|cycle|missing)|template-(selected|executed|overridden|replaced))$/);
+                    assert.match(effect, /^layout-(block-(created|rendered)|wireframe-(selected|origin-unconfirmed)|move-(applied|removed|target-missing|unchanged|unresolved)|include-(traversed|duplicate|cycle|missing)|template-(selected|executed|overridden|replaced))$/);
                     assert.ok(['frontend', 'adminhtml'].includes(area));
                     assert.match(theme, /^[a-f0-9]{64}$/);
                 }

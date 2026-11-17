@@ -24,3 +24,15 @@ include('coverageprobe_handle_index', 'coverageprobe_layout_repeat', 'layout-inc
 include('coverageprobe_layout_nested', 'coverageprobe_layout_repeat', 'layout-include-traversed', 'covered');
 include('coverageprobe_layout_repeat', 'coverageprobe_layout_nested', 'layout-include-cycle', 'unmeasured');
 console.log('Verified exact source for traversed, duplicate and cyclic layout include edges.');
+
+function selected(file, kind, state, effect) {
+    const source = report.files.find(item => item.path === file);
+    assert.ok(source, `Missing wireframe source ${file}`);
+    const matches = source.declarations.filter(item => item.layout?.kind === kind);
+    assert.equal(matches.length, 1, `Missing unique ${kind} origin for ${file}`);
+    assert.equal(matches[0].state, state);
+    assert.deepEqual([...new Set(matches[0].evidence.map(item => item.type))], [effect]);
+}
+selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection', 'unmeasured', 'layout-wireframe-origin-unconfirmed');
+selected('app/code/MageLens/Compatibility/view/frontend/page_layout/magelens_fixture.xml', 'wireframe', 'covered', 'layout-wireframe-selected');
+console.log('Verified the selected wireframe and the intercepted page-layout attribution limitation.');

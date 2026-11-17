@@ -54,6 +54,10 @@ test('starts the next test with fresh state', async ({page}) => {
     const wireframe = page.locator('#layout-wireframe');
     await expect(wireframe.locator('[data-layout-handle]')).toHaveText(['repeat', 'nested', 'action']);
     await expect(wireframe.locator('[data-layout-registry]')).toHaveText('MageLens fixture wireframe');
+    await expect(wireframe.locator('#layout-left [data-layout-structure]')).toHaveText(['first', 'restored']);
+    await expect(wireframe.locator('#layout-right #layout-nested [data-layout-structure]')).toHaveText(['anchor', 'moved']);
+    await expect(wireframe.locator('#layout-removed, [data-layout-structure="hidden"]')).toHaveCount(0);
+    await expect(wireframe.locator('[data-layout-structure-outcome]')).toHaveText('verified');
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
 });

@@ -36,22 +36,32 @@ final class LayoutManifest
         $result = [];
         foreach ($document->getElementsByTagName('*') as $index => $node) {
             $position = $node->getNodePath();
-            $element = $node->getAttribute($node->tagName === 'update' ? 'handle' : 'name');
+            $element = $node->getAttribute(match ($node->tagName) {
+                'update' => 'handle',
+                'move' => 'element',
+                default => 'name',
+            });
             $namedBlock = $element !== '' && in_array($node->tagName, ['block', 'referenceBlock'], true)
                 && in_array($fileType, ['page', 'generic'], true);
             $kind = match (true) {
                 $namedBlock && $node->tagName === 'block' => 'block',
+                $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
+                $fileType === 'wireframe' && $index === 0 => 'wireframe',
                 $fileType === 'page' && $node->parentNode === $root && $node->tagName === 'update' && $element !== '' => 'include',
                 default => 'instruction',
             };
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
-                $kind = $namedBlock && $attribute->nodeName === 'template' && $attribute->nodeValue !== ''
-                    ? 'template' : 'attribute';
+                $kind = match (true) {
+                    $namedBlock && $attribute->nodeName === 'template' && $attribute->nodeValue !== '' => 'template',
+                    $fileType === 'page' && $index === 0 && $attribute->nodeName === 'layout'
+                        && $attribute->nodeValue !== '' => 'wireframe-selection',
+                    default => 'attribute',
+                };
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'include'], true);
+                $supported = in_array($kind, ['block', 'template', 'include', 'move', 'wireframe', 'wireframe-selection'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -62,7 +72,9 @@ final class LayoutManifest
                     'node' => $identity,
                     'layout' => ['kind' => $kind, 'element' => $element, 'handle' => $handle,
                         'fileType' => $fileType, 'ordinal' => $index, 'instruction' => $node->tagName,
-                        'attribute' => $attribute],
+                        'attribute' => $attribute,
+                        ...($kind === 'wireframe-selection' ? ['selection' => $node->getAttribute('layout')] : []),
+                        ...($kind === 'move' ? ['destination' => $node->getAttribute('destination')] : [])],
                     'supported' => $supported,
                     'reason' => $supported ? null : self::limitation($fileType, $node->tagName, $attribute),
                 ];
@@ -73,10 +85,21 @@ final class LayoutManifest
 
     private static function limitation(string $fileType, string $node, ?string $attribute): string
     {
-        if ($fileType === 'registry' || $fileType === 'page-types') return 'Registry consumption has no source hook';
-        if ($fileType === 'wireframe') return 'Wireframe selection and the separate wireframe reader are unmeasured';
+        if ($fileType === 'registry' || $fileType === 'page-types') return 'Registry consumers lack a trace back through the merged registry to this declaration';
+        if ($fileType === 'wireframe') return 'The wireframe reader does not supply source attribution for this instruction';
         if ($fileType === 'custom') return 'Source grammar is outside the supported native layout schemas';
         if ($attribute === 'name' && $node === 'block') return 'Name participates in the block creation identity';
+        if ($attribute === 'remove' && in_array($node, ['referenceBlock', 'referenceContainer'], true)) {
+            return 'The removal queue and its cancellations are unmeasured at this reference';
+        }
+        if ($attribute === 'display') return 'The display decision has no source trace at the element rendering boundary';
+        if ($attribute === 'cacheable') return 'Page cache eligibility is unmeasured at its native layout check';
+        if ($attribute === 'ttl') return 'TTL application and subsequent cache behavior are unmeasured';
+        if ($attribute === 'ifconfig' || $attribute === 'aclResource' || $attribute === 'acl') {
+            return 'The native permission or configuration decision has no source trace';
+        }
+        if ($node === 'move') return 'This move attribute has no independent evidence for its structural effect';
+        if ($node === 'remove' && $attribute === 'src') return 'Actual removal from scheduled head assets has no source trace';
         return match ($node) {
             'page', 'layout', 'update' => 'Handle selection or inclusion has no attributable runtime evidence',
             'block', 'referenceBlock', 'container', 'referenceContainer', 'move', 'remove' =>
@@ -102,6 +125,7 @@ final class LayoutManifest
                 $targets[$details['ordinal']]['element'] = $details['element'];
                 $targets[$details['ordinal']]['instruction'] = $details['instruction'];
                 $targets[$details['ordinal']]['ids'][$details['kind']] = $item['id'];
+                if (isset($details['selection'])) $targets[$details['ordinal']]['selection'] = $details['selection'];
             }
             if ($targets) $result[$file['path']] = ['hash' => $file['sourceHash'], 'targets' => $targets];
         }

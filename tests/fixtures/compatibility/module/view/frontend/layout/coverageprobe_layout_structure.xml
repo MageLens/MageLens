@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceContainer name="magelens.layout.wireframe">
+            <container name="magelens.layout.left" htmlTag="section" htmlId="layout-left">
+                <block class="Magento\Framework\View\Element\Template" name="magelens.layout.restored" template="MageLens_Compatibility::layout-structure.phtml"/>
+                <block class="Magento\Framework\View\Element\Template" name="magelens.layout.first" before="-" template="MageLens_Compatibility::layout-structure.phtml"/>
+                <block class="Magento\Framework\View\Element\Template" name="magelens.layout.moved" as="starting-alias" template="MageLens_Compatibility::layout-structure.phtml"/>
+                <block class="Magento\Framework\View\Element\Template" name="magelens.layout.moved-removed" template="MageLens_Compatibility::layout-structure.phtml"/>
+                <block class="Magento\Framework\View\Element\Template" name="magelens.layout.hidden" template="MageLens_Compatibility::layout-structure.phtml"/>
+            </container>
+            <container name="magelens.layout.right" htmlTag="section" htmlId="layout-right">
+                <container name="magelens.layout.right.nested" htmlTag="div" htmlId="layout-nested">
+                    <block class="Magento\Framework\View\Element\Template" name="magelens.layout.anchor" as="anchor-alias" template="MageLens_Compatibility::layout-structure.phtml"/>
+                </container>
+            </container>
+            <container name="magelens.layout.removed" htmlTag="section" htmlId="layout-removed"/>
+            <block class="MageLens\Compatibility\Block\LayoutStructure" name="magelens.layout.structure-proof" template="MageLens_Compatibility::layout-structure.phtml"/>
+        </referenceContainer>
+        <move element="magelens.layout.moved" destination="magelens.layout.right.nested" as="moved-alias" after="anchor-alias"/>
+        <move element="magelens.layout.absent" destination="magelens.layout.right.nested"/>
+        <move element="magelens.layout.moved-removed" destination="magelens.layout.removed"/>
+        <referenceContainer name="magelens.layout.removed" remove="true"/>
+        <referenceBlock name="magelens.layout.restored" remove="true"/>
+        <referenceBlock name="magelens.layout.hidden" display="false"/>
+    </body>
+</page>

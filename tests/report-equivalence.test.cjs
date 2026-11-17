@@ -300,3 +300,38 @@ test('factory DI equivalence retains virtual routes and inherited parameter iden
         assert.equal(compareThemes(matrix, cases).passed, false);
     }
 });
+
+test('layout equivalence preserves effects, source and context without exposing identities', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    const effect = {type: 'layout-template-executed', area: 'frontend', theme: 'frontend/SECRET/theme'};
+    const declaration = {
+        id: 'b'.repeat(64), family: 'layout', path: '/page/body/block/@template', declaredScope: {type: 'frontend', code: ''},
+        startLine: 11, endLine: 11, state: 'covered', supported: true, hits: 2, evidence: [effect],
+        layout: {kind: 'template', fileType: 'page', ordinal: 2, element: 'SECRET block', handle: 'SECRET handle',
+            instruction: 'block', attribute: 'template'}
+    };
+    xml.files[0].declarations = [declaration];
+    xml.layout = {total: 1, covered: 1, limitations: ['SECRET cache reason']};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    declaration.evidence.push({...effect, request: 'another'});
+    declaration.hits = 90;
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+
+    for (const change of [
+        report => { report.files[0].declarations[0].evidence[0].theme = 'frontend/Acme/different'; },
+        report => { report.files[0].declarations[0].evidence[0].type = 'layout-template-selected'; },
+        report => { report.files[0].declarations[0].startLine++; },
+        report => { report.layout.limitations.pop(); }
+    ]) {
+        const changed = structuredClone(xml);
+        change(changed);
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+});

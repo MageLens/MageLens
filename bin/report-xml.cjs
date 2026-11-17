@@ -27,17 +27,27 @@ const diFamilies = {
 };
 const layoutEvents = {
     block: ['layout-block-created', 'layout-block-rendered'],
+    wireframe: ['layout-wireframe-selected'],
+    move: ['layout-move-applied', 'layout-move-removed', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved'],
+    'wireframe-selection': ['layout-wireframe-selected', 'layout-wireframe-origin-unconfirmed'],
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced'],
 };
 const layoutDecisions = {
+    'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
+    'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',
+    'layout-move-unresolved': 'The scheduled move did not establish the requested parent.',
+    'layout-wireframe-origin-unconfirmed': 'An intercepted page-layout getter can replace the XML selection with an equal value.',
     'layout-template-overridden': 'A later declaration supplied the template used during block generation',
     'layout-include-duplicate': 'Magento had already processed the included handle',
     'layout-include-cycle': 'Magento was processing the included handle and skipped recursive re-entry',
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
-    'missing-layout-origins': 'A layout generated elements without a confirmed source trace. Warm layout caches and untracked XML providers can omit original ownership.',
+    'layout-package-cache': 'Magento reused a package layout cache entry without original file positions.',
+    'layout-merge-cache': 'Magento reused a merged handle update without original declaration positions.',
+    'scheduled-layout-cache': 'Magento populated the layout schedule from cache without running the layout readers.',
+    'missing-layout-origins': 'A generated layout had no confirmed trace from original files to its schedule.',
 };
 function merge(manifest, records, sources) {
     const declarations = new Map(), files = structuredClone(manifest.files);
@@ -85,7 +95,6 @@ function merge(manifest, records, sources) {
         if (!/\/blog\/index\/configuration\/?$/.test(url.pathname) || !cases.has((scenario || '').replace(/-warm$/, ''))) scenario = null;
         const events = [];
         for (const limitation of record.layoutLimitations || []) {
-            assert.equal(record.layoutHook, true, 'Layout limitation without a functioning request hook');
             assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
             requestLimitations.add(limitation);
         }
@@ -336,10 +345,10 @@ function writeReport(result, sources, directory = 'coverage/xml') {
                     <small>Original ${lineLabel(item)}</small></td><td>${preferenceAreas(item, files, prefix)}</td></tr>`;
             }
             if (item.family === 'layout') {
-                const {element, handle, fileType} = item.layout;
+                const {element, handle, fileType, selection, destination} = item.layout;
                 const outcomes = item.evidence.map(event =>
                     `<small>${escape(event.type.replace(/^layout-/, '').replaceAll('-', ' '))} · ${escape(event.theme)}</small>`).join('');
-                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(element)} · ${escape(handle)} · ${escape(fileType)} · ${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}<small>${escape(item.reason || '')}</small></td></tr>`;
+                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(selection || element)}${destination ? ' → ' + escape(destination) : ''} · ${escape(handle)} · ${escape(fileType)} · ${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}<small>${escape(item.reason || '')}</small></td></tr>`;
             }
             const outcomes = item.areas
                 ? Object.entries(item.areas).map(([area, outcome]) => {

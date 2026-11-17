@@ -6,7 +6,7 @@
  */
 declare(strict_types=1);
 require __DIR__ . '/../docker/php/xml-manifest.php';
-use MageLens\XmlCoverage\Xml;
+use MageLens\XmlCoverage\{LayoutManifest, Xml};
 function checkXml(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
 $config = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/etc/config.xml';
 $source = file_get_contents($config);
@@ -48,6 +48,18 @@ checkXml($collector['fields'][$fields[0]['path']] === [$fields[0]['id']] && !iss
 checkXml($collector['originScopes'] === ['default' => [$path => 'default-id'], 'stores/reading' => [$path => 'store-id']]
     && $collector['valueHashes'] === ['default' => [$path => 'default-hash'], 'stores/reading' => [$path => 'store-hash']],
     'Collector indexes matching origin IDs and hashes by scope and path');
+$layoutDirectory = __DIR__ . '/fixtures/compatibility/module/view/frontend/layout/';
+$originFile = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_layout_base.xml';
+$layoutSource = file_get_contents($layoutDirectory . basename($originFile));
+$layoutItems = LayoutManifest::declarations($originFile, $layoutSource);
+$replaced = array_values(array_filter($layoutItems, static fn($item) => $item['layout']['element'] === 'magelens.layout.replaced' && $item['supported']));
+checkXml(array_column(array_column($replaced, 'layout'), 'kind') === ['block', 'template'], 'Block and template origins are independent');
+checkXml($replaced[0]['id'] !== $replaced[1]['id'] && $replaced[0]['startLine'] === $replaced[1]['startLine'], 'Separate original effects share their source line');
+checkXml($replaced[0]['path'] . '/@template' === $replaced[1]['path'], 'Template location retains the original attribute');
+checkXml(LayoutManifest::declarations($originFile, str_replace("\n", "\r\n", $layoutSource)) === $layoutItems, 'Layout source maps preserve original positions across line endings');
+$layoutUnsupported = array_values(array_filter($layoutItems, static fn($item) => !$item['supported']));
+checkXml(count($layoutUnsupported) > 0 && count(array_filter($layoutUnsupported, static fn($item) => !$item['reason'])) === 0,
+    'Layout declarations without runtime observations retain a reason');
 echo "XML parsing, source maps, scopes and field identities passed.\n";
 
 require __DIR__ . '/configuration-fixture.test.php';

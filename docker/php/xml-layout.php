@@ -12,8 +12,13 @@ use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\View\Layout;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
+use Magento\Framework\View\Layout\GeneratorPool;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
+use Magento\Framework\View\Layout\Reader\Move as MoveReader;
+use Magento\Framework\View\Layout\ScheduledStructure;
 use Magento\Framework\View\Model\Layout\Merge;
+use Magento\Framework\View\Page\Builder as PageBuilder;
+use Magento\Framework\View\Page\Layout\Reader as WireframeReader;
 use Magento\Framework\View\TemplateEngine\Php;
 
 final class LayoutCoverage
@@ -21,11 +26,15 @@ final class LayoutCoverage
     private array $packages = [];
     private array $entries = [];
     private array $handles = [];
+    private array $pageBuilders = [];
+    private array $wireframes = [];
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
     private array $contexts = [];
     private \WeakMap $structures;
+    private \WeakMap $moves;
+    private array $moving = [];
     private array $generating = [];
     private \WeakMap $blocks;
     private array $fetching = [];
@@ -38,6 +47,7 @@ final class LayoutCoverage
     {
         $this->merges = new \WeakMap();
         $this->structures = new \WeakMap();
+        $this->moves = new \WeakMap();
         $this->blocks = new \WeakMap();
     }
 
@@ -65,8 +75,17 @@ final class LayoutCoverage
             [Merge::class, '_fetchDbLayoutUpdates', null, $this->completeDatabaseUpdate(...)],
             [Merge::class, 'addUpdate', $this->beginUpdate(...), $this->appendUpdate(...)],
             [Merge::class, 'asSimplexml', null, $this->mergeDocument(...)],
+            [Merge::class, 'load', $this->resetPageSelection(...), null],
+            [Merge::class, '_loadCache', null, $this->cachedUpdate(...)],
+            [ScheduledStructure::class, 'populateWithArray', null, $this->cachedStructure(...)],
+            [Merge::class, 'getPageLayout', null, $this->readSelection(...)],
+            [PageBuilder::class, 'readPageLayout', $this->beginPageRead(...), $this->completePageRead(...)],
+            [WireframeReader::class, 'read', $this->beginWireframe(...), $this->completeWireframe(...)],
             [BlockReader::class, 'scheduleBlock', null, $this->scheduleBlock(...)],
             [BlockReader::class, 'scheduleReference', null, $this->scheduleReference(...)],
+            [MoveReader::class, 'scheduleMove', null, $this->scheduleMove(...)],
+            [GeneratorPool::class, 'moveElementInStructure', $this->beginMove(...), $this->completeMove(...)],
+            [GeneratorPool::class, 'buildStructure', null, $this->finishMoves(...)],
             [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
@@ -149,6 +168,7 @@ final class LayoutCoverage
         $updates = [];
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $source = $package['entries'][$entry->getNodePath()] ?? [];
+            $this->findWireframe($merge, $entry, $source[0]['ids']['wireframe'] ?? null);
             foreach ($entry->getElementsByTagName('*') as $index => $node) {
                 if (!$node->parentNode->isSameNode($entry) || strtolower($node->tagName) !== 'update'
                     || !$node->hasAttribute('handle')) continue;
@@ -203,14 +223,111 @@ final class LayoutCoverage
     {
         if ($class !== Merge::class) return;
         array_pop($this->entries);
-        if ($error || !isset($this->merges[$merge]['package'])) return;
-        $state = $this->merges[$merge];
+        if ($error) return;
+        $state = $this->merges[$merge] ?? [];
+        if (isset($params[0]['layout'])) unset($state['pageLayout']);
         $entry = dom_import_simplexml($params[0]);
-        $package = $state['package'];
-        if (!$entry->ownerDocument->documentElement->isSameNode($package['root'])) return;
-        $targets = $package['entries'][$entry->getNodePath()] ?? [];
-        $state['pending'] = ['hash' => hash('sha256', $params[0]->innerXml()), 'targets' => $targets];
+        $package = $state['package'] ?? null;
+        if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
+            $targets = $package['entries'][$entry->getNodePath()] ?? [];
+            $state['pending'] = ['hash' => hash('sha256', $params[0]->innerXml()), 'targets' => $targets];
+            if (isset($targets[0]['selection']) && $entry->getAttribute('layout') === $targets[0]['selection']) {
+                $state['pageLayout'] = ['name' => $targets[0]['selection'], 'id' => $targets[0]['ids']['wireframe-selection']];
+            }
+        }
         $this->merges[$merge] = $state;
+    }
+
+    private function resetPageSelection($merge, array $params, string $class): void
+    {
+        if ($class !== Merge::class) return;
+        $state = $this->merges[$merge] ?? [];
+        unset($state['pageLayout']);
+        $this->merges[$merge] = $state;
+    }
+
+    private function cachedUpdate($merge, array $params, $value, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== Merge::class || !$value) return;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (($caller['class'] ?? null) !== Merge::class) return;
+        $reason = match ($caller['function'] ?? null) {
+            'load' => 'layout-merge-cache',
+            'getFileLayoutUpdatesXml' => 'layout-package-cache',
+            default => null,
+        };
+        if ($reason !== null) $this->limitations[$reason] = true;
+    }
+
+    private function cachedStructure($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== ScheduledStructure::class) return;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'generateElements') {
+            $this->limitations['scheduled-layout-cache'] = true;
+        }
+    }
+
+    private function beginPageRead($builder, array $params, string $class): void
+    {
+        if ($class === PageBuilder::class) {
+            $method = new \ReflectionMethod($builder, 'getPageLayout');
+            $this->pageBuilders[] = ['selection' => null, 'native' => $method->getDeclaringClass()->getName() === PageBuilder::class];
+        }
+    }
+
+    private function completePageRead($builder, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class === PageBuilder::class) array_pop($this->pageBuilders);
+    }
+
+    private function readSelection($merge, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $frame = array_key_last($this->pageBuilders);
+        if ($frame === null || !$this->pageBuilders[$frame]['native'] || $error || $class !== Merge::class) return;
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 6);
+        $selection = $this->merges[$merge]['pageLayout'] ?? null;
+        if (!$selection || $selection['name'] !== $result) return;
+        for ($depth = 2; isset($trace[$depth]) && $trace[$depth]['function'] === 'getPageLayout'; $depth++) {
+            if (($trace[$depth]['class'] ?? null) !== PageBuilder::class) continue;
+            $selection['confirmed'] = $depth === 2;
+            $this->pageBuilders[$frame]['selection'] = $selection;
+            return;
+        }
+    }
+
+    private function beginWireframe($reader, array $params, string $class): void
+    {
+        if ($class !== WireframeReader::class) return;
+        $frame = array_key_last($this->pageBuilders);
+        $selection = $this->pageBuilders[$frame]['selection'] ?? null;
+        $this->wireframes[] = ['reader' => $reader, 'name' => $params[1], 'roots' => [], 'context' => null,
+            'selection' => $selection && $selection['name'] === $params[1] ? $selection : null];
+    }
+
+    private function findWireframe($merge, \DOMElement $entry, ?string $id): void
+    {
+        $index = array_key_last($this->wireframes);
+        if ($index === null || $entry->tagName !== 'layout' || $entry->getAttribute('id') !== $this->wireframes[$index]['name']) return;
+        static $property;
+        $property ??= new \ReflectionProperty(WireframeReader::class, 'pageLayoutMerge');
+        if ($property->getValue($this->wireframes[$index]['reader']) !== $merge) return;
+        $theme = $merge->getTheme();
+        $this->wireframes[$index]['context'] = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        if ($id !== null) $this->wireframes[$index]['roots'][$id] = true;
+    }
+
+    private function completeWireframe($reader, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== WireframeReader::class) return;
+        $frame = array_pop($this->wireframes);
+        if ($error || !$frame || $frame['context'] === null) return;
+        foreach (array_keys($frame['roots']) as $id) $this->event($id, 'layout-wireframe-selected', $frame['context']);
+        if ($frame['selection'] !== null) {
+            $selection = $frame['selection'];
+            $effect = $selection['confirmed'] ? 'layout-wireframe-selected' : 'layout-wireframe-origin-unconfirmed';
+            $this->event($selection['id'], $effect, $frame['context']);
+        }
     }
 
     private function beginUpdate($merge, array $params, string $class): void
@@ -263,9 +380,15 @@ final class LayoutCoverage
             }
             if (isset($sources[$index]) && $sources[$index]['hash'] === hash('sha256', $part)) {
                 foreach ($sources[$index]['targets'] as $ordinal => $declarations) {
+                    // The native merge appends the body of each package entry.
+                    if ($ordinal === 0) continue;
                     $node = $allNodes->item($offset + $ordinal - 1);
                     if (!$node) return;
-                    $identity = $node->getAttribute($node->tagName === 'update' ? 'handle' : 'name');
+                    $identity = $node->getAttribute(match ($node->tagName) {
+                        'update' => 'handle',
+                        'move' => 'element',
+                        default => 'name',
+                    });
                     if ($node->tagName !== $declarations['instruction'] || $identity !== $declarations['element']) return;
                     $targets[$node->getNodePath()] = $declarations['ids'];
                 }
@@ -296,14 +419,8 @@ final class LayoutCoverage
         if ($name === '') return;
         $state = $this->structures[$structure] ?? [];
         $block = $state[$name] ?? [];
-        $node = dom_import_simplexml($xml);
-        $origin = null;
-        foreach ($this->documents as $document) {
-            if (!$node->ownerDocument->documentElement->isSameNode($document['root'])) continue;
-            $origin = $document['targets'][$node->getNodePath()] ?? [];
-            $block['context'] = $document['context'];
-            break;
-        }
+        [$origin, $context] = $this->origin($xml);
+        if ($context !== null) $block['context'] = $context;
         if ($declaration) $block['block'] = $origin['block'] ?? null;
         $actual = $structure->getStructureElementData($name, [])['attributes']['template'] ?? null;
         if (isset($xml['template']) || ($declaration && $actual === '')) {
@@ -318,6 +435,78 @@ final class LayoutCoverage
         $this->structures[$structure] = $state;
     }
 
+    private function origin($xml): array
+    {
+        $node = dom_import_simplexml($xml);
+        foreach ($this->documents as $document) {
+            if ($node->ownerDocument->documentElement->isSameNode($document['root'])) {
+                return [$document['targets'][$node->getNodePath()] ?? [], $document['context']];
+            }
+        }
+        return [[], null];
+    }
+
+    private function scheduleMove($reader, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== MoveReader::class) return;
+        [$schedule, $xml] = $params;
+        $name = $xml->getAttribute('element');
+        [$origin, $context] = $this->origin($xml);
+        $moves = $this->moves[$schedule] ?? [];
+        unset($moves[$name]);
+        if (isset($origin['move'])) {
+            $moves[$name] = ['id' => $origin['move'], 'context' => $context,
+                'data' => $schedule->getElementToMove($name), 'effect' => null];
+        }
+        $this->moves[$schedule] = $moves;
+    }
+
+    private static function placement($structure, string $element): array
+    {
+        $parent = $structure->getParentId($element);
+        return [$parent, $parent ? $structure->getChildAlias($parent, $element) : null,
+            $parent ? array_keys($structure->getChildren($parent)) : []];
+    }
+
+    private function beginMove($pool, array $params, string $class): void
+    {
+        if ($class !== GeneratorPool::class) return;
+        [$schedule, $structure, $name] = $params;
+        $tracked = $this->moves[$schedule][$name] ?? null;
+        $this->moving[] = $tracked && $tracked['data'] === $schedule->getElementToMove($name)
+            ? self::placement($structure, $name) : null;
+    }
+
+    private function completeMove($pool, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== GeneratorPool::class) return;
+        $before = array_pop($this->moving);
+        if ($error || $before === null) return;
+        [$schedule, $structure, $name] = $params;
+        $moves = $this->moves[$schedule];
+        $after = self::placement($structure, $name);
+        $destination = $moves[$name]['data'][0];
+        $moves[$name]['effect'] = match (true) {
+            $after[0] !== $destination => 'unresolved',
+            $before === $after => 'unchanged',
+            default => 'applied',
+        };
+        $this->moves[$schedule] = $moves;
+    }
+
+    private function finishMoves($pool, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== GeneratorPool::class || !isset($this->moves[$params[0]])) return;
+        [$schedule, $structure] = $params;
+        foreach ($this->moves[$schedule] as $name => $move) {
+            if ($move['data'] !== $schedule->getElementToMove($name)) continue;
+            $effect = $move['effect'];
+            if ($effect === null) $effect = $structure->hasElement($name) ? 'unresolved' : 'target-missing';
+            if ($effect === 'applied' && !$schedule->hasElement($name)) $effect = 'removed';
+            $this->event($move['id'], 'layout-move-' . $effect, $move['context']);
+        }
+    }
+
     private static function readerContext($layout)
     {
         static $property;
@@ -329,7 +518,7 @@ final class LayoutCoverage
     {
         if ($class !== Layout::class) return;
         $structure = self::readerContext($layout)?->getScheduledStructure();
-        if ($structure !== null) unset($this->structures[$structure]);
+        if ($structure !== null) unset($this->structures[$structure], $this->moves[$structure]);
     }
 
     private function generateElements($layout, array $params, $result, ?\Throwable $error, string $class): void
@@ -352,14 +541,17 @@ final class LayoutCoverage
     {
         if ($class !== Layout::class) return;
         $source = self::readerContext($layout)->getScheduledStructure();
-        $this->contexts[] = $this->structures[$source] ?? [];
+        $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? []];
     }
 
     private function mirrorContext($layout, array $params, $context, ?\Throwable $error, string $class): void
     {
         if ($class !== Layout::class) return;
-        $state = array_pop($this->contexts);
-        if (!$error && $state) $this->structures[$context->getScheduledStructure()] = $state;
+        [$blocks, $moves] = array_pop($this->contexts);
+        if ($error) return;
+        $schedule = $context->getScheduledStructure();
+        if ($blocks) $this->structures[$schedule] = $blocks;
+        if ($moves) $this->moves[$schedule] = $moves;
     }
 
     private function beginBlock($generator, array $params, string $class): void

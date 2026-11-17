@@ -8,6 +8,8 @@ License: see LICENSE in the repository root.
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd" layout="magelens_fixture">
     <update handle="coverageprobe_layout_nested"/>
     <update handle="coverageprobe_layout_repeat"/>
+    <update handle="coverageprobe_layout_structure"/>
+    <update handle="coverageprobe_layout_structure_restore"/>
     <body>
         <referenceContainer name="magelens.layout.wireframe">
             <block class="MageLens\Compatibility\Block\LayoutRegistry" name="magelens.layout.handle.action" template="MageLens_Compatibility::layout-handle.phtml">
