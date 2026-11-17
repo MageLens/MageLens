@@ -105,11 +105,22 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/grammar/');
     await expect(page.locator('[data-layout-grammar="serviceurl"], [data-layout-grammar="const"]')).toHaveText(['applied', 'applied']);
     await expect(page.locator('[data-layout-grammar="configurable"]')).toHaveText('generator-error');
+    await expect(page.locator('[data-layout-grammar="configuredarray"]')).toHaveText('nested-interpreter-error');
+    await expect(page.locator('[data-layout-grammar="constarray"]')).toHaveText('applied');
+    await expect(page.locator('[data-layout-grammar="updaterenabled"], [data-layout-grammar="updaterorder"]')).toHaveText(['updater-lookup-error', 'updater-lookup-error']);
     await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"]')).toHaveText(['verified', 'verified', 'verified']);
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');
     await expect(page.locator('body')).not.toHaveClass(/\bclass-(before|after)\b/);
+    await page.goto('/coverageprobe/theme/?___store=default');
+    const providers = () => page.locator('#layout-theme [data-layout-structure]').allTextContents();
+    expect((await providers()).sort()).toEqual(['provider.base.overlay-template', 'provider.frontend',
+        'provider.overlay', 'provider.replaced-base', 'provider.replaced-empty']);
+    await page.goto('/coverageprobe/theme/?___store=magelens_layout_fixture');
+    expect((await providers()).sort()).toEqual(['provider.base-replacement', 'provider.base.overlay-template',
+        'provider.child', 'provider.frontend', 'provider.overlay', 'provider.parent', 'provider.parent-replacement']);
+    await expect(page.locator('[data-layout-structure="provider.inactive"], [data-layout-structure="provider.replaced-empty"]')).toHaveCount(0);
     await admin.login(page);
     await expect(page.locator('[data-layout-structure="acl-dashboard"]')).toHaveText('acl-dashboard');
     await expect(page.locator('[data-layout-structure="acl-blog"]')).toHaveText('acl-blog');

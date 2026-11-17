@@ -115,6 +115,11 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-grammar="serviceurl"]').should('have.text', 'applied');
         cy.get('[data-layout-grammar="const"]').should('have.text', 'applied');
         cy.get('[data-layout-grammar="configurable"]').should('have.text', 'generator-error');
+        cy.get('[data-layout-grammar="configuredarray"]').should('have.text', 'nested-interpreter-error');
+        cy.get('[data-layout-grammar="constarray"]').should('have.text', 'applied');
+        for (const entry of ['updaterenabled', 'updaterorder']) {
+            cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'updater-lookup-error');
+        }
         for (const entry of ['cachefalse', 'cacheremoved', 'cachezero']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'verified');
         }
@@ -122,6 +127,18 @@ describe('Magento storefront coverage compatibility', () => {
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');
         cy.get('body').should('not.have.class', 'class-before').and('not.have.class', 'class-after');
+        cy.visit('/coverageprobe/theme/?___store=default');
+        cy.get('#layout-theme [data-layout-structure]').should(markers => {
+            expect([...markers].map(marker => marker.textContent).sort()).to.deep.equal(['provider.base.overlay-template',
+                'provider.frontend', 'provider.overlay', 'provider.replaced-base', 'provider.replaced-empty']);
+        });
+        cy.visit('/coverageprobe/theme/?___store=magelens_layout_fixture');
+        cy.get('#layout-theme [data-layout-structure]').should(markers => {
+            expect([...markers].map(marker => marker.textContent).sort()).to.deep.equal(['provider.base-replacement',
+                'provider.base.overlay-template', 'provider.child', 'provider.frontend', 'provider.overlay',
+                'provider.parent', 'provider.parent-replacement']);
+        });
+        cy.get('[data-layout-structure="provider.inactive"], [data-layout-structure="provider.replaced-empty"]').should('not.exist');
         admin.login();
         for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias']) {
             cy.get(`[data-layout-structure="${entry}"]`).should('have.text', entry);

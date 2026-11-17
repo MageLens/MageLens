@@ -14,6 +14,8 @@ use Magento\Framework\View\Layout\Argument\UpdaterInterface;
 
 class LayoutArgumentSource implements ArgumentInterface, OptionSourceInterface, UpdaterInterface
 {
+    public const MATRIX = ['constant' => 'fixture'];
+
     public function toOptionArray(): array
     {
         return ['fixture-option' => 'Fixture label'];

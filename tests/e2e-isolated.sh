@@ -110,6 +110,9 @@ cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js 
 cp -a src/app/design/frontend/Application "$scratch/src/app/design/frontend/"
 mkdir -p "$scratch/src/app/code/MageLens"
 cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
+cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
+mkdir -p "$scratch/src/app/design/frontend/MageLens"
+cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
     mkdir -p "$scratch/.runtime"
     cp "$MAGELENS_TEMPLATE_COVERAGE_PACKAGE" "$scratch/.runtime/template-coverage.tgz"
@@ -147,6 +150,8 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     bash tests/runner-container.sh "$(./bin/application-compose images -q runner)"
     # Verify HTTPS routing through nginx, including the read-only viewer redirect.
     ./bin/application-compose exec -T phpfpm bash -c '
