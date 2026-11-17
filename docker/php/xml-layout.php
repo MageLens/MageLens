@@ -348,7 +348,14 @@ final class LayoutCoverage
         if ($class !== Merge::class) return;
         $count = array_pop($this->appending);
         if ($error || !isset($this->merges[$merge]['pending'])) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
+        $caller = $trace[2] ?? [];
+        // Magento's generated no-plugin fallback calls the inherited method
+        // directly. Plugin dispatch inserts its own frames.
+        if (($caller['class'] ?? null) === get_class($merge) && str_ends_with(get_class($merge), '\\Interceptor')
+            && ($caller['function'] ?? null) === 'addUpdate') {
+            $caller = $trace[3] ?? [];
+        }
         if (($caller['class'] ?? null) !== Merge::class || ($caller['function'] ?? null) !== '_fetchPackageLayoutUpdates') return;
         $state = $this->merges[$merge];
         $pending = $state['pending'];
