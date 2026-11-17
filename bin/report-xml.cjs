@@ -26,6 +26,8 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'file-selection': ['layout-file-selected'],
+    'include-handle': ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     'position-name': ['layout-position-name-applied', 'layout-position-replaced'],
     'position-as': ['layout-position-alias-applied', 'layout-position-replaced'],
     'position-before': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],

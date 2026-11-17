@@ -288,7 +288,8 @@ final class LayoutCoverage
                 $name = $node->getAttribute('handle');
                 $candidate = $source[$index + 1] ?? [];
                 $id = $candidate['element'] ?? null;
-                $updates[] = ['handle' => $name, 'id' => $name === $id ? ($candidate['ids']['include'] ?? null) : null];
+                $updates[] = ['handle' => $name, 'id' => $name === $id ? ($candidate['ids']['include'] ?? null) : null,
+                    'handleId' => $name === $id ? ($candidate['ids']['include-handle'] ?? null) : null];
             }
         }
         $this->entries[] = ['merge' => $merge, 'updates' => $updates, 'next' => 0];
@@ -298,20 +299,24 @@ final class LayoutCoverage
     {
         if ($class !== Merge::class) return;
         $source = null;
+        $handleSource = null;
         $entry = array_key_last($this->entries);
         $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if ($entry !== null && $this->entries[$entry]['merge'] === $merge
             && ($caller['class'] ?? null) === Merge::class && ($caller['function'] ?? null) === '_fetchRecursiveUpdates') {
             $index = $this->entries[$entry]['next']++;
             $candidate = $this->entries[$entry]['updates'][$index] ?? null;
-            if ($candidate && $candidate['handle'] === $params[0]) $source = $candidate['id'];
+            if ($candidate && $candidate['handle'] === $params[0]) {
+                $source = $candidate['id'];
+                $handleSource = $candidate['handleId'];
+            }
         }
         static $allHandles, $processing;
         $allHandles ??= new \ReflectionProperty(Merge::class, 'allHandles');
         $processing ??= new \ReflectionProperty(Merge::class, 'handleProcessing');
         $state = $allHandles->getValue($merge)[$params[0]] ?? null;
         $effect = $state === null ? null : ($state === $processing->getValue($merge) ? 'cycle' : 'duplicate');
-        $this->handles[] = ['merge' => $merge, 'id' => $source, 'effect' => $effect, 'found' => false];
+        $this->handles[] = ['merge' => $merge, 'id' => $source, 'handleId' => $handleSource, 'effect' => $effect, 'found' => false];
     }
 
     private function completeDatabaseUpdate($merge, array $params, $result, ?\Throwable $error, string $class): void
@@ -329,7 +334,9 @@ final class LayoutCoverage
         if ($error || !$handle || $handle['id'] === null) return;
         $effect = $handle['effect'] ?? ($handle['found'] ? 'traversed' : 'missing');
         $theme = $merge->getTheme();
-        $this->event($handle['id'], 'layout-include-' . $effect, ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
+        $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        $this->event($handle['id'], 'layout-include-' . $effect, $context);
+        $this->event($handle['handleId'], 'layout-include-' . $effect, $context);
     }
 
     private function traverseEntry($merge, array $params, $result, ?\Throwable $error, string $class): void
@@ -344,6 +351,9 @@ final class LayoutCoverage
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $targets = $package['entries'][$entry->getNodePath()] ?? [];
             $state['pending'] = ['hash' => hash('sha256', $params[0]->innerXml()), 'targets' => $targets];
+            $theme = $merge->getTheme();
+            $this->event($targets[0]['ids']['file-selection'] ?? null, 'layout-file-selected',
+                ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
             if (isset($targets[0]['selection']) && $entry->getAttribute('layout') === $targets[0]['selection']) {
                 $state['pageLayout'] = ['name' => $targets[0]['selection'], 'id' => $targets[0]['ids']['wireframe-selection']];
             }
@@ -565,7 +575,10 @@ final class LayoutCoverage
         foreach ($this->documents as &$document) {
             if (!$document['root']->isSameNode($root)) continue;
             foreach ($document['targets'] as $ids) {
-                foreach ($ids as $id) $this->event($id, 'layout-xml-ownership-revoked', $document['context']);
+                foreach ($ids as $kind => $id) {
+                    if (in_array($kind, ['file-selection', 'include', 'include-handle', 'wireframe-selection', 'wireframe'], true)) continue;
+                    $this->event($id, 'layout-xml-ownership-revoked', $document['context']);
+                }
             }
             $document['targets'] = [];
         }

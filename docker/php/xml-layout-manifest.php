@@ -48,6 +48,7 @@ final class LayoutManifest
             $kind = match (true) {
                 in_array($fileType, ['page', 'generic'], true) && $index === 0
                     && preg_match('~/layout/override/(?:base|theme)/~', $path) => 'file-override',
+                in_array($fileType, ['page', 'generic'], true) && $index === 0 => 'file-selection',
                 $blockNode && $node->tagName === 'block' => 'block',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
                     && $node->tagName === 'container' => 'container',
@@ -81,6 +82,7 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    $valueKind === 'include' && $attribute->nodeName === 'handle' => 'include-handle',
                     $valueKind === 'asset-reference' && $attribute->nodeName === 'src' => 'asset-src',
                     $valueKind === 'asset-reference' && $attribute->nodeName === 'src_type' => 'asset-src-type',
                     $valueKind === 'asset-reference' && $attribute->nodeName === 'order' => 'asset-order',
@@ -120,7 +122,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
