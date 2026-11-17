@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 use Magento\Framework\DataObject;
+use Magento\Framework\Simplexml\Config as XmlConfig;
 use Magento\Framework\Data\Structure as DataStructure;
 use Magento\Framework\Filesystem\File\Read;
 use Magento\Framework\View\Element\AbstractBlock;
@@ -122,6 +123,12 @@ final class LayoutCoverage
             [GeneratorPool::class, 'removeElement', $this->beginRemoval(...), $this->completeRemoval(...)],
             [GeneratorPool::class, 'buildStructure', null, $this->finishStructure(...)],
             [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
+            [XmlConfig::class, 'getNode', null, $this->layoutXmlAccess(...)],
+            [XmlConfig::class, 'getXpath', null, $this->layoutXmlAccess(...)],
+            [XmlConfig::class, 'setXml', null, $this->layoutXmlAccess(...)],
+            [XmlConfig::class, 'setNode', $this->layoutXmlWrite(...), null],
+            [XmlConfig::class, 'extend', $this->layoutXmlWrite(...), null],
+            [XmlConfig::class, 'applyExtends', $this->layoutXmlWrite(...), null],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
             [BlockGenerator::class, 'evaluateArguments', null, $this->evaluatedArguments(...)],
@@ -525,6 +532,43 @@ final class LayoutCoverage
         $theme = $merge->getTheme();
         $this->documents[] = ['root' => $root, 'targets' => $targets,
             'context' => ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]];
+    }
+
+    private function layoutXmlAccess($layout, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        if ($error || $class !== XmlConfig::class || !$layout instanceof Layout) return;
+        if ($method !== 'setXml' && !$result instanceof \SimpleXMLElement
+            && !(is_array($result) && array_filter($result, static fn($node) => $node instanceof \SimpleXMLElement))) return;
+        $caller = self::nativeCaller($layout, $method);
+        if ($method === 'setXml') {
+            if (($caller['class'] ?? null) === Layout::class
+                && in_array($caller['function'] ?? '', ['generateXml', 'getXml'], true)) return;
+        } elseif (in_array($caller['class'] ?? '', [Layout::class, XmlConfig::class], true)
+            || str_starts_with($caller['class'] ?? '', __NAMESPACE__ . '\\')) return;
+        $this->revokeLayoutXml($layout);
+    }
+
+    private function layoutXmlWrite($layout, array $params, string $class): void
+    {
+        if ($class === XmlConfig::class && $layout instanceof Layout) $this->revokeLayoutXml($layout);
+    }
+
+    private function revokeLayoutXml(Layout $layout): void
+    {
+        static $xml;
+        $xml ??= new \ReflectionProperty(XmlConfig::class, '_xml');
+        $element = $xml->getValue($layout);
+        if (!$element instanceof \SimpleXMLElement) return;
+        $root = dom_import_simplexml($element)->ownerDocument->documentElement;
+        $this->limitations['mutable-layout-xml'] = true;
+        foreach ($this->documents as &$document) {
+            if (!$document['root']->isSameNode($root)) continue;
+            foreach ($document['targets'] as $ids) {
+                foreach ($ids as $id) $this->event($id, 'layout-xml-ownership-revoked', $document['context']);
+            }
+            $document['targets'] = [];
+        }
+        unset($document);
     }
 
     private function beginArgumentSchedule($reader, array $params, string $class): void
@@ -996,7 +1040,7 @@ final class LayoutCoverage
         $node = dom_import_simplexml($xml);
         $context = self::readerContext($layout);
         foreach ($this->documents as $document) {
-            if ($node->isSameNode($document['root']) && (isset($this->structures[$context->getScheduledStructure()])
+            if ($document['targets'] && $node->isSameNode($document['root']) && (isset($this->structures[$context->getScheduledStructure()])
                 || $this->page->snapshot($context->getPageConfigStructure())
                 || $this->structureCoverage->snapshot($context->getScheduledStructure()))) {
                 $this->sourceTrace = true;

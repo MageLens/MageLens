@@ -79,8 +79,9 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
-for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden');
+for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked');
 const layoutDecisions = {
+    'layout-xml-ownership-revoked': 'Mutable layout XML was exposed to external PHP or reassigned before native interpretation, so original ownership could not be retained.',
     'layout-position-replaced': 'A later native structure operation replaced this declaration identity, alias or sibling order.',
     'layout-position-ignored': 'The native scheduling helper selected after and ignored this before attribute.',
     'layout-position-order-unchanged': 'The native ordering operation left the child order unchanged.',
@@ -127,6 +128,7 @@ const layoutDecisions = {
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
+    'mutable-layout-xml': 'External PHP accessed or reassigned mutable layout XML; direct and equal-valued edits cannot retain verified original declaration ownership.',
     'layout-package-cache': 'Magento reused a package layout cache entry without original file positions.',
     'layout-merge-cache': 'Magento reused a merged handle update without original declaration positions.',
     'scheduled-layout-cache': 'Magento populated the layout schedule from cache without running the layout readers.',
