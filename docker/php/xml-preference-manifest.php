@@ -8,15 +8,21 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 require_once __DIR__ . '/xml-di-usage-manifest.php';
+require_once __DIR__ . '/xml-compiled-provenance.php';
 
 use Magento\Framework\App\ObjectManager as AppObjectManager;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
+use Magento\Framework\App\ObjectManager\ConfigLoader\Compiled as CompiledLoader;
+use Magento\Framework\App\ObjectManager\Environment\Compiled as CompiledEnvironment;
 use Magento\Framework\App\ObjectManager\Environment\Developer as DeveloperEnvironment;
+use Magento\Framework\Interception\ObjectManager\Config\Compiled as InterceptingCompiled;
 use Magento\Framework\Interception\ObjectManager\Config\Developer as DeveloperConfig;
 use Magento\Framework\ObjectManager\Config\Config;
+use Magento\Framework\ObjectManager\Config\Compiled as CompiledConfig;
 use Magento\Framework\ObjectManager\Config\Reader\Dom;
 use Magento\Framework\ObjectManager\ConfigLoaderInterface;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer as DeveloperFactory;
+use Magento\Framework\ObjectManager\Factory\Compiled as CompiledFactory;
 use Magento\Framework\ObjectManager\ObjectManager;
 
 final class PreferenceManifest
@@ -24,25 +30,38 @@ final class PreferenceManifest
     public const AREAS = ['global', 'frontend', 'adminhtml'];
     public const LOOKUP_LINES = ['get' => 71, 'create' => 59];
 
-    public static function nativeHooks(): bool
+    public static function nativeHooks(bool $compiled = false): bool
     {
         // These pinned bodies establish the lookup call sites, configuration
         // transitions, and the map and factory semantics used by the adapter.
         $hashes = [
             AppObjectManager::class => '5d8669179661973aa696891b8ae1ffcdb06b99951fed313d110b392077b1f58f',
             ObjectManager::class => '36a7a50d911c00c06a4fe09af9866e5540b7afcadb115d80b3f51b0dbb16af60',
+        ];
+        $hashes += $compiled ? [
+            CompiledConfig::class => ['2554fba57a1cd017808cc35c4e6fe27cc4b233073c3eb856453ccd0dbbf6c6d4',
+                '4f52fee01696c4c394eb90914446944021e7ca4b6992235485a83390ff46405d'],
+            InterceptingCompiled::class => '5321290384a628c6ec4f7e6d6024cacfc92e8d151196ecee86e056ed893a045d',
+            CompiledFactory::class => ['8f5a29a793f51686f6bd6eaf0cce515092448db1a1e2cbc78216e0bfd45dc47c',
+                '624981341724973d68170ac4b4aaaf61ea20aefe99a9dcf4b44d63bfd72bb77d'],
+            CompiledLoader::class => ['da6e7d8a54d7b992cf8b68c830034e75c06e61b2b36242e59126580ef24fd07d',
+                '53233e2a859aa9184ca82a1ebbbbd58cf3cb717b704f8d11ab5892d381a26c63'],
+            CompiledEnvironment::class => '5157aaa40769bcbc14c14239952eaa40c99538868cfe649f5193a932c69afe1e',
+        ] : [
             Config::class => '67bd481c7217dc6e7b3a2fccf014b3caf9201fa7676836a8287436be36fc5f8c',
             DeveloperConfig::class => 'f933be84382b9fae48653bb865ada798bb114dd07996126c7ae7453dbc764cdc',
             DeveloperFactory::class => 'db112044bcd4166bd0331f459dff451df28d76e10144829b8a4e268fac49882b',
             ConfigLoader::class => '25a68a03e567d054f064b7f392f12fc5a51bb1f38151b23846672f83cdb102f7',
             DeveloperEnvironment::class => '4d11d51528b18c3f76d72991acb6bcbb3e3b9598781d68c5fc124e3d3b3d9b22',
+        ];
+        $hashes += [
             \Magento\Framework\App\StaticResource::class => '523a7b8f792ed60e3e8fcd58fc4cfd8e57ad929fc200d61450933c18018140fb',
             \Magento\Framework\App\Http::class => 'fe2c5f2437a7bcf4e0be4fb9b6b20c8c8d41a1fc8c104ddbd1e156ec7b29e598',
             \Magento\Framework\App\Area::class => 'fe283d05890a449b755152c6b2c4726368f104eb465f32bd1f405bab5dfde21a',
         ];
         foreach ($hashes as $class => $hash) {
             $file = (new \ReflectionClass($class))->getFileName();
-            if (!$file || hash('sha256', str_replace("\r\n", "\n", file_get_contents($file))) !== $hash) return false;
+            if (!$file || !in_array(hash('sha256', str_replace("\r\n", "\n", file_get_contents($file))), (array) $hash, true)) return false;
         }
         return true;
     }
@@ -54,19 +73,20 @@ final class PreferenceManifest
         return in_array(get_class($manager), [AppObjectManager::class, ObjectManager::class], true);
     }
 
-    public static function configHash(Config $config): string
+    public static function configHash(Config|CompiledConfig $config): string
     {
         $preferences = $config->getPreferences();
         $virtualTypes = $config->getVirtualTypes();
-        $nonShared = (new \ReflectionProperty(Config::class, '_nonShared'))->getValue($config);
+        $nonShared = $config instanceof Config ? (new \ReflectionProperty(Config::class, '_nonShared'))->getValue($config) : [];
         ksort($preferences);
         ksort($virtualTypes);
         ksort($nonShared);
         return hash('sha256', json_encode([$preferences, $virtualTypes, $nonShared], JSON_THROW_ON_ERROR));
     }
 
-    public static function deltaHash(array $data): string
+    public static function deltaHash(array $data, bool $compiled = false): string
     {
+        if ($compiled) return hash('sha256', serialize($data));
         $virtualTypes = $shared = [];
         foreach ($data as $name => $entry) {
             if ($name === 'preferences') continue;
@@ -109,7 +129,9 @@ final class PreferenceManifest
         unset($file);
         if (!$items && !$usage) return [[], null];
 
-        $snapshot = PluginManifest::sources($om->get(Dom::class), $known, (bool)$items, (bool)$usage);
+        $mode = $om->get(\Magento\Framework\App\State::class)->getMode();
+        $compiled = $mode === \Magento\Framework\App\State::MODE_PRODUCTION;
+        $snapshot = PluginManifest::sources($om->get(Dom::class), $known, (bool)$items, $compiled || (bool)$usage);
         [$configs, , $sources, , $origins, $usageOrigins] = $snapshot;
         $active = [];
         foreach ($items + $usage as $id => $item) {
@@ -120,19 +142,23 @@ final class PreferenceManifest
         }
 
         $loader = $om->get(ConfigLoaderInterface::class);
+        $runtimeConfig = (new \ReflectionProperty(ObjectManager::class, '_config'))->getValue($om);
+        $runtimeFactory = (new \ReflectionProperty(ObjectManager::class, '_factory'))->getValue($om);
+        $provenance = $compiled && get_class($loader) === CompiledLoader::class ? CompiledProvenance::validate($sources) : null;
         $unsupported = match (true) {
-            $om->get(\Magento\Framework\App\State::class)->getMode() !== \Magento\Framework\App\State::MODE_DEVELOPER
-                => 'Preference coverage requires developer mode',
-            !self::nativeManager($om), get_class($loader) !== ConfigLoader::class
-                => 'Custom or compiled Object Manager configuration loading is unmeasured',
-            get_class((new \ReflectionProperty(ObjectManager::class, '_config'))->getValue($om)) !== DeveloperConfig::class,
-            get_class((new \ReflectionProperty(ObjectManager::class, '_factory'))->getValue($om)) !== DeveloperFactory::class
-                => 'Custom or compiled Object Manager resolution is unmeasured',
-            !self::nativeHooks() => 'Installed DI methods differ from the verified hook paths',
+            !$compiled && $mode !== \Magento\Framework\App\State::MODE_DEVELOPER => 'Unsupported application mode',
+            !self::nativeManager($om), get_class($loader) !== ($compiled ? CompiledLoader::class : ConfigLoader::class)
+                => 'Custom Object Manager configuration loading is unmeasured',
+            get_class($runtimeConfig) !== ($compiled ? InterceptingCompiled::class : DeveloperConfig::class),
+            get_class($runtimeFactory) !== ($compiled ? CompiledFactory::class : DeveloperFactory::class)
+                => 'Custom Object Manager resolution is unmeasured',
+            !self::nativeHooks($compiled) => 'Installed DI methods differ from the verified hook paths',
+            $compiled && $provenance === null => 'Run ./bin/deploy-production to record compiled DI provenance',
             default => null,
         };
         $nativeArguments = $usage && DiUsageManifest::nativeArguments();
-        if ($nativeArguments && $unsupported === null) {
+        $lazyCompiled = $compiled && method_exists(CompiledFactory::class, 'resolveArguments');
+        if (!$compiled && $nativeArguments && $unsupported === null) {
             $nativeConfig = (new \ReflectionProperty(ObjectManager::class, '_config'))->getValue($om);
             $nativeArguments = get_class((new \ReflectionProperty(Config::class, '_relations'))->getValue($nativeConfig))
                 === \Magento\Framework\ObjectManager\Relations\Runtime::class;
@@ -175,14 +201,6 @@ final class PreferenceManifest
                 }
             }
             unset($item);
-            $diUsage = DiUsageManifest::prepareArea($usage, $active, $usageOrigins, $config, $scopes, $area, $unsupported, $nativeArguments);
-            if ($unsupported !== null) continue;
-            $loaded = $loader->load($area);
-            if ($diUsage['names'] ?? []) {
-                $diUsage['argumentDelta'] = DiUsageManifest::argumentDelta($configs[$area]);
-                if ($diUsage['argumentDelta'] !== DiUsageManifest::argumentDelta($loaded)) self::stale('loaded constructor arguments changed');
-            }
-            if (self::deltaHash($loaded) !== self::deltaHash($configs[$area])) self::stale();
             $routes = [];
             foreach ($preferences as $requested => $replacement) {
                 [$edges, $terminal, $resolved] = self::resolve($requested, $preferences, $virtualTypes);
@@ -190,7 +208,36 @@ final class PreferenceManifest
                 foreach ($edges as $edge) if (isset($bindings[$edge])) $ids[] = $bindings[$edge];
                 if ($resolved !== null && $ids) $routes[$requested] = ['terminal' => $terminal, 'resolved' => $resolved, 'ids' => $ids];
             }
-            $runtime[$area] = ['delta' => self::deltaHash($configs[$area]), 'config' => self::configHash($config),
+            $diUsage = DiUsageManifest::prepareArea($usage, $active, $usageOrigins, $config, $scopes, $area, $unsupported,
+                $nativeArguments, $compiled ? $routes : [], $compiled);
+            if ($unsupported !== null) continue;
+            $loaded = $loader->load($area);
+            if (!$compiled && ($diUsage['names'] ?? [])) {
+                $diUsage['argumentDelta'] = DiUsageManifest::argumentDelta($configs[$area]);
+                if ($diUsage['argumentDelta'] !== DiUsageManifest::argumentDelta($loaded)) self::stale('loaded constructor arguments changed');
+            }
+            if (!$compiled && self::deltaHash($loaded) !== self::deltaHash($configs[$area])) self::stale();
+            if ($compiled) {
+                $live = new InterceptingCompiled($loader->load('global'));
+                if ($area !== 'global') $live->extend($loaded);
+                foreach ($routes as $requested => &$route) {
+                    $target = $live->getPreference($requested);
+                    if ($target !== $route['terminal'] && $target !== $route['terminal'] . '\\Interceptor') {
+                        self::stale('compiled preference does not match the original binding');
+                    }
+                    $route['terminal'] = $target;
+                }
+                unset($route);
+                foreach ($diUsage['virtualRoutes'] ?? [] as $alias => $route) {
+                    $target = $live->getInstanceType($alias);
+                    if ($target !== $route['resolved'] && $target !== $route['resolved'] . '\\Interceptor') {
+                        self::stale('compiled virtual type does not match the original declaration');
+                    }
+                }
+                $diUsage['preferences'] = $routes;
+            }
+            $runtime[$area] = ['delta' => self::deltaHash($compiled ? $loaded : $configs[$area], $compiled),
+                'config' => self::configHash($compiled ? $live : $config), 'compiled' => $compiled, 'lazyCompiled' => $lazyCompiled,
                 'routes' => $routes, 'diUsage' => $diUsage];
         }
         $all = $items + $usage;

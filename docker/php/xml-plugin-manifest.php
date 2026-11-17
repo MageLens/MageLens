@@ -293,21 +293,25 @@ final class PluginManifest
         $generator = $om->get(PluginListGenerator::class);
         $developer = $loader instanceof \Magento\Framework\App\ObjectManager\ConfigLoader
             && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Developer;
+        $production = $loader instanceof \Magento\Framework\App\ObjectManager\ConfigLoader\Compiled
+            && $live instanceof \Magento\Framework\Interception\ObjectManager\Config\Compiled
+            && CompiledProvenance::validate($sources) !== null;
         $compiled = glob(BP . '/generated/metadata/*|plugin-list.php');
+        $supportedMode = ($developer && !$compiled) || $production;
         $modules = $active ? self::localModules($om) : [];
         $classes = $active ? self::candidateTypes(array_intersect_key($items, $active), $paths, $modules, $sourceRoot) : [];
-        $generatorType = $developer ? InlinePluginManifest::generator($live) : '';
+        $generatorType = $supportedMode ? InlinePluginManifest::generator($live) : '';
         $runtime = [];
         foreach (self::AREAS as $area) {
             $scopes = $area === 'global' ? ['primary', 'global'] : ['primary', 'global', $area];
-            $di = clone $live;
+            $di = $production ? new \Magento\Framework\Interception\ObjectManager\Config\Developer() : clone $live;
             $data = [];
-            if ($developer) foreach ($scopes as $scope) $di->extend($configs[$scope]);
+            if ($supportedMode) foreach ($scopes as $scope) $di->extend($configs[$scope]);
             foreach (InlinePluginManifest::scopeOrder($generatorType, $scopes) as $scope) {
                 $data = $generator->merge($tagged[$scope], $data);
             }
-            $listType = $developer ? $di->getOriginalInstanceType($di->getPreference(PluginListInterface::class)) : '';
-            $supported = $developer && !$compiled && $listType === PluginList::class
+            $listType = $supportedMode ? $di->getOriginalInstanceType($di->getPreference(PluginListInterface::class)) : '';
+            $supported = $supportedMode && $listType === PluginList::class
                 && InlinePluginManifest::supported($generatorType) && InlinePluginManifest::generator($di) === $generatorType;
             foreach ($items as $id => &$item) {
                 $scope = $item['declaredScope']['type'];
@@ -316,7 +320,7 @@ final class PluginManifest
                 $registration = $data[$target][$name] ?? [];
                 $origins = self::origins($registration);
                 $item['areas'][$area] = match (true) {
-                    !$supported => self::outcome('unsupported', 'Compiled DI, custom plugin lists or unsupported interceptor generators are unmeasured'),
+                    !$supported => self::outcome('unsupported', 'Plugin list or interceptor provenance is unavailable'),
                     !isset($active[$id]) => self::outcome('unsupported', 'Declaration is inactive in the installed DI reader'),
                     !in_array($id, $origins, true) => self::outcome('overridden', 'Superseded by another declaration'),
                     !empty($registration['disabled']) => self::outcome('disabled', 'Effective Magento registration is disabled'),
@@ -412,7 +416,7 @@ final class PluginManifest
             }
         }
         if ($runtime) {
-            self::checkCaches($om->get(PluginListInterface::class), $runtime, $loader, $configs);
+            if (!$production) self::checkCaches($om->get(PluginListInterface::class), $runtime, $loader, $configs);
             InlinePluginManifest::prepare($om, $runtime);
         }
         foreach ($items as &$item) {

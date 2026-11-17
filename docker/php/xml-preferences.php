@@ -11,9 +11,14 @@ use Magento\Framework\App\Area;
 use Magento\Framework\App\Http;
 use Magento\Framework\App\StaticResource;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
+use Magento\Framework\App\ObjectManager\ConfigLoader\Compiled as CompiledLoader;
+use Magento\Framework\App\ObjectManager\Environment\Compiled as CompiledEnvironment;
 use Magento\Framework\App\ObjectManager\Environment\Developer as DeveloperEnvironment;
+use Magento\Framework\Interception\ObjectManager\Config\Compiled as InterceptingCompiled;
 use Magento\Framework\Interception\ObjectManager\Config\Developer as DeveloperConfig;
 use Magento\Framework\ObjectManager\Config\Config;
+use Magento\Framework\ObjectManager\Config\Compiled as CompiledConfig;
+use Magento\Framework\ObjectManager\Factory\Compiled as CompiledFactory;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer as DeveloperFactory;
 use Magento\Framework\ObjectManager\ObjectManager;
 
@@ -31,19 +36,23 @@ final class Preferences
     private static ?string $stale = null;
     private static bool $broken = false;
     private static ?string $managerFile = null;
+    private static bool $compiled = false;
 
     public static function hooks(array $areas): array
     {
         if (!$areas) return [];
         self::$areas = $areas;
+        self::$compiled = $areas['global']['compiled'] ?? false;
+        $loaderClass = self::$compiled ? CompiledLoader::class : ConfigLoader::class;
+        $configClass = self::$compiled ? CompiledConfig::class : Config::class;
         $hooks = [
-            [ConfigLoader::class, 'load', null, static function ($loader, array $params, $result, ?\Throwable $error, string $class) {
+            [$loaderClass, 'load', null, static function ($loader, array $params, $result, ?\Throwable $error, string $class) use ($loaderClass) {
                 $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
                 $site = self::scopeSite($trace[2] ?? []);
-                if ($site && !$error && $class === ConfigLoader::class && is_array($result)) {
+                if ($site && !$error && $class === $loaderClass && is_array($result)) {
                     $area = $params[0] ?? null;
                     $arguments = isset(self::$areas[$area]['diUsage']['argumentDelta']) ? DiUsageManifest::argumentDelta($result) : null;
-                    self::$loaded = [$site, $area, PreferenceManifest::deltaHash($result), $arguments];
+                    self::$loaded = [$site, $area, PreferenceManifest::deltaHash($result, self::$compiled), $arguments];
                 }
             }],
             [ObjectManager::class, 'configure', null, static function ($manager, array $params, $result, ?\Throwable $error, string $class) {
@@ -51,8 +60,8 @@ final class Preferences
                 $site = self::scopeSite($trace[2] ?? []);
                 if ($site && !$error && $class === ObjectManager::class) self::configured($manager, $site);
             }],
-            [Config::class, 'extend', static function ($config, array $params, string $class) {
-                if ($class !== Config::class) return;
+            [$configClass, 'extend', static function ($config, array $params, string $class) use ($configClass) {
+                if ($class !== $configClass) return;
                 $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
                 if (($trace[2]['class'] ?? null) === ObjectManager::class && ($trace[2]['function'] ?? null) === 'configure'
                     && self::scopeSite($trace[3] ?? [])) {
@@ -64,14 +73,15 @@ final class Preferences
                 // Out-of-band preference edits invalidate origin even if
                 // a provider writes exactly the same mapping.
                 $arguments = class_exists(DiUsage::class, false) && DiUsage::hasArgumentMeasurement();
-                if (isset($data['preferences']) || array_filter($data, static fn($entry) => isset($entry['type'])
+                if (isset($data['preferences']) || (self::$compiled && (isset($data['instanceTypes']) || ($arguments && isset($data['arguments']))))
+                    || array_filter($data, static fn($entry) => isset($entry['type'])
                     || isset($entry['shared']) || ($arguments && !empty($entry['arguments'])))) {
                     self::$stale ??= 'DI changed outside native area loading';
                 }
             }, null],
-            [Config::class, 'getPreference', null, static function ($config, array $params, $result, ?\Throwable $error, string $class) {
+            [$configClass, 'getPreference', null, static function ($config, array $params, $result, ?\Throwable $error, string $class) use ($configClass) {
                 $index = array_key_last(self::$frames);
-                if ($index === null || !isset(self::$frames[$index]) || $error || $class !== Config::class || self::$config?->get() !== $config) return;
+                if ($index === null || !isset(self::$frames[$index]) || $error || $class !== $configClass || self::$config?->get() !== $config) return;
                 $frame = &self::$frames[$index];
                 if ($frame['matched']) return;
                 $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
@@ -106,7 +116,7 @@ final class Preferences
     {
         $method = [$frame['class'] ?? null, $frame['function'] ?? null];
         return match ($method) {
-            [DeveloperEnvironment::class, 'configureObjectManager'] => 'bootstrap',
+            [DeveloperEnvironment::class, 'configureObjectManager'], [CompiledEnvironment::class, 'configureObjectManager'] => 'bootstrap',
             [Http::class, 'launch'] => 'http',
             [StaticResource::class, 'launch'] => 'static',
             [Area::class, '_initConfig'] => 'area',
@@ -137,8 +147,9 @@ final class Preferences
         $reflection = new \ReflectionClass(ObjectManager::class);
         $config = $reflection->getProperty('_config')->getValue($manager);
         $factory = $reflection->getProperty('_factory')->getValue($manager);
-        if ((!self::$global && (!PreferenceManifest::nativeHooks() || $site !== 'bootstrap' || $area !== 'global'))
-            || $extended !== $config || get_class($config) !== DeveloperConfig::class || get_class($factory) !== DeveloperFactory::class
+        if ((!self::$global && (!PreferenceManifest::nativeHooks(self::$compiled) || $site !== 'bootstrap' || $area !== 'global'))
+            || $extended !== $config || get_class($config) !== (self::$compiled ? InterceptingCompiled::class : DeveloperConfig::class)
+            || get_class($factory) !== (self::$compiled ? CompiledFactory::class : DeveloperFactory::class)
             || !PreferenceManifest::nativeManager($manager)) {
             self::$broken = true;
             return;

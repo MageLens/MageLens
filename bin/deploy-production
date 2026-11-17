@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Copyright (c)  MageLens
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+source "$(dirname "$0")/common"
+[[ $# == 0 ]] || fail 'Usage: ./bin/deploy-production'
+preflight
+[[ -f .runtime/installed ]] || fail 'Run ./install.sh first.'
+lock_workflow
+dc exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
+dc exec -T runner node bin/prepare.cjs --runtime-only --theme-roots .runtime/active-themes.json
+script=/application/docker/php/xml-compiled-provenance.php
+inputs=$(dc exec -T phpfpm php "$script")
+[[ "$inputs" =~ ^[a-f0-9]{64}$ ]] || fail 'Cannot establish the production DI inputs.'
+dc exec -T phpfpm php bin/magento deploy:mode:set production
+dc exec -T phpfpm php "$script" "$inputs"

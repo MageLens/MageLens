@@ -11,9 +11,11 @@ preflight
 theme=${MAGELENS_E2E_THEME:-luma}
 runner=${MAGELENS_E2E_RUNNER:-cypress}
 platform=${MAGELENS_E2E_PLATFORM:-magento}
+mode=${MAGELENS_E2E_MODE:-developer}
 [[ "$theme" == luma || "$theme" == hyva ]] || fail 'MAGELENS_E2E_THEME must be luma or hyva (Hyva CSP).'
 [[ "$runner" == cypress || "$runner" == playwright ]] || fail 'MAGELENS_E2E_RUNNER must be cypress or playwright.'
 [[ "$platform" == magento || "$platform" == mageos ]] || fail 'MAGELENS_E2E_PLATFORM must be magento or mageos.'
+[[ "$mode" == developer || "$mode" == production ]] || fail 'MAGELENS_E2E_MODE must be developer or production.'
 install_options=()
 [[ "${MAGELENS_BUILD_FROM_SOURCE:-0}" != 1 ]] || install_options+=(--build-from-source)
 [[ "$platform" != mageos ]] || install_options+=(--mageos)
@@ -171,7 +173,8 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-di-usage-hook-proof.php /var/www/html/vendor "$di_usage_case"
     done
-    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/xml-compiled-di-hook-proof.php
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php /application/docker/php/e2e/xml-compiled-di-hook-proof.php
     for preference_case in cold warm stale-removed stale-retained stale-mutation broken-hook; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-preferences.test.php /var/www/html/vendor "$preference_case"
@@ -182,11 +185,18 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-plugins.test.php inline stale-inline
     fi
-    ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
+    coverage_options=()
+    if [[ "$mode" == production ]]; then
+        ./bin/deploy-production
+        ./bin/application-compose exec -T phpfpm php bin/magento deploy:mode:show | grep -F 'Current application mode: production'
+        coverage_options+=(--refresh-assets)
+    else
+        ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
+    fi
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
-    ./bin/run-coverage | tee .runtime/coverage-run.log
+    ./bin/run-coverage "${coverage_options[@]}" | tee .runtime/coverage-run.log
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs

@@ -145,6 +145,8 @@ test(`${runner}: refreshes run only when requested`, t => {
     assert.match(result.calls, /^up /m);
     assert.match(result.calls, /^restart -t 60 phpfpm$/m);
     assert.match(result.calls, /refresh-assets.sh/);
+    assert.ok(result.calls.indexOf('bin/prepare.cjs') < result.calls.indexOf('refresh-assets.sh'),
+        'Production static deployment uses the current instrumented assets');
     assert.doesNotMatch(result.calls, /cache:clean/, 'Asset refresh already cleans caches');
     const cache = workflow(t, ['--refresh-cache'], '', false, runner);
     assert.match(cache.calls, /cache:clean/);

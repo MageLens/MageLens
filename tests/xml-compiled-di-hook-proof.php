@@ -7,6 +7,8 @@
 declare(strict_types=1);
 namespace MageLens\ProductionProof;
 
+use MageLens\XmlCoverage\{CompiledProvenance, DiUsage, DiUsageManifest, PreferenceManifest, Recorder};
+use Magento\Framework\App\ObjectManager\ConfigLoader\Compiled as CompiledLoader;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
 use Magento\Framework\Code\Reader\ClassReader;
 use Magento\Framework\Interception\ObjectManager\Config\Compiled as InterceptingConfig;
@@ -24,6 +26,7 @@ use Magento\Setup\Module\Di\Definition\Collection;
 use function OpenTelemetry\Instrumentation\hook;
 
 require '/var/www/html/vendor/autoload.php';
+require getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php';
 
 interface First {}
 interface Second {}
@@ -40,6 +43,14 @@ class ThrowingService implements Broken
 class Consumer
 {
     public function __construct(public First $dependency) {}
+}
+class ConsumerDirect extends Consumer {}
+class DeferredConsumer
+{
+    public function __construct(public string $label)
+    {
+        if ($label === 'throw') throw new \DomainException('fixture');
+    }
 }
 class CallsObjectManager
 {
@@ -67,17 +78,74 @@ function compile(string $chain, string $area): array
             AreaChoice::class => Service::class, VirtualChoice::class => 'ProbeVirtualA', Broken::class => ThrowingService::class],
         'ProbeVirtualA' => ['type' => 'ProbeVirtualB'],
         'ProbeVirtualB' => ['type' => Service::class],
+        DeferredConsumer::class => ['arguments' => ['label' => 'configured']],
+        ConsumerDirect::class => ['arguments' => ['dependency' => ['instance' => Service::class]]],
+        'ProbeThrowing' => ['type' => DeferredConsumer::class, 'arguments' => ['label' => 'throw']],
     ]);
     $factory = new Developer($config);
     $manager = new ObjectManager($factory, $config);
     $factory->setObjectManager($manager);
     $classes = new ClassReaderDecorator(new ClassReader());
     $definitions = new Collection();
-    foreach ([Service::class, FrontendService::class, Consumer::class, ThrowingService::class, CallsObjectManager::class] as $type) {
+    foreach ([Service::class, FrontendService::class, Consumer::class, ConsumerDirect::class,
+        ThrowingService::class, CallsObjectManager::class, DeferredConsumer::class] as $type) {
         $definitions->addDefinition($type, $classes->getConstructor($type));
     }
     $reader = new Reader($config, new AreaLoader(), new ArgumentsResolverFactory($manager), $classes, new Type());
     return (new PreferencesResolving())->modify($reader->generateCachePerScope($definitions, $area));
+}
+
+function verifyCompiledProvenance(): void
+{
+    $directory = tempnam(sys_get_temp_dir(), 'magelens-compiled-');
+    unlink($directory);
+    define('BP', $directory);
+    mkdir($directory . '/app/etc', 0777, true);
+    mkdir($directory . '/generated/metadata', 0777, true);
+    $files = [$directory . '/app/etc/config.php', $directory . '/composer.lock'];
+    foreach (PreferenceManifest::AREAS as $area) $files[] = CompiledLoader::getFilePath($area);
+    try {
+        foreach ($files as $file) file_put_contents($file, 'fixture');
+        $providers = ['global' => ['example/etc/di.xml' => hash('sha256', 'original')]];
+        check(CompiledProvenance::validate($providers) === null, 'deployment has no provenance before compilation');
+        $before = CompiledProvenance::inputs($providers);
+        CompiledProvenance::publish($before, $before);
+        check(CompiledProvenance::validate($providers) === CompiledProvenance::metadata(), 'compiled provenance round trip');
+        $edited = ['global' => ['example/etc/di.xml' => hash('sha256', 'edited')]];
+        foreach ([$edited, $providers] as $index => $input) {
+            if ($index === 1) file_put_contents(CompiledLoader::getFilePath('frontend'), 'changed');
+            try {
+                CompiledProvenance::validate($input);
+                throw new \LogicException('Expected stale compiled provenance');
+            } catch (\RuntimeException $error) {
+                check(str_contains($error->getMessage(), 'provenance is stale'), 'explicit stale compiled provenance failure');
+            }
+        }
+    } finally {
+        foreach (glob($directory . '/generated/metadata/*') as $file) unlink($file);
+        unlink($directory . '/composer.lock');
+        unlink($directory . '/app/etc/config.php');
+        foreach (['/generated/metadata', '/generated', '/app/etc', '/app', ''] as $path) rmdir($directory . $path);
+    }
+}
+
+function verifyCompiledLifetimeMask(): void
+{
+    $config = new Config();
+    $config->extend(['preferences' => [First::class => Service::class], First::class => ['shared' => true]]);
+    $items = ['shared' => ['family' => 'lifecycles', 'declaredScope' => ['type' => 'global'],
+        'binding' => ['declaringType' => First::class, 'shared' => true]]];
+    $maps = ['global' => [
+        'lifecycles' => [First::class => ['id' => 'shared']],
+        'arguments' => [ConsumerDirect::class => ['dependency' => [
+            'array' => true, 'kind' => 'object', 'objectType' => Service::class, 'origin' => null,
+            'items' => [], 'shared' => null, 'hasShared' => false,
+        ]]],
+    ]];
+    $usage = DiUsageManifest::prepareArea($items, ['shared' => true], $maps, $config, ['global'],
+        'global', null, true, compiled: true);
+    check($usage['arguments'][ConsumerDirect::class]['dependency']['objectType'] === Service::class,
+        'an out-of-scope direct request masks an implicit type lifetime even without tracked preferences');
 }
 
 $lookups = $frames = $resolutions = [];
@@ -120,6 +188,24 @@ check($global === $alternate && $global['preferences'][Chain::class] === Service
     'distinct original chains must be indistinguishable in compiled metadata');
 check($global['arguments'][Consumer::class]['dependency'] === ['_i_' => Service::class]
     && $global['instanceTypes']['ProbeVirtualA'] === Service::class, 'compiled descriptor and virtual chain');
+$lazy = method_exists(CompiledFactory::class, 'resolveArguments');
+check(PreferenceManifest::nativeHooks(true), 'verified native compiled method bodies');
+if ($lazy) $global['lazyTypes'][DeferredConsumer::class] = true;
+$usage = [
+    'eligible' => ['arguments' => ['label' => true, 'throwing-label' => true], 'virtual-types' => ['virtual-a' => true, 'virtual-b' => true]],
+    'virtualRoutes' => ['ProbeVirtualA' => ['ids' => ['virtual-a', 'virtual-b'], 'resolved' => Service::class]],
+    'virtual' => ['ProbeThrowing' => DeferredConsumer::class], 'names' => ['label' => true, 'dependency' => true],
+    'preferences' => [First::class => ['ids' => ['first-binding'], 'terminal' => Service::class]],
+    'arguments' => [
+        ConsumerDirect::class => ['dependency' => ['id' => null, 'array' => true, 'kind' => 'object',
+            'objectType' => Service::class, 'shared' => null, 'items' => []]],
+        DeferredConsumer::class => ['label' => ['id' => 'label', 'array' => false, 'kind' => 'string', 'objectType' => null, 'shared' => null, 'items' => []]],
+        'ProbeThrowing' => ['label' => ['id' => 'throwing-label', 'array' => false, 'kind' => 'string', 'objectType' => null, 'shared' => null, 'items' => []]],
+    ],
+];
+foreach (DiUsage::hooks(['global' => ['compiled' => true, 'lazyCompiled' => $lazy, 'diUsage' => $usage]]) as [$class, $method, $pre, $post]) {
+    check(hook($class, $method, $pre, $post), "compiled factory hook $method");
+}
 $config = new InterceptingConfig($global);
 $shared = [];
 $factory = new CompiledFactory($config, $shared);
@@ -127,6 +213,20 @@ $manager = new ObjectManager($factory, $config, $shared);
 $nativeManager = $manager;
 CallsObjectManager::$manager = $manager;
 $factory->setObjectManager($manager);
+DiUsage::area('global', $factory, $config, $usage);
+
+$events = new \ReflectionProperty(Recorder::class, 'events');
+$object = $factory->create(DeferredConsumer::class);
+check(($events->getValue() === []) === $lazy, 'lazy arguments earn no evidence before initialization');
+check($object->label === 'configured', 'native constructor configuration');
+$override = $factory->create(DeferredConsumer::class, ['label' => 'caller']);
+check($override->label === 'caller', 'call-time override remains effective');
+try {
+    $throwing = $factory->create('ProbeThrowing');
+    $throwing->label;
+    throw new \LogicException('Expected configured constructor failure');
+} catch (\DomainException) {
+}
 
 $config->getPreference(First::class);
 check($manager->get(First::class) === $manager->get(Second::class) && $manager->get(Chain::class) === $manager->get(Service::class),
@@ -137,6 +237,8 @@ $before = count($lookups);
 $consumer = $manager->create(Consumer::class);
 check($consumer->dependency === $manager->get(Service::class) && count($lookups) === $before + 2,
     'compiled constructor injection skips Object Manager preference lookup');
+$direct = $factory->create(ConsumerDirect::class);
+check($direct->dependency === $consumer->dependency, 'the configured direct request shares the same object');
 $manager->create(CallsObjectManager::class, ['fixture' => true]);
 $warm = $manager->get(AreaChoice::class);
 $manager->configure(compile(First::class, 'frontend'));
@@ -158,7 +260,15 @@ check(!$brokenHook && !$frames && count($lookups) === 14 && $resolutions === [
     ['get', AreaChoice::class, Service::class],
     ['get', AreaChoice::class, FrontendService::class],
 ], 'success only, with distinct binding identities and no credit for the throwing return');
+$recorded = array_column(array_values($events->getValue()), 'hits', 'id');
+check($recorded === ['label' => 1, 'virtual-a' => 1, 'virtual-b' => 1, 'first-binding' => 1],
+    'compiled collector credits actual construction and selection, including pre-resolved preferences');
+$health = DiUsage::finish();
+ksort($health);
+check($health === ['arguments' => true, 'virtual-types' => true], 'compiled factory hooks are healthy');
+verifyCompiledLifetimeMask();
+verifyCompiledProvenance();
 echo json_encode(['php' => PHP_VERSION, 'otel' => phpversion('opentelemetry'), 'lookups' => count($lookups),
     'successfulBindingResolutions' => count($resolutions),
     'chainsProduceIdenticalMetadata' => true, 'compiledInjectionBypassesPreferenceLookup' => true,
-    'sharedAndAreaOverride' => true, 'throwingConstructor' => true], JSON_THROW_ON_ERROR), PHP_EOL;
+    'sharedAndAreaOverride' => true, 'throwingConstructor' => true, 'staleProvenanceRejected' => true], JSON_THROW_ON_ERROR), PHP_EOL;

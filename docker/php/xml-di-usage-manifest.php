@@ -126,6 +126,7 @@ final class DiUsageManifest
     {
         $entry += ['origin' => null, 'kind' => '', 'items' => [], 'shared' => null];
         $entry['array'] = is_array($value);
+        $entry['objectType'] = $entry['kind'] === 'object' && $entry['array'] ? ($value['instance'] ?? null) : null;
         $entry['hasShared'] = $entry['array'] && isset($value['instance'], $value['shared']);
         if (!$entry['hasShared']) $entry['shared'] = null;
         // Magento treats these keys as descriptors when parsing nested items.
@@ -147,6 +148,7 @@ final class DiUsageManifest
         $shared = $entry['shared']['id'] ?? null;
         return ['array' => $entry['array'], 'id' => isset($enabled['arguments'][$id]) ? $id : null,
             'kind' => $entry['kind'], 'items' => $items,
+            'objectType' => $entry['objectType'],
             'shared' => $entry['hasShared'] ? (isset($enabled['lifecycles'][$shared]) ? $shared : false) : null];
     }
 
@@ -195,7 +197,7 @@ final class DiUsageManifest
     }
 
     public static function prepareArea(array &$items, array $sources, array $maps, Config $config, array $scopes,
-        string $area, ?string $unsupported, bool $nativeArguments): array
+        string $area, ?string $unsupported, bool $nativeArguments, array $compiledPreferences = [], bool $compiled = false): array
     {
         $virtualOrigins = $argumentOrigins = $sharedOrigins = [];
         foreach ($scopes as $scope) {
@@ -251,7 +253,14 @@ final class DiUsageManifest
             else $names[$binding['argument']] = true;
         }
         unset($item);
-        if (!$enabled) return [];
+        if ($compiled && ($compiledPreferences || $shared)) {
+            $targets = array_fill_keys(array_column($compiledPreferences, 'terminal'), true);
+            foreach ($shared as $type => $policy) $targets[$config->getPreference($type)] = true;
+            foreach ($argumentOrigins as $entries) foreach ($entries as $name => $entry) {
+                if (!isset($names[$name]) && self::containsDependency($entry, $config, $targets)) $names[$name] = true;
+            }
+        }
+        if (!$enabled && !$compiledPreferences) return [];
         $routes = [];
         if ($virtualIds) foreach ($virtual as $type => $target) {
             [$chain, $resolved] = self::virtualPath($type, $virtual);
@@ -266,7 +275,18 @@ final class DiUsageManifest
             }
         }
         return ['eligible' => $enabled, 'virtualRoutes' => $routes, 'names' => $names, 'arguments' => $arguments,
-            'virtual' => $names ? $virtual : [], 'argumentsHash' => $names ? self::argumentHash($config) : null,
+            'virtual' => $names || $compiledPreferences || $shared ? $virtual : [], 'argumentsHash' => $names ? self::argumentHash($config) : null,
             'shared' => $shared];
+    }
+
+    private static function containsDependency(array $entry, Config $config, array $targets): bool
+    {
+        if ($entry['objectType'] !== null) {
+            $type = $config->getPreference($entry['objectType']);
+            if (str_ends_with($type, '\\Interceptor')) $type = substr($type, 0, -12);
+            if (isset($targets[$type])) return true;
+        }
+        foreach ($entry['items'] as $item) if (self::containsDependency($item, $config, $targets)) return true;
+        return false;
     }
 }

@@ -71,6 +71,8 @@ Dependabot checks GitHub Actions, npm and the PHP report Composer manifest weekl
 
 The workflow reuses `tests/e2e-isolated.sh` unchanged in its acceptance behavior. `npm run test:e2e` is available for focused local investigation; the full `npm run test:e2e:matrix` belongs in CI unless explicitly requested locally. Magento uses `MAGELENS_COMPOSER_AUTH_FILE` or `MAGELENS_COMPOSER_AUTH_VOLUME`; Mage-OS never copies those credentials.
 
+Use `MAGELENS_E2E_MODE=production bash tests/e2e-isolated.sh` to run the same acceptance suite against a compiled deployment. The harness deploys the disposable installation with `./bin/deploy-production` and exercises `./bin/run-coverage --refresh-assets`.
+
 By default, the test installs Luma with Cypress using the versions in `dependencies.yaml`, runs the bundled browser suites, and verifies PHP, JavaScript, template and XML coverage reports. It also checks that reports belong to the current run, original source files are unchanged, and test data is cleaned up. The installer uses `--container-only` to generate HTTPS inside Docker; it does not edit host DNS or certificate trust.
 
 Each invocation has its own Compose project, image tags, database, credentials, and source. Ports default to **18080**, **18443**, and **16080**. Override `MAGELENS_TEST_PORT`, `MAGELENS_TEST_HTTPS_PORT`, and `MAGELENS_TEST_VIEW_PORT` when those ports are occupied or when running tests concurrently.

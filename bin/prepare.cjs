@@ -42,7 +42,7 @@ function prepare({plain = false, runtimeOnly = false, updateReadme = false, them
     const reuse = !plain && cache?.signature === signature
         && fs.existsSync('.runtime/template-manifest.json') && fs.existsSync('.runtime/js-baseline.json') && fs.existsSync('.runtime/javascript-scope.json')
         && selectedBrowser.every(file => before[file] === cache.outputs[file]);
-    if (!plain && !runtimeOnly && cache && JSON.stringify(cache.mountRoots) !== JSON.stringify(discovered.roots)) {
+    if (!plain && cache && JSON.stringify(cache.mountRoots) !== JSON.stringify(discovered.roots)) {
         throw new Error('Source mount directories changed. Run ./install.sh before running coverage.');
     }
     for (const root of discovered.roots) fs.mkdirSync(`.runtime/${root}`, {recursive: true});
