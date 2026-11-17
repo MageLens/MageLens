@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Copyright (c)  MageLens
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+case "$#:${1:-}" in
+    0:|1:--include-source) ;;
+    1:-h|1:--help)
+        echo 'Usage: ./bin/export-coverage [--include-source]'
+        echo 'Create coverage/share.html from a completed run. --include-source creates coverage/share-with-source.html with the original measured files.'
+        exit 0 ;;
+    *) echo 'Usage: ./bin/export-coverage [--include-source]' >&2; exit 2 ;;
+esac
+exec ./bin/application-compose exec -T runner node bin/export-coverage.cjs "$@"

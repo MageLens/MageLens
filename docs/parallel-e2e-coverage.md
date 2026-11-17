@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -126,7 +126,7 @@ For multiple environments on one host, give each checkout its own Docker project
 
 The useful merge inputs are raw execution records, their matching manifests, and test results. Per-shard HTML reports alone cannot reconstruct the combined coverage.
 
-The example uploads one artifact per suite, including on failure. A generalized layout is:
+The example uploads one artifact per suite, including on failure. Use private CI storage for these merge inputs because they can contain source code and request data. A generalized layout is:
 
 ```text
 coverage-input/

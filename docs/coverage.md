@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 Run `./bin/run-coverage` from the repository root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, and HTML template reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
 
-The public report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous public link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
+The local report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous report link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
 
 ## Coverage scope
 
@@ -142,7 +142,9 @@ Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templat
 
 For collection details, inspect PHP records under `coverage/raw/php/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
 
-Reports, raw artifacts and the SVGs in `coverage/badges/` are ignored by Git. To share browsable reports, copy the entire `coverage/` directory so relative links continue to work.
+After a successful run, use `./bin/export-coverage` and share only **`coverage/share.html`**. The standalone HTML file opens offline and includes coverage metrics and project-relative file paths. If the recipient also needs the measured source code, run `./bin/export-coverage --include-source` and share **`coverage/share-with-source.html`** with them.
+
+Keep the full `coverage/` directory private. It contains local debugging artifacts, including raw request URLs and custom fixture data that can contain credentials. After upgrading, run `./bin/run-coverage` once to replace the old local web link with one that serves only report files. Git ignores the reports, raw artifacts and SVGs in `coverage/badges/`.
 
 XML configuration coverage appears separately in `coverage/xml/index.html`, with source directories preserved. Supported `config.xml` leaves turn green when a runtime read consumes their effective value at default, website or store scope. Supported `system.xml` fields turn green when Admin renders them; unopened fields and unread values remain red. Loading XML grants no credit. Unsupported XML and ambiguous field origins are shown as unmeasured. The collector uses OpenTelemetry runtime hooks without adding Magento modules, changing DI or rewriting application sources. Existing installations must rerun installation with their saved platform, theme and runner selections to install the hook extension.
 
