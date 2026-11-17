@@ -19,6 +19,17 @@ class LayoutRegistry extends Template
         parent::__construct($context, $data);
     }
 
+    public function wireframeEffects(): array
+    {
+        $layout = $this->getLayout();
+        return [
+            'move' => $layout->getParentName('magelens.layout.wireframe.movable') === 'magelens.layout.wireframe',
+            'removal' => !$layout->hasElement('magelens.layout.wireframe.removed'),
+            'nested-block' => $layout->getBlock('magelens.layout.wireframe.nested-block') instanceof Template,
+            'ignored-body' => !$layout->hasElement('magelens.layout.wireframe.ignored-body'),
+        ];
+    }
+
     public function fixtureLayoutLabel(): string
     {
         return $this->pageLayouts->getPageLayoutsConfig()->getOptions()['magelens_fixture'] ?? '';

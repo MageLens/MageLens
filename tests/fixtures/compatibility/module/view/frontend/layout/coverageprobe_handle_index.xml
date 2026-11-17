@@ -15,6 +15,9 @@ License: see LICENSE in the repository root.
     <update handle="coverageprobe_layout_head"/>
     <update handle="coverageprobe_layout_head_overlay"/>
     <body>
+        <referenceContainer name="magelens.layout.wireframe.movable">
+            <block name="magelens.layout.wireframe-move-marker" template="MageLens_Compatibility::layout-structure.phtml"/>
+        </referenceContainer>
         <referenceContainer name="magelens.layout.wireframe">
             <block class="MageLens\Compatibility\Block\LayoutAssetGroups" name="magelens.layout.asset-groups" template="MageLens_Compatibility::layout-assets-proof.phtml"/>
             <block class="MageLens\Compatibility\Block\LayoutRegistry" name="magelens.layout.handle.action" template="MageLens_Compatibility::layout-handle.phtml">

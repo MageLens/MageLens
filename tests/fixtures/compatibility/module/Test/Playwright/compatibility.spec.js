@@ -55,6 +55,12 @@ test('starts the next test with fresh state', async ({page}) => {
     const wireframe = page.locator('#layout-wireframe');
     await expect(wireframe.locator('[data-layout-handle]')).toHaveText(['repeat', 'nested', 'action']);
     await expect(wireframe.locator('[data-layout-registry]')).toHaveText('MageLens fixture wireframe');
+    for (const effect of ['move', 'removal', 'nested-block', 'ignored-body']) {
+        await expect(wireframe.locator(`[data-layout-wireframe-proof="${effect}"]`)).toHaveText('verified');
+    }
+    await expect(wireframe.locator('#layout-wireframe-move [data-layout-structure]')).toHaveText('wireframe-move-marker');
+    await expect(page.locator('body')).not.toHaveAttribute('data-wireframe-ignored');
+    await expect(page.locator('meta[name="magelens-wireframe"]')).toHaveCount(0);
     await expect(wireframe.locator('#layout-left [data-layout-structure]')).toHaveText(['first', 'restored']);
     await expect(wireframe.locator('#layout-right #layout-nested [data-layout-structure]')).toHaveText(['anchor', 'moved']);
     await expect(wireframe.locator('#layout-removed, [data-layout-structure="hidden"]')).toHaveCount(0);
@@ -101,6 +107,9 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/fragment/');
     await expect(page.locator('#layout-fragment [data-layout-structure="fragment-marker"]')).toHaveText('fragment-marker');
     await expect(page.locator('title')).toHaveCount(0);
+    await page.goto('/coverageprobe/generic/');
+    await expect(page.locator('[data-layout-generic]')).toHaveText('verified');
+    await expect(page.locator('#layout-generic-right [data-layout-structure]')).toHaveText('generic.moved');
     await page.goto('/coverageprobe/anonymous/');
     await expect(page.locator('#layout-anonymous [data-layout-anonymous]')).toHaveText('verified');
     await expect(page.locator('[data-layout-order]')).toHaveText(['order.first', 'order.last', 'order.middle']);

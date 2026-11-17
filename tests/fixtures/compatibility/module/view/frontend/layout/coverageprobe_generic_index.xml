@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.layout.generic.root" htmlTag="section" htmlId="layout-generic">
+        <block class="MageLens\Compatibility\Block\LayoutGeneric" name="magelens.layout.generic.proof" template="MageLens_Compatibility::layout-generic.phtml">
+            <action method="markGeneric"><argument name="value" xsi:type="string">generic</argument></action>
+            <arguments>
+                <argument name="value" xsi:type="string">generic-value</argument>
+                <argument name="matrix" xsi:type="array"><item name="nested" xsi:type="string">leaf</item></argument>
+            </arguments>
+        </block>
+        <container name="magelens.layout.generic.left" htmlTag="div" htmlId="layout-generic-left">
+            <block name="magelens.layout.generic.moved" template="MageLens_Compatibility::layout-structure.phtml"/>
+            <block name="magelens.layout.generic.removed" template="MageLens_Compatibility::layout-structure.phtml"/>
+        </container>
+        <container name="magelens.layout.generic.right" htmlTag="div" htmlId="layout-generic-right"/>
+    </container>
+    <move element="magelens.layout.generic.moved" destination="magelens.layout.generic.right" as="generic-moved"/>
+    <referenceBlock name="magelens.layout.generic.removed" remove="true"/>
+</layout>

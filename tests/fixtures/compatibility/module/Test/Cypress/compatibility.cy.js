@@ -60,6 +60,12 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...markers].map(element => element.textContent)).to.deep.equal(['repeat', 'nested', 'action']);
         });
         cy.get('#layout-wireframe [data-layout-registry]').should('have.text', 'MageLens fixture wireframe');
+        for (const effect of ['move', 'removal', 'nested-block', 'ignored-body']) {
+            cy.get(`#layout-wireframe [data-layout-wireframe-proof="${effect}"]`).should('have.text', 'verified');
+        }
+        cy.get('#layout-wireframe-move [data-layout-structure]').should('have.text', 'wireframe-move-marker');
+        cy.get('body').should('not.have.attr', 'data-wireframe-ignored');
+        cy.get('meta[name="magelens-wireframe"]').should('not.exist');
         cy.get('#layout-wireframe #layout-left [data-layout-structure]').should(markers => {
             expect([...markers].map(element => element.textContent)).to.deep.equal(['first', 'restored']);
         });
@@ -110,6 +116,9 @@ describe('Magento storefront coverage compatibility', () => {
         cy.visit('/coverageprobe/fragment/');
         cy.get('#layout-fragment [data-layout-structure="fragment-marker"]').should('have.text', 'fragment-marker');
         cy.get('title').should('not.exist');
+        cy.visit('/coverageprobe/generic/');
+        cy.get('[data-layout-generic]').should('have.text', 'verified');
+        cy.get('#layout-generic-right [data-layout-structure]').should('have.text', 'generic.moved');
         cy.visit('/coverageprobe/anonymous/');
         cy.get('#layout-anonymous [data-layout-anonymous]').should('have.text', 'verified');
         cy.get('[data-layout-order]').then(elements => {

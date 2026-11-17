@@ -10,5 +10,8 @@ $marker = $block->getData('marker');
 ?>
 <span data-layout-handle="<?= $block->escapeHtmlAttr($marker) ?>"><?= $block->escapeHtml($marker) ?></span>
 <?php if ($block instanceof \MageLens\Compatibility\Block\LayoutRegistry): ?>
+    <?php foreach ($block->wireframeEffects() as $effect => $verified): ?>
+        <span data-layout-wireframe-proof="<?= $block->escapeHtmlAttr($effect) ?>"><?= $verified ? 'verified' : 'unexpected' ?></span>
+    <?php endforeach; ?>
     <span data-layout-registry><?= $block->escapeHtml($block->fixtureLayoutLabel()) ?></span>
 <?php endif; ?>
