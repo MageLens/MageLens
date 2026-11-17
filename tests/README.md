@@ -81,6 +81,8 @@ Reports, screenshots, and logs are retained under `.runtime/e2e/<project>/`, inc
 
 For focused local investigation, `MAGELENS_E2E_KEEP_ON_FAILURE=1` retains a failed test's workspace and running services. The failure output includes its location and Compose cleanup command; remove that temporary directory after stopping its services and volumes.
 
+The disposable layout fixtures use fresh native interpretation with layout, block HTML and full-page caches explicitly disabled for their source assertions. Native registry proofs separately exercise cold inputs, warm-cache zero hits, equal-valued replacements and missing-hook failures. Every `tests/verify-layout-*.cjs` assertion runs after successful browser collection. The instruction inventory and platform evidence are recorded in [the layout XML inventory](layout-xml-inventory.md).
+
 These E2E checks validate fresh installations. The integration suite also checks upgrades of existing installations and recovery of patches left by interrupted runs.
 
 ## Both platforms, all storefronts and runners

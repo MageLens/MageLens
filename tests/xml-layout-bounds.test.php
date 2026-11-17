@@ -5,7 +5,8 @@
  * License: see LICENSE in the repository root.
  */
 declare(strict_types=1);
-require __DIR__ . '/../docker/php/xml-recorder.php';
+$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+require $hooks . '/xml-recorder.php';
 
 use MageLens\XmlCoverage\Recorder;
 
