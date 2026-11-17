@@ -46,6 +46,16 @@ installed_runtime=$(cat .runtime/installed)
 [[ "$installed_runtime" == 6 ]] \
     || fail 'Rerun ./install.sh with your saved platform, theme and runner flags to install the current browser runner and PHP coverage hooks.'
 lock_workflow
+report_link=src/pub/media/coverage
+report_target=../../../coverage/.site
+if [[ -L "$report_link" ]]; then
+    case "$(readlink "$report_link")" in
+        "$report_target"|../../../coverage) rm "$report_link" ;;
+    esac
+fi
+if [[ -e "$report_link" || -L "$report_link" ]]; then
+    fail "Cannot publish coverage: $report_link already exists and is not the MageLens report symlink. Move it aside first."
+fi
 if (( start_services )); then
     if ! dc up -d --wait --wait-timeout 180 db redis opensearch phpfpm app runner; then
         dc logs --tail 80 db redis opensearch phpfpm app runner >&2 || true
@@ -70,12 +80,11 @@ cleanup_hooks() {
 }
 report_ready=0
 report_url=''
-report_link=src/pub/media/coverage
-report_target=../../../coverage
 publish_report() {
     report_url=$(dc exec -T phpfpm php /application/docker/php/report-url.php) || return 1
     [[ "$report_url" == http://* || "$report_url" == https://* ]] || return 1
-    dc exec -T app test -r /var/www/coverage/index.html || return 1
+    dc exec -T runner node bin/public-report.cjs || return 1
+    dc exec -T app test -r /var/www/coverage/.site/index.html || return 1
     ln -s "$report_target" "$report_link"
 }
 cleanup() {
@@ -101,11 +110,6 @@ cleanup_hooks
 # Older running containers need the new report mount and static location.
 dc exec -T app sh -c 'test -d /var/www/coverage && grep -q "location ^~ /media/coverage/" /etc/nginx/conf.d/default.conf' \
     || fail 'Rerun ./install.sh with your saved platform, theme and runner flags to enable report publication.'
-if [[ -L "$report_link" && "$(readlink "$report_link")" == "$report_target" ]]; then
-    rm "$report_link"
-elif [[ -e "$report_link" || -L "$report_link" ]]; then
-    fail "Cannot publish coverage: $report_link already exists and is not the MageLens report symlink. Move it aside first."
-fi
 mkdir -p src/pub/media
 if (( refresh_cache && !refresh_assets )); then
     dc exec -T phpfpm php bin/magento cache:clean

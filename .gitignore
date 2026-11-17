@@ -28,6 +28,8 @@
 !/bin/dependencies
 !/bin/deploy-production
 !/bin/expose-tools
+!/bin/export-coverage
+!/bin/export-coverage.cjs
 !/bin/finalize.cjs
 !/bin/install
 !/bin/image-inputs.cjs
@@ -35,6 +37,7 @@
 !/bin/sync-runner-dependencies
 !/bin/prepare.cjs
 !/bin/project.cjs
+!/bin/public-report.cjs
 !/bin/javascript-scope.cjs
 !/bin/report-browser.cjs
 !/bin/report-index.cjs
@@ -43,6 +46,8 @@
 !/bin/run-playwright.cjs
 !/bin/run-coverage
 !/bin/runner
+!/bin/share-report-data.cjs
+!/bin/share-report-source.cjs
 !/bin/sync-dependencies.cjs
 /.env
 /rootCA.pem
