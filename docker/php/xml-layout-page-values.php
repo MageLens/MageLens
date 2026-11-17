@@ -9,6 +9,7 @@ namespace MageLens\XmlCoverage;
 
 use Magento\Framework\View\Page\Config;
 use Magento\Framework\View\Page\Config\Generator\Head as Generator;
+use Magento\Framework\View\Page\Config\Generator\Body as BodyGenerator;
 use Magento\Framework\View\Page\Config\Reader\Head;
 use Magento\Framework\View\Page\Config\Reader\Body;
 use Magento\Framework\View\Page\Config\Reader\Html;
@@ -22,6 +23,9 @@ final class LayoutPageValuesCoverage
     private array $reading = [];
     private array $generating = [];
     private array $rendering = [];
+    private array $classWrites = [];
+    private array $classGeneration = [];
+    private array $classAssignments = [];
 
     public function __construct(private readonly \Closure $origin)
     {
@@ -32,6 +36,10 @@ final class LayoutPageValuesCoverage
     public function hooks(): array
     {
         return [
+            [Structure::class, 'setBodyClass', $this->beginClassWrite(...), $this->endClassWrite(...)],
+            [Structure::class, 'getBodyClasses', null, $this->readBodyClasses(...)],
+            [BodyGenerator::class, 'processBodyClasses', $this->beginBodyClasses(...), $this->endBodyClasses(...)],
+            [Config::class, 'addBodyClass', $this->beginClassAssignment(...), $this->endClassAssignment(...)],
             [Head::class, 'processNode', $this->beginRead(...), $this->endRead(...)],
             [Body::class, 'setBodyAttributeToStructure', $this->beginRead(...), $this->endRead(...)],
             [Html::class, 'interpret', $this->beginRead(...), $this->endRead(...)],
@@ -153,6 +161,13 @@ final class LayoutPageValuesCoverage
     {
         if ($error || $class !== Config::class) return;
         $caller = self::caller($config, 'setElementAttribute');
+        if ($params[0] === 'body' && $params[1] === 'class'
+            && !(($caller['class'] ?? null) === Config::class && ($caller['function'] ?? null) === 'addBodyClass')) {
+            $state = $this->configs[$config] ?? [];
+            foreach ($state['classes'] ?? [] as $origin) self::record($origin, 'layout-body-class-replaced');
+            unset($state['classes']);
+            $this->configs[$config] = $state;
+        }
         $this->applyValue($config, ['attributes', $params[0], $params[1]], $caller, 'processElementAttributes', 'page-attribute');
     }
 
@@ -193,6 +208,108 @@ final class LayoutPageValuesCoverage
         foreach ($this->configs[$config]['attributes'][$params[0]] ?? [] as $name => $origin) {
             if ($origin && array_key_exists($name, $result)) $this->rendering[$index]['origins'][] = [$origin, 'layout-page-attribute-rendered'];
         }
+        if ($params[0] === 'body') {
+            $tokens = array_fill_keys(explode(' ', $result['class'] ?? ''), true);
+            foreach ($this->configs[$config]['classes'] ?? [] as $token => $origin) {
+                if (isset($tokens[$token])) $this->rendering[$index]['origins'][] = [$origin, 'layout-body-class-rendered'];
+            }
+        }
+    }
+
+    private function beginClassWrite($structure, array $params, string $class): void
+    {
+        if ($class !== Structure::class) return;
+        static $deleted;
+        $deleted ??= new \ReflectionProperty(Structure::class, 'isBodyClassesDeleted');
+        $this->classWrites[] = $deleted->getValue($structure);
+    }
+
+    private function endClassWrite($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Structure::class) return;
+        $deleted = array_pop($this->classWrites);
+        if ($error) return;
+        $state = $this->snapshot($structure);
+        $frame = $this->reading[array_key_last($this->reading)] ?? null;
+        $caller = self::caller($structure, 'setBodyClass');
+        $origin = null;
+        if ($frame && $frame['structure'] === $structure && ($caller['class'] ?? null) === Body::class
+            && ($caller['function'] ?? null) === 'setBodyAttributeToStructure') {
+            [$ids, $context] = ($this->origin)($frame['nodes'][0]);
+            $ids = array_intersect_key($ids, array_flip(['body-class', 'body-class-name', 'body-class-value']));
+            if ($ids) $origin = ['ids' => array_values($ids), 'context' => $context];
+        }
+        if (empty($params[0])) {
+            if (!$deleted) $state['class-clear'] = $origin;
+        } else {
+            $state['classes'][] = ['signature' => hash('sha256', (string) $params[0]), 'origin' => $origin];
+        }
+        $this->restore($structure, $state);
+    }
+
+    private function beginBodyClasses($generator, array $params, string $class): void
+    {
+        if ($class === BodyGenerator::class) $this->classGeneration[] = ['structure' => $params[0], 'queue' => []];
+    }
+
+    private function endBodyClasses($generator, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class === BodyGenerator::class) array_pop($this->classGeneration);
+    }
+
+    private function readBodyClasses($structure, array $params, $classes, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->classGeneration);
+        if ($error || $class !== Structure::class || $index === null || $this->classGeneration[$index]['structure'] !== $structure) return;
+        $caller = self::caller($structure, 'getBodyClasses');
+        if (($caller['class'] ?? null) !== BodyGenerator::class || ($caller['function'] ?? null) !== 'processBodyClasses') return;
+        $state = $this->snapshot($structure);
+        if (!$classes && array_key_exists('class-clear', $state)) {
+            if ($state['class-clear'] && ($state['classes'] ?? [])) self::record($state['class-clear'], 'layout-body-classes-cleared');
+            foreach ($state['classes'] ?? [] as $entry) {
+                if ($entry['origin']) self::record($entry['origin'], 'layout-body-class-canceled');
+            }
+        }
+        $expected = $state['classes'] ?? [];
+        if (array_column($expected, 'signature') !== array_map(static fn($value) => hash('sha256', (string) $value), $classes)) return;
+        $this->classGeneration[$index]['queue'] = $expected;
+    }
+
+    private static function bodyTokens(Config $config): array
+    {
+        static $elements;
+        $elements ??= new \ReflectionProperty(Config::class, 'elements');
+        return explode(' ', $elements->getValue($config)['body']['class'] ?? '');
+    }
+
+    private function beginClassAssignment($config, array $params, string $class): void
+    {
+        if ($class !== Config::class) return;
+        $index = array_key_last($this->classGeneration);
+        $caller = self::caller($config, 'addBodyClass');
+        $entry = null;
+        if ($index !== null && ($caller['class'] ?? null) === BodyGenerator::class
+            && ($caller['function'] ?? null) === 'processBodyClasses') {
+            $entry = array_shift($this->classGeneration[$index]['queue']);
+        }
+        $origin = $entry && $entry['signature'] === hash('sha256', (string) $params[0]) ? $entry['origin'] : null;
+        $this->classAssignments[] = ['before' => self::bodyTokens($config), 'origin' => $origin];
+    }
+
+    private function endClassAssignment($config, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Config::class) return;
+        $frame = array_pop($this->classAssignments);
+        if ($error || !$frame['origin']) return;
+        $added = array_values(array_diff(self::bodyTokens($config), $frame['before']));
+        if (!$added) {
+            self::record($frame['origin'], 'layout-body-class-duplicate');
+            return;
+        }
+        if (count($added) !== 1 || $added[0] !== $params[0]) return;
+        $state = $this->configs[$config] ?? [];
+        $state['classes'][$added[0]] = $frame['origin'];
+        $this->configs[$config] = $state;
     }
 
     private function readMetadata($config, array $params, $result, ?\Throwable $error, string $class): void

@@ -336,6 +336,18 @@ test('layout structural and page-value reports require the correct native effect
         'ui-placement': 'layout-ui-rendered',
         'page-attribute': 'layout-page-attribute-rendered',
         metadata: 'layout-metadata-rendered',
+        'condition-ifconfig': 'layout-condition-allowed',
+        'condition-aclResource': 'layout-condition-denied',
+        'condition-acl': 'layout-condition-allowed',
+        'asset-reference': 'layout-asset-reference-rendered',
+        'asset-src': 'layout-asset-reference-rendered',
+        'asset-src-type': 'layout-asset-reference-rendered',
+        'asset-attribute-media': 'layout-asset-attribute-emitted',
+        'asset-order': 'layout-asset-group-applied',
+        'asset-condition': 'layout-asset-condition-rendered',
+        'body-class': 'layout-body-class-rendered',
+        'body-class-name': 'layout-body-classes-cleared',
+        'body-class-value': 'layout-body-class-rendered',
     };
     for (const [kind, type] of Object.entries(effects)) {
         const {manifest, record, sources} = fixture();

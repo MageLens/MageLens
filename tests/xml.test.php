@@ -8,6 +8,21 @@ declare(strict_types=1);
 require __DIR__ . '/../docker/php/xml-manifest.php';
 use MageLens\XmlCoverage\{LayoutManifest, Xml};
 function checkXml(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
+$unsafe = new class {
+    public function __serialize(): array { throw new LogicException('Application serialization executed'); }
+};
+checkXml(Xml::scalarTreeSignature(['nested' => ['unsafe' => $unsafe]]) === null,
+    'Runtime signatures reject objects without invoking application serialization');
+$cycle = [];
+$cycle['self'] = &$cycle;
+set_error_handler(static function ($severity, $message): never { throw new RuntimeException($message); });
+try {
+    checkXml(Xml::scalarTreeSignature($cycle) === null, 'Recursive runtime data has no scalar signature');
+} finally {
+    restore_error_handler();
+}
+checkXml(Xml::scalarTreeSignature(['value' => ['false' => false, 'null' => null]]) !== null,
+    'Runtime signatures preserve nested scalar types');
 $config = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/etc/config.xml';
 $source = file_get_contents($config);
 $items = Xml::declarations('app/code/Application/Blog/etc/config.xml', $source, 'config');

@@ -26,6 +26,17 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'asset-order': ['layout-asset-group-applied', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
+    'asset-condition': ['layout-asset-condition-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
+    'body-class': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
+    'body-class-name': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
+    'body-class-value': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
+    'asset-reference': ['layout-asset-reference-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
+    'asset-src': ['layout-asset-reference-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
+    'asset-src-type': ['layout-asset-reference-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
+    'condition-ifconfig': ['layout-condition-allowed', 'layout-condition-denied'],
+    'condition-aclResource': ['layout-condition-allowed', 'layout-condition-denied'],
+    'condition-acl': ['layout-condition-allowed', 'layout-condition-denied'],
     container: ['layout-container-created'],
     'ui-placement': ['layout-ui-created', 'layout-ui-rendered'],
     'page-attribute': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
@@ -55,7 +66,18 @@ const layoutEvents = {
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed'],
 };
+for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 'rev', 'sizes', 'target', 'type', 'integrity', 'crossorigin', 'as']) {
+    layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
+        'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
+}
 const layoutDecisions = {
+    'layout-asset-attributes-discarded': 'The native font renderer supplied its fixed preload attributes and discarded these XML attributes.',
+    'layout-body-class-duplicate': 'The native body class assignment found this sanitized class already present.',
+    'layout-body-class-canceled': 'An empty class assignment suppressed all scheduled XML body classes, including later additions.',
+    'layout-body-class-replaced': 'A runtime body class assignment replaced the XML-origin class list before output.',
+    'layout-asset-overridden': 'A later declaration replaced this scheduled resource before native asset output.',
+    'layout-asset-replaced': 'A runtime assignment replaced this scheduled XML resource before native asset output.',
+    'layout-asset-removed-before-output': 'The native removal pass removed this scheduled resource before asset generation.',
     'layout-block-generation-failed': 'Native block generation failed before completing construction and data application.',
     'layout-block-attribute-overridden': 'A later declaration supplied the block attribute used by the native generator.',
     'layout-cacheability-target-missing': 'The native cacheability check found that the noncacheable declaration had no surviving structural element.',

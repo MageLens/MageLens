@@ -10,6 +10,7 @@ const layout = 'app/code/MageLens/Compatibility/view/frontend/layout';
 for (const [handle, declaration, state, expected] of [
     ['coverageprobe_layout_arguments', '/page/body/referenceContainer/block/action[1]', 'covered', ['layout-action-executed']],
     ['coverageprobe_layout_arguments', '/page/body/referenceContainer/block/action[2]', 'uncovered', []],
+    ['coverageprobe_layout_arguments', '/page/body/referenceContainer/block/action[3]', 'covered', ['layout-action-executed']],
     ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action[1]', 'covered', ['layout-action-executed']],
     ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action[2]', 'unmeasured', ['layout-action-ambiguous']],
     ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action[3]', 'unmeasured', ['layout-action-ambiguous']],
@@ -23,4 +24,4 @@ for (const [handle, declaration, state, expected] of [
     assert.deepEqual([...new Set(item.evidence.map(entry => entry.type))], expected, declaration);
     assert.ok(item.evidence.every(entry => entry.area === 'frontend'), declaration);
 }
-console.log('Verified two attributable native action calls and zero hits for the guarded and ambiguous actions.');
+console.log('Verified native scalar and configurable-object action calls and zero hits for the guarded and ambiguous actions.');

@@ -17,6 +17,11 @@ use Magento\Framework\View\Layout\Reader\Container as ContainerReader;
 use Magento\Framework\View\Layout\Reader\UiComponent as UiReader;
 use Magento\Framework\View\Layout\ScheduledStructure;
 use Magento\Framework\View\Layout\ScheduledStructure\Helper;
+use Magento\Framework\View\Layout\GeneratorPool;
+use Magento\Framework\View\Layout\ConfigCondition;
+use Magento\Framework\View\Layout\AclCondition;
+use Magento\Framework\View\Layout\Reader\Visibility\Condition as ConditionReader;
+use Magento\Framework\View\Layout\Condition\Condition;
 use Magento\Ui\Component\Wrapper\UiComponent as UiWrapper;
 
 final class LayoutStructureCoverage
@@ -27,17 +32,28 @@ final class LayoutStructureCoverage
     private array $wrapping = [];
     private \WeakMap $components;
     private array $cacheability = [];
+    private \WeakMap $conditionNodes;
+    private array $visibility = [];
+    private array $conditions = [];
 
     public function __construct(private readonly \Closure $origin)
     {
         $this->scheduled = new \WeakMap();
         $this->structures = new \WeakMap();
         $this->components = new \WeakMap();
+        $this->conditionNodes = new \WeakMap();
     }
 
     public function hooks(): array
     {
         return [
+            [ConditionReader::class, 'parseConditions', null, $this->parseConditions(...)],
+            [GeneratorPool::class, 'buildStructure', $this->beginVisibility(...), $this->endVisibility(...)],
+            [ScheduledStructure::class, 'getElements', null, $this->visibilityElements(...)],
+            [GeneratorPool::class, 'visibilityConditionsExistsIn', null, $this->selectConditions(...)],
+            [Condition::class, 'isVisible', $this->beginConditions(...), $this->endConditions(...)],
+            [ConfigCondition::class, 'isVisible', null, $this->conditionDecision(...)],
+            [AclCondition::class, 'isVisible', null, $this->conditionDecision(...)],
             [ContainerReader::class, 'mergeContainerAttributes', null, $this->scheduleContainer(...)],
             [BlockReader::class, 'scheduleBlock', null, $this->scheduleDisplay(...)],
             [BlockReader::class, 'scheduleReference', null, $this->scheduleDisplay(...)],
@@ -120,13 +136,14 @@ final class LayoutStructureCoverage
         $name = $xml->getAttribute('name');
         $state = $this->snapshot($schedule);
         if ($xml->getName() === 'block') unset($state[$name]);
-        if (!isset($xml['display'])) {
-            $this->restore($schedule, $state);
-            return;
-        }
         [$ids, $context] = ($this->origin)($xml);
-        unset($state[$name]['attributes']['display']);
-        if (isset($ids['block-display'])) $state[$name]['attributes']['display'] = ['id' => $ids['block-display'], 'context' => $context];
+        if (isset($xml['display'])) {
+            unset($state[$name]['attributes']['display']);
+            if (isset($ids['block-display'])) $state[$name]['attributes']['display'] = ['id' => $ids['block-display'], 'context' => $context];
+        }
+        if ($xml->getName() === 'block' && isset($this->conditionNodes[$xml])) {
+            $state[$name]['conditions'] = $this->conditionNodes[$xml];
+        }
         $this->restore($schedule, $state);
     }
 
@@ -160,6 +177,7 @@ final class LayoutStructureCoverage
             [BlockReader::class, 'scheduleBlock'],
             [BlockReader::class, 'scheduleReference'],
             [Helper::class, 'scheduleElement'],
+            [UiReader::class, 'interpret'],
         ], true)) return;
         $state = $this->snapshot($schedule);
         unset($state[$params[0]]);
@@ -181,7 +199,99 @@ final class LayoutStructureCoverage
         unset($state[$name]);
         [$ids, $scope] = ($this->origin)($xml);
         if (isset($ids['ui-placement'])) $state[$name]['ui'] = ['id' => $ids['ui-placement'], 'context' => $scope];
+        if (isset($this->conditionNodes[$xml])) $state[$name]['conditions'] = $this->conditionNodes[$xml];
         $this->restore($schedule, $state);
+    }
+
+    private static function signature(array $data): ?string
+    {
+        return Xml::scalarTreeSignature($data);
+    }
+
+    private function parseConditions($reader, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== ConditionReader::class || !is_array($result)) return;
+        $xml = $params[0];
+        [$ids, $context] = ($this->origin)($xml);
+        $origins = [];
+        $custom = [];
+        foreach ($xml->visibilityCondition as $child) $custom[(string) $child['name']] = true;
+        foreach (['ifconfig' => [ConfigCondition::class, 'configPath', 'ifconfig'],
+            'acl' => [AclCondition::class, 'acl', 'aclResource']] as $key => [$consumer, $argument, $attribute]) {
+            if (isset($custom[$key])) continue;
+            $kind = $key === 'acl' && isset($ids['condition-acl']) ? 'condition-acl' : 'condition-' . $attribute;
+            $expected = ['name' => $consumer, 'arguments' => [$argument => (string) $xml[$attribute]]];
+            if (isset($ids[$kind]) && ($result[$key] ?? null) === $expected) {
+                $origins[$consumer] = ['id' => $ids[$kind], 'context' => $context,
+                    'signature' => self::signature($expected['arguments'])];
+            }
+        }
+        $this->conditionNodes[$xml] = ['signature' => self::signature($result), 'origins' => $origins];
+    }
+
+    private function beginVisibility($pool, array $params, string $class): void
+    {
+        if ($class === GeneratorPool::class) $this->visibility[] = ['schedule' => $params[0], 'queue' => [], 'current' => null];
+    }
+
+    private function endVisibility($pool, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class === GeneratorPool::class) array_pop($this->visibility);
+    }
+
+    private function visibilityElements($schedule, array $params, $elements, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->visibility);
+        if ($error || $class !== ScheduledStructure::class || $index === null
+            || $this->visibility[$index]['schedule'] !== $schedule) return;
+        $caller = self::caller($schedule, 'getElements');
+        if (($caller['class'] ?? null) !== GeneratorPool::class || ($caller['function'] ?? null) !== 'buildStructure') return;
+        $state = $this->snapshot($schedule);
+        $queue = [];
+        foreach ($elements as $name => $element) {
+            $queue[] = ['data' => self::signature($element[1]['attributes']['visibilityConditions'] ?? []),
+                'origin' => $state[$name]['conditions'] ?? null];
+        }
+        $this->visibility[$index]['queue'] = $queue;
+    }
+
+    private function selectConditions($pool, array $params, $exists, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->visibility);
+        if ($class !== GeneratorPool::class || $index === null) return;
+        $entry = array_shift($this->visibility[$index]['queue']);
+        $this->visibility[$index]['current'] = null;
+        if (!$error && $exists && $entry && $entry['data'] !== null
+            && $entry['data'] === self::signature($params[0]['attributes']['visibilityConditions'] ?? [])) {
+            $this->visibility[$index]['current'] = $entry['origin'];
+        }
+    }
+
+    private function beginConditions($condition, array $params, string $class): void
+    {
+        if ($class !== Condition::class) return;
+        $index = array_key_last($this->visibility);
+        $origin = $index === null ? null : $this->visibility[$index]['current'];
+        $caller = self::caller($condition, 'isVisible');
+        $valid = ($caller['class'] ?? null) === GeneratorPool::class && ($caller['function'] ?? null) === 'buildStructure'
+            && $origin && $origin['signature'] !== null && $origin['signature'] === self::signature($params[0]);
+        $this->conditions[] = $valid ? $origin['origins'] : [];
+    }
+
+    private function endConditions($condition, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class === Condition::class) array_pop($this->conditions);
+    }
+
+    private function conditionDecision($condition, array $params, $visible, ?\Throwable $error, string $class): void
+    {
+        if ($error || !is_bool($visible) || !in_array($class, [ConfigCondition::class, AclCondition::class], true)) return;
+        $index = array_key_last($this->conditions);
+        $origin = $index === null ? null : ($this->conditions[$index][$class] ?? null);
+        $caller = self::caller($condition, 'isVisible');
+        if (!$origin || ($caller['class'] ?? null) !== Condition::class || ($caller['function'] ?? null) !== 'isVisible'
+            || $origin['signature'] !== self::signature($params[0])) return;
+        self::record($origin, $visible ? 'layout-condition-allowed' : 'layout-condition-denied');
     }
 
     private function createUi($generator, array $params, $wrapper, ?\Throwable $error, string $class): void

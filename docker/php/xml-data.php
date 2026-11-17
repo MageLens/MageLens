@@ -11,6 +11,22 @@ final class Xml
 {
     public const HTTP_AREAS = ['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql'];
 
+    public static function scalarTreeSignature(array $data): ?string
+    {
+        return self::plainTree($data, 0) ? hash('sha256', serialize($data)) : null;
+    }
+
+    private static function plainTree(array $data, int $depth): bool
+    {
+        if ($depth > 32) return false;
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                if (!self::plainTree($value, $depth + 1)) return false;
+            } elseif (!is_scalar($value) && $value !== null) return false;
+        }
+        return true;
+    }
+
     public static function enabledHttpAreas(array $registeredAreas): array
     {
         return array_values(array_intersect(self::HTTP_AREAS, ['global', ...$registeredAreas]));

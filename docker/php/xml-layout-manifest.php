@@ -52,10 +52,15 @@ final class LayoutManifest
                 in_array($fileType, ['page', 'generic'], true) && $node->tagName === 'uiComponent'
                     && $element !== '' => 'ui-placement',
                 $fileType === 'page' && $node->tagName === 'attribute'
+                    && $node->parentNode->nodeName === 'body' && $element === 'class' => 'body-class',
+                $fileType === 'page' && $node->tagName === 'attribute'
                     && in_array($node->parentNode->nodeName, ['html', 'head', 'body'], true)
                     && $element !== '' && !($node->parentNode->nodeName === 'body' && $element === 'class') => 'page-attribute',
                 $fileType === 'page' && $node->tagName === 'meta' && $node->parentNode->nodeName === 'head'
                     && $element !== '' => 'metadata',
+                $fileType === 'page' && $node->parentNode->nodeName === 'head'
+                    && in_array($node->tagName, ['css', 'script', 'link', 'font'], true)
+                    && $node->getAttribute('src') !== '' => 'asset-reference',
                 $fileType === 'page' && $node->tagName === 'action' && $element !== ''
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
@@ -69,7 +74,14 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
-                    in_array($valueKind, ['page-attribute', 'metadata'], true)
+                    $valueKind === 'asset-reference' && $attribute->nodeName === 'src' => 'asset-src',
+                    $valueKind === 'asset-reference' && $attribute->nodeName === 'src_type' => 'asset-src-type',
+                    $valueKind === 'asset-reference' && $attribute->nodeName === 'order' => 'asset-order',
+                    $valueKind === 'asset-reference' && $attribute->nodeName === 'ie_condition' => 'asset-condition',
+                    $valueKind === 'asset-reference' && in_array($attribute->nodeName, ['defer', 'async', 'charset',
+                        'hreflang', 'media', 'rel', 'rev', 'sizes', 'target', 'type', 'integrity', 'crossorigin', 'as'], true) =>
+                            'asset-attribute-' . $attribute->nodeName,
+                    in_array($valueKind, ['page-attribute', 'metadata', 'body-class'], true)
                         && in_array($attribute->nodeName, $valueKind === 'metadata' ? ['name', 'content'] : ['name', 'value'], true) =>
                             $valueKind . '-' . $attribute->nodeName,
                     in_array($fileType, ['page', 'generic', 'wireframe'], true) && $element !== ''
@@ -77,6 +89,10 @@ final class LayoutManifest
                         && in_array($attribute->nodeName, ['htmlTag', 'htmlId', 'htmlClass', 'display'], true) =>
                             'container-' . $attribute->nodeName,
                     $namedBlock && $attribute->nodeName === 'display' => 'block-display',
+                    in_array($fileType, ['page', 'generic'], true) && $element !== ''
+                        && in_array($node->tagName, ['block', 'uiComponent'], true)
+                        && in_array($attribute->nodeName, ['ifconfig', 'aclResource', 'acl'], true) =>
+                            'condition-' . $attribute->nodeName,
                     $namedBlock && in_array($attribute->nodeName, ['class', 'group', 'ttl'], true) =>
                         'block-' . $attribute->nodeName,
                     $namedBlock && $node->tagName === 'block' && $attribute->nodeName === 'cacheable'
@@ -97,7 +113,11 @@ final class LayoutManifest
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
-                    'block-class', 'block-group', 'block-ttl', 'cacheability'], true);
+                    'block-class', 'block-group', 'block-ttl', 'cacheability',
+                    'condition-ifconfig', 'condition-aclResource', 'condition-acl'], true);
+                $supported = $supported || str_starts_with($kind, 'asset-attribute-')
+                    || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
+                        'body-class', 'body-class-name', 'body-class-value'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
