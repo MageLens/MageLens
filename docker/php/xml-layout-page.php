@@ -21,11 +21,13 @@ final class LayoutPageCoverage
     private array $applying = [];
     private array $rendering = [];
     private array $removing = [];
+    private LayoutPageValuesCoverage $values;
 
     public function __construct(private readonly \Closure $origin)
     {
         $this->structures = new \WeakMap();
         $this->titles = new \WeakMap();
+        $this->values = new LayoutPageValuesCoverage($origin);
     }
 
     public function hooks(): array
@@ -40,22 +42,29 @@ final class LayoutPageCoverage
             [Title::class, 'set', null, $this->applyTitle(...)],
             [Title::class, 'get', null, $this->consumeTitle(...)],
             [Renderer::class, 'renderTitle', $this->beginRender(...), $this->completeRender(...)],
+            ...$this->values->hooks(),
         ];
     }
 
     public function snapshot(Structure $structure): array
     {
-        return $this->structures[$structure] ?? [];
+        $state = $this->structures[$structure] ?? [];
+        $values = $this->values->snapshot($structure);
+        if ($values) $state['values'] = $values;
+        return $state;
     }
 
     public function restore(Structure $structure, array $origins): void
     {
+        $this->values->restore($structure, $origins['values'] ?? []);
+        unset($origins['values']);
         if ($origins) $this->structures[$structure] = $origins;
     }
 
     public function reset(Structure $structure): void
     {
         unset($this->structures[$structure]);
+        $this->values->reset($structure);
     }
 
     private static function calledFrom(object $subject, string $method, string $class, string $consumer): bool

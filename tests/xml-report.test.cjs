@@ -324,3 +324,38 @@ test('layout action ambiguity remains visible and contributes zero hits', () => 
         events: [{...action, type: 'layout-action-executed'}]}], sources);
     assert.equal(executed.files[1].declarations[0].state, 'covered');
 });
+
+test('layout structural and page-value reports require the correct native effect and retain zero-hit inventory', () => {
+    const effects = {
+        container: 'layout-container-created',
+        'container-htmlTag': 'layout-container-wrapper-rendered',
+        'container-htmlId': 'layout-container-wrapper-rendered',
+        'container-htmlClass': 'layout-container-wrapper-rendered',
+        'container-display': 'layout-display-denied',
+        'block-display': 'layout-display-allowed',
+        'ui-placement': 'layout-ui-rendered',
+        'page-attribute': 'layout-page-attribute-rendered',
+        metadata: 'layout-metadata-rendered',
+    };
+    for (const [kind, type] of Object.entries(effects)) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
+        const source = Buffer.from('<page><body/></page>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+            {id: 'effect', family: 'layout', path: '/page/body', startLine: 1, endLine: 1, supported: true,
+                declaredScope: {type: 'frontend', code: ''}, layout: {kind, element: 'fixture', ordinal: 1,
+                    handle: 'fixture', fileType: 'page', instruction: 'body'}}
+        ]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {[kind]: 'effect'}}}}};
+        sources[path] = source;
+        const empty = merge(manifest, [{...record, layoutHook: true}], sources);
+        assert.equal(empty.files[1].declarations[0].state, 'uncovered', kind);
+        const event = {id: 'effect', type, area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
+        const covered = merge(manifest, [{...record, layoutHook: true, events: [event]}], sources);
+        assert.equal(covered.files[1].declarations[0].state, 'covered', kind);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true,
+            events: [{...event, type: 'layout-template-executed'}]}], sources), kind);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [event]}], sources), /Stale XML request/);
+    }
+});

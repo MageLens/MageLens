@@ -32,6 +32,7 @@ final class LayoutCoverage
     private array $pageBuilders = [];
     private array $wireframes = [];
     private LayoutPageCoverage $page;
+    private LayoutStructureCoverage $structureCoverage;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -56,6 +57,7 @@ final class LayoutCoverage
     {
         $this->merges = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
+        $this->structureCoverage = new LayoutStructureCoverage($this->origin(...));
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
@@ -117,6 +119,7 @@ final class LayoutCoverage
             [Template::class, 'fetchView', $this->beginTemplate(...), $this->completeTemplate(...)],
             [Php::class, 'render', null, $this->renderTemplate(...)],
             ...$this->page->hooks(),
+            ...$this->structureCoverage->hooks(),
         ];
     }
 
@@ -530,10 +533,20 @@ final class LayoutCoverage
         $xml = $params[0];
         $origins = [];
         foreach ($xml->arguments[0]->argument ?? [] as $node) {
-            [$origin] = $this->origin($node);
-            $origins[$node->getAttribute('name')] = $origin['argument'] ?? null;
+            $origins[$node->getAttribute('name')] = $this->argumentOrigins($node);
         }
         if (array_keys($origins) === array_keys($arguments)) $this->argumentReads[$xml] = $origins;
+    }
+
+    private function argumentOrigins($node): array
+    {
+        [$origin] = $this->origin($node);
+        if (isset($origin['argument'])) return ['id' => $origin['argument']];
+        if ((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'array'
+            || isset($node->updater)) return [];
+        $children = [];
+        foreach ($node->item as $item) $children[$item->getAttribute('name')] = $this->argumentOrigins($item);
+        return ['children' => $children];
     }
 
     private function bindArguments($xml, array $values, array $previous): array
@@ -541,16 +554,49 @@ final class LayoutCoverage
         $read = $this->argumentReads[$xml] ?? null;
         unset($this->argumentReads[$xml]);
         if ($read === null) return [];
-        foreach ($read as $name => $id) {
+        return $this->bindArgumentLeaves($read, $values, $previous);
+    }
+
+    private function bindArgumentLeaves(array $read, array $values, array $previous): array
+    {
+        foreach ($read as $name => $origin) {
+            if (isset($origin['children']) && isset($values[$name]) && is_array($values[$name])) {
+                $previous[$name] = ['children' => $this->bindArgumentLeaves($origin['children'], $values[$name], $previous[$name]['children'] ?? [])];
+                continue;
+            }
             unset($previous[$name]);
-            if ($id !== null && array_key_exists($name, $values)
+            if (isset($origin['id']) && array_key_exists($name, $values)
                 && (is_scalar($values[$name]) || $values[$name] === null)) {
-                $previous[$name] = ['id' => $id, 'digest' => self::digest([$values[$name]])];
+                $previous[$name] = ['id' => $origin['id'], 'digest' => self::digest([$values[$name]])];
             }
         }
-        return array_filter($previous, static fn($binding, $name) =>
-            array_key_exists($name, $values) && (is_scalar($values[$name]) || $values[$name] === null)
-                && self::digest([$values[$name]]) === $binding['digest'], ARRAY_FILTER_USE_BOTH);
+        return $this->matchingArguments($previous, $values);
+    }
+
+    private function matchingArguments(array $origins, array $values): array
+    {
+        $matched = [];
+        foreach ($origins as $name => $origin) {
+            if (!array_key_exists($name, $values)) continue;
+            $value = $values[$name];
+            if (isset($origin['children']) && is_array($value)) {
+                $matched[$name] = ['children' => $this->matchingArguments($origin['children'], $value)];
+            } elseif (isset($origin['digest']) && (is_scalar($value) || $value === null)
+                && self::digest([$value]) === $origin['digest']) {
+                $matched[$name] = $origin;
+            }
+        }
+        return $matched;
+    }
+
+    private function appliedArgumentIds(array $origins): array
+    {
+        $ids = [];
+        foreach ($origins as $origin) {
+            if (isset($origin['id'])) $ids[] = $origin['id'];
+            if (isset($origin['children'])) array_push($ids, ...$this->appliedArgumentIds($origin['children']));
+        }
+        return $ids;
     }
 
     private function checkScheduledWrite($schedule, array $params, $result, ?\Throwable $error, string $class): void
@@ -729,6 +775,7 @@ final class LayoutCoverage
             $structure = $context->getScheduledStructure();
             unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
             $this->page->reset($context->getPageConfigStructure());
+            $this->structureCoverage->reset($structure);
         }
     }
 
@@ -742,7 +789,8 @@ final class LayoutCoverage
         $context = self::readerContext($layout);
         foreach ($this->documents as $document) {
             if ($node->isSameNode($document['root']) && (isset($this->structures[$context->getScheduledStructure()])
-                || $this->page->snapshot($context->getPageConfigStructure()))) {
+                || $this->page->snapshot($context->getPageConfigStructure())
+                || $this->structureCoverage->snapshot($context->getScheduledStructure()))) {
                 $this->sourceTrace = true;
                 return;
             }
@@ -756,19 +804,20 @@ final class LayoutCoverage
         $context = self::readerContext($layout);
         $source = $context->getScheduledStructure();
         $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? [], $this->removals[$source] ?? [],
-            $this->page->snapshot($context->getPageConfigStructure())];
+            $this->page->snapshot($context->getPageConfigStructure()), $this->structureCoverage->snapshot($source)];
     }
 
     private function mirrorContext($layout, array $params, $context, ?\Throwable $error, string $class): void
     {
         if ($class !== Layout::class) return;
-        [$blocks, $moves, $removals, $page] = array_pop($this->contexts);
+        [$blocks, $moves, $removals, $page, $containers] = array_pop($this->contexts);
         if ($error) return;
         $schedule = $context->getScheduledStructure();
         if ($blocks) $this->structures[$schedule] = $blocks;
         if ($moves) $this->moves[$schedule] = $moves;
         if ($removals) $this->removals[$schedule] = $removals;
         $this->page->restore($context->getPageConfigStructure(), $page);
+        $this->structureCoverage->restore($schedule, $containers);
     }
 
     private function beginBlock($generator, array $params, string $class): void
@@ -804,11 +853,8 @@ final class LayoutCoverage
         }
         $key = $params[0] ?? '';
         $values = is_array($key) ? $key : [$key => $params[1] ?? null];
-        foreach ($values as $name => $value) {
-            $origin = $origins[$name] ?? null;
-            if ($origin && (is_scalar($value) || $value === null) && self::digest([$value]) === $origin['digest']) {
-                $this->generating[$index]['applied'][$origin['id']] = $block;
-            }
+        foreach ($this->appliedArgumentIds($this->matchingArguments($origins, $values)) as $id) {
+            $this->generating[$index]['applied'][$id] = $block;
         }
     }
 

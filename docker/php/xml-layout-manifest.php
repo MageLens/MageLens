@@ -47,23 +47,36 @@ final class LayoutManifest
                 && in_array($fileType, ['page', 'generic'], true);
             $kind = match (true) {
                 $namedBlock && $node->tagName === 'block' => 'block',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                    && $node->tagName === 'container' && $element !== '' => 'container',
+                in_array($fileType, ['page', 'generic'], true) && $node->tagName === 'uiComponent'
+                    && $element !== '' => 'ui-placement',
+                $fileType === 'page' && $node->tagName === 'attribute'
+                    && in_array($node->parentNode->nodeName, ['html', 'head', 'body'], true)
+                    && $element !== '' && !($node->parentNode->nodeName === 'body' && $element === 'class') => 'page-attribute',
+                $fileType === 'page' && $node->tagName === 'meta' && $node->parentNode->nodeName === 'head'
+                    && $element !== '' => 'metadata',
                 $fileType === 'page' && $node->tagName === 'action' && $element !== ''
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
-                $fileType === 'page' && $node->tagName === 'argument' && $element !== ''
-                    && $node->parentNode->nodeName === 'arguments'
-                    && in_array($node->parentNode->parentNode->nodeName, ['block', 'referenceBlock'], true)
-                    && in_array($node->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type'),
-                        ['string', 'number', 'boolean', 'null'], true)
-                    && !$node->getElementsByTagName('updater')->length => 'argument',
+                $fileType === 'page' && self::scalarArgument($node) => 'argument',
                 $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
                 $fileType === 'wireframe' && $index === 0 => 'wireframe',
                 $fileType === 'page' && $node->parentNode === $root && $node->tagName === 'update' && $element !== '' => 'include',
                 default => 'instruction',
             };
+            $valueKind = $kind;
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    in_array($valueKind, ['page-attribute', 'metadata'], true)
+                        && in_array($attribute->nodeName, $valueKind === 'metadata' ? ['name', 'content'] : ['name', 'value'], true) =>
+                            $valueKind . '-' . $attribute->nodeName,
+                    in_array($fileType, ['page', 'generic', 'wireframe'], true) && $element !== ''
+                        && in_array($node->tagName, ['container', 'referenceContainer'], true)
+                        && in_array($attribute->nodeName, ['htmlTag', 'htmlId', 'htmlClass', 'display'], true) =>
+                            'container-' . $attribute->nodeName,
+                    $namedBlock && $attribute->nodeName === 'display' => 'block-display',
                     $fileType === 'page' && $attribute->nodeName === 'remove' && $element !== ''
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
@@ -77,7 +90,9 @@ final class LayoutManifest
             }
             foreach ($instructions as [$attribute, $kind]) {
                 $supported = in_array($kind, ['block', 'template', 'action', 'argument', 'include', 'move', 'removal',
-                    'wireframe', 'wireframe-selection', 'page-title', 'asset-removal'], true);
+                    'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
+                    'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
+                    'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -99,11 +114,29 @@ final class LayoutManifest
         return $result;
     }
 
+    private static function scalarArgument(\DOMElement $node): bool
+    {
+        $type = static fn($element) => $element->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type');
+        if (!in_array($node->tagName, ['argument', 'item'], true) || !$node->hasAttribute('name')
+            || !in_array($type($node), ['string', 'number', 'boolean', 'null'], true)
+            || $node->getElementsByTagName('updater')->length) return false;
+        while ($node->tagName === 'item') {
+            $node = $node->parentNode;
+            if (!$node instanceof \DOMElement || !in_array($node->tagName, ['argument', 'item'], true)
+                || $type($node) !== 'array' || $node->getElementsByTagName('updater')->length) return false;
+        }
+        return $node->parentNode->nodeName === 'arguments'
+            && in_array($node->parentNode->parentNode->nodeName, ['block', 'referenceBlock'], true);
+    }
+
     private static function limitation(string $fileType, string $node, ?string $attribute): string
     {
         if ($fileType === 'registry' || $fileType === 'page-types') return 'Registry consumers lack a trace back through the merged registry to this declaration';
         if ($fileType === 'wireframe') return 'The wireframe reader does not supply source attribution for this instruction';
         if ($fileType === 'custom') return 'Source grammar is outside the supported native layout schemas';
+        if ($node === 'uiComponent' && $attribute === 'component') {
+            return 'The native layout generator creates the component by name and does not pass this component attribute to its factory';
+        }
         if ($attribute === 'name' && $node === 'block') return 'Name participates in the block creation identity';
         if ($attribute === 'method' && $node === 'action') return 'Method participates in the identity of the parent action call';
         if ($attribute === 'remove' && in_array($node, ['referenceBlock', 'referenceContainer'], true)) {

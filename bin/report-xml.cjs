@@ -26,6 +26,19 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    container: ['layout-container-created'],
+    'ui-placement': ['layout-ui-created', 'layout-ui-rendered'],
+    'page-attribute': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden'],
+    'page-attribute-name': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden'],
+    'page-attribute-value': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden'],
+    metadata: ['layout-metadata-rendered', 'layout-metadata-overridden'],
+    'metadata-name': ['layout-metadata-rendered', 'layout-metadata-overridden'],
+    'metadata-content': ['layout-metadata-rendered', 'layout-metadata-overridden'],
+    'container-htmlTag': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden'],
+    'container-htmlId': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden'],
+    'container-htmlClass': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden'],
+    'container-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-overridden'],
+    'block-display': ['layout-display-allowed', 'layout-display-denied'],
     block: ['layout-block-created', 'layout-block-rendered'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     argument: ['layout-argument-applied'],
@@ -39,6 +52,9 @@ const layoutEvents = {
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced'],
 };
 const layoutDecisions = {
+    'layout-container-attribute-overridden': 'A later container declaration supplied the attribute used during generation.',
+    'layout-page-attribute-overridden': 'A later page configuration assignment replaced this element attribute.',
+    'layout-metadata-overridden': 'A later page configuration assignment replaced this metadata entry.',
     'layout-action-ambiguous': 'Multiple scheduled actions match the native method and arguments; the executed declaration could not be identified.',
     'layout-title-overridden': 'A later title replaced this declaration before the page configuration was applied.',
     'layout-title-replaced': 'A runtime title assignment replaced this declaration before attribution at the renderer.',

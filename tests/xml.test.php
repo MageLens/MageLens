@@ -60,6 +60,16 @@ checkXml(LayoutManifest::declarations($originFile, str_replace("\n", "\r\n", $la
 $layoutUnsupported = array_values(array_filter($layoutItems, static fn($item) => !$item['supported']));
 checkXml(count($layoutUnsupported) > 0 && count(array_filter($layoutUnsupported, static fn($item) => !$item['reason'])) === 0,
     'Layout declarations without runtime observations retain a reason');
+$arraySource = file_get_contents($layoutDirectory . 'coverageprobe_layout_arguments.xml');
+$arrayItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_layout_arguments.xml', $arraySource);
+$leaves = array_values(array_filter($arrayItems, static fn($item) =>
+    $item['layout']['instruction'] === 'item' && $item['supported']));
+checkXml(count($leaves) === 3 && count(array_unique(array_column($leaves, 'id'))) === 3,
+    'Scalar array leaves retain separate original declarations');
+foreach ($leaves as $leaf) {
+    checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),
+        'Array leaf evidence uses the layout argument application boundary');
+}
 echo "XML parsing, source maps, scopes and field identities passed.\n";
 
 require __DIR__ . '/configuration-fixture.test.php';
