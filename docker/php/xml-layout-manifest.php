@@ -44,14 +44,14 @@ final class LayoutManifest
                 default => 'name',
             });
             $blockNode = ($node->tagName === 'block' || ($node->tagName === 'referenceBlock' && $element !== ''))
-                && in_array($fileType, ['page', 'generic'], true);
+                && in_array($fileType, ['page', 'generic', 'wireframe'], true);
             $kind = match (true) {
                 in_array($fileType, ['page', 'generic'], true) && $index === 0
                     && preg_match('~/layout/override/(?:base|theme)/~', $path) => 'file-override',
                 $blockNode && $node->tagName === 'block' => 'block',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
                     && $node->tagName === 'container' => 'container',
-                in_array($fileType, ['page', 'generic'], true) && $node->tagName === 'uiComponent'
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'uiComponent'
                     && $element !== '' => 'ui-placement',
                 $fileType === 'page' && $node->tagName === 'attribute'
                     && $node->parentNode->nodeName === 'body' && $element === 'class' => 'body-class',
@@ -63,15 +63,15 @@ final class LayoutManifest
                 $fileType === 'page' && $node->parentNode->nodeName === 'head'
                     && in_array($node->tagName, ['css', 'script', 'link', 'font'], true)
                     && $node->getAttribute('src') !== '' => 'asset-reference',
-                $fileType === 'page' && $node->tagName === 'action' && $element !== ''
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'action' && $element !== ''
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
-                $fileType === 'page' && $node->tagName === 'argument' && $element !== ''
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'argument' && $element !== ''
                     && $node->parentNode->nodeName === 'action' => 'action-argument',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
-                $fileType === 'page' && self::blockArgument($node) => 'argument',
-                $fileType === 'page' && $node->tagName === 'updater'
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::blockArgument($node) => 'argument',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'updater'
                     && self::blockArgument($node->parentNode) => 'argument-updater',
-                $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'move' && $element !== '' => 'move',
                 $fileType === 'wireframe' && $index === 0 => 'wireframe',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
                     && $node->parentNode === $root && $node->tagName === 'update' && $element !== '' => 'include',
@@ -99,15 +99,16 @@ final class LayoutManifest
                         && in_array($node->tagName, ['block', 'container', 'uiComponent'], true)
                         && in_array($attribute->nodeName, ['name', 'as', 'before', 'after'], true) => 'position-' . $attribute->nodeName,
                     $blockNode && $attribute->nodeName === 'display' => 'block-display',
-                    in_array($fileType, ['page', 'generic'], true) && $element !== ''
+                    in_array($fileType, ['page', 'generic', 'wireframe'], true) && $element !== ''
                         && in_array($node->tagName, ['block', 'uiComponent'], true)
                         && in_array($attribute->nodeName, ['ifconfig', 'aclResource', 'acl'], true) =>
                             'condition-' . $attribute->nodeName,
                     $blockNode && in_array($attribute->nodeName, ['class', 'group', 'ttl'], true) =>
                         'block-' . $attribute->nodeName,
-                    $blockNode && $node->tagName === 'block' && $attribute->nodeName === 'cacheable'
+                    in_array($fileType, ['page', 'generic'], true) && $blockNode
+                        && $node->tagName === 'block' && $attribute->nodeName === 'cacheable'
                         && $attribute->nodeValue === 'false' => 'cacheability',
-                    $fileType === 'page' && $attribute->nodeName === 'remove' && $element !== ''
+                    in_array($fileType, ['page', 'generic', 'wireframe'], true) && $attribute->nodeName === 'remove' && $element !== ''
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
                         && $attribute->nodeName === 'src' && $element !== '' => 'asset-removal',
@@ -129,6 +130,8 @@ final class LayoutManifest
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
                         'body-class', 'body-class-name', 'body-class-value'], true);
+                $ignoredWrapper = $fileType === 'wireframe' && self::wireframeWrapper($node);
+                if ($ignoredWrapper) $supported = false;
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -143,11 +146,21 @@ final class LayoutManifest
                         ...($kind === 'wireframe-selection' ? ['selection' => $node->getAttribute('layout')] : []),
                         ...($kind === 'move' ? ['destination' => $node->getAttribute('destination')] : [])],
                     'supported' => $supported,
-                    'reason' => $supported ? null : self::limitation($fileType, $node->tagName, $attribute),
+                    'reason' => $supported ? null : ($ignoredWrapper
+                        ? 'The installed wireframe root reader pool ignores head and body branches, including their descendants'
+                        : self::limitation($fileType, $node->tagName, $attribute)),
                 ];
             }
         }
         return $result;
+    }
+
+    private static function wireframeWrapper(\DOMElement $node): bool
+    {
+        while ($node->parentNode instanceof \DOMElement && $node->parentNode->tagName !== 'layout') {
+            $node = $node->parentNode;
+        }
+        return in_array($node->tagName, ['head', 'body'], true);
     }
 
     private static function blockArgument(\DOMElement $node): bool

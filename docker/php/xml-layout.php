@@ -122,7 +122,8 @@ final class LayoutCoverage
             [ScheduledStructure::class, 'unsetElementFromListToRemove', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
             [GeneratorPool::class, 'removeElement', $this->beginRemoval(...), $this->completeRemoval(...)],
             [GeneratorPool::class, 'buildStructure', null, $this->finishStructure(...)],
-            [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
+            [Layout::class, 'generateXml', $this->beginXml(...), null],
+            [Layout::class, 'generateElements', null, $this->generateElements(...)],
             [XmlConfig::class, 'getNode', null, $this->layoutXmlAccess(...)],
             [XmlConfig::class, 'getXpath', null, $this->layoutXmlAccess(...)],
             [XmlConfig::class, 'setXml', null, $this->layoutXmlAccess(...)],
@@ -1018,7 +1019,7 @@ final class LayoutCoverage
         return $property->getValue($layout);
     }
 
-    private function beginElements($layout, array $params, string $class): void
+    private function beginXml($layout, array $params, string $class): void
     {
         if ($class !== Layout::class) return;
         $context = self::readerContext($layout);
