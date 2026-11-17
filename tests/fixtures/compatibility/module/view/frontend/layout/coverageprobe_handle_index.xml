@@ -16,6 +16,7 @@ License: see LICENSE in the repository root.
     <update handle="coverageprobe_layout_head_overlay"/>
     <body>
         <referenceContainer name="magelens.layout.wireframe">
+            <block class="MageLens\Compatibility\Block\LayoutAssetGroups" name="magelens.layout.asset-groups" template="MageLens_Compatibility::layout-assets-proof.phtml"/>
             <block class="MageLens\Compatibility\Block\LayoutRegistry" name="magelens.layout.handle.action" template="MageLens_Compatibility::layout-handle.phtml">
                 <arguments><argument name="marker" xsi:type="string">action</argument></arguments>
             </block>

@@ -9,8 +9,13 @@ License: see LICENSE in the repository root.
     <head>
         <title>Effective fixture title</title>
         <meta name="description" content="Effective fixture description"/>
-        <css src="MageLens_Compatibility::css/layout-head.css" media="screen"/>
+        <css src="MageLens_Compatibility::css/layout-head.css" media="screen" order="70"/>
+        <css src="MageLens_Compatibility::css/layout-second.css" media="screen" order="10"/>
         <remove src="MageLens_Compatibility::css/layout-removed.css"/>
         <remove src="MageLens_Compatibility::css/layout-absent.css"/>
     </head>
+    <body>
+        <attribute name="class" value="layout-head-fixture"/>
+        <attribute name="class" value="Page Wide"/>
+    </body>
 </page>

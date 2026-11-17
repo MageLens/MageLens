@@ -4,6 +4,7 @@
 
 const {verifyScriptPolicy} = require('../csp-proof');
 const {test, expect} = require('../../../../../../../playwright/support.cjs');
+const admin = require('../../../../Application/Blog/Test/Playwright/support');
 test('collects real PHP, JavaScript and template execution', async ({page}) => {
     const response = await page.goto('/coverageprobe/');
     for (const marker of ['replacement', 'equal', 'late']) {
@@ -60,6 +61,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(wireframe.locator('[data-layout-structure-outcome]')).toHaveText('verified');
     await expect(wireframe.locator('#layout-left')).toHaveClass('layout-effective');
     await expect(wireframe.locator('#layout-empty, #layout-hidden-container, [data-layout-structure="hidden-container-child"]')).toHaveCount(0);
+    await expect(wireframe.locator('[data-layout-structure="config-allowed"]')).toHaveText('config-allowed');
+    await expect(wireframe.locator('[data-layout-structure="config-denied"]')).toHaveCount(0);
     for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
         'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
         await expect(wireframe.locator(`[data-layout-argument="${effect}"]`)).toHaveText('verified');
@@ -69,6 +72,7 @@ test('starts the next test with fresh state', async ({page}) => {
         await expect(page.locator(element)).toHaveAttribute(`data-layout-${element}`, 'fixture');
     }
     await expect(page.locator('body')).toHaveClass(/\blayout-head-fixture\b/);
+    await expect(page.locator('body')).toHaveClass(/\bpage-wide\b/);
     await expect(page.locator('head meta[name="description"]')).toHaveAttribute('content', 'Effective fixture description');
     await expect(page.locator('head meta[name="magelens-layout"]')).toHaveAttribute('content', 'fixture metadata');
     await expect(page.locator('head meta[name="magelens-replaced"]')).toHaveAttribute('content', 'same');
@@ -76,8 +80,20 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('head link[href*="/css/layout-head.css"]')).toHaveAttribute('media', 'screen');
     await expect(page.locator('head link[href*="/css/layout-removed.css"], head link[href*="/css/layout-absent.css"]')).toHaveCount(0);
     await expect(page.locator('head script[src*="/js/layout-head.js"]')).toHaveAttribute('defer', 'defer');
+    await expect(page.locator('head script[src*="/js/layout-head.js"]')).toHaveAttribute('async', 'async');
     await expect(page.locator('head link[href="https://example.invalid/layout-alternate"]')).toHaveAttribute('rel', 'alternate');
-    await expect(page.locator('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]')).toHaveCount(1);
+    for (const [name, value] of Object.entries({hreflang: 'en-US', charset: 'utf-8', media: 'screen', rev: 'made',
+        sizes: 'any', target: '_self', type: 'text/plain', integrity: 'sha256-fixture', crossorigin: 'anonymous', as: 'style', defer: 'defer'})) {
+        await expect(page.locator('head link[href="https://example.invalid/layout-alternate"]')).toHaveAttribute(name, value);
+    }
+    await expect(page.locator('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]')).toHaveAttribute('as', 'font');
+    await expect(page.locator('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]')).toHaveAttribute('crossorigin', 'anonymous');
+    await expect(page.locator('[data-layout-asset-groups]')).toHaveText('verified');
+    const order = await page.locator('head link[href*="/css/layout-"]').evaluateAll(links =>
+        links.map(link => link.getAttribute('href').split('/').pop()));
+    expect(order).toEqual(['layout-head.css', 'layout-second.css']);
+    expect(await page.locator('head').innerHTML()).toContain('<!--[if lt IE 9]>');
+    expect(await page.evaluate(() => typeof window.magelensConditionalAsset)).toBe('undefined');
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
     await page.goto('/coverageprobe/fragment/');
@@ -90,4 +106,18 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-grammar="serviceurl"], [data-layout-grammar="const"]')).toHaveText(['applied', 'applied']);
     await expect(page.locator('[data-layout-grammar="configurable"]')).toHaveText('generator-error');
     await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"]')).toHaveText(['verified', 'verified', 'verified']);
+    await page.goto('/coverageprobe/classclear/');
+    await expect(page).toHaveTitle('Class reset fixture');
+    await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');
+    await expect(page.locator('body')).not.toHaveClass(/\bclass-(before|after)\b/);
+    await admin.login(page);
+    await expect(page.locator('[data-layout-structure="acl-dashboard"]')).toHaveText('acl-dashboard');
+    await expect(page.locator('[data-layout-structure="acl-blog"]')).toHaveText('acl-blog');
+    await expect(page.locator('[data-layout-structure="acl-alias"]')).toHaveText('acl-alias');
+    await page.goto('/');
+    await page.context().clearCookies();
+    const fixture = admin.fixtures();
+    await admin.login(page, fixture.readerUser, fixture.readerPassword);
+    await expect(page.locator('[data-layout-structure="acl-dashboard"]')).toHaveText('acl-dashboard');
+    await expect(page.locator('[data-layout-structure="acl-blog"], [data-layout-structure="acl-alias"]')).toHaveCount(0);
 });

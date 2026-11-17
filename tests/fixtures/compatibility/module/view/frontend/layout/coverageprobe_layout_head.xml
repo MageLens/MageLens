@@ -17,9 +17,10 @@ License: see LICENSE in the repository root.
         <meta name="magelens-replaced" content="same"/>
         <css src="MageLens_Compatibility::css/layout-head.css" media="print"/>
         <css src="MageLens_Compatibility::css/layout-removed.css"/>
-        <script src="MageLens_Compatibility::js/layout-head.js" defer="defer"/>
-        <link src="https://example.invalid/layout-alternate" src_type="url" rel="alternate" hreflang="en-US"/>
-        <font src="fonts/MUI-Icons/MUI-Icons.woff2"/>
+        <script src="MageLens_Compatibility::js/layout-head.js" defer="defer" async="async" charset="utf-8" type="text/javascript"/>
+        <script src="MageLens_Compatibility::js/layout-conditional.js" ie_condition="lt IE 9"/>
+        <link src="https://example.invalid/layout-alternate" src_type="url" rel="alternate" hreflang="en-US" charset="utf-8" media="screen" rev="made" sizes="any" target="_self" type="text/plain" integrity="sha256-fixture" crossorigin="anonymous" as="style" defer="defer"/>
+        <font src="fonts/MUI-Icons/MUI-Icons.woff2" as="style" crossorigin="use-credentials"/>
     </head>
     <body>
         <attribute name="data-layout-body" value="fixture"/>

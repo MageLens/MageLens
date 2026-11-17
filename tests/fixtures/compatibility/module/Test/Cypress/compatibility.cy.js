@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const {verifyScriptPolicy} = require('../csp-proof');
+const admin = require('../../../../Application/Blog/Test/Cypress/support');
 describe('Magento storefront coverage compatibility', () => {
     it('collects real PHP, JavaScript and template execution', () => {
         cy.visit('/coverageprobe/');
@@ -69,6 +70,8 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-structure-outcome]').should('have.text', 'verified');
         cy.get('#layout-left').should('have.class', 'layout-effective');
         cy.get('#layout-empty, #layout-hidden-container, [data-layout-structure="hidden-container-child"]').should('not.exist');
+        cy.get('#layout-wireframe [data-layout-structure="config-allowed"]').should('have.text', 'config-allowed');
+        cy.get('#layout-wireframe [data-layout-structure="config-denied"]').should('not.exist');
         for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
             'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
             cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
@@ -78,6 +81,7 @@ describe('Magento storefront coverage compatibility', () => {
             cy.get(element).should('have.attr', `data-layout-${element}`, 'fixture');
         }
         cy.get('body').should('have.class', 'layout-head-fixture');
+        cy.get('body').should('have.class', 'page-wide');
         cy.get('head meta[name="description"]').should('have.attr', 'content', 'Effective fixture description');
         cy.get('head meta[name="magelens-layout"]').should('have.attr', 'content', 'fixture metadata');
         cy.get('head meta[name="magelens-replaced"]').should('have.attr', 'content', 'same');
@@ -85,8 +89,20 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('head link[href*="/css/layout-head.css"]').should('have.length', 1).and('have.attr', 'media', 'screen');
         cy.get('head link[href*="/css/layout-removed.css"], head link[href*="/css/layout-absent.css"]').should('not.exist');
         cy.get('head script[src*="/js/layout-head.js"]').should('have.attr', 'defer', 'defer');
+        cy.get('head script[src*="/js/layout-head.js"]').should('have.attr', 'async', 'async');
         cy.get('head link[href="https://example.invalid/layout-alternate"]').should('have.attr', 'rel', 'alternate');
-        cy.get('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]').should('have.length', 1);
+        for (const [name, value] of Object.entries({hreflang: 'en-US', charset: 'utf-8', media: 'screen', rev: 'made',
+            sizes: 'any', target: '_self', type: 'text/plain', integrity: 'sha256-fixture', crossorigin: 'anonymous', as: 'style', defer: 'defer'})) {
+            cy.get('head link[href="https://example.invalid/layout-alternate"]').should('have.attr', name, value);
+        }
+        cy.get('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]').should('have.attr', 'as', 'font');
+        cy.get('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]').should('have.attr', 'crossorigin', 'anonymous');
+        cy.get('[data-layout-asset-groups]').should('have.text', 'verified');
+        cy.get('head link[href*="/css/layout-"]').should(links => {
+            expect([...links].map(link => link.getAttribute('href').split('/').pop())).to.deep.equal(['layout-head.css', 'layout-second.css']);
+        });
+        cy.get('head').invoke('html').should('contain', '<!--[if lt IE 9]>');
+        cy.window().then(win => expect(typeof win.magelensConditionalAsset).to.equal('undefined'));
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
         cy.visit('/coverageprobe/fragment/');
@@ -102,5 +118,19 @@ describe('Magento storefront coverage compatibility', () => {
         for (const entry of ['cachefalse', 'cacheremoved', 'cachezero']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'verified');
         }
+        cy.visit('/coverageprobe/classclear/');
+        cy.title().should('equal', 'Class reset fixture');
+        cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');
+        cy.get('body').should('not.have.class', 'class-before').and('not.have.class', 'class-after');
+        admin.login();
+        for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias']) {
+            cy.get(`[data-layout-structure="${entry}"]`).should('have.text', entry);
+        }
+        cy.visit('/');
+        cy.clearCookies();
+        const fixture = admin.fixtures();
+        admin.login(fixture.readerUser, fixture.readerPassword);
+        cy.get('[data-layout-structure="acl-dashboard"]').should('have.text', 'acl-dashboard');
+        cy.get('[data-layout-structure="acl-blog"], [data-layout-structure="acl-alias"]').should('not.exist');
     });
 });

@@ -53,9 +53,12 @@ $originFile = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprob
 $layoutSource = file_get_contents($layoutDirectory . basename($originFile));
 $layoutItems = LayoutManifest::declarations($originFile, $layoutSource);
 $replaced = array_values(array_filter($layoutItems, static fn($item) => $item['layout']['element'] === 'magelens.layout.replaced' && $item['supported']));
-checkXml(array_column(array_column($replaced, 'layout'), 'kind') === ['block', 'template'], 'Block and template origins are independent');
-checkXml($replaced[0]['id'] !== $replaced[1]['id'] && $replaced[0]['startLine'] === $replaced[1]['startLine'], 'Separate original effects share their source line');
-checkXml($replaced[0]['path'] . '/@template' === $replaced[1]['path'], 'Template location retains the original attribute');
+checkXml(array_column(array_column($replaced, 'layout'), 'kind') === ['block', 'block-class', 'template'],
+    'Block, class and template origins are independent');
+checkXml(count(array_unique(array_column($replaced, 'id'))) === 3
+    && count(array_unique(array_column($replaced, 'startLine'))) === 1, 'Separate original effects share their source line');
+checkXml($replaced[0]['path'] . '/@class' === $replaced[1]['path'], 'Class location retains the original attribute');
+checkXml($replaced[0]['path'] . '/@template' === $replaced[2]['path'], 'Template location retains the original attribute');
 checkXml(LayoutManifest::declarations($originFile, str_replace("\n", "\r\n", $layoutSource)) === $layoutItems, 'Layout source maps preserve original positions across line endings');
 $layoutUnsupported = array_values(array_filter($layoutItems, static fn($item) => !$item['supported']));
 checkXml(count($layoutUnsupported) > 0 && count(array_filter($layoutUnsupported, static fn($item) => !$item['reason'])) === 0,

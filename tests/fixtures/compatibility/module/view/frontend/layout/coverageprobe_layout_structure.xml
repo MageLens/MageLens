@@ -25,6 +25,8 @@ License: see LICENSE in the repository root.
             <container name="magelens.layout.hidden-container" htmlTag="section" htmlId="layout-hidden-container">
                 <block name="magelens.layout.hidden-container-child" template="MageLens_Compatibility::layout-structure.phtml"/>
             </container>
+            <block name="magelens.layout.config-allowed" ifconfig="magelens_layout_fixture/visibility/enabled" template="MageLens_Compatibility::layout-structure.phtml"/>
+            <block name="magelens.layout.config-denied" ifconfig="magelens_layout_fixture/visibility/disabled" template="MageLens_Compatibility::layout-structure.phtml"/>
             <block class="MageLens\Compatibility\Block\LayoutStructure" name="magelens.layout.structure-proof" template="MageLens_Compatibility::layout-structure.phtml"/>
         </referenceContainer>
         <move element="magelens.layout.moved" destination="magelens.layout.right.nested" as="moved-alias" after="anchor-alias"/>
