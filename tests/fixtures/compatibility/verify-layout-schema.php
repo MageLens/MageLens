@@ -37,6 +37,7 @@ $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
+    ['disabled output membership', $genericSchema, '<layout><container name="fixture" output="0"/></layout>'],
     ['asoc argument', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"asoc\"/></arguments></block></body></page>"],
     ['page standalone removal', $pageSchema, '<page><body><remove name="fixture"/></body></page>'],
     ['generic standalone removal', $genericSchema, '<layout><remove name="fixture"/></layout>'],

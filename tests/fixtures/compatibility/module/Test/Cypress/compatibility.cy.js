@@ -110,6 +110,11 @@ describe('Magento storefront coverage compatibility', () => {
         cy.visit('/coverageprobe/fragment/');
         cy.get('#layout-fragment [data-layout-structure="fragment-marker"]').should('have.text', 'fragment-marker');
         cy.get('title').should('not.exist');
+        cy.visit('/coverageprobe/anonymous/');
+        cy.get('#layout-anonymous [data-layout-anonymous]').should('have.text', 'verified');
+        cy.get('[data-layout-order]').then(elements => {
+            expect([...elements].map(element => element.textContent)).to.deep.equal(['order.first', 'order.last', 'order.middle']);
+        });
         cy.visit('/coverageprobe/component/');
         cy.get('#layout-component .entry-edit').should('have.attr', 'data-bind', "scope: 'magelens_layout_ui.areas'");
         cy.get('[data-layout-ui-proof]').should('have.text', 'verified');

@@ -101,6 +101,9 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/fragment/');
     await expect(page.locator('#layout-fragment [data-layout-structure="fragment-marker"]')).toHaveText('fragment-marker');
     await expect(page.locator('title')).toHaveCount(0);
+    await page.goto('/coverageprobe/anonymous/');
+    await expect(page.locator('#layout-anonymous [data-layout-anonymous]')).toHaveText('verified');
+    await expect(page.locator('[data-layout-order]')).toHaveText(['order.first', 'order.last', 'order.middle']);
     await page.goto('/coverageprobe/component/');
     await expect(page.locator('#layout-component .entry-edit')).toHaveAttribute('data-bind', "scope: 'magelens_layout_ui.areas'");
     await expect(page.locator('[data-layout-ui-proof]')).toHaveText('verified');
