@@ -15,6 +15,24 @@ License: see LICENSE in the repository root.
                     <argument name="nested" xsi:type="array"><item name="token" xsi:type="string">ui-condition</item></argument>
                 </arguments>
             </visibilityCondition>
+            <visibilityCondition name="other_visibility" className="MageLens\Compatibility\Model\LayoutVisibility">
+                <arguments>
+                    <argument name="visible" xsi:type="boolean">false</argument>
+                    <argument name="nested" xsi:type="array"><item name="token" xsi:type="string">unused-condition</item></argument>
+                </arguments>
+            </visibilityCondition>
+            <visibilityCondition name="duck_visibility" className="MageLens\Compatibility\Model\LayoutVisibilityDuck">
+                <arguments>
+                    <argument name="visible" xsi:type="boolean">false</argument>
+                    <argument name="nested" xsi:type="array"><item name="token" xsi:type="string">unused-condition</item></argument>
+                </arguments>
+            </visibilityCondition>
+            <visibilityCondition name="magic_visibility" className="MageLens\Compatibility\Model\LayoutVisibilityMagic">
+                <arguments>
+                    <argument name="visible" xsi:type="boolean">false</argument>
+                    <argument name="nested" xsi:type="array"><item name="token" xsi:type="string">unused-condition</item></argument>
+                </arguments>
+            </visibilityCondition>
         </uiComponent>
         <block name="magelens.layout.ui-anchor" template="MageLens_Compatibility::layout-structure.phtml"/>
         <uiComponent name="magelens_layout_ui_denied">
@@ -36,14 +54,14 @@ License: see LICENSE in the repository root.
         </uiComponent>
         <block class="MageLens\Compatibility\Block\LayoutUiProof" name="magelens.layout.ui-proof" template="MageLens_Compatibility::layout-ui-proof.phtml"/>
         <container name="magelens.layout.ui-hidden">
-    <uiComponent name="magelens_layout_ui_detached" output="1">
-            <visibilityCondition name="fixture_visibility" className="MageLens\Compatibility\Model\LayoutVisibility">
-                <arguments>
-                    <argument name="visible" xsi:type="boolean">true</argument>
-                    <argument name="nested" xsi:type="array"><item name="token" xsi:type="string">ui-condition</item></argument>
-                </arguments>
-            </visibilityCondition>
-    </uiComponent>
+            <uiComponent name="magelens_layout_ui_detached" output="1">
+                <visibilityCondition name="fixture_visibility" className="MageLens\Compatibility\Model\LayoutVisibility">
+                    <arguments>
+                        <argument name="visible" xsi:type="boolean">true</argument>
+                        <argument name="nested" xsi:type="array"><item name="token" xsi:type="string">ui-condition</item></argument>
+                    </arguments>
+                </visibilityCondition>
+            </uiComponent>
         </container>
     </container>
     <referenceContainer name="magelens.layout.ui-hidden" display="false"/>

@@ -64,12 +64,13 @@ final class LayoutCoverage
     private bool $sourceTrace = false;
     private array $limitations = [];
     private array $errors = [];
+    private array $validating = [];
 
     private function __construct(private readonly array $sources)
     {
         $this->merges = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
-        $this->structureCoverage = new LayoutStructureCoverage($this->origin(...));
+        $this->structureCoverage = new LayoutStructureCoverage($this->origin(...), self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->structures = new \WeakMap();
@@ -91,8 +92,9 @@ final class LayoutCoverage
     public function finish(): array
     {
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
+        [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
-        return [$this->healthy || $registryHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits]))];
+        return [$this->healthy || $registryHealthy || $structureHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits]))];
     }
 
     private function hooks(): array
@@ -107,6 +109,8 @@ final class LayoutCoverage
             [Merge::class, '_fetchDbLayoutUpdates', null, $this->completeDatabaseUpdate(...)],
             [Merge::class, 'addUpdate', $this->beginUpdate(...), $this->appendUpdate(...)],
             [Merge::class, 'asSimplexml', null, $this->mergeDocument(...)],
+            [Merge::class, '_validateMergedLayout', $this->beginValidation(...), $this->completeValidation(...)],
+            [\Magento\Framework\View\Model\Layout\Update\Validator::class, 'isValid', null, $this->validationResult(...)],
             [Merge::class, 'load', $this->resetPageSelection(...), null],
             [Merge::class, '_loadCache', null, $this->cachedUpdate(...)],
             [ScheduledStructure::class, 'populateWithArray', null, $this->cachedStructure(...)],
@@ -371,6 +375,42 @@ final class LayoutCoverage
         $state = $this->merges[$merge] ?? [];
         unset($state['pageLayout']);
         $this->merges[$merge] = $state;
+    }
+
+    private function beginValidation($merge, array $params, string $class): void
+    {
+        if ($class === Merge::class) $this->validating[] = ['merge' => $merge, 'failed' => false];
+    }
+
+    private function validationResult($validator, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->validating);
+        if ($index === null || $class !== \Magento\Framework\View\Model\Layout\Update\Validator::class) return;
+        $caller = self::nativeCaller($validator, 'isValid');
+        if (($caller['class'] ?? null) === Merge::class && ($caller['function'] ?? null) === '_validateMergedLayout'
+            && ($error instanceof \Magento\Framework\Config\Dom\ValidationException || $result === false)) {
+            $this->validating[$index]['failed'] = true;
+        }
+    }
+
+    private function completeValidation($merge, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Merge::class) return;
+        $frame = array_pop($this->validating);
+        if (!$frame['failed'] && !($error instanceof \Magento\Framework\Config\Dom\ValidationException)) return;
+        $this->healthy = true;
+        $this->limitations[$error ? 'layout-validation-failed' : 'layout-validation-warning'] = true;
+        if (!$error) return;
+        $theme = $merge->getTheme();
+        $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        $updates = self::updates($merge);
+        foreach ($this->merges[$merge]['updates'] ?? [] as $index => $source) {
+            if (!isset($updates[$index]) || $source['hash'] !== hash('sha256', $updates[$index])) continue;
+            $this->sourceTrace = true;
+            foreach ($source['targets'] as $target) {
+                foreach ($target['ids'] as $id) $this->event($id, 'layout-validation-failed', $context);
+            }
+        }
     }
 
     private function cachedUpdate($merge, array $params, $value, ?\Throwable $error, string $class): void

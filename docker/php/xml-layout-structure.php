@@ -22,6 +22,8 @@ use Magento\Framework\View\Layout\ConfigCondition;
 use Magento\Framework\View\Layout\AclCondition;
 use Magento\Framework\View\Layout\Reader\Visibility\Condition as ConditionReader;
 use Magento\Framework\View\Layout\Condition\Condition;
+use Magento\Framework\View\Layout\Condition\ConditionFactory;
+use Magento\Framework\View\Layout\Condition\VisibilityConditionInterface;
 use Magento\Ui\Component\Wrapper\UiComponent as UiWrapper;
 
 final class LayoutStructureCoverage
@@ -35,13 +37,29 @@ final class LayoutStructureCoverage
     private \WeakMap $conditionNodes;
     private array $visibility = [];
     private array $conditions = [];
+    private \WeakMap $conditionComposites;
+    private array $conditionHooks = [];
+    private array $errors = [];
+    private array $limitations = [];
+    private bool $healthy = false;
 
-    public function __construct(private readonly \Closure $origin)
+    public function __construct(
+        private readonly \Closure $origin,
+        private readonly \Closure $fingerprint,
+        private readonly \Closure $matches
+    )
     {
         $this->scheduled = new \WeakMap();
         $this->structures = new \WeakMap();
         $this->components = new \WeakMap();
         $this->conditionNodes = new \WeakMap();
+        $this->conditionComposites = new \WeakMap();
+    }
+
+    public function finish(): array
+    {
+        if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
+        return [$this->healthy, array_keys($this->limitations)];
     }
 
     public function hooks(): array
@@ -52,8 +70,9 @@ final class LayoutStructureCoverage
             [ScheduledStructure::class, 'getElements', null, $this->visibilityElements(...)],
             [GeneratorPool::class, 'visibilityConditionsExistsIn', null, $this->selectConditions(...)],
             [Condition::class, 'isVisible', $this->beginConditions(...), $this->endConditions(...)],
-            [ConfigCondition::class, 'isVisible', null, $this->conditionDecision(...)],
-            [AclCondition::class, 'isVisible', null, $this->conditionDecision(...)],
+            [ConditionFactory::class, 'create', null, $this->conditionComposite(...)],
+            [VisibilityConditionInterface::class, 'getName', null, $this->conditionName(...)],
+            [VisibilityConditionInterface::class, 'isVisible', null, $this->conditionDecision(...)],
             [ContainerReader::class, 'mergeContainerAttributes', null, $this->scheduleContainer(...)],
             [BlockReader::class, 'scheduleBlock', null, $this->scheduleDisplay(...)],
             [BlockReader::class, 'scheduleReference', null, $this->scheduleDisplay(...)],
@@ -64,6 +83,7 @@ final class LayoutStructureCoverage
             [UiGenerator::class, 'generateComponent', null, $this->createUi(...)],
             [UiWrapper::class, '_toHtml', null, $this->renderUi(...)],
             [ContainerGenerator::class, 'generateContainer', null, $this->createContainer(...)],
+            [DataStructure::class, 'addToParentGroup', null, $this->uiGroup(...)],
             [DataStructure::class, 'setAttribute', null, $this->assignAttribute(...)],
             [DataStructure::class, 'createElement', null, $this->replaceElement(...)],
             [DataStructure::class, 'importElements', null, $this->replaceStructure(...)],
@@ -199,6 +219,10 @@ final class LayoutStructureCoverage
         unset($state[$name]);
         [$ids, $scope] = ($this->origin)($xml);
         if (isset($ids['ui-placement'])) $state[$name]['ui'] = ['id' => $ids['ui-placement'], 'context' => $scope];
+        $attributes = $schedule->getStructureElementData($name, [])['attributes'] ?? [];
+        if (isset($ids['ui-group']) && ($attributes['group'] ?? null) === (string) $xml['group']) {
+            $state[$name]['uiGroup'] = ['id' => $ids['ui-group'], 'context' => $scope, 'value' => (string) $xml['group']];
+        }
         if (isset($this->conditionNodes[$xml])) $state[$name]['conditions'] = $this->conditionNodes[$xml];
         $this->restore($schedule, $state);
     }
@@ -215,7 +239,7 @@ final class LayoutStructureCoverage
         [$ids, $context] = ($this->origin)($xml);
         $origins = [];
         $custom = [];
-        foreach ($xml->visibilityCondition as $child) $custom[(string) $child['name']] = true;
+        foreach ($xml->visibilityCondition as $child) $custom[(string) $child['name']] = $child;
         foreach (['ifconfig' => [ConfigCondition::class, 'configPath', 'ifconfig'],
             'acl' => [AclCondition::class, 'acl', 'aclResource']] as $key => [$consumer, $argument, $attribute]) {
             if (isset($custom[$key])) continue;
@@ -226,12 +250,47 @@ final class LayoutStructureCoverage
                     'signature' => self::signature($expected['arguments'])];
             }
         }
-        $this->conditionNodes[$xml] = ['signature' => self::signature($result), 'origins' => $origins];
+        $rules = [];
+        foreach ($custom as $key => $node) {
+            [$source, $ruleContext] = ($this->origin)($node);
+            if (!isset($source['visibility']) || ($result[$key]['name'] ?? null) !== (string) $node['className']) continue;
+            $arguments = $result[$key]['arguments'];
+            $identity = ($this->fingerprint)($arguments);
+            $rules[$key] = ['id' => $source['visibility'], 'nameId' => $source['visibility-name'] ?? null,
+                'classId' => $source['visibility-class'] ?? null, 'context' => $ruleContext,
+                'fingerprint' => $identity, 'arguments' => $identity === null ? [] : $this->conditionValues($node, $arguments)];
+        }
+        $this->conditionNodes[$xml] = ['fingerprint' => ($this->fingerprint)($result), 'origins' => $origins,
+            'rules' => $rules, 'identity' => hash('sha256', serialize([array_column($origins, 'id'), array_column($rules, 'id'), $context]))];
+    }
+
+    private function conditionValues($xml, array $arguments): array
+    {
+        $nodes = [];
+        foreach ($xml->arguments->argument as $node) $nodes[(string) $node['name']] = $node;
+        $ids = [];
+        foreach ($nodes as $name => $node) {
+            if (array_key_exists($name, $arguments)) $ids = [...$ids, ...$this->conditionValue($node, $arguments[$name])];
+        }
+        return $ids;
+    }
+
+    private function conditionValue($xml, $value): array
+    {
+        [$source] = ($this->origin)($xml);
+        $ids = isset($source['visibility-argument']) ? [$source['visibility-argument']] : [];
+        if ((string) $xml->attributes('http://www.w3.org/2001/XMLSchema-instance')['type'] !== 'array' || !is_array($value)) return $ids;
+        $nodes = [];
+        foreach ($xml->item as $node) $nodes[(string) $node['name']] = $node;
+        foreach ($nodes as $name => $node) {
+            if (array_key_exists($name, $value)) $ids = [...$ids, ...$this->conditionValue($node, $value[$name])];
+        }
+        return $ids;
     }
 
     private function beginVisibility($pool, array $params, string $class): void
     {
-        if ($class === GeneratorPool::class) $this->visibility[] = ['schedule' => $params[0], 'queue' => [], 'current' => null];
+        if ($class === GeneratorPool::class) $this->visibility[] = ['pool' => $pool, 'schedule' => $params[0], 'queue' => [], 'current' => null];
     }
 
     private function endVisibility($pool, array $params, $result, ?\Throwable $error, string $class): void
@@ -249,8 +308,9 @@ final class LayoutStructureCoverage
         $state = $this->snapshot($schedule);
         $queue = [];
         foreach ($elements as $name => $element) {
-            $queue[] = ['data' => self::signature($element[1]['attributes']['visibilityConditions'] ?? []),
-                'origin' => $state[$name]['conditions'] ?? null];
+            $origin = $state[$name]['conditions'] ?? null;
+            if ($origin) $origin['placement'] = $state[$name]['ui'] ?? null;
+            $queue[] = ['data' => ($this->fingerprint)($element[1]['attributes']['visibilityConditions'] ?? []), 'origin' => $origin];
         }
         $this->visibility[$index]['queue'] = $queue;
     }
@@ -262,8 +322,70 @@ final class LayoutStructureCoverage
         $entry = array_shift($this->visibility[$index]['queue']);
         $this->visibility[$index]['current'] = null;
         if (!$error && $exists && $entry && $entry['data'] !== null
-            && $entry['data'] === self::signature($params[0]['attributes']['visibilityConditions'] ?? [])) {
+            && ($this->matches)($entry['data'], $params[0]['attributes']['visibilityConditions'] ?? [])) {
             $this->visibility[$index]['current'] = $entry['origin'];
+        }
+    }
+
+    private static function compositeRules(Condition $condition): array
+    {
+        static $property;
+        $property ??= new \ReflectionProperty(Condition::class, 'conditions');
+        return $property->getValue($condition);
+    }
+
+    private function conditionComposite($factory, array $params, $composite, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->visibility);
+        $origin = $index === null ? null : $this->visibility[$index]['current'];
+        $caller = self::caller($factory, 'create');
+        if ($error || $class !== ConditionFactory::class || !$origin || $origin['fingerprint'] === null
+            || !($this->matches)($origin['fingerprint'], $params[0])
+            || ($caller['class'] ?? null) !== GeneratorPool::class || ($caller['function'] ?? null) !== 'buildStructure') return;
+        if ($composite instanceof Condition) $this->conditionComposites[$composite] = ['unsupported' => true];
+        if (get_class($factory) !== ConditionFactory::class || !($composite instanceof Condition) || get_class($composite) !== Condition::class) return;
+        $objects = self::compositeRules($composite);
+        if (count($objects) !== count($params[0])) return;
+        $ordered = [];
+        foreach (array_keys($params[0]) as $position => $key) {
+            $object = $objects[$position] ?? null;
+            $row = $origin['rules'][$key] ?? null;
+            if (!is_object($object)) continue;
+            $ready = $this->ruleHooks($object);
+            $ordered[] = ['object' => $object, 'owner' => $row, 'key' => $key, 'ready' => $ready];
+            if (!$row) continue;
+            if ($row['classId']) $this->record(['id' => $row['classId'], 'context' => $row['context']], 'layout-condition-class-selected');
+            if (!$ready) $this->unconfirmedCondition($row);
+        }
+        $this->conditionComposites[$composite] = ['identity' => $origin['identity'], 'objects' => $objects, 'ordered' => $ordered];
+    }
+
+    private function ruleHooks(object $rule): bool
+    {
+        if ($rule instanceof VisibilityConditionInterface) return true;
+        foreach (['getName', 'isVisible'] as $method) {
+            $target = method_exists($rule, $method) && (new \ReflectionMethod($rule, $method))->isPublic() ? $method : '__call';
+            if (!method_exists($rule, $target) || !(new \ReflectionMethod($rule, $target))->isPublic()) return false;
+            $class = (new \ReflectionMethod($rule, $target))->getDeclaringClass()->getName();
+            if (!isset($this->conditionHooks[$class]) && count($this->conditionHooks) >= 1024) {
+                $this->limitations['layout-condition-hook-limit'] = true;
+                return false;
+            }
+            $this->conditionHooks[$class] ??= [];
+            if (isset($this->conditionHooks[$class][$target])) continue;
+            if (!\OpenTelemetry\Instrumentation\hook($class, $target, null, $this->conditionDynamic(...))) {
+                $this->errors['Cannot register native visibility rule hook'] = true;
+                return false;
+            }
+            $this->conditionHooks[$class][$target] = true;
+        }
+        return true;
+    }
+
+    private function unconfirmedCondition(array $row): void
+    {
+        foreach (array_filter([$row['id'], $row['nameId'], $row['classId'], ...$row['arguments']]) as $id) {
+            $this->record(['id' => $id, 'context' => $row['context']], 'layout-condition-unconfirmed');
         }
     }
 
@@ -274,24 +396,146 @@ final class LayoutStructureCoverage
         $origin = $index === null ? null : $this->visibility[$index]['current'];
         $caller = self::caller($condition, 'isVisible');
         $valid = ($caller['class'] ?? null) === GeneratorPool::class && ($caller['function'] ?? null) === 'buildStructure'
-            && $origin && $origin['signature'] !== null && $origin['signature'] === self::signature($params[0]);
-        $this->conditions[] = $valid ? $origin['origins'] : [];
+            && $origin && $origin['fingerprint'] !== null && ($this->matches)($origin['fingerprint'], $params[0]);
+        $binding = $this->conditionComposites[$condition] ?? null;
+        if ($valid && $origin['rules'] && $binding === null && get_class($condition) === Condition::class) {
+            static $factoryProperty;
+            $factoryProperty ??= new \ReflectionProperty(GeneratorPool::class, 'conditionFactory');
+            if (get_class($factoryProperty->getValue($this->visibility[$index]['pool'])) === ConditionFactory::class) {
+                $this->errors['Missing native visibility factory hook evidence'] = true;
+            }
+        }
+        $bound = $valid && $binding && empty($binding['unsupported']) && $binding['identity'] === $origin['identity']
+            && $binding['objects'] === self::compositeRules($condition);
+        if ($valid && !$bound) foreach ($origin['rules'] as $row) $this->unconfirmedCondition($row);
+        $this->conditions[] = ['origins' => $valid ? $origin['origins'] : [],
+            'ordered' => $bound ? $binding['ordered'] : [], 'values' => $valid ? $origin['rules'] : [],
+            'next' => 0, 'current' => null, 'name' => null, 'keys' => [], 'decisions' => [],
+            'placement' => $valid ? ($origin['placement'] ?? null) : null];
     }
 
     private function endConditions($condition, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($class === Condition::class) array_pop($this->conditions);
+        if ($class !== Condition::class) return;
+        $frame = array_pop($this->conditions);
+        if (!$error) {
+            foreach ($frame['ordered'] as $position => $entry) {
+                if (!$entry['ready']) continue;
+                if ($result === true && !isset($frame['keys'][$position])) $this->errors['Missing native visibility key hook evidence'] = true;
+                if (isset($frame['keys'][$position]) && !isset($frame['decisions'][$position])) {
+                    $this->errors['Missing native visibility decision hook evidence'] = true;
+                }
+            }
+            if ($result === false && (!$frame['decisions'] || end($frame['decisions']) !== false)) {
+                $remaining = array_slice($frame['ordered'], $frame['next']);
+                if (!array_filter($remaining, static fn($entry) => !$entry['ready'])) {
+                    $this->errors['Missing native visibility key hook evidence'] = true;
+                }
+            }
+        }
+        if (!$error && $result === false && $frame['placement']) $this->record($frame['placement'], 'layout-ui-denied');
+    }
+
+    private function conditionName($condition, array $params, $name, ?\Throwable $error, string $class): void
+    {
+        $caller = is_object($condition) ? self::caller($condition, 'getName') : (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
+        $this->recordConditionName($condition, $name, $error, $class, $caller);
+    }
+
+    private static function ruleTarget(object $expected, $subject, string $class, string $method): bool
+    {
+        if (is_object($subject)) return $subject === $expected;
+        $reflection = new \ReflectionMethod($expected, $method);
+        return is_string($subject) && is_a($expected, $subject) && $reflection->isStatic()
+            && $reflection->getDeclaringClass()->getName() === $class;
+    }
+
+    private function recordConditionName($condition, $name, ?\Throwable $error, string $class, array $caller): void
+    {
+        $index = array_key_last($this->conditions);
+        if ($index === null || ($caller['class'] ?? null) !== Condition::class || ($caller['function'] ?? null) !== 'isVisible') return;
+        $frame = &$this->conditions[$index];
+        while (isset($frame['ordered'][$frame['next']]) && !$frame['ordered'][$frame['next']]['ready']) $frame['next']++;
+        $position = $frame['next'];
+        $entry = $frame['ordered'][$position] ?? null;
+        if (!$entry) return;
+        if (!self::ruleTarget($entry['object'], $condition, $class, 'getName')) {
+            $this->errors['Missing native visibility key hook evidence'] = true;
+            return;
+        }
+        $frame['next']++;
+        $frame['current'] = $position;
+        $frame['keys'][$position] = true;
+        $frame['name'] = null;
+        if ($error || (!is_string($name) && !is_int($name))) {
+            if ($entry['owner']) $this->unconfirmedCondition($entry['owner']);
+            return;
+        }
+        $frame['name'] = ['values' => $frame['values'][$name] ?? null, 'ownName' => $name === $entry['key']];
     }
 
     private function conditionDecision($condition, array $params, $visible, ?\Throwable $error, string $class): void
     {
-        if ($error || !is_bool($visible) || !in_array($class, [ConfigCondition::class, AclCondition::class], true)) return;
+        $caller = is_object($condition) ? self::caller($condition, 'isVisible') : (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
+        $this->recordConditionDecision($condition, $params, $visible, $error, $class, $caller);
+    }
+
+    private function conditionDynamic($condition, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        if ($condition instanceof VisibilityConditionInterface) return;
+        $caller = is_object($condition) ? self::caller($condition, $method) : (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
+        $method = strtolower($method);
+        if ($method === '__call') {
+            $method = strtolower($params[0] ?? '');
+            $params = $params[1] ?? [];
+        }
+        if ($method === 'getname') $this->recordConditionName($condition, $result, $error, $class, $caller);
+        if ($method === 'isvisible' && is_array($params)) $this->recordConditionDecision($condition, $params, $result, $error, $class, $caller);
+    }
+
+    private function recordConditionDecision($condition, array $params, $visible, ?\Throwable $error, string $class, array $caller): void
+    {
         $index = array_key_last($this->conditions);
-        $origin = $index === null ? null : ($this->conditions[$index][$class] ?? null);
-        $caller = self::caller($condition, 'isVisible');
-        if (!$origin || ($caller['class'] ?? null) !== Condition::class || ($caller['function'] ?? null) !== 'isVisible'
-            || $origin['signature'] !== self::signature($params[0])) return;
-        self::record($origin, $visible ? 'layout-condition-allowed' : 'layout-condition-denied');
+        if ($index === null || ($caller['class'] ?? null) !== Condition::class || ($caller['function'] ?? null) !== 'isVisible') return;
+        $frame = &$this->conditions[$index];
+        $position = $frame['current'];
+        $entry = $position === null ? null : ($frame['ordered'][$position] ?? null);
+        if (!$entry || !self::ruleTarget($entry['object'], $condition, $class, 'isVisible')) {
+            if ($frame['ordered']) $this->errors['Missing native visibility key hook evidence'] = true;
+            return;
+        }
+        $frame['decisions'][$position] = (bool) $visible;
+        $origin = $frame['origins'][$class] ?? null;
+        if (!$error && is_bool($visible) && $origin && $origin['signature'] === self::signature($params[0])) {
+            $this->record($origin, $visible ? 'layout-condition-allowed' : 'layout-condition-denied');
+        }
+        $owner = $entry['owner'];
+        $binding = $frame['name'];
+        if (!$owner || !$binding) return;
+        $values = $binding['values'];
+        if (!$binding['ownName']) {
+            if ($owner['nameId']) $this->record(['id' => $owner['nameId'], 'context' => $owner['context']], 'layout-condition-name-unused');
+            foreach ($owner['arguments'] as $id) $this->record(['id' => $id, 'context' => $owner['context']], 'layout-condition-argument-unconsumed');
+        }
+        if ($values && $values['nameId']) $this->record(['id' => $values['nameId'], 'context' => $values['context']], 'layout-condition-name-applied');
+        $origin = ['id' => $owner['id'], 'context' => $owner['context']];
+        if ($error) { $this->record($origin, 'layout-condition-failed'); return; }
+        $this->record($origin, $visible ? 'layout-condition-allowed' : 'layout-condition-denied');
+        if ($values && $values['fingerprint'] !== null && ($this->matches)($values['fingerprint'], $params[0])) {
+            foreach ($values['arguments'] as $id) $this->record(['id' => $id, 'context' => $values['context']], 'layout-condition-argument-applied');
+        }
+    }
+
+    private function uiGroup($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $frame = $this->generating[array_key_last($this->generating)] ?? null;
+        if ($error || $class !== DataStructure::class || !$frame || $frame['structure'] !== $structure) return;
+        $caller = self::caller($structure, 'addToParentGroup');
+        if (($caller['class'] ?? null) !== UiGenerator::class || ($caller['function'] ?? null) !== 'generateComponent') return;
+        $origin = $frame['state'][$params[0]]['uiGroup'] ?? null;
+        $parent = $structure->getParentId($params[0]);
+        if ($origin && $origin['value'] === $params[1] && $parent
+            && in_array($params[0], $structure->getGroupChildNames($parent, $params[1]), true)) $this->record($origin, 'layout-ui-group-applied');
     }
 
     private function createUi($generator, array $params, $wrapper, ?\Throwable $error, string $class): void
@@ -302,7 +546,7 @@ final class LayoutStructureCoverage
         if (!$frame || $frame['structure'] !== $structure || $wrapper->getNameInLayout() !== $name) return;
         $origin = $frame['state'][$name]['ui'] ?? null;
         if ($origin) {
-            self::record($origin, 'layout-ui-created');
+            $this->record($origin, 'layout-ui-created');
             $this->components[$wrapper] = $origin;
         }
     }
@@ -310,7 +554,7 @@ final class LayoutStructureCoverage
     private function renderUi($wrapper, array $params, $result, ?\Throwable $error, string $class): void
     {
         if (!$error && $class === UiWrapper::class && isset($this->components[$wrapper])) {
-            self::record($this->components[$wrapper], 'layout-ui-rendered');
+            $this->record($this->components[$wrapper], 'layout-ui-rendered');
         }
     }
 
@@ -321,8 +565,8 @@ final class LayoutStructureCoverage
         [$structure, $name] = $params;
         if (!$frame || $frame['structure'] !== $structure || !$structure->hasElement($name)) return;
         $entry = $frame['state'][$name] ?? [];
-        if (isset($entry['container'])) self::record($entry['container'], 'layout-container-created');
-        foreach ($entry['overridden'] ?? [] as $origin) self::record($origin, 'layout-container-attribute-overridden');
+        if (isset($entry['container'])) $this->record($entry['container'], 'layout-container-created');
+        foreach ($entry['overridden'] ?? [] as $origin) $this->record($origin, 'layout-container-attribute-overridden');
     }
 
     private function assignAttribute($structure, array $params, $result, ?\Throwable $error, string $class): void
@@ -340,10 +584,10 @@ final class LayoutStructureCoverage
             $origin = $frame['state'][$name]['attributes'][$attribute] ?? null;
             if ($origin) {
                 $state[$name][$attribute] = $origin;
-                if ($attribute === 'label') self::record($origin, 'layout-container-label-applied');
+                if ($attribute === 'label') $this->record($origin, 'layout-container-label-applied');
             }
         } elseif ($previous) {
-            self::record($previous, 'layout-container-attribute-replaced');
+            $this->record($previous, 'layout-container-attribute-replaced');
         }
         $this->structures[$structure] = $state;
     }
@@ -367,7 +611,7 @@ final class LayoutStructureCoverage
             $caller = self::caller($structure, 'getAttribute');
             $origin = $this->structures[$structure][$params[0]]['label'] ?? null;
             if ($origin && ($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'getElementProperty') {
-                self::record($origin, 'layout-container-label-read');
+                $this->record($origin, 'layout-container-label-read');
             }
         }
         $index = array_key_last($this->wrapping);
@@ -389,14 +633,14 @@ final class LayoutStructureCoverage
         if ($class !== Layout::class) return;
         $frame = array_pop($this->wrapping);
         if ($error || $frame['tagReads'] !== 2) return;
-        foreach ($frame['origins'] as $origin) self::record($origin, 'layout-container-wrapper-rendered');
+        foreach ($frame['origins'] as $origin) $this->record($origin, 'layout-container-wrapper-rendered');
     }
 
     private function display($layout, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== Layout::class) return;
         $origin = $this->structures[self::structure($layout)][$params[0]]['display'] ?? null;
-        if ($origin) self::record($origin, $result ? 'layout-display-allowed' : 'layout-display-denied');
+        if ($origin) $this->record($origin, $result ? 'layout-display-allowed' : 'layout-display-denied');
     }
 
     private function beginCacheability($layout, array $params, string $class): void
@@ -438,12 +682,17 @@ final class LayoutStructureCoverage
         if ($class !== Layout::class) return;
         $frame = array_pop($this->cacheability);
         if ($error) return;
-        foreach ($frame['missing'] as $origin) self::record($origin, 'layout-cacheability-target-missing');
-        if ($cacheable === false && $frame['winner']) self::record($frame['winner'], 'layout-cacheability-denied');
+        foreach ($frame['missing'] as $origin) $this->record($origin, 'layout-cacheability-target-missing');
+        if ($cacheable === false && $frame['winner']) $this->record($frame['winner'], 'layout-cacheability-denied');
     }
 
-    private static function record(array $origin, string $effect): void
+    private function record(array $origin, string $effect): void
     {
+        if (in_array($effect, ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-name-applied',
+            'layout-condition-class-selected', 'layout-condition-argument-applied', 'layout-ui-group-applied',
+            'layout-ui-created', 'layout-ui-rendered', 'layout-container-created', 'layout-container-label-applied',
+            'layout-container-label-read', 'layout-container-wrapper-rendered', 'layout-display-allowed',
+            'layout-display-denied', 'layout-cacheability-denied'], true)) $this->healthy = true;
         Recorder::layout($origin['id'], $effect, $origin['context']);
     }
 }

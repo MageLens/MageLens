@@ -41,8 +41,8 @@ class LayoutUiProof extends Template
             'group' => $group === ['magelens_layout_ui', 'magelens_layout_ui_before'],
             'visibility' => !$layout->hasElement('magelens_layout_ui_denied')
                 && !$layout->hasElement('magelens_layout_ui_config_denied'),
-            'calls' => count(array_filter(\MageLens\Compatibility\Model\LayoutVisibility::$decisions)) === 3
-                && count(\MageLens\Compatibility\Model\LayoutVisibility::$decisions) === 4,
+            'calls' => count(array_filter(\MageLens\Compatibility\Model\LayoutVisibility::$decisions)) === 6
+                && count(\MageLens\Compatibility\Model\LayoutVisibility::$decisions) === 7,
             'cacheable' => $layout->isCacheable(),
             'ttl' => $wrapper->getData('ttl') === null,
             'output' => $layout->getBlock('magelens_layout_ui_detached') instanceof UiComponent

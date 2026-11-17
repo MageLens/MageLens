@@ -48,6 +48,8 @@ final class LayoutManifest
             $blockNode = ($node->tagName === 'block' || ($node->tagName === 'referenceBlock' && $element !== ''))
                 && in_array($fileType, ['page', 'generic', 'wireframe'], true);
             $kind = match (true) {
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'visibilityCondition' => 'visibility',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::visibilityArgument($node) => 'visibility-argument',
                 $fileType === 'page-types' && $node->tagName === 'type' => 'page-type',
                 $fileType === 'registry' && $node->tagName === 'layout' => 'registry-entry',
                 $fileType === 'registry' && $node->tagName === 'label' => 'registry-label',
@@ -87,6 +89,9 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    $valueKind === 'visibility' && $attribute->nodeName === 'name' => 'visibility-name',
+                    $valueKind === 'visibility' && $attribute->nodeName === 'className' => 'visibility-class',
+                    $valueKind === 'ui-placement' && $attribute->nodeName === 'group' => 'ui-group',
                     $valueKind === 'page-type' && in_array($attribute->nodeName, ['id', 'label'], true) => 'page-type-' . $attribute->nodeName,
                     $valueKind === 'registry-entry' && $attribute->nodeName === 'id' => 'registry-id',
                     $valueKind === 'include' && $attribute->nodeName === 'handle' => 'include-handle',
@@ -135,7 +140,8 @@ final class LayoutManifest
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',
                     'position-name', 'position-as', 'position-before', 'position-after',
-                    'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override'], true);
+                    'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override',
+                    'visibility', 'visibility-name', 'visibility-class', 'visibility-argument', 'ui-group'], true);
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
                         'body-class', 'body-class-name', 'body-class-value'], true);
@@ -174,6 +180,14 @@ final class LayoutManifest
         return in_array($node->tagName, ['head', 'body'], true);
     }
 
+    private static function visibilityArgument(\DOMElement $node): bool
+    {
+        if (!in_array($node->tagName, ['argument', 'item'], true) || $node->getAttribute('name') === '') return false;
+        while ($node->tagName === 'item' && $node->parentNode instanceof \DOMElement) $node = $node->parentNode;
+        return $node->tagName === 'argument' && $node->parentNode->nodeName === 'arguments'
+            && $node->parentNode->parentNode->nodeName === 'visibilityCondition';
+    }
+
     private static function blockArgument(\DOMElement $node): bool
     {
         $type = static fn($element) => $element->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type');
@@ -210,6 +224,9 @@ final class LayoutManifest
         }
         if ($attribute === 'display') return 'The display decision has no source trace at the element rendering boundary';
         if ($attribute === 'cacheable') return 'The native page-cache selector visits block declarations whose cacheable attribute is the literal false';
+        if ($node === 'uiComponent' && $attribute === 'ttl') {
+            return 'The native UI reader omits TTL and its generator does not apply this attribute to the wrapper';
+        }
         if ($attribute === 'ttl') return 'TTL application and subsequent cache behavior are unmeasured';
         if ($attribute === 'ifconfig' || $attribute === 'aclResource' || $attribute === 'acl') {
             return 'The native permission or configuration decision has no source trace';

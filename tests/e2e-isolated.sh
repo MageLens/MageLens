@@ -96,7 +96,7 @@ fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -196,6 +196,10 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-registry-hook-proof.php "$registry_case"
     done
+    for ui_case in native missing-factory missing-key missing-decision missing-dynamic-key missing-dynamic-decision missing-magic dynamic-limit; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-ui-hook-proof.php "$ui_case"
+    done
     # Original-source fixture assertions need fresh native layout interpretation.
     # Registry proofs separately verify warm cache zero-hit provenance boundaries.
     ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
@@ -221,6 +225,7 @@ fi
     for layout_check in tests/verify-layout-*.cjs; do
         case "$layout_check" in
             tests/verify-layout-admin.cjs) ./bin/runner node "$layout_check" "$platform" ;;
+            tests/verify-layout-ui-structure.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
             tests/verify-layout-ownership.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$theme" ;;
             *) ./bin/runner node "$layout_check" ;;
         esac

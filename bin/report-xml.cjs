@@ -26,6 +26,11 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'ui-group': ['layout-ui-group-applied'],
+    'visibility': ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-unconfirmed', 'layout-condition-failed'],
+    'visibility-name': ['layout-condition-name-applied', 'layout-condition-name-unused', 'layout-condition-unconfirmed'],
+    'visibility-class': ['layout-condition-class-selected', 'layout-condition-unconfirmed'],
+    'visibility-argument': ['layout-condition-argument-applied', 'layout-condition-argument-unconsumed', 'layout-condition-unconfirmed'],
     'page-type': ['layout-page-type-applied'],
     'page-type-id': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
     'page-type-label': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
@@ -51,7 +56,7 @@ const layoutEvents = {
     'condition-aclResource': ['layout-condition-allowed', 'layout-condition-denied'],
     'condition-acl': ['layout-condition-allowed', 'layout-condition-denied'],
     container: ['layout-container-created'],
-    'ui-placement': ['layout-ui-created', 'layout-ui-rendered'],
+    'ui-placement': ['layout-ui-created', 'layout-ui-rendered', 'layout-ui-denied'],
     'page-attribute': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
     'page-attribute-name': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
     'page-attribute-value': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
@@ -87,8 +92,14 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
-for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked');
+for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed');
 const layoutDecisions = {
+    'layout-ui-denied': 'The native visibility decision removed this UI placement before component generation.',
+    'layout-condition-unconfirmed': 'The custom condition source lacks a unique native composite, rule-key or bounded argument binding.',
+    'layout-condition-name-unused': 'The native rule used another condition key to retrieve its arguments.',
+    'layout-condition-argument-unconsumed': 'This rule retrieved its arguments from another XML condition key.',
+    'layout-condition-failed': 'The native visibility rule call failed before returning a decision.',
+    'layout-validation-failed': 'Native merged-layout validation stopped construction before this instruction could execute.',
     'layout-registry-overridden': 'A later native registry write supplied the field used by the consumer.',
     'layout-registry-label-ignored': 'The native label merge applied no replacement text and preserved the preceding label fragments.',
     'layout-registry-label-unconfirmed': 'The mixed-content label merge lacks complete native text assignment evidence.',
@@ -142,6 +153,9 @@ const layoutDecisions = {
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
+    'layout-condition-hook-limit': 'Runtime visibility hooks are bounded to 1024 declaring classes per request.',
+    'layout-validation-failed': 'Native merged-layout validation stopped this layout instance before interpretation.',
+    'layout-validation-warning': 'Native merged-layout validation logged a schema failure and continued in the current application mode.',
     'layout-registry-custom-provider': 'A customized registry builder or configuration implementation lacks verified source and native consumer boundaries.',
     'layout-registry-cache': 'The registry reused inputs without current native file-read provenance.',
     'layout-registry-limit': 'Registry tracing is bounded to 512 files, 2 MiB of input XML and 16384 retained DOM nodes per request.',
