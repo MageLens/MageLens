@@ -78,7 +78,8 @@ function shareReportData(coverageDir) {
         section('PHP lines', php, phpFiles),
         section('JavaScript statements', javascript.total.statements, jsFiles),
         {...section('Template executable lines', templates.lines, templateFiles),
-            warningCount: templates.templates.reduce((sum, entry) => sum + warningCount(entry.unsupportedDirectives), 0)
+            warningCount: templates.templates.reduce((sum, entry) =>
+                sum + warningCount(entry.unsupportedDirectives) + (entry.executionUnsupported ? 1 : 0), 0)
                 + warningCount(templates.scripts?.unsupported) + warningCount(templates.scripts?.generated)}
     ];
     if (Object.hasOwn(summary.metrics, 'xml')) {

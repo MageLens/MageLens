@@ -7,9 +7,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const {createHash} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
+const {createCoverageMap} = require('istanbul-lib-coverage');
+const {createInstrumenter} = require('istanbul-lib-instrument');
+const {createContext} = require('istanbul-lib-report');
+const reports = require('istanbul-reports');
 const {createManifest, merge} = require('@vitaliiboiko/magento-template-coverage');
+
+const {createJavascriptScope} = require('../bin/javascript-scope.cjs');
 
 const cli = path.resolve(__dirname, '../bin/export-coverage.cjs');
 const moduleRoot = 'app/code/Example/Checkout';
@@ -21,7 +28,9 @@ const runId = '1234567890abcdef1234567890abcdef';
 const sourceText = '<div>ORIGINAL_SOURCE_ONLY</div>';
 const privateMarker = 'PRIVATE_RUNTIME_VALUE';
 
-function fixture(t) {
+const exportModes = [[[], 'share.html'], [['--include-source'], 'share-with-source.html']];
+
+function fixture(t, {javascriptFile = js, templateSource = sourceText} = {}) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-share-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const write = (file, contents) => {
@@ -33,10 +42,11 @@ function fixture(t) {
     const read = file => fs.readFileSync(path.join(root, 'coverage', file), 'utf8');
     const run = (...args) => spawnSync(process.execPath, [cli, ...args], {cwd: root, encoding: 'utf8'});
     const sources = {};
+    const javascriptSource = 'window.shipping = true;';
     for (const [file, contents] of Object.entries({
         [php]: "<?php\nreturn 'shipping';\n",
-        [js]: 'define(function () { return true; });',
-        [template]: sourceText,
+        [javascriptFile]: javascriptSource,
+        [template]: templateSource,
         [xml]: '<config><default><shipping/></default></config>',
         [moduleRoot + '/Test/MageLens/hooks.php']: "<?php\nreturn '" + privateMarker + "';\n"
     })) {
@@ -57,17 +67,23 @@ function fixture(t) {
     artifact('php/coverage-summary.json', {run: runId, covered: 1, total: 2, percent: 50,
         requests: [{uri: '/checkout/?token=' + privateMarker}]});
     artifact('php/line-coverage.json', {[php]: {1: 0, 2: 1}});
-    const statements = {covered: 1, total: 1, pct: 100, skipped: 0};
-    const coveragePath = '/workspace/src/' + js;
-    artifact('js/coverage-summary.json', {total: {statements}, [coveragePath]: {statements}});
-    artifact('javascript-scope.json', {run: runId, included: [{path: js, coveragePath, group: 'application'}]});
-    const templates = merge(createManifest({source: path.join(root, 'src'), roots}), []);
-    artifact('templates/coverage-summary.json', templates);
+    const scope = createJavascriptScope(['src/' + javascriptFile], {});
+    const [entry] = scope.included;
+    // The scope and Istanbul artifacts come from a Linux runner.
+    entry.coveragePath = entry.coveragePath.replaceAll('\\', '/');
+    const code = createInstrumenter().instrumentSync(javascriptSource, entry.coveragePath);
+    const context = {window: {}};
+    vm.runInNewContext(code, context);
+    const coverageMap = createCoverageMap(context.__coverage__);
+    reports.create('json-summary').execute(createContext({dir: path.join(root, 'coverage/js'), coverageMap}));
+    artifact('javascript-scope.json', {run: runId, ...scope});
+    const manifest = createManifest({source: path.join(root, 'src'), roots});
+    artifact('templates/coverage-summary.json', merge(manifest, []));
     artifact('xml/coverage.json', {run: runId, complete: true, sourcesUnchanged: true, collectorErrors: [],
         covered: 1, total: 1, percent: 100, warnings: [{reason: privateMarker}],
         files: [{path: xml, covered: 1, total: 1, lines: {1: {state: 'covered', hits: 1}},
             declarations: [], sourceHash: sources['src/' + xml]}]});
-    return {root, write, artifact, read, run};
+    return {root, write, artifact, read, run, manifest};
 }
 
 test('the default export contains only file paths and projected results, including an empty metric', t => {
@@ -77,7 +93,9 @@ test('the default export contains only file paths and projected results, includi
     const html = report.read('share.html');
     for (const file of [php, js, template, xml]) assert.ok(html.includes(file), file);
     assert.match(html, /Template executable lines<\/th><td>0<\/td><td>0<\/td><td>N\/A<\/td>/);
-    assert.doesNotMatch(html, /NaN|PRIVATE_RUNTIME_VALUE|ORIGINAL_SOURCE_ONLY|\/workspace\/src\/|project-fixtures\.json/);
+    assert.doesNotMatch(html, /NaN|PRIVATE_RUNTIME_VALUE|ORIGINAL_SOURCE_ONLY|project-fixtures\.json/);
+    const scope = JSON.parse(report.read('javascript-scope.json'));
+    assert.ok(!html.includes(scope.included[0].coveragePath));
     for (const [, href] of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
         assert.ok(href.startsWith('#'), 'Export should open offline using only the shared file');
     }
@@ -97,6 +115,63 @@ test('opting into source escapes the original and keeps runtime data out of both
     assert.ok(!html.includes(privateMarker));
     assert.equal(report.read('share.html'), original);
 });
+
+test('both exports retain measured dot-prefixed JavaScript files and source opt-in checks their hash', t => {
+    const javascriptFile = moduleRoot + '/.eslintrc.js';
+    const report = fixture(t, {javascriptFile});
+    for (const [args, file] of exportModes) {
+        const result = report.run(...args);
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(report.read(file), /app\/code\/Example\/Checkout\/\.eslintrc\.js(?:<\/a>)?<\/th><td>1<\/td><td>1<\/td><td>100\.00%<\/td>/);
+    }
+    report.write('src/' + javascriptFile, 'window.shipping = false;');
+    const changed = report.run('--include-source');
+    assert.equal(changed.status, 1);
+    assert.match(changed.stderr, /Original source has changed/);
+});
+
+for (const [name, markup, expectWarning] of [
+    ['unsupported bindings', '<div data-bind="text: first, text: second"></div>', true],
+    ['fully supported markup', '<div></div>', false]
+]) {
+    test(`both exports preserve template counts and warnings with ${name}`, t => {
+        const report = fixture(t, {templateSource: markup + '\n<script>window.foo = 1;</script>'});
+        const {manifest} = report;
+        const [entry] = manifest.templates;
+        const [statement] = entry.statements;
+        const marker = 'TEMPLATE_DIAGNOSTIC_ONLY';
+        if (expectWarning) {
+            assert.match(entry.executionUnsupported, /binding coverage unavailable/);
+            entry.executionUnsupported += ' ' + marker;
+        } else {
+            assert.equal(entry.executionUnsupported, undefined);
+        }
+        const coverage = merge(manifest, [{
+            schemaVersion: 2, recordId: 'test', ids: [entry.id], hits: {[entry.id]: {[statement.id]: 1}}
+        }]);
+        assert.equal(coverage.lines.covered, 1);
+        assert.equal(coverage.lines.total, 1);
+        assert.deepEqual(coverage.templates[0].unsupportedDirectives || [], []);
+        assert.deepEqual(coverage.scripts.unsupported, []);
+        assert.deepEqual(coverage.scripts.generated, []);
+        report.artifact('templates/coverage-summary.json', coverage);
+        const xmlCoverage = JSON.parse(report.read('xml/coverage.json'));
+        report.artifact('xml/coverage.json', {...xmlCoverage, warnings: []});
+
+        for (const [args, file] of exportModes) {
+            const result = report.run(...args);
+            assert.equal(result.status, 0, result.stderr);
+            const html = report.read(file);
+            assert.match(html, /Template executable lines<\/th><td>1<\/td><td>1<\/td><td>100\.00%<\/td>/);
+            if (expectWarning) {
+                assert.match(html, /Measurement warnings: 1\. Coverage counts only measurable items\./);
+            } else {
+                assert.doesNotMatch(html, /Measurement warnings/);
+            }
+            assert.ok(!html.includes(marker));
+        }
+    });
+}
 
 test('a completed three-report run from v1.9.4 exports without XML or a source checkout', t => {
     const report = fixture(t);
@@ -123,7 +198,7 @@ exec "$@"
     const launcher = path.join(report.root, 'bin/export-coverage');
     fs.copyFileSync(path.join(__dirname, '../bin/export-coverage'), launcher);
     fs.symlinkSync(cli, path.join(report.root, 'bin/export-coverage.cjs'));
-    for (const [args, file] of [[[], 'share.html'], [['--include-source'], 'share-with-source.html']]) {
+    for (const [args, file] of exportModes) {
         const result = spawnSync('bash', [launcher, ...args], {cwd: os.tmpdir(), encoding: 'utf8'});
         assert.equal(result.status, 0, result.stderr);
         assert.ok(report.read(file).includes(js));
@@ -169,6 +244,23 @@ test('a fixture hook cannot be exported as a measured PHP file even when it is i
     }
 });
 
+test('both exports reject traversal components even when the paths are inventoried', t => {
+    const report = fixture(t);
+    const inventory = JSON.parse(report.read('run.json'));
+    for (const component of ['.', '..']) {
+        const file = moduleRoot + '/' + component + '/Model/Shipping.php';
+        report.artifact('run.json', {...inventory, sources: {
+            ...inventory.sources, ['src/' + file]: inventory.sources['src/' + php]
+        }});
+        report.artifact('php/line-coverage.json', {[file]: {1: 0, 2: 1}});
+        for (const [args] of exportModes) {
+            const result = report.run(...args);
+            assert.equal(result.status, 1);
+            assert.match(result.stderr, /outside the measured source inventory/);
+        }
+    }
+});
+
 test('opt-in declines modified and symlinked originals, even if the symlink target matches the recorded hash', t => {
     const report = fixture(t);
     report.write('src/' + template, 'changed');
@@ -178,6 +270,8 @@ test('opt-in declines modified and symlinked originals, even if the symlink targ
     report.write('outside.html', sourceText);
     fs.unlinkSync(original);
     fs.symlinkSync(outside, original);
-    assert.notEqual(report.run('--include-source').status, 0);
+    const symlinked = report.run('--include-source');
+    assert.equal(symlinked.status, 1);
+    assert.match(symlinked.stderr, /Symlinked coverage source is unsupported/);
     assert.equal(fs.existsSync(path.join(report.root, 'coverage/share-with-source.html')), false);
 });

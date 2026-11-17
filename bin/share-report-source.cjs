@@ -12,7 +12,7 @@ function isShareablePath(file) {
         && /^(?:app\/code|app\/design\/(?:frontend|adminhtml)|vendor)\//.test(file)
         && /\.(?:php|phtml|html|js|xml)$/.test(file)
         && !/[\\\x00-\x1f\x7f-\x9f<>:"|?*]/.test(file)
-        && file.split('/').every(part => part && !part.startsWith('.'))
+        && file.split('/').every(part => part && part !== '.' && part !== '..')
         && !isCoverageExcluded(file);
 }
 
