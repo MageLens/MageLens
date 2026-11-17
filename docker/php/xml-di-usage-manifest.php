@@ -44,10 +44,8 @@ final class DiUsageManifest
             $node->setAttribute(self::OWNER, $id);
             return;
         }
-        $argument = $node->tagName === 'argument';
-        $entries = $argument ? [$node, ...$node->getElementsByTagName('*')] : [$node];
-        foreach ($entries as $entry) {
-            $tag = $argument ? self::ARGUMENT : self::OWNER;
+        $tag = self::originTag($node);
+        foreach ([$node, ...$node->getElementsByTagName('*')] as $entry) {
             $entry->setAttribute($tag, $id);
             foreach (self::OBJECT_METADATA as $attribute) {
                 if ($entry->hasAttribute($attribute)) $entry->setAttribute($tag . '-' . $attribute, $id);
@@ -68,13 +66,23 @@ final class DiUsageManifest
         $node->setAttribute(self::SHARED, $id);
     }
 
-    private static function nodeOrigin(\DOMElement $node, array $locations, bool $argument): array
+    private static function originTag(\DOMElement $node): string
+    {
+        if ($node->tagName === 'argument') return self::ARGUMENT;
+        // Keep each enclosing item's owner on the descendant after a DOM merge.
+        $depth = 0;
+        for ($parent = $node->parentNode; $parent instanceof \DOMElement && $parent->tagName === 'item'; $parent = $parent->parentNode) {
+            $depth++;
+        }
+        return self::OWNER . '-' . $depth;
+    }
+
+    private static function nodeOrigin(\DOMElement $node, array $locations): array
     {
         $owners = $items = [];
-        $tag = $argument ? self::ARGUMENT : self::OWNER;
+        $tag = self::originTag($node);
         $kind = $node->getAttributeNS(self::XSI, 'type');
-        $entries = $argument ? [$node, ...$node->getElementsByTagName('*')] : [$node];
-        foreach ($entries as $entry) {
+        foreach ([$node, ...$node->getElementsByTagName('*')] as $entry) {
             $owners[$entry->getAttribute($tag)] = true;
             // The installed DI string interpreter ignores translatable and
             // sortOrder. Only object descriptors retain these metadata keys.
@@ -88,7 +96,7 @@ final class DiUsageManifest
         }
         if ($kind === 'array') foreach ($node->childNodes as $child) {
             if ($child instanceof \DOMElement && $child->tagName === 'item') {
-                $items[$child->getAttribute('name')] = self::nodeOrigin($child, $locations, false);
+                $items[$child->getAttribute('name')] = self::nodeOrigin($child, $locations);
             }
         }
         return ['origin' => count($owners) === 1 ? ($locations[array_key_first($owners)] ?? null) : null,
@@ -104,7 +112,7 @@ final class DiUsageManifest
             $name = $node->getAttribute('name');
             $arguments = [];
             foreach ($xpath->query('arguments/argument', $node) as $argument) {
-                $arguments[$argument->getAttribute('name')] = self::nodeOrigin($argument, $locations, true);
+                $arguments[$argument->getAttribute('name')] = self::nodeOrigin($argument, $locations);
             }
             $types[$name] = ['virtual' => $locations[$node->getAttribute(self::OWNER)] ?? null, 'arguments' => $arguments,
                 'shared' => $locations[$node->getAttribute(self::SHARED)] ?? null];
@@ -127,6 +135,8 @@ final class DiUsageManifest
         $entry += ['origin' => null, 'kind' => '', 'items' => [], 'shared' => null];
         $entry['array'] = is_array($value);
         $entry['objectType'] = $entry['kind'] === 'object' && $entry['array'] ? ($value['instance'] ?? null) : null;
+        $entry['objectFields'] = $entry['objectType'] !== null ? array_fill_keys(array_keys($value), true) : [];
+        $entry['null'] = $value === null;
         $entry['hasShared'] = $entry['array'] && isset($value['instance'], $value['shared']);
         if (!$entry['hasShared']) $entry['shared'] = null;
         // Magento treats these keys as descriptors when parsing nested items.
@@ -148,7 +158,7 @@ final class DiUsageManifest
         $shared = $entry['shared']['id'] ?? null;
         return ['array' => $entry['array'], 'id' => isset($enabled['arguments'][$id]) ? $id : null,
             'kind' => $entry['kind'], 'items' => $items,
-            'objectType' => $entry['objectType'],
+            'objectType' => $entry['objectType'], 'objectFields' => $entry['objectFields'] ?? [], 'null' => $entry['null'] ?? false,
             'shared' => $entry['hasShared'] ? (isset($enabled['lifecycles'][$shared]) ? $shared : false) : null];
     }
 

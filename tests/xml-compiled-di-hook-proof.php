@@ -45,6 +45,15 @@ class Consumer
     public function __construct(public First $dependency) {}
 }
 class ConsumerDirect extends Consumer {}
+class NullableConsumer
+{
+    public function __construct(public array $options, public ?int $limit = 10, public ?int $defaultNull = null) {}
+}
+class OriginalParent
+{
+    public function __construct(public string $label) {}
+}
+class ChangedParent extends OriginalParent {}
 class DeferredConsumer
 {
     public function __construct(public string $label)
@@ -70,7 +79,7 @@ function check(bool $condition, string $message): void
 {
     if (!$condition) throw new \RuntimeException($message);
 }
-function compile(string $chain, string $area): array
+function compile(string $chain, string $area, array $xmlConfig): array
 {
     $config = new Config();
     $config->extend([
@@ -81,18 +90,79 @@ function compile(string $chain, string $area): array
         DeferredConsumer::class => ['arguments' => ['label' => 'configured']],
         ConsumerDirect::class => ['arguments' => ['dependency' => ['instance' => Service::class]]],
         'ProbeThrowing' => ['type' => DeferredConsumer::class, 'arguments' => ['label' => 'throw']],
-    ]);
+    ] + $xmlConfig);
+    return compileConfiguration($config, [Service::class, FrontendService::class, Consumer::class, ConsumerDirect::class,
+        ThrowingService::class, CallsObjectManager::class, DeferredConsumer::class, NullableConsumer::class], $area);
+}
+
+function compileConfiguration(Config $config, array $types, string $area): array
+{
     $factory = new Developer($config);
     $manager = new ObjectManager($factory, $config);
     $factory->setObjectManager($manager);
     $classes = new ClassReaderDecorator(new ClassReader());
     $definitions = new Collection();
-    foreach ([Service::class, FrontendService::class, Consumer::class, ConsumerDirect::class,
-        ThrowingService::class, CallsObjectManager::class, DeferredConsumer::class] as $type) {
+    foreach ($types as $type) {
         $definitions->addDefinition($type, $classes->getConstructor($type));
     }
     $reader = new Reader($config, new AreaLoader(), new ArgumentsResolverFactory($manager), $classes, new Type());
     return (new PreferencesResolving())->modify($reader->generateCachePerScope($definitions, $area));
+}
+
+function fixtureConfiguration(string $fragment, array &$items, array &$origins): array
+{
+    $source = '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation='
+        . '"urn:magento:framework:ObjectManager/etc/config.xsd">' . $fragment . '</config>';
+    $document = Xml::document($source);
+    $factory = new \ReflectionClass(\Magento\Framework\App\ObjectManagerFactory::class);
+    $interpreter = $factory->getMethod('createArgumentInterpreter')->invoke(
+        $factory->newInstanceWithoutConstructor(), new \Magento\Framework\Stdlib\BooleanUtils());
+    $mapper = new \Magento\Framework\ObjectManager\Config\Mapper\Dom($interpreter);
+    $data = $mapper->convert($document);
+    $path = 'app/code/Fixture/Native/etc/di.xml';
+    $xpath = new \DOMXPath($document);
+    $locations = [];
+    foreach (Xml::declarations($path, $source, 'arguments') as $item) {
+        $id = $item['id'];
+        $items[$id] = $item;
+        $locations[$id] = ['id' => $id, 'path' => $path];
+        DiUsageManifest::annotate($xpath->query($item['node'])->item(0), $id);
+    }
+    $origins = DiUsageManifest::origins($document, $data, $locations);
+    return $data;
+}
+
+function nullableConfiguration(array &$usage, array &$ids): array
+{
+    $type = NullableConsumer::class;
+    $items = $origins = [];
+    $data = fixtureConfiguration(<<<XML
+        <type name="$type"><arguments>
+            <argument name="limit" xsi:type="null"/>
+            <argument name="defaultNull" xsi:type="null"/>
+            <argument name="options" xsi:type="array">
+                <item name="group" xsi:type="array"><item name="retained" xsi:type="null"/></item>
+            </argument>
+        </arguments></type>
+        XML, $items, $origins);
+    $config = new Config();
+    $config->extend($data);
+    $usage = DiUsageManifest::prepareArea($items, array_fill_keys(array_keys($items), true), ['global' => $origins],
+        $config, ['global'], 'global', null, true, compiled: true);
+    $ids = array_column($items, 'id', 'path');
+    check(count($usage['eligible']['arguments']) === 5, 'XML null declarations and nested arrays stay in scope');
+    return $data;
+}
+
+function expectStaleProvenance(array $providers, array $areas): void
+{
+    try {
+        CompiledProvenance::validate($providers, $areas);
+        throw new \LogicException('Expected stale compiled provenance');
+    } catch (\RuntimeException $error) {
+        check(str_contains($error->getMessage(), 'provenance is stale')
+            && str_contains($error->getMessage(), './bin/deploy-production'), 'stale compiled provenance requires redeployment');
+    }
 }
 
 function verifyCompiledProvenance(): void
@@ -102,17 +172,72 @@ function verifyCompiledProvenance(): void
     define('BP', $directory);
     mkdir($directory . '/app/etc', 0777, true);
     mkdir($directory . '/generated/metadata', 0777, true);
+    mkdir($directory . '/app/code/Fixture', 0777, true);
+    $source = $directory . '/app/code/Fixture/Consumer.php';
+    $environment = $directory . '/app/etc/env.php';
+    $session = $directory . '/vendor/magento/framework/Session/SessionManager.php';
+    $sessionSource = (new \ReflectionClass(\Magento\Framework\Session\SessionManager::class))->getFileName();
+    mkdir(dirname($session), 0777, true);
+    $original = '<?php namespace ' . __NAMESPACE__ . '; class ProvenanceConsumer extends OriginalParent {}';
     $files = [$directory . '/app/etc/config.php', $directory . '/composer.lock'];
     $areas = Xml::enabledHttpAreas(['frontend', 'adminhtml', 'webapi_rest', 'crontab', 'webapi_soap']);
     check($areas === ['global', 'frontend', 'adminhtml', 'webapi_rest'], 'Only installed HTTP scopes are stamped');
     foreach ($areas as $area) $files[] = CompiledLoader::getFilePath($area);
     try {
         foreach ($files as $file) file_put_contents($file, 'fixture');
-        $providers = ['global' => ['example/etc/di.xml' => hash('sha256', 'original')]];
+        file_put_contents($source, $original);
+        copy($sessionSource, $session);
+        require $source;
+        $originalParent = OriginalParent::class;
+        $changedParent = ChangedParent::class;
+        $diXml = <<<XML
+            <type name="$originalParent"><arguments><argument name="label" xsi:type="string">original value</argument></arguments></type>
+            <type name="$changedParent"><arguments><argument name="label" xsi:type="string">changed value</argument></arguments></type>
+            XML;
+        $items = $origins = [];
+        $config = new Config();
+        $config->extend(fixtureConfiguration($diXml, $items, $origins));
+        check($config->getArguments(ChangedParent::class) === ['label' => 'changed value'], 'different parent configuration');
+        $providers = ['global' => ['example/etc/di.xml' => hash('sha256', $diXml)]];
         check(CompiledProvenance::validate($providers, $areas) === null, 'deployment has no provenance before compilation');
+        file_put_contents($environment, "<?php return ['MAGE_MODE' => 'developer'];");
         $before = CompiledProvenance::inputs($providers);
-        CompiledProvenance::publish($before, $before, $areas);
-        check(CompiledProvenance::validate($providers, $areas) === CompiledProvenance::metadata($areas), 'compiled provenance round trip');
+        $compiled = compileConfiguration($config, [ProvenanceConsumer::class], 'global');
+        check($compiled['arguments'][ProvenanceConsumer::class] === ['label' => ['_v_' => 'original value']],
+            'native compilation uses the original PHP inheritance');
+        file_put_contents(CompiledLoader::getFilePath('global'), '<?php return ' . var_export($compiled, true) . ';');
+        file_put_contents($environment, "<?php return ['MAGE_MODE' => 'production'];");
+        CompiledProvenance::publish($before, CompiledProvenance::inputs($providers), $areas);
+        $metadata = CompiledProvenance::metadata($areas);
+        check(CompiledProvenance::validate($providers, $areas) === $metadata, 'compiled provenance round trip');
+        $patchPath = '/cypress-patches/magento-framework-session-cookie-race-41057.patch';
+        if (!is_file($patchPath)) $patchPath = dirname(__DIR__) . '/patches/cypress/' . basename($patchPath);
+        $patch = proc_open(['git', 'apply', '--no-index', '--unidiff-zero', $patchPath],
+            [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $directory);
+        check(is_resource($patch) && proc_close($patch) === 0, 'apply the native session fixture patch on a test copy');
+        $patchedHash = hash_file('sha256', $session);
+        check($patchedHash !== hash_file('sha256', $sessionSource) && CompiledProvenance::validate($providers, $areas) === $metadata
+            && hash_file('sha256', $session) === $patchedHash, 'fixture patch preserves provenance and validation leaves source untouched');
+        file_put_contents($session, "\n// Unexpected PHP source edit.\n", FILE_APPEND);
+        expectStaleProvenance($providers, $areas);
+        copy($sessionSource, $session);
+
+        $shared = [];
+        $factory = new CompiledFactory(new CompiledConfig($compiled), $shared);
+        check($factory->create(ProvenanceConsumer::class)->label === 'original value', 'unchanged compiled constructor injection');
+        $events = new \ReflectionProperty(Recorder::class, 'events');
+        $evidence = $events->getValue();
+        foreach ([
+            str_replace('extends OriginalParent', 'extends ChangedParent', $original),
+            str_replace('{}', '{ public function __construct(public string $label = "edited") {} }', $original),
+        ] as $changed) {
+            file_put_contents($source, $changed);
+            expectStaleProvenance($providers, $areas);
+            check($events->getValue() === $evidence, 'PHP-only changes are rejected before any new DI evidence');
+        }
+        file_put_contents($source, $original);
+        check(CompiledProvenance::validate($providers, $areas) === CompiledProvenance::metadata($areas),
+            'restoring the original class restores provenance');
         try {
             CompiledProvenance::validate($providers, [...$areas, 'graphql']);
             throw new \LogicException('Expected missing metadata for the registered area');
@@ -120,20 +245,16 @@ function verifyCompiledProvenance(): void
             check(str_contains($error->getMessage(), 'metadata is missing for graphql'), 'Missing active metadata fails explicitly');
         }
         $edited = ['global' => ['example/etc/di.xml' => hash('sha256', 'edited')]];
-        foreach ([$edited, $providers] as $index => $input) {
-            if ($index === 1) file_put_contents(CompiledLoader::getFilePath('frontend'), 'changed');
-            try {
-                CompiledProvenance::validate($input, $areas);
-                throw new \LogicException('Expected stale compiled provenance');
-            } catch (\RuntimeException $error) {
-                check(str_contains($error->getMessage(), 'provenance is stale'), 'explicit stale compiled provenance failure');
-            }
-        }
+        expectStaleProvenance($edited, $areas);
+        file_put_contents(CompiledLoader::getFilePath('frontend'), 'changed');
+        expectStaleProvenance($providers, $areas);
     } finally {
         foreach (glob($directory . '/generated/metadata/*') as $file) unlink($file);
         unlink($directory . '/composer.lock');
         unlink($directory . '/app/etc/config.php');
-        foreach (['/generated/metadata', '/generated', '/app/etc', '/app', ''] as $path) rmdir($directory . $path);
+        foreach ([$source, $environment, $session] as $file) if (is_file($file)) unlink($file);
+        foreach (['/generated/metadata', '/generated', '/app/code/Fixture', '/app/code', '/app/etc', '/app',
+            '/vendor/magento/framework/Session', '/vendor/magento/framework', '/vendor/magento', '/vendor', ''] as $path) rmdir($directory . $path);
     }
 }
 
@@ -190,8 +311,15 @@ check(hook(CompiledConfig::class, 'getPreference', null,
         $lookups[] = $frame['method'];
     }), 'native compiled config lookup hook');
 
-$global = compile(First::class, 'global');
-$alternate = compile(Second::class, 'global');
+$nullableUsage = $nullableIds = [];
+$xmlConfig = nullableConfiguration($nullableUsage, $nullableIds);
+$global = compile(First::class, 'global', $xmlConfig);
+$alternate = compile(Second::class, 'global', $xmlConfig);
+check($global['arguments'][NullableConsumer::class] === [
+    'options' => ['_v_' => ['group' => ['retained' => null]]],
+    'limit' => ['_v_' => 10],
+    'defaultNull' => ['_vn_' => true],
+], 'native compilation keeps constructor defaults and retains nested null');
 check($global === $alternate && $global['preferences'][Chain::class] === Service::class,
     'distinct original chains must be indistinguishable in compiled metadata');
 check($global['arguments'][Consumer::class]['dependency'] === ['_i_' => Service::class]
@@ -211,6 +339,9 @@ $usage = [
         'ProbeThrowing' => ['label' => ['id' => 'throwing-label', 'array' => false, 'kind' => 'string', 'objectType' => null, 'shared' => null, 'items' => []]],
     ],
 ];
+$usage['eligible']['arguments'] += $nullableUsage['eligible']['arguments'];
+$usage['names'] += $nullableUsage['names'];
+$usage['arguments'] += $nullableUsage['arguments'];
 foreach (DiUsage::hooks(['global' => ['compiled' => true, 'lazyCompiled' => $lazy, 'diUsage' => $usage]]) as [$class, $method, $pre, $post]) {
     check(hook($class, $method, $pre, $post), "compiled factory hook $method");
 }
@@ -236,6 +367,16 @@ try {
 } catch (\DomainException) {
 }
 
+$nullable = $factory->create(NullableConsumer::class);
+check($nullable->limit === 10 && $nullable->defaultNull === null && $nullable->options === ['group' => ['retained' => null]],
+    'native compiled factory applies defaults and nested null');
+$nullableEvents = array_filter($events->getValue(), static fn($event) => $event['requested'] === NullableConsumer::class);
+$type = NullableConsumer::class;
+check(array_column($nullableEvents, 'hits', 'id') === [
+    $nullableIds["$type/options"] => 1,
+    $nullableIds["$type/options[group]"] => 1,
+    $nullableIds["$type/options[group][retained]"] => 1,
+], 'only the applied array and its nested items earn credit');
 $config->getPreference(First::class);
 check($manager->get(First::class) === $manager->get(Second::class) && $manager->get(Chain::class) === $manager->get(Service::class),
     'two bindings with a shared object and a direct request');
@@ -249,7 +390,7 @@ $direct = $factory->create(ConsumerDirect::class);
 check($direct->dependency === $consumer->dependency, 'the configured direct request shares the same object');
 $manager->create(CallsObjectManager::class, ['fixture' => true]);
 $warm = $manager->get(AreaChoice::class);
-$manager->configure(compile(First::class, 'frontend'));
+$manager->configure(compile(First::class, 'frontend', $xmlConfig));
 check($warm instanceof Service && !$warm instanceof FrontendService
     && $manager->get(AreaChoice::class) instanceof FrontendService, 'frontend area changes effective binding');
 try {
@@ -268,7 +409,7 @@ check(!$brokenHook && !$frames && count($lookups) === 14 && $resolutions === [
     ['get', AreaChoice::class, Service::class],
     ['get', AreaChoice::class, FrontendService::class],
 ], 'success only, with distinct binding identities and no credit for the throwing return');
-$recorded = array_column(array_values($events->getValue()), 'hits', 'id');
+$recorded = array_column(array_diff_key($events->getValue(), $nullableEvents), 'hits', 'id');
 check($recorded === ['label' => 1, 'virtual-a' => 1, 'virtual-b' => 1, 'first-binding' => 1],
     'compiled collector credits actual construction and selection, including pre-resolved preferences');
 $health = DiUsage::finish();

@@ -225,6 +225,9 @@ final class DiUsage
         $arguments = array_diff_key($arguments, $frame['overrides']);
         $named = array_intersect_key($arguments, self::$context['names'] ?? []);
         $origins = $named ? array_intersect_key(self::argumentOrigins($type), $named) : [];
+        // The compiler selects top-level configuration with isset(). Nested
+        // null array items survive compilation and are handled by compiledEntry.
+        $origins = array_filter($origins, static fn($entry) => empty($entry['null']));
         $initial = (new \ReflectionProperty(AbstractFactory::class, 'globalArguments'))->getValue(self::$factory->get());
         foreach ($origins as $name => $entry) self::compiledEntry($entry, $arguments[$name], $initial, $frame, true);
         $targets = self::$context['dependencyTargets'] ?? [];
@@ -277,11 +280,15 @@ final class DiUsage
     private static function mergeEntries(array $older, array $newer): array
     {
         if (!$older['array'] || !$newer['array']) return $newer;
-        if ($older['id'] !== $newer['id']) $newer['id'] = null;
         if (($older['kind'] ?? null) === 'object' && ($newer['kind'] ?? null) === 'object') {
+            $retained = array_diff_key($older['objectFields'], $newer['objectFields']);
+            if ($retained && $older['id'] !== $newer['id']) $newer['id'] = null;
+            $newer['objectFields'] += $retained;
             // False denotes an explicit setting with no eligible in-scope owner.
-            $newer['shared'] ??= $older['shared'] ?? null;
+            $newer['shared'] ??= $older['shared'];
+            return $newer;
         }
+        if ($older['id'] !== $newer['id']) $newer['id'] = null;
         if (($older['kind'] ?? null) !== 'array' || ($newer['kind'] ?? null) !== 'array') {
             $newer['items'] = [];
             return $newer;

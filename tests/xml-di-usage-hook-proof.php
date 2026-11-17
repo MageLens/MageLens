@@ -38,6 +38,13 @@ class LifetimeConsumer
     {
     }
 }
+class Replacement extends Nested {}
+class InheritedArguments
+{
+    public function __construct(public Nested $full, public Nested $partial, public Nested $ordered) {}
+}
+class ReplacedArguments extends InheritedArguments {}
+
 function verify(bool $condition, string $message): void
 {
     if (!$condition) throw new \RuntimeException($message);
@@ -80,8 +87,21 @@ function verifyRemainingFactoryPaths(): void
 {
     $class = LifetimeConsumer::class;
     $service = Nested::class;
+    $parent = InheritedArguments::class;
+    $child = ReplacedArguments::class;
+    $replacement = Replacement::class;
     $base = <<<XML
     <type name="$service" shared="false"/>
+    <type name="$parent"><arguments>
+        <argument name="full" xsi:type="object">$service</argument>
+        <argument name="partial" xsi:type="object" shared="false">$service</argument>
+        <argument name="ordered" xsi:type="object" sortOrder="10">$service</argument>
+    </arguments></type>
+    <type name="$child"><arguments>
+        <argument name="full" xsi:type="object">$replacement</argument>
+        <argument name="partial" xsi:type="object">$replacement</argument>
+        <argument name="ordered" xsi:type="object">$replacement</argument>
+    </arguments></type>
     <type name="$class">
         <arguments>
             <argument name="a" xsi:type="object">$service</argument>
@@ -90,6 +110,10 @@ function verifyRemainingFactoryPaths(): void
             <argument name="items" xsi:type="array">
                 <item name="retained" xsi:type="string">retained</item>
                 <item name="replaced" xsi:type="string">old</item>
+                <item name="group" xsi:type="array">
+                    <item name="retained" xsi:type="string">old</item>
+                    <item name="replaced" xsi:type="string">old</item>
+                </item>
                 <item name="layer" xsi:type="array">
                     <item name="service" xsi:type="object" shared="true">$service</item>
                     <item name="missing" xsi:type="init_parameter">{$class}::MISSING</item>
@@ -103,6 +127,9 @@ function verifyRemainingFactoryPaths(): void
     $overlay = <<<XML
     <type name="$class"><arguments><argument name="items" xsi:type="array">
         <item name="replaced" xsi:type="string">new</item>
+        <item name="group" xsi:type="array">
+            <item name="replaced" xsi:type="string">new</item>
+        </item>
         <item name="overlay" xsi:type="init_parameter">{$class}::INIT</item>
     </argument></arguments></type>
     XML;
@@ -137,8 +164,8 @@ function verifyRemainingFactoryPaths(): void
     $interpreter = $factoryClass->getMethod('createArgumentInterpreter')->invoke(
         $factoryClass->newInstanceWithoutConstructor(), new \Magento\Framework\Stdlib\BooleanUtils());
     $mapper = new \Magento\Framework\ObjectManager\Config\Mapper\Dom($interpreter);
-    $merge = new \Magento\Framework\Config\Dom($inputs[0], $validation, ['/config/type' => 'name', '/config/virtualType' => 'name',
-        '/config/type/arguments/argument' => 'name', '/config/type/arguments/argument/item' => 'name'], 'xsi:type');
+    $keys = new \ReflectionProperty(\Magento\Framework\ObjectManager\Config\Reader\Dom::class, '_idAttributes');
+    $merge = new \Magento\Framework\Config\Dom($inputs[0], $validation, $keys->getDefaultValue(), 'xsi:type');
     $merge->merge($inputs[1]);
     $merge->merge($inputs[2]);
     $data = $mapper->convert($merge->getDom());
@@ -150,6 +177,13 @@ function verifyRemainingFactoryPaths(): void
     $id = static fn(string $key, string $module = 'Base', string $family = 'arguments') => $ids[$module][$family]["$class/$key"];
     verify($items[$id('items')]['areas']['frontend']['status'] === 'ambiguous', 'mixed root');
     verify($items[$id('items[replaced]')]['areas']['frontend']['status'] === 'overridden', 'superseded item');
+    foreach (['Base', 'Overlay'] as $module) {
+        verify($items[$id('items[group]', $module)]['areas']['frontend']['status'] === 'ambiguous',
+            "mixed nested array is unmeasured for $module");
+    }
+    verify($items[$id('items[group][replaced]')]['areas']['frontend']['status'] === 'overridden',
+        'superseded nested leaf');
+    verify($items[$id('items[layer]')]['areas']['frontend']['status'] === 'eligible', 'single-owner nested array');
     foreach (DiUsage::hooks(['frontend' => ['diUsage' => $usage]]) as [$hookClass, $method, $pre, $post]) {
         verify(hook($hookClass, $method, $pre, $post), "register $hookClass::$method");
     }
@@ -162,16 +196,18 @@ function verifyRemainingFactoryPaths(): void
     verify($manager->get($class) === $result && $result->a !== $result->b && $result->explicit === $result->items['layer']['service'],
         'explicit lifetime and shared-instance reuse');
     verify($result->init === 'provided' && $result->absent === 'fallback' && $result->items['overlay'] === 'provided'
-        && $result->items['layer']['missing'] === null && $result->items['replaced'] === 'new', 'native merged injection');
+        && $result->items['layer']['missing'] === null && $result->items['replaced'] === 'new'
+        && $result->items['group'] === ['retained' => 'old', 'replaced' => 'new'], 'native merged injection');
     verify(DiUsage::finish() === ['arguments' => true, 'lifecycles' => true], 'new adapters healthy');
     $events = array_values((new \ReflectionProperty(Recorder::class, 'events'))->getValue());
     $received = array_column(array_filter($events, static fn($event) => $event['requested'] === $class), 'id', 'id');
     $expected = [$ids['Base']['lifecycles'][$service], $id('explicit', 'Base', 'lifecycles'), $id('items[layer][service]', 'Base', 'lifecycles'),
         $id('a'), $id('b'), $id('explicit'), $id('init'), $id('items[retained]'), $id('items[layer]'),
-        $id('items[layer][service]'), $id('items[replaced]', 'Overlay'), $id('items[overlay]', 'Overlay')];
+        $id('items[layer][service]'), $id('items[replaced]', 'Overlay'), $id('items[overlay]', 'Overlay'),
+        $id('items[group][retained]'), $id('items[group][replaced]', 'Overlay')];
     sort($received);
     sort($expected);
-    verify($received === $expected && count($events) === 12, 'exact lifecycle and argument evidence');
+    verify($received === $expected && count($events) === 14, 'exact lifecycle and argument evidence');
     $outside = $manager->create('ExternalAlias');
     verify($outside->explicit !== $result->explicit && $outside->items['replaced'] === 'external'
         && $outside->items['retained'] === 'retained', 'inherited array and explicit external lifetime override');
@@ -180,7 +216,18 @@ function verifyRemainingFactoryPaths(): void
     verify(in_array($id('items[retained]'), $externalIds, true)
         && !in_array($id('items[replaced]', 'Overlay'), $externalIds, true)
         && !in_array($id('explicit', 'Base', 'lifecycles'), $externalIds, true), 'outside providers mask inherited evidence');
-    echo "Native merged array, initialization and lifetime collector passed with 12 direct records and verified external inheritance\n";
+    $first = $manager->create($child);
+    $next = $manager->create($child);
+    verify($first->full instanceof Replacement && $first->partial instanceof Replacement
+        && $first->ordered instanceof Replacement && $first->full === $next->full && $first->partial !== $next->partial,
+        'native replacement and retained shared policy');
+    $events = array_values((new \ReflectionProperty(Recorder::class, 'events'))->getValue());
+    $childEvents = array_filter($events, static fn($event) => $event['requested'] === $child);
+    verify(array_column($childEvents, 'hits', 'id') === [
+        $ids['Base']['arguments']["$child/full"] => 2,
+        $ids['Base']['lifecycles']["$parent/partial"] => 2,
+    ], 'credit complete descriptor replacement and retained lifetime, leaving mixed descriptors unmeasured');
+    echo "Native merged arrays, initialization, lifetimes and inherited object arguments passed\n";
 }
 
 $mode = $argv[2] ?? 'proof';
