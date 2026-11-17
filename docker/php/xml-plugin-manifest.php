@@ -80,17 +80,30 @@ final class PluginManifest
                 if ($preferences || $diUsage) {
                     $query = $preferences ? '/config/preference' : '';
                     if ($diUsage) $query .= ($query ? ' | ' : '') . DiUsageManifest::NODES;
-                    $nodes = (new \DOMXPath($document))->query($query);
-                    $ranges = $nodes->length ? Xml::ranges($bytes, $document) : [];
+                    $xpath = new \DOMXPath($document);
+                    $nodes = $xpath->query($query);
+                    $sharedNodes = $diUsage ? $xpath->query(DiUsageManifest::SHARED_NODES) : [];
+                    $hasNodes = $nodes->length || count($sharedNodes);
+                    $ranges = $hasNodes ? Xml::ranges($bytes, $document, (bool) count($sharedNodes)) : [];
                     $path = str_starts_with($file, BP . '/') ? substr($file, strlen(BP) + 1) : $file;
-                    $fingerprint = $nodes->length ? hash('sha256', str_replace("\r\n", "\n", $bytes)) : null;
+                    $fingerprint = $hasNodes ? hash('sha256', str_replace("\r\n", "\n", $bytes)) : null;
                     foreach ($nodes as $node) {
                         $nodePath = $node->getNodePath();
                         $id = $known[$file][$nodePath] ?? hash('sha256', "$path\0$nodePath");
                         if ($node->tagName === 'preference') $node->setAttribute(self::ORIGIN . 'preference', $id);
                         else DiUsageManifest::annotate($node, $id);
-                        $locations[$id] = ['id' => $id, 'path' => $path, ...$ranges[$nodePath],
+                        $range = $ranges[$nodePath];
+                        unset($range['highlightEndLine']);
+                        $locations[$id] = ['id' => $id, 'path' => $path, ...$range,
                             'fingerprint' => $fingerprint];
+                    }
+                    foreach ($sharedNodes as $node) {
+                        $nodePath = $node->getNodePath();
+                        $key = $nodePath . '/@shared';
+                        $id = $known[$file][$key] ?? hash('sha256', "$path\0$key");
+                        DiUsageManifest::annotateShared($node, $id);
+                        $locations[$id] = ['id' => $id, 'path' => $path, 'startLine' => $ranges[$nodePath]['startLine'],
+                            'endLine' => $ranges[$nodePath]['highlightEndLine'], 'fingerprint' => $fingerprint];
                     }
                 }
                 $bytes = $document->saveXML();

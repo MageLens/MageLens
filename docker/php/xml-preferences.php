@@ -65,7 +65,7 @@ final class Preferences
                 // a provider writes exactly the same mapping.
                 $arguments = class_exists(DiUsage::class, false) && DiUsage::hasArgumentMeasurement();
                 if (isset($data['preferences']) || array_filter($data, static fn($entry) => isset($entry['type'])
-                    || ($arguments && !empty($entry['arguments'])))) {
+                    || isset($entry['shared']) || ($arguments && !empty($entry['arguments'])))) {
                     self::$stale ??= 'DI changed outside native area loading';
                 }
             }, null],

@@ -22,9 +22,10 @@ function report() {
     assert.deepEqual(value.collectorErrors, []);
     return value;
 }
-function declaration(result, file, key, type = 'default', code = '') {
+function declaration(result, file, key, type = 'default', code = '', family = null) {
     const matches = result.files.find(entry => entry.path === file)?.declarations
-        .filter(item => item.path === key && item.declaredScope.type === type && item.declaredScope.code === code);
+        .filter(item => item.path === key && item.declaredScope.type === type && item.declaredScope.code === code
+            && (!family || item.family === family));
     assert.equal(matches?.length, 1, `${key} at ${type}/${code}`);
     return matches[0];
 }
@@ -276,32 +277,46 @@ test('reports preference resolution by native binding and original configuration
 test('reports only factory-resolved virtual types and applied constructor arguments', () => {
     const result = report();
     assert.deepEqual(result.virtualTypes, {total: 9, covered: 5, hook: true});
-    assert.deepEqual(result.arguments, {total: 15, covered: 7, hook: true});
+    assert.deepEqual(result.arguments, {total: 18, covered: 9, hook: true});
+    assert.deepEqual(result.lifecycles, {total: 3, covered: 2, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
     const site = (type, scope = 'global', argument = '') => declaration(result,
-        root + (scope === 'global' ? '' : scope + '/') + 'di.xml', model + type + (argument ? '/' + argument : ''), scope);
+        root + (scope === 'global' ? '' : scope + '/') + 'di.xml', model + type + (argument ? '/' + argument : ''), scope, '',
+        argument ? 'arguments' : 'virtual-types');
     const alias = site('ArgumentAlias'), frontend = site('ArgumentAlias', 'frontend'), admin = site('ArgumentAlias', 'adminhtml');
     const chain = site('ArgumentChain'), serviceType = site('VirtualTarget');
     const argument = name => site('ArgumentProbe', 'global', name);
+    const enabled = argument('options[enabled]');
+    const lifetime = result.files.find(file => file.path === root + 'di.xml').declarations.find(item => item.family === 'lifecycles');
     const frontendLabel = site('ArgumentAlias', 'frontend', 'label'), adminLabel = site('ArgumentAlias', 'adminhtml', 'label');
     assert.deepEqual([alias.startLine, alias.highlightEndLine, alias.endLine], [42, 43, 45]);
     assert.equal(alias.areas.frontend.status, 'overridden');
     assert.equal(alias.areas.frontend.origin.id, frontend.id);
     assert.equal(frontend.areas.frontend.resolved, model + 'ArgumentProbe');
     assert.deepEqual([argument('options').startLine, argument('options').endLine], [35, 37]);
+    assert.deepEqual([enabled.startLine, enabled.endLine, enabled.binding.items], [36, 36, ['enabled']]);
+    assert.equal(enabled.areas.global.state, 'uncovered');
+    assert.equal(enabled.areas.frontend.state, 'covered');
+    assert.deepEqual([lifetime.startLine, lifetime.endLine, lifetime.binding], [30, 30,
+        {declaringType: model + 'VirtualTarget', shared: true}]);
+    assert.equal(lifetime.areas.global.state, 'uncovered');
+    assert.equal(lifetime.areas.frontend.state, 'covered');
+    assert.equal(lifetime.areas.adminhtml.state, 'covered');
     assert.equal(argument('ignored').areas.frontend.state, 'uncovered');
     assert.equal(frontendLabel.areas.frontend.state, 'covered');
     assert.equal(adminLabel.areas.adminhtml.state, 'covered');
     assert.equal(admin.areas.adminhtml.state, 'covered');
     assert.deepEqual(site('ArgumentAlias', 'global', 'label').evidence, []);
     for (const name of ['preference-resolution', 'preference-resolution-warm']) {
-        const events = request(result, name).events.filter(event => ['virtual-type-resolved', 'argument-applied'].includes(event.type));
+        const events = request(result, name).events.filter(event => ['virtual-type-resolved', 'argument-applied', 'lifetime-applied'].includes(event.type));
         const expected = [
             [serviceType, 'VirtualTarget'], [chain, 'ArgumentChain'], [frontend, 'ArgumentChain'], [frontend, 'ArgumentAlias'],
             [frontendLabel, 'ArgumentChain'], [argument('options'), 'ArgumentChain'], [argument('options'), 'ArgumentAlias'],
             [argument('options'), 'ArgumentProbe'], [argument('service'), 'ArgumentChain'], [argument('service'), 'ArgumentAlias'],
             [argument('service'), 'ArgumentProbe'], [argument('label'), 'ArgumentProbe'],
+            [enabled, 'ArgumentChain'], [enabled, 'ArgumentAlias'], [enabled, 'ArgumentProbe'],
+            [lifetime, 'ArgumentChain'], [lifetime, 'ArgumentAlias'], [lifetime, 'ArgumentProbe'],
         ];
         assert.deepEqual(events.map(event => [event.id, event.requested, event.hits]).sort(),
             expected.map(([item, type]) => [item.id, model + type, 1]).sort());
@@ -310,5 +325,6 @@ test('reports only factory-resolved virtual types and applied constructor argume
     assert.match(html, /Virtual type usage/);
     assert.match(html, /Constructor argument usage/);
     assert.match(html, /5\/9 eligible declaration–area pairs resolved/);
-    assert.match(html, /7\/15 eligible declaration–area pairs applied/);
+    assert.match(html, /9\/18 eligible declaration–area pairs applied/);
+    assert.match(html, /2\/3 eligible declaration–area pairs applied/);
 });

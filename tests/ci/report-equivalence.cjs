@@ -119,6 +119,7 @@ function snapshot(directory) {
             preferences: {total: count(xml.preferences?.total ?? 0), covered: count(xml.preferences?.covered ?? 0)},
             virtualTypes: {total: count(xml.virtualTypes?.total ?? 0), covered: count(xml.virtualTypes?.covered ?? 0)},
             arguments: {total: count(xml.arguments?.total ?? 0), covered: count(xml.arguments?.covered ?? 0)},
+            lifecycles: {total: count(xml.lifecycles?.total ?? 0), covered: count(xml.lifecycles?.covered ?? 0)},
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
@@ -148,8 +149,13 @@ function snapshot(directory) {
                         virtualTypeAreas: diAreas(item.areas)
                     } : {}),
                     ...(item.family === 'arguments' ? {
-                        argument: [digest(item.binding.declaringType), digest(item.binding.argument)],
+                        argument: [digest(item.binding.declaringType), digest(item.binding.argument), ...(item.binding.items || []).map(digest)],
                         argumentAreas: diAreas(item.areas)
+                    } : {}),
+                    ...(item.family === 'lifecycles' ? {
+                        lifecycle: [digest(item.binding.declaringType), digest(String(item.binding.shared)),
+                            ...(item.binding.argument ? [digest(item.binding.argument), ...(item.binding.items || []).map(digest)] : [])],
+                        lifecycleAreas: diAreas(item.areas)
                     } : {}),
                     evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(event.type === 'observer-execute'
                         ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
@@ -157,8 +163,10 @@ function snapshot(directory) {
                             ? [event.type, event.area, digest(event.registration.target), digest(event.registration.name), ...pluginIdentity(event.callback)]
                             : ['preference-resolved', 'virtual-type-resolved'].includes(event.type)
                                 ? [event.type, event.area, digest(event.requested), digest(event.binding.requested), digest(event.binding.replacement), digest(event.resolved)]
-                                : event.type === 'argument-applied'
-                                    ? [event.type, event.area, digest(event.requested), digest(event.binding.declaringType), digest(event.binding.argument)]
+                                : ['argument-applied', 'lifetime-applied'].includes(event.type)
+                                    ? [event.type, event.area, digest(event.requested), digest(event.binding.declaringType),
+                                        digest(event.binding.argument || ''), digest(String(event.binding.shared)),
+                                        ...(event.binding.items || []).map(digest)]
                                     : [event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
                 })))
             }))},
@@ -196,6 +204,7 @@ function validateSnapshot(value, run, summary) {
     const preferenceTotals = {total: 0, covered: 0};
     const virtualTotals = {total: 0, covered: 0};
     const argumentTotals = {total: 0, covered: 0};
+    const lifecycleTotals = {total: 0, covered: 0};
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
         object(file.lines);
@@ -222,9 +231,10 @@ function validateSnapshot(value, run, summary) {
                     if (executed) pluginTotals.covered++;
                 }
             }
-            for (const [kind, total] of [['preference', preferenceTotals], ['virtualType', virtualTotals], ['argument', argumentTotals]]) {
+            for (const [kind, total] of [['preference', preferenceTotals], ['virtualType', virtualTotals], ['argument', argumentTotals],
+                ['lifecycle', lifecycleTotals]]) {
                 if (!item[kind]) continue;
-                assert.equal(array(item[kind]).length, 2);
+                assert.ok(['argument', 'lifecycle'].includes(kind) ? array(item[kind]).length >= 2 : array(item[kind]).length === 2);
                 for (const part of item[kind]) assert.match(part, /^[a-f0-9]{64}$/);
                 const areas = array(item[kind + 'Areas']);
                 assert.equal(new Set(areas.map(outcome => outcome[0])).size, areas.length);
@@ -245,7 +255,7 @@ function validateSnapshot(value, run, summary) {
                     assert.equal(state, status === 'eligible' ? (resolved ? 'covered' : 'uncovered') : 'unmeasured');
                     if (status === 'eligible') {
                         assert.equal(origin?.[0], item.id);
-                        if (kind !== 'argument') {
+                        if (kind === 'preference' || kind === 'virtualType') {
                             assert.equal(replacement, item[kind][1]);
                             assert.ok(type);
                         }
@@ -279,6 +289,7 @@ function validateSnapshot(value, run, summary) {
     assert.deepEqual(value.xml.preferences ?? {total: 0, covered: 0}, preferenceTotals, 'Incomplete preference coverage inventory');
     assert.deepEqual(value.xml.virtualTypes ?? {total: 0, covered: 0}, virtualTotals, 'Incomplete virtual type coverage inventory');
     assert.deepEqual(value.xml.arguments ?? {total: 0, covered: 0}, argumentTotals, 'Incomplete constructor argument coverage inventory');
+    assert.deepEqual(value.xml.lifecycles ?? {total: 0, covered: 0}, lifecycleTotals, 'Incomplete object lifetime coverage inventory');
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
         assert.match(line, /^[1-9]\d*$/, 'Invalid PHP line');

@@ -28,6 +28,16 @@ class Nested
 {
     public function __construct(public string $tag = 'default') {}
 }
+class LifetimeConsumer
+{
+    public const INIT = 'available';
+    public const MISSING = 'missing';
+
+    public function __construct(public Nested $a, public Nested $b, public Nested $explicit, public array $items,
+        public $init = 'fallback', public $absent = 'fallback')
+    {
+    }
+}
 function verify(bool $condition, string $message): void
 {
     if (!$condition) throw new \RuntimeException($message);
@@ -66,6 +76,113 @@ function verifyProvenance(): void
     }
 }
 
+function verifyRemainingFactoryPaths(): void
+{
+    $class = LifetimeConsumer::class;
+    $service = Nested::class;
+    $base = <<<XML
+    <type name="$service" shared="false"/>
+    <type name="$class">
+        <arguments>
+            <argument name="a" xsi:type="object">$service</argument>
+            <argument name="b" xsi:type="object">$service</argument>
+            <argument name="explicit" xsi:type="object" shared="true">$service</argument>
+            <argument name="items" xsi:type="array">
+                <item name="retained" xsi:type="string">retained</item>
+                <item name="replaced" xsi:type="string">old</item>
+                <item name="layer" xsi:type="array">
+                    <item name="service" xsi:type="object" shared="true">$service</item>
+                    <item name="missing" xsi:type="init_parameter">{$class}::MISSING</item>
+                </item>
+            </argument>
+            <argument name="init" xsi:type="init_parameter">{$class}::INIT</argument>
+            <argument name="absent" xsi:type="init_parameter">{$class}::MISSING</argument>
+        </arguments>
+    </type>
+    XML;
+    $overlay = <<<XML
+    <type name="$class"><arguments><argument name="items" xsi:type="array">
+        <item name="replaced" xsi:type="string">new</item>
+        <item name="overlay" xsi:type="init_parameter">{$class}::INIT</item>
+    </argument></arguments></type>
+    XML;
+    $external = <<<XML
+    <virtualType name="ExternalAlias" type="$class"><arguments>
+        <argument name="explicit" xsi:type="object" shared="false">$service</argument>
+        <argument name="items" xsi:type="array"><item name="replaced" xsi:type="string">external</item></argument>
+    </arguments></virtualType>
+    XML;
+    $items = $locations = $inputs = $ids = [];
+    foreach (['Base' => $base, 'Overlay' => $overlay, 'External' => $external] as $module => $fragment) {
+        $source = '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation='
+            . '"urn:magento:framework:ObjectManager/etc/config.xsd">' . $fragment . '</config>';
+        $path = "app/code/Fixture/$module/etc/di.xml";
+        $document = Xml::document($source);
+        $xpath = new \DOMXPath($document);
+        foreach (['arguments', 'lifecycles'] as $family) foreach (Xml::declarations($path, $source, $family) as $item) {
+            $id = $item['id'];
+            $node = $xpath->query($item['node'])->item(0);
+            if ($family === 'lifecycles') DiUsageManifest::annotateShared($node->ownerElement, $id);
+            else DiUsageManifest::annotate($node, $id);
+            $locations[$id] = ['id' => $id, 'path' => $path];
+            $ids[$module][$family][$item['path']] = $id;
+            if ($module !== 'External') $items[$id] = $item;
+        }
+        $inputs[] = $document->saveXML();
+    }
+    $validation = new class implements \Magento\Framework\Config\ValidationStateInterface {
+        public function isValidationRequired() { return false; }
+    };
+    $factoryClass = new \ReflectionClass(\Magento\Framework\App\ObjectManagerFactory::class);
+    $interpreter = $factoryClass->getMethod('createArgumentInterpreter')->invoke(
+        $factoryClass->newInstanceWithoutConstructor(), new \Magento\Framework\Stdlib\BooleanUtils());
+    $mapper = new \Magento\Framework\ObjectManager\Config\Mapper\Dom($interpreter);
+    $merge = new \Magento\Framework\Config\Dom($inputs[0], $validation, ['/config/type' => 'name', '/config/virtualType' => 'name',
+        '/config/type/arguments/argument' => 'name', '/config/type/arguments/argument/item' => 'name'], 'xsi:type');
+    $merge->merge($inputs[1]);
+    $merge->merge($inputs[2]);
+    $data = $mapper->convert($merge->getDom());
+    $origins = DiUsageManifest::origins($merge->getDom(), $data, $locations);
+    $config = new Config();
+    $config->extend($data);
+    $usage = DiUsageManifest::prepareArea($items, array_fill_keys(array_keys($items), true), ['global' => $origins],
+        $config, ['global'], 'frontend', null, true);
+    $id = static fn(string $key, string $module = 'Base', string $family = 'arguments') => $ids[$module][$family]["$class/$key"];
+    verify($items[$id('items')]['areas']['frontend']['status'] === 'ambiguous', 'mixed root');
+    verify($items[$id('items[replaced]')]['areas']['frontend']['status'] === 'overridden', 'superseded item');
+    foreach (DiUsage::hooks(['frontend' => ['diUsage' => $usage]]) as [$hookClass, $method, $pre, $post]) {
+        verify(hook($hookClass, $method, $pre, $post), "register $hookClass::$method");
+    }
+    $factory = new Developer($config, null, null, ['available' => 'provided']);
+    $manager = new ObjectManager($factory, $config);
+    $factory->setObjectManager($manager);
+    DiUsage::area('frontend', $factory, $config, $usage);
+    $config->isShared($service);
+    $result = $manager->get($class);
+    verify($manager->get($class) === $result && $result->a !== $result->b && $result->explicit === $result->items['layer']['service'],
+        'explicit lifetime and shared-instance reuse');
+    verify($result->init === 'provided' && $result->absent === 'fallback' && $result->items['overlay'] === 'provided'
+        && $result->items['layer']['missing'] === null && $result->items['replaced'] === 'new', 'native merged injection');
+    verify(DiUsage::finish() === ['arguments' => true, 'lifecycles' => true], 'new adapters healthy');
+    $events = array_values((new \ReflectionProperty(Recorder::class, 'events'))->getValue());
+    $received = array_column(array_filter($events, static fn($event) => $event['requested'] === $class), 'id', 'id');
+    $expected = [$ids['Base']['lifecycles'][$service], $id('explicit', 'Base', 'lifecycles'), $id('items[layer][service]', 'Base', 'lifecycles'),
+        $id('a'), $id('b'), $id('explicit'), $id('init'), $id('items[retained]'), $id('items[layer]'),
+        $id('items[layer][service]'), $id('items[replaced]', 'Overlay'), $id('items[overlay]', 'Overlay')];
+    sort($received);
+    sort($expected);
+    verify($received === $expected && count($events) === 12, 'exact lifecycle and argument evidence');
+    $outside = $manager->create('ExternalAlias');
+    verify($outside->explicit !== $result->explicit && $outside->items['replaced'] === 'external'
+        && $outside->items['retained'] === 'retained', 'inherited array and explicit external lifetime override');
+    $allEvents = array_values((new \ReflectionProperty(Recorder::class, 'events'))->getValue());
+    $externalIds = array_column(array_filter($allEvents, static fn($event) => $event['requested'] === 'ExternalAlias'), 'id');
+    verify(in_array($id('items[retained]'), $externalIds, true)
+        && !in_array($id('items[replaced]', 'Overlay'), $externalIds, true)
+        && !in_array($id('explicit', 'Base', 'lifecycles'), $externalIds, true), 'outside providers mask inherited evidence');
+    echo "Native merged array, initialization and lifetime collector passed with 12 direct records and verified external inheritance\n";
+}
+
 $mode = $argv[2] ?? 'proof';
 $collector = $mode !== 'proof';
 $usage = [
@@ -85,6 +202,10 @@ $usage = [
 ];
 require getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php';
 verifyProvenance();
+if ($mode === 'collector-gaps') {
+    verifyRemainingFactoryPaths();
+    exit;
+}
 if ($collector) {
     verify(PreferenceManifest::nativeHooks(), 'verified factory and config bodies');
     foreach (DiUsage::hooks(['frontend' => ['diUsage' => $usage]]) as [$class, $method, $pre, $post]) {

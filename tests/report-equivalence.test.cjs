@@ -268,19 +268,23 @@ test('factory DI equivalence retains virtual routes and inherited parameter iden
         return item;
     };
     const alias = add('virtual-types', 'a'.repeat(64), {requested: 'SECRET\\Alias', replacement: resolved}, 'virtual-type-resolved', resolved);
-    const argument = add('arguments', 'b'.repeat(64), {declaringType: resolved, argument: 'SECRET parameter'}, 'argument-applied', null);
+    const lifetime = add('lifecycles', 'c'.repeat(64), {declaringType: resolved, shared: false}, 'lifetime-applied', null);
+    const argument = add('arguments', 'b'.repeat(64), {declaringType: resolved, argument: 'SECRET parameter', items: ['SECRET item']}, 'argument-applied', null);
     xml.virtualTypes = {total: 2, covered: 1, hook: true};
     xml.arguments = {total: 2, covered: 1, hook: true};
+    xml.lifecycles = {total: 2, covered: 1, hook: true};
     write('xml/coverage.json', xml);
     const original = snapshot(directory);
     assert.doesNotMatch(JSON.stringify(original), /SECRET/);
-    alias.areas.frontend.hits = argument.areas.frontend.hits = 60;
+    alias.areas.frontend.hits = argument.areas.frontend.hits = lifetime.areas.frontend.hits = 60;
     argument.evidence.push({...argument.evidence[0], request: 'another'});
     write('xml/coverage.json', xml);
     assert.deepEqual(snapshot(directory), original);
     const last = report => report.files[0].declarations.at(-1);
     for (const alter of [
         value => { last(value).binding.argument = 'changed'; },
+        value => { last(value).binding.items = ['changed']; },
+        value => { value.files[0].declarations.find(item => item.family === 'lifecycles').binding.shared = true; },
         value => { last(value).evidence[0].requested = 'different requester'; },
         value => { last(value).areas.global.origin.fingerprint = 'f'.repeat(64); },
         value => { last(value).areas.frontend.hits = 0; last(value).areas.frontend.state = 'uncovered'; value.arguments.covered = 0; }

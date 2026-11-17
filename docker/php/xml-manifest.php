@@ -42,7 +42,7 @@ function prepareXmlManifests($om, array $run): array
             default => null,
         };
         $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
-        if ($family === 'plugins') foreach (['preferences', 'virtual-types', 'arguments'] as $diFamily) {
+        if ($family === 'plugins') foreach (['preferences', 'virtual-types', 'arguments', 'lifecycles'] as $diFamily) {
             $declarations = array_merge($declarations, Xml::declarations($path, $bytes, $diFamily));
         }
         $files[$path] = ['path' => $path, 'sourceHash' => $hash, 'family' => $family,

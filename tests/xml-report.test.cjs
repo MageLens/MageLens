@@ -197,21 +197,26 @@ test('virtual and constructor usage require live evidence and preserve independe
         path: 'AcmeAlias', startLine: 2, endLine: 4, highlightEndLine: 2};
     const argument = {id: 'argument', family: 'arguments', binding: {declaringType: 'AcmeAlias', argument: 'unused'},
         path: 'AcmeAlias/unused', startLine: 3, endLine: 3};
-    for (const item of [virtual, argument]) {
+    const arrayItem = {id: 'item', family: 'arguments', binding: {declaringType: 'AcmeAlias', argument: 'items', items: ['nested', 'key']},
+        path: 'AcmeAlias/items[nested][key]', startLine: 3, endLine: 3};
+    const lifetime = {id: 'lifetime', family: 'lifecycles', binding: {declaringType: 'AcmeAlias', shared: false},
+        path: 'AcmeAlias', startLine: 2, endLine: 2};
+    for (const item of [virtual, argument, arrayItem, lifetime]) {
         Object.assign(item, {declaredScope: {type: 'frontend', code: ''}, supported: true, areas: {frontend: {
             status: 'eligible', origin: {id: item.id, path: file, startLine: item.startLine, endLine: item.endLine, fingerprint},
             resolved: item === virtual ? 'AcmeType' : null
         }}});
     }
-    const diUsage = {eligible: {'virtual-types': {virtual: true}, arguments: {argument: true}},
+    const diUsage = {eligible: {'virtual-types': {virtual: true}, arguments: {argument: true, item: true}, lifecycles: {lifetime: true}},
         virtualRoutes: {AcmeAlias: {ids: ['virtual'], resolved: 'AcmeType'}}};
     manifest.preferences = {frontend: {routes: {}, diUsage}};
-    manifest.files.push({path: file, family: 'plugins', sourceHash: fingerprint, declarations: [virtual, argument]});
-    const healthy = {...record, preferenceHook: true, diUsageHooks: {'virtual-types': true, arguments: true}};
+    manifest.files.push({path: file, family: 'plugins', sourceHash: fingerprint, declarations: [virtual, argument, arrayItem, lifetime]});
+    const healthy = {...record, preferenceHook: true, diUsageHooks: {'virtual-types': true, arguments: true, lifecycles: true}};
     const resolution = {id: 'virtual', type: 'virtual-type-resolved', area: 'frontend', requested: 'AcmeAlias', hits: 1};
     const report = merge(manifest, [{...healthy, events: [...record.events, resolution]}], sources);
     assert.deepEqual(report.virtualTypes, {total: 1, covered: 1, hook: true});
-    assert.deepEqual(report.arguments, {total: 1, covered: 0, hook: true});
+    assert.deepEqual(report.arguments, {total: 2, covered: 0, hook: true});
+    assert.deepEqual(report.lifecycles, {total: 1, covered: 0, hook: true});
     assert.equal(report.files[1].lines[2].state, 'covered');
     assert.equal(report.files[1].lines[3].state, 'uncovered');
     assert.equal(report.files[1].lines[4], undefined);
@@ -220,11 +225,18 @@ test('virtual and constructor usage require live evidence and preserve independe
     assert.throws(() => merge(manifest, [{...healthy, events: [{...resolution, requested: 'AcmeType'}]}], sources), /factory route/);
     const applied = {id: 'argument', type: 'argument-applied', area: 'frontend', requested: 'AcmeAlias', hits: 3};
     assert.throws(() => merge(manifest, [{...healthy, events: [{...applied, value: 'secret'}]}], sources));
-    assert.deepEqual(merge(manifest, [{...healthy, events: [applied]}], sources).arguments, {total: 1, covered: 1, hook: true});
+    const policy = {id: 'lifetime', type: 'lifetime-applied', area: 'frontend', requested: 'AcmeAlias', hits: 1};
+    const populated = merge(manifest, [{...healthy, events: [applied, {...applied, id: 'item'}, policy]}], sources);
+    assert.deepEqual(populated.arguments, {total: 2, covered: 2, hook: true});
+    assert.deepEqual(populated.lifecycles, {total: 1, covered: 1, hook: true});
+    assert.throws(() => merge(manifest, [{...healthy, events: [{...policy, id: 'item'}]}], sources));
     const output = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-di-usage-'));
     t.after(() => fs.rmSync(output, {recursive: true, force: true}));
     writeReport(report, sources, output);
     const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
     assert.match(index, /Virtual type usage/);
     assert.match(index, /Constructor argument usage/);
+    assert.match(index, /\$items\[&quot;nested&quot;\]\[&quot;key&quot;\]/);
+    assert.match(index, /Object lifetime usage/);
+    assert.match(index, /New instance/);
 });

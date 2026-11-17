@@ -58,18 +58,24 @@ final class PreferenceManifest
     {
         $preferences = $config->getPreferences();
         $virtualTypes = $config->getVirtualTypes();
+        $nonShared = (new \ReflectionProperty(Config::class, '_nonShared'))->getValue($config);
         ksort($preferences);
         ksort($virtualTypes);
-        return hash('sha256', json_encode([$preferences, $virtualTypes], JSON_THROW_ON_ERROR));
+        ksort($nonShared);
+        return hash('sha256', json_encode([$preferences, $virtualTypes, $nonShared], JSON_THROW_ON_ERROR));
     }
 
     public static function deltaHash(array $data): string
     {
-        $virtualTypes = [];
-        foreach ($data as $name => $entry) if ($name !== 'preferences' && isset($entry['type'])) $virtualTypes[$name] = $entry['type'];
+        $virtualTypes = $shared = [];
+        foreach ($data as $name => $entry) {
+            if ($name === 'preferences') continue;
+            if (isset($entry['type'])) $virtualTypes[$name] = $entry['type'];
+            if (isset($entry['shared'])) $shared[$name] = $entry['shared'];
+        }
         // Order within each map is significant for raw aliases such as \Foo
         // and Foo that Magento normalizes to the same key during extend().
-        return hash('sha256', json_encode([$data['preferences'] ?? [], $virtualTypes], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode([$data['preferences'] ?? [], $virtualTypes, $shared], JSON_THROW_ON_ERROR));
     }
 
     /** @return array{list<string>, ?string, ?string} */
@@ -94,7 +100,7 @@ final class PreferenceManifest
             foreach ($file['declarations'] as &$item) {
                 $known[BP . '/' . $path][$item['node']] = $item['id'];
                 if ($item['family'] === 'preferences') $items[$item['id']] = &$item;
-                elseif (in_array($item['family'], ['virtual-types', 'arguments'], true)) $usage[$item['id']] = &$item;
+                elseif (in_array($item['family'], ['virtual-types', 'arguments', 'lifecycles'], true)) $usage[$item['id']] = &$item;
                 else continue;
                 $paths[$item['id']] = [$path, $file['sourceHash']];
             }

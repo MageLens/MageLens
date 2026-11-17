@@ -9,6 +9,7 @@ namespace MageLens\XmlCoverage;
 
 use Magento\Framework\Interception\ObjectManager\Config\Developer as DeveloperConfig;
 use Magento\Framework\ObjectManager\Config\Config;
+use Magento\Framework\ObjectManager\Factory\AbstractFactory;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer as DeveloperFactory;
 use Magento\Framework\ObjectManager\Relations\Runtime;
 
@@ -21,12 +22,14 @@ final class DiUsage
     private static array $origins = [];
     private static ?string $area = null;
     private static ?string $factoryFile = null;
+    private static ?string $abstractFactoryFile = null;
     private static ?\WeakReference $factory = null;
     private static ?\WeakReference $config = null;
     private static ?DeveloperConfig $fresh = null;
     private static ?Runtime $relations = null;
     private static bool $broken = false;
     private static bool $stale = false;
+    private static bool $sharedHook = false;
 
     public static function hooks(array $areas): array
     {
@@ -39,7 +42,7 @@ final class DiUsage
                     $type = $params[0] ?? null;
                     $route = is_string($type) ? (self::$context['virtualRoutes'][$type] ?? null) : null;
                     self::$frames[] = ['requested' => $type, 'area' => self::$area, 'virtual' => $route, 'lookedUp' => false,
-                        'constructor' => null, 'read' => false, 'arguments' => []];
+                        'constructor' => null, 'read' => false, 'arguments' => [], 'lifetimes' => []];
                 },
                 static function ($factory, array $params, $result, ?\Throwable $error, string $class) {
                     if ($class !== DeveloperFactory::class || self::$factory?->get() !== $factory) return;
@@ -61,14 +64,17 @@ final class DiUsage
                     if ($expected !== null && $result !== $expected && $result !== $expected . '\\Interceptor') self::$stale = true;
                 }];
         }
-        if (isset(self::$enabled['arguments'])) {
+        if (self::hasArgumentMeasurement()) {
+            $hooks[] = [AbstractFactory::class, 'setArguments', static function ($factory) {
+                if (self::$frames && self::$factory?->get() === $factory) self::$stale = true;
+            }, null];
             $hooks[] = [DeveloperFactory::class, '_resolveArguments',
                 static function ($factory, array $params, string $class) {
                     $index = array_key_last(self::$frames);
                     if ($index === null || $class !== DeveloperFactory::class || self::$factory?->get() !== $factory) return;
                     $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
                     if (!self::site($trace, 61, 'create')) return;
-                    self::$frames[$index]['constructor'] = array_fill_keys(array_column($params[1], 0), true);
+                    self::$frames[$index]['constructor'] = array_column($params[1], null, 0);
                     foreach ($params[2] ?? [] as $name => $value) unset(self::$frames[$index]['constructor'][$name]);
                 }, null];
             $hooks[] = [Config::class, 'getArguments', null,
@@ -80,7 +86,7 @@ final class DiUsage
                     $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
                     if (!self::site($trace, 27, '_resolveArguments')) return;
                     $frame['read'] = true;
-                    self::$seen['arguments'] = true;
+                    foreach (['arguments', 'lifecycles'] as $family) if (isset(self::$enabled[$family])) self::$seen[$family] = true;
                     $candidates = array_intersect_key($frame['constructor'], self::$context['names'] ?? []);
                     if (!$candidates || !is_string($frame['requested']) || !self::$fresh) return;
                     if (self::$area !== $frame['area']) {
@@ -89,14 +95,41 @@ final class DiUsage
                     }
                     $type = $frame['requested'];
                     $arguments = array_intersect_key(self::argumentOrigins($type), $candidates);
-                    foreach ($arguments as $name => $entry) {
-                        if ($entry['id'] !== null) $frame['arguments'][$name] = $entry['id'];
-                    }
-                    if (!$frame['arguments']) return;
-                    $expected = array_intersect_key(self::$fresh->getArguments($type), $frame['arguments']);
-                    if (count($expected) !== count($frame['arguments']) || array_intersect_key($result, $frame['arguments']) !== $expected) {
+                    if (!$arguments) return;
+                    $expected = array_intersect_key(self::$fresh->getArguments($type), $arguments);
+                    if (count($expected) !== count($arguments) || array_intersect_key($result, $arguments) !== $expected) {
                         self::$stale = true;
-                        $frame['arguments'] = [];
+                        return;
+                    }
+                    $factory = self::$factory->get();
+                    $initial = (new \ReflectionProperty(AbstractFactory::class, 'globalArguments'))->getValue($factory);
+                    foreach ($arguments as $name => $entry) {
+                        [, $paramType, , $default, $variadic] = $candidates[$name];
+                        $object = !$variadic && $paramType && $result[$name] !== $default;
+                        self::applied($entry, $result[$name], $initial, $frame, !$variadic && !$object, $object);
+                    }
+                }];
+        }
+        if (isset(self::$enabled['lifecycles'])) {
+            $hooks[] = [Config::class, 'isShared', null,
+                static function ($config, array $params, $result, ?\Throwable $error, string $class) {
+                    if ($class !== Config::class || $error || self::$config?->get() !== $config) return;
+                    self::$sharedHook = true;
+                    $index = array_key_last(self::$frames);
+                    if ($index === null) return;
+                    $type = $params[0] ?? null;
+                    $policy = is_string($type) ? (self::$context['shared'][$type] ?? null) : null;
+                    if (!$policy) return;
+                    $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
+                    if (($trace[1]['file'] ?? null) !== self::$abstractFactoryFile
+                        || !in_array([$trace[1]['line'] ?? null, $trace[2]['function'] ?? null],
+                            [[171, 'resolveArgument'], [207, 'parseArray']], true)) return;
+                    if (self::$frames[$index]['area'] !== self::$area) {
+                        self::$broken = true;
+                    } elseif ($result !== $policy['shared']) {
+                        self::$stale = true;
+                    } else {
+                        self::$frames[$index]['lifetimes'][] = $policy['id'];
                     }
                 }];
         }
@@ -111,7 +144,42 @@ final class DiUsage
 
     public static function hasArgumentMeasurement(): bool
     {
-        return isset(self::$enabled['arguments']);
+        return isset(self::$enabled['arguments']) || isset(self::$enabled['lifecycles']);
+    }
+
+    private static function applied(array $entry, mixed $value, array $initial, array &$frame, bool $runtimeArray, bool $object): void
+    {
+        if (($entry['kind'] ?? null) === 'init_parameter'
+            && (!$runtimeArray || !is_array($value) || !isset($value['argument'], $initial[$value['argument']]))) return;
+        if ($entry['id'] !== null) $frame['arguments'][] = $entry['id'];
+        if (is_string($entry['shared'] ?? null) && $object && is_array($value) && isset($value['instance'], $value['shared'])) {
+            $frame['lifetimes'][] = $entry['shared'];
+        }
+        if (!($entry['items'] ?? []) || !$runtimeArray || !is_array($value) || isset($value['instance']) || isset($value['argument'])) return;
+        foreach (array_intersect_key($entry['items'], $value) as $key => $item) {
+            $descriptor = is_array($value[$key]) && isset($value[$key]['instance']);
+            self::applied($item, $value[$key], $initial, $frame, !$descriptor, $descriptor);
+        }
+    }
+
+    private static function mergeEntries(array $older, array $newer): array
+    {
+        if (!$older['array'] || !$newer['array']) return $newer;
+        if ($older['id'] !== $newer['id']) $newer['id'] = null;
+        if (($older['kind'] ?? null) === 'object' && ($newer['kind'] ?? null) === 'object') {
+            // False denotes an explicit setting with no eligible in-scope owner.
+            $newer['shared'] ??= $older['shared'] ?? null;
+        }
+        if (($older['kind'] ?? null) !== 'array' || ($newer['kind'] ?? null) !== 'array') {
+            $newer['items'] = [];
+            return $newer;
+        }
+        $items = $older['items'];
+        foreach ($newer['items'] as $key => $entry) {
+            $items[$key] = isset($items[$key]) ? self::mergeEntries($items[$key], $entry) : $entry;
+        }
+        $newer['items'] = $items;
+        return $newer;
     }
 
     public static function area(?string $area, object $factory, DeveloperConfig $config, array $expected = []): void
@@ -122,8 +190,13 @@ final class DiUsage
         self::$origins = [];
         self::$fresh = self::$relations = null;
         self::$factoryFile ??= (new \ReflectionClass(DeveloperFactory::class))->getFileName();
+        self::$abstractFactoryFile ??= (new \ReflectionClass(AbstractFactory::class))->getFileName();
         self::$factory = \WeakReference::create($factory);
         self::$config = \WeakReference::create($config);
+        if (isset(self::$enabled['lifecycles']) && !self::$sharedHook) {
+            // The isolated query verifies hook entry even on a zero-hit request.
+            $config->isShared(array_key_first($expected['shared'] ?? []) ?? '');
+        }
         if (!($expected['names'] ?? [])) return;
         $relations = (new \ReflectionProperty(Config::class, '_relations'))->getValue($config);
         if (get_class($relations) !== Runtime::class || !DiUsageManifest::nativeArguments()) {
@@ -150,11 +223,7 @@ final class DiUsage
             }
         }
         foreach (self::$context['arguments'][$type] ?? [] as $name => $entry) {
-            if ($entry['array'] && ($owners[$name]['array'] ?? false) && $entry['id'] !== $owners[$name]['id']) {
-                // Native recursive merging can retain values from both arrays.
-                $entry['id'] = null;
-            }
-            $owners[$name] = $entry;
+            $owners[$name] = isset($owners[$name]) ? self::mergeEntries($owners[$name], $entry) : $entry;
         }
         return self::$origins[$type] = $owners;
     }
@@ -175,12 +244,15 @@ final class DiUsage
         }
         if ($frame['constructor'] !== null && !$frame['read']) self::$broken = true;
         foreach ($frame['arguments'] as $id) Recorder::diUsage($id, 'argument-applied', $frame['area'], $frame['requested']);
+        foreach (array_unique($frame['lifetimes']) as $id) Recorder::diUsage($id, 'lifetime-applied', $frame['area'], $frame['requested']);
     }
 
     public static function finish(): array
     {
         if (self::$stale) PreferenceManifest::stale('factory DI differs from its prepared configuration');
-        if (self::$broken || self::$frames) throw new \RuntimeException('Magento DI usage hooks did not confirm the native developer factory path');
+        if (self::$broken || self::$frames || (isset(self::$enabled['lifecycles']) && !self::$sharedHook)) {
+            throw new \RuntimeException('Magento DI usage hooks did not confirm the native developer factory path');
+        }
         return self::$seen;
     }
 }

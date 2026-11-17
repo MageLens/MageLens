@@ -23,6 +23,7 @@ const cases = new Set(['baseline', 'preference-resolution', 'observer-dispatch',
 const diFamilies = {
     'virtual-types': {key: 'virtualTypes', title: 'Virtual type usage', event: 'virtual-type-resolved', action: 'resolved'},
     arguments: {key: 'arguments', title: 'Constructor argument usage', event: 'argument-applied', action: 'applied'},
+    lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 function merge(manifest, records, sources) {
     const declarations = new Map(), files = structuredClone(manifest.files);
@@ -201,11 +202,13 @@ function typeName(name) {
 }
 function preferenceAreas(item, files, prefix) {
     const content = Object.entries(item.areas).map(([area, outcome]) => {
-        const status = outcome.status === 'eligible' ? (outcome.hits ? (item.family === 'arguments' ? 'Applied' : 'Resolved') : 'Uncovered') : `Unmeasured · ${outcome.status}`;
+        const action = diFamilies[item.family]?.action || 'resolved';
+        const status = outcome.status === 'eligible'
+            ? (outcome.hits ? action[0].toUpperCase() + action.slice(1) : 'Uncovered') : `Unmeasured · ${outcome.status}`;
         const origin = outcome.origin;
         let details = '';
         if (outcome.resolved) details += `<span>Effective type ${typeName(outcome.resolved)}</span>`;
-        if (item.family === 'arguments' && outcome.hits) {
+        if (action === 'applied' && outcome.hits) {
             const types = [...new Set(item.evidence.filter(event => event.area === area).map(event => event.requested))].sort();
             if (types.length) details += `<details><summary>Applied for ${types.length} requested ${types.length === 1 ? 'type' : 'types'}</summary>
                 ${types.map(type => `<span>${typeName(type)}</span>`).join('')}</details>`;
@@ -243,7 +246,13 @@ function preferenceSection(result, files) {
 }
 function bindingLabel(item, linkedType = value => value) {
     const binding = item.binding;
-    if (item.family === 'arguments') return `${linkedType(typeName(binding.declaringType))} · ${typeName('$' + binding.argument)}`;
+    if (binding.declaringType) {
+        const parameter = binding.argument
+            ? ' · ' + typeName('$' + binding.argument + (binding.items || []).map(key => `[${JSON.stringify(key)}]`).join(''))
+            : '';
+        const shared = item.family === 'lifecycles' ? ` · ${binding.shared ? 'Shared instance' : 'New instance'}` : '';
+        return linkedType(typeName(binding.declaringType)) + parameter + shared;
+    }
     return linkedType(typeName(binding.requested)) + (binding.replacement ? ' → ' + typeName(binding.replacement) : '');
 }
 function diSections(result, files) {

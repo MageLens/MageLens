@@ -137,32 +137,59 @@ final class Xml
             'config' => 'urn:magento:module:Magento_Store:etc/config.xsd',
             'system' => 'urn:magento:module:Magento_Config:etc/system_file.xsd',
             'events' => 'urn:magento:framework:Event/etc/events.xsd',
-            'plugins', 'preferences', 'virtual-types', 'arguments' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
+            'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
         };
         if ($dom->documentElement->tagName !== 'config' || $schema !== $expected) return [];
-        $ranges = self::ranges($source, $dom, $family === 'virtual-types');
+        $ranges = self::ranges($source, $dom, in_array($family, ['virtual-types', 'lifecycles'], true));
         $xpath = new \DOMXPath($dom);
-        if (in_array($family, ['virtual-types', 'arguments'], true)) {
+        if (in_array($family, ['virtual-types', 'arguments', 'lifecycles'], true)) {
             $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
-            $query = $family === 'virtual-types' ? '/config/virtualType[@name]'
-                : '/config/type/arguments/argument[@name] | /config/virtualType/arguments/argument[@name]';
+            $arguments = '/config/type/arguments/argument | /config/virtualType/arguments/argument'
+                . ' | /config/type/arguments/argument//item | /config/virtualType/arguments/argument//item';
+            $query = match ($family) {
+                'virtual-types' => '/config/virtualType[@name]',
+                'lifecycles' => "($arguments | /config/type | /config/virtualType)[@shared]",
+                default => $arguments,
+            };
             $result = []; $seen = [];
             foreach ($xpath->query($query) as $node) {
                 if ($family === 'virtual-types') {
                     $name = ltrim($node->getAttribute('name'), '\\');
                     $binding = ['requested' => $name, 'replacement' => ltrim($node->getAttribute('type'), '\\')];
                     $key = $name;
+                } elseif (in_array($node->tagName, ['type', 'virtualType'], true)) {
+                    $key = ltrim($node->getAttribute('name'), '\\');
+                    $binding = ['declaringType' => $key];
                 } else {
-                    $type = ltrim($node->parentNode->parentNode->getAttribute('name'), '\\');
-                    $name = $node->getAttribute('name');
+                    $argument = $node;
+                    $items = [];
+                    while ($argument->tagName === 'item') {
+                        array_unshift($items, $argument->getAttribute('name'));
+                        $argument = $argument->parentNode;
+                    }
+                    $type = ltrim($argument->parentNode->parentNode->getAttribute('name'), '\\');
+                    $name = $argument->getAttribute('name');
                     $binding = ['declaringType' => $type, 'argument' => $name];
                     $key = "$type/$name";
+                    if ($items) {
+                        $binding['items'] = $items;
+                        $key .= "\0" . json_encode($items, JSON_THROW_ON_ERROR);
+                    }
+                }
+                $nodePath = $node->getNodePath();
+                $range = $ranges[$nodePath];
+                if ($family === 'lifecycles') {
+                    $binding['shared'] = in_array($node->getAttribute('shared'), ['true', '1'], true);
+                    $range['endLine'] = $range['highlightEndLine'];
+                    unset($range['highlightEndLine']);
                 }
                 $index = $seen[$key] ?? 0;
                 $seen[$key] = $index + 1;
                 $result[] = ['id' => hash('sha256', "$path\0$family\0$key\0$index"),
-                    'path' => $key, 'family' => $family, 'declaredScope' => ['type' => $scope, 'code' => ''],
-                    ...$ranges[$node->getNodePath()], 'node' => $node->getNodePath(), 'binding' => $binding,
+                    'path' => isset($binding['argument']) ? "$type/$name" . implode('', array_map(
+                        static fn($part) => '[' . $part . ']', $binding['items'] ?? [])) : $key,
+                    'family' => $family, 'declaredScope' => ['type' => $scope, 'code' => ''],
+                    ...$range, 'node' => $nodePath . ($family === 'lifecycles' ? '/@shared' : ''), 'binding' => $binding,
                     'supported' => false, 'reason' => null];
             }
             return $result;

@@ -166,7 +166,7 @@ fi
         php /application/docker/php/e2e/xml-observers.test.php
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-plugins.test.php
-    for di_usage_case in proof collector collector-stale; do
+    for di_usage_case in proof collector collector-stale collector-gaps; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-di-usage-hook-proof.php /var/www/html/vendor "$di_usage_case"
     done
