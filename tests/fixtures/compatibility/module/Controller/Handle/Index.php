@@ -11,12 +11,14 @@ namespace MageLens\Compatibility\Controller\Handle;
 
 use Magento\Framework\App\Action\HttpGetActionInterface;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\App\ViewInterface;
 use Magento\Framework\View\Result\Page;
 use Magento\Framework\View\Result\PageFactory;
 
 class Index implements HttpGetActionInterface
 {
-    public function __construct(private PageFactory $pages, private RequestInterface $request)
+    // Resolve the application view before layout generation can request it.
+    public function __construct(private PageFactory $pages, private RequestInterface $request, ViewInterface $view)
     {
     }
 
