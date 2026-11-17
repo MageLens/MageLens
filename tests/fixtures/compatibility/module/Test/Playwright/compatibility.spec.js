@@ -65,7 +65,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(wireframe.locator('[data-layout-structure="config-denied"]')).toHaveCount(0);
     for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
         'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement',
-        'equal-replacement', 'unset-value', 'offset-replacement', 'offset-read', 'array-path']) {
+        'equal-replacement', 'unset-value', 'offset-replacement', 'offset-read', 'array-path',
+        'indexed-array', 'indexed-string', 'literal-slash']) {
         await expect(wireframe.locator(`[data-layout-argument="${effect}"]`)).toHaveText('verified');
     }
     await expect(page).toHaveTitle('Effective fixture title');
@@ -112,6 +113,9 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-grammar="constenum"]')).toHaveText('structure-serialization-error');
     await expect(page.locator('[data-layout-grammar="updaterenabled"], [data-layout-grammar="updaterorder"]')).toHaveText(['updater-lookup-error', 'updater-lookup-error']);
     await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"]')).toHaveText(['verified', 'verified', 'verified']);
+    await page.goto('/coverageprobe/boundary/');
+    await expect(page.locator('[data-layout-boundary-failure]')).toHaveText('verified');
+    await expect(page.locator('[data-layout-boundary-success]')).toHaveText('success-value');
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

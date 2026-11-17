@@ -67,6 +67,12 @@ class LayoutArguments extends Template
             'offset-replacement' => $this->getData('offset_replaced') === 'same',
             'offset-read' => $this['offset_read'] === 'array-access',
             'array-path' => $this->getData('matrix/nested/surviving') === '7',
+            'indexed-array' => $this->getData('indexed', 'visited') === 'indexed-read'
+                && $this->getData('indexed/nested', 'leaf') === 'indexed-path'
+                && $this->getData('indexed', 'nullable') === null
+                && $this->getData('indexed', 'absent') === null,
+            'indexed-string' => $this->getData('lines', 1) === 'second',
+            'literal-slash' => $this->getData('literal/slash') === 'literal-key',
         ];
     }
 }

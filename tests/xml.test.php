@@ -101,7 +101,7 @@ $arraySource = file_get_contents($layoutDirectory . 'coverageprobe_layout_argume
 $arrayItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_layout_arguments.xml', $arraySource);
 $leaves = array_values(array_filter($arrayItems, static fn($item) =>
     $item['layout']['instruction'] === 'item' && $item['supported']));
-checkXml(count($leaves) === 4 && count(array_unique(array_column($leaves, 'id'))) === 4,
+checkXml(count($leaves) === 9 && count(array_unique(array_column($leaves, 'id'))) === 9,
     'Array parents and leaves retain separate original declarations');
 foreach ($leaves as $leaf) {
     checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),

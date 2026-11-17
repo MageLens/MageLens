@@ -74,7 +74,8 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('#layout-wireframe [data-layout-structure="config-denied"]').should('not.exist');
         for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
             'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement',
-            'equal-replacement', 'unset-value', 'offset-replacement', 'offset-read', 'array-path']) {
+            'equal-replacement', 'unset-value', 'offset-replacement', 'offset-read', 'array-path',
+            'indexed-array', 'indexed-string', 'literal-slash']) {
             cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
         }
         cy.title().should('equal', 'Effective fixture title');
@@ -128,6 +129,9 @@ describe('Magento storefront coverage compatibility', () => {
         for (const entry of ['cachefalse', 'cacheremoved', 'cachezero']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'verified');
         }
+        cy.visit('/coverageprobe/boundary/');
+        cy.get('[data-layout-boundary-failure]').should('have.text', 'verified');
+        cy.get('[data-layout-boundary-success]').should('have.text', 'success-value');
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');

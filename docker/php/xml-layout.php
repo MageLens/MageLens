@@ -1245,22 +1245,32 @@ final class LayoutCoverage
         if ($error || $class !== DataObject::class || !isset($this->blocks[$block], $this->argumentBindings[$block])) return;
         $key = $params[0] ?? null;
         if (!is_scalar($key) && $key !== null) return;
-        if ($function === 'getData' && ($key === null || $key === '' || ($params[1] ?? null) !== null)) return;
-        $path = $function === 'getDataByPath';
-        if ($function === 'getData' && str_contains((string) $key, '/')) return;
-        if ($path && $value === null) return;
-        $keys = $path ? explode('/', (string) $key) : [self::dataKey($key)];
+        if ($function === 'getData' && ($key === null || $key === '')) return;
         $binding = $this->argumentBindings[$block];
         $origins = $binding['origins'];
         static $data;
         $data ??= new \ReflectionProperty(DataObject::class, '_data');
         $values = $data->getValue($block);
+        $path = $function === 'getDataByPath'
+            || ($function === 'getData' && !isset($values[$key]) && str_contains((string) $key, '/'));
+        if ($path && $value === null) return;
+        $keys = $path ? explode('/', (string) $key) : [self::dataKey($key)];
         $origin = null;
         foreach ($keys as $part) {
             if (!is_array($values) || !array_key_exists($part, $values)) return;
             $values = $values[$part];
             $origin = $origins[$part] ?? null;
             $origins = $origin['children'] ?? [];
+        }
+        if ($function === 'getData' && ($params[1] ?? null) !== null) {
+            // Native array projections consume one existing non-null member.
+            // String projections split the original value at native EOLs.
+            if ($value === null) return;
+            if (is_array($values)) {
+                $origin = $origins[self::dataKey($params[1])] ?? null;
+            } elseif (is_string($values)) {
+                $value = $values;
+            } else return;
         }
         $matched = isset($origin['digest']) && (is_scalar($value) || $value === null)
             && self::digest([$value]) === $origin['digest'];

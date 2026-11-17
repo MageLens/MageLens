@@ -1,0 +1,10 @@
+<?php
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+if ($block->getData('boundary_value') !== 'failed-value') {
+    throw new LogicException('Fixture failure value was replaced');
+}
+throw new RuntimeException('MageLens fixture template failed after reading its value');

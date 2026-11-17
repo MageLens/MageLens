@@ -56,6 +56,14 @@ License: see LICENSE in the repository root.
                     <argument name="unset_nullable" xsi:type="null"/>
                     <argument name="offset_replaced" xsi:type="string">same</argument>
                     <argument name="offset_read" xsi:type="string">array-access</argument>
+                    <argument name="indexed" xsi:type="array">
+                        <item name="visited" xsi:type="string">indexed-read</item>
+                        <item name="unread" xsi:type="string">indexed-unread</item>
+                        <item name="nullable" xsi:type="null"/>
+                        <item name="nested" xsi:type="array"><item name="leaf" xsi:type="string">indexed-path</item></item>
+                    </argument>
+                    <argument name="lines" xsi:type="string">first&#10;second</argument>
+                    <argument name="literal/slash" xsi:type="string">literal-key</argument>
                 </arguments>
             </block>
         </referenceContainer>
