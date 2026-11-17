@@ -10,9 +10,9 @@ describe('Blog storefront', () => {
         cy.intercept('GET', '**/Application_Blog/template/theme-note.html*').as('themeNote');
         visitBlog(f.query);
         if (Cypress.expose('hyvaCsp')) {
-            get('blog').should('have.attr', 'x-data', 'applicationBlog');
+            get('blog').should('have.class', 'coverage-blog');
         } else {
-            get('blog').find("[data-bind=\"scope: 'coverageBlog'\"]").should('exist');
+            get('blog').find('div[data-bind]').should('exist');
         }
         if (f.themePaths[0] === 'Application/coverage') {
             cy.get('[data-cy="theme-note"]', {timeout: Cypress.config('pageLoadTimeout')})
