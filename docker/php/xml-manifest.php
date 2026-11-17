@@ -6,10 +6,11 @@
  */
 declare(strict_types=1);
 require_once __DIR__ . '/xml-data.php';
+require_once __DIR__ . '/xml-layout-manifest.php';
 require_once __DIR__ . '/xml-observer-manifest.php';
 require_once __DIR__ . '/xml-plugin-manifest.php';
 require_once __DIR__ . '/xml-preference-manifest.php';
-use MageLens\XmlCoverage\{Xml, ObserverManifest, PluginManifest, PreferenceManifest};
+use MageLens\XmlCoverage\{Xml, LayoutManifest, ObserverManifest, PluginManifest, PreferenceManifest};
 
 function xmlFingerprint($om): string
 {
@@ -39,9 +40,14 @@ function prepareXmlManifests($om, array $run): array
             (bool) preg_match('~/etc/adminhtml/system\.xml$~', $path) => 'system',
             (bool) preg_match('~/etc/(?:[^/]+/)?events\.xml$~', $path) => 'events',
             (bool) preg_match('~/etc/(?:[^/]+/)?di\.xml$~', $path) => 'plugins',
+            LayoutManifest::isLayout($path) => 'layout',
             default => null,
         };
-        $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
+        $declarations = match ($family) {
+            'layout' => LayoutManifest::declarations($path, $bytes),
+            null => [],
+            default => Xml::declarations($path, $bytes, $family),
+        };
         if ($family === 'plugins') foreach (['preferences', 'virtual-types', 'arguments', 'lifecycles'] as $diFamily) {
             $declarations = array_merge($declarations, Xml::declarations($path, $bytes, $diFamily));
         }
@@ -129,6 +135,7 @@ function prepareXmlManifests($om, array $run): array
     $fieldHashes = [];
     $effectiveIds = array_fill_keys(array_values($origins), true);
     foreach ($files as $path => &$file) foreach ($file['declarations'] as &$item) {
+        if ($file['family'] === 'layout') continue;
         if ($file['family'] === 'config' && !isset($providers[BP . '/' . $path])) {
             $item['supported'] = false; $item['reason'] = 'Not consumed by the installed initial configuration reader';
         }
@@ -183,6 +190,7 @@ function prepareXmlManifests($om, array $run): array
             'observers' => $observers,
             'plugins' => $plugins,
             'preferences' => $preferences,
+            'layoutSources' => LayoutManifest::targets($files),
             'scopes' => $scopes,
             'scopeCodes' => $scopeCodes,
             'fieldHashes' => $fieldHashes,

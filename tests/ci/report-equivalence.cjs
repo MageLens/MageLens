@@ -120,6 +120,8 @@ function snapshot(directory) {
             virtualTypes: {total: count(xml.virtualTypes?.total ?? 0), covered: count(xml.virtualTypes?.covered ?? 0)},
             arguments: {total: count(xml.arguments?.total ?? 0), covered: count(xml.arguments?.covered ?? 0)},
             lifecycles: {total: count(xml.lifecycles?.total ?? 0), covered: count(xml.lifecycles?.covered ?? 0)},
+            layout: {total: count(xml.layout?.total ?? 0), covered: count(xml.layout?.covered ?? 0),
+                limitations: sort(array(xml.layout?.limitations ?? []).map(digest))},
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
@@ -128,6 +130,10 @@ function snapshot(directory) {
                     id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],
                     range: [item.startLine, item.endLine], supported: item.supported, effective: item.effective,
                     state: item.state, reason: digest(item.reason || ''),
+                    ...(item.family === 'layout' ? {
+                        layout: [item.layout.kind, item.layout.fileType, item.layout.ordinal, digest(item.layout.element),
+                            digest(item.layout.handle), digest(item.layout.instruction), digest(item.layout.attribute || '')]
+                    } : {}),
                     ...(item.family === 'events' ? {
                         registration: [digest(item.registration.event), digest(item.registration.observer)],
                         areas: sort(Object.entries(object(item.areas)).map(([area, outcome]) =>
@@ -157,7 +163,9 @@ function snapshot(directory) {
                             ...(item.binding.argument ? [digest(item.binding.argument), ...(item.binding.items || []).map(digest)] : [])],
                         lifecycleAreas: diAreas(item.areas)
                     } : {}),
-                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(event.type === 'observer-execute'
+                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(item.family === 'layout'
+                        ? [event.type, event.area, digest(event.theme)]
+                        : event.type === 'observer-execute'
                         ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
                         : event.type === 'plugin-execute'
                             ? [event.type, event.area, digest(event.registration.target), digest(event.registration.name), ...pluginIdentity(event.callback)]
@@ -205,10 +213,26 @@ function validateSnapshot(value, run, summary) {
     const virtualTotals = {total: 0, covered: 0};
     const argumentTotals = {total: 0, covered: 0};
     const lifecycleTotals = {total: 0, covered: 0};
+    const layoutTotals = {total: 0, covered: 0};
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
         object(file.lines);
         for (const item of array(file.declarations)) {
+            if (item.layout) {
+                const [kind, fileType, ordinal, ...identity] = array(item.layout);
+                assert.ok(['block', 'template', 'include', 'instruction', 'attribute'].includes(kind));
+                assert.ok(['page', 'generic', 'wireframe', 'custom', 'registry', 'page-types'].includes(fileType));
+                count(ordinal);
+                assert.equal(identity.length, 4);
+                for (const part of identity) assert.match(part, /^[a-f0-9]{64}$/);
+                for (const [effect, area, theme] of array(item.evidence)) {
+                    assert.match(effect, /^layout-(block-(created|rendered)|include-(traversed|duplicate|cycle|missing)|template-(selected|executed|overridden|replaced))$/);
+                    assert.ok(['frontend', 'adminhtml'].includes(area));
+                    assert.match(theme, /^[a-f0-9]{64}$/);
+                }
+                if (item.state !== 'unmeasured') layoutTotals.total++;
+                if (item.state === 'covered') layoutTotals.covered++;
+            }
             if (item.plugin) {
                 assert.equal(array(item.plugin).length, 2);
                 for (const part of item.plugin) assert.match(part, /^[a-f0-9]{64}$/);
@@ -290,6 +314,9 @@ function validateSnapshot(value, run, summary) {
     assert.deepEqual(value.xml.virtualTypes ?? {total: 0, covered: 0}, virtualTotals, 'Incomplete virtual type coverage inventory');
     assert.deepEqual(value.xml.arguments ?? {total: 0, covered: 0}, argumentTotals, 'Incomplete constructor argument coverage inventory');
     assert.deepEqual(value.xml.lifecycles ?? {total: 0, covered: 0}, lifecycleTotals, 'Incomplete object lifetime coverage inventory');
+    const {limitations: layoutLimitations, ...layoutSummary} = value.xml.layout ?? {...layoutTotals, limitations: []};
+    assert.deepEqual(layoutSummary, layoutTotals, 'Incomplete layout coverage inventory');
+    for (const reason of array(layoutLimitations)) assert.match(reason, /^[a-f0-9]{64}$/);
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
         assert.match(line, /^[1-9]\d*$/, 'Invalid PHP line');

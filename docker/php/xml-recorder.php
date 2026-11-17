@@ -17,6 +17,7 @@ final class Recorder
     private static bool $busy = false;
     private static bool $readHook = false;
     private static bool $renderHook = false;
+    private static ?LayoutCoverage $layout = null;
 
     public static function start(string $run): void
     {
@@ -58,6 +59,19 @@ final class Recorder
             'requested' => $requested, 'hits' => 0];
         self::$events[$key]['hits']++;
     }
+    public static function layoutHooks(): array
+    {
+        [self::$layout, $hooks] = LayoutCoverage::register(self::$manifest['layoutSources'] ?? []);
+        return $hooks;
+    }
+
+    public static function layout(string $id, string $type, array $context): void
+    {
+        $key = "$id\0$type\0{$context['area']}\0{$context['theme']}";
+        self::$events[$key] ??= ['id' => $id, 'type' => $type, ...$context, 'hits' => 0];
+        self::$events[$key]['hits']++;
+    }
+
     public static function mutation(): void
     {
         if (self::$manifest) self::$errors[] = 'Configuration changed during collection';
@@ -193,6 +207,7 @@ final class Recorder
         [$data['pluginHook'], $data['ambiguousPlugins']] = class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
         $data['preferenceHook'] = class_exists(Preferences::class, false) && Preferences::finish();
         $data['diUsageHooks'] = class_exists(DiUsage::class, false) ? DiUsage::finish() : [];
+        [$data['layoutHook'], $data['layoutSourceTrace'], $data['layoutLimitations']] = self::$layout?->finish() ?? [false, false, []];
         return $data;
     }
 }

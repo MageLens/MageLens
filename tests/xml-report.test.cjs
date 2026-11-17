@@ -240,3 +240,62 @@ test('virtual and constructor usage require live evidence and preserve independe
     assert.match(index, /Object lifetime usage/);
     assert.match(index, /New instance/);
 });
+
+test('layout reports validate effects and keep superseded and zero-hit declarations visible', () => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/view/frontend/layout/blog_index_index.xml';
+    const source = Buffer.from('<page><body><block name="blog" template="a.phtml"/></body></page>');
+    const declaration = (id, kind) => ({id, family: 'layout', path: '/page/body/block', startLine: 1, endLine: 1,
+        declaredScope: {type: 'frontend', code: ''}, layout: {kind, element: 'blog', ordinal: 2, handle: 'blog_index_index',
+            fileType: 'page', instruction: 'block'}, supported: true});
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    manifest.files.push({path: file, sourceHash, family: 'layout',
+        declarations: [declaration('created', 'block'), declaration('template', 'template')]});
+    manifest.layoutSources = {[file]: {hash: sourceHash,
+        targets: {2: {ids: {block: 'created', template: 'template'}}}}};
+    sources[file] = source;
+    const healthy = {...record, layoutHook: true};
+    assert.throws(() => merge(manifest, [record], sources), /No functioning XML layout hook/);
+    const empty = merge(manifest, [healthy], sources);
+    assert.deepEqual(empty.layout, {total: 2, covered: 0, hook: true, limitations: []});
+    assert.deepEqual(empty.files[1].declarations.map(item => item.state), ['uncovered', 'uncovered']);
+    const context = {area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
+    const block = {id: 'created', type: 'layout-block-created', ...context};
+    const overridden = {id: 'template', type: 'layout-template-overridden', ...context};
+    const current = {...healthy, events: [block, overridden]};
+    const actual = merge(manifest, [current], sources);
+    assert.deepEqual(actual.layout, {total: 1, covered: 1, hook: true, limitations: []});
+    assert.deepEqual(actual.files[1].declarations.map(item => item.state), ['covered', 'unmeasured']);
+    assert.equal(actual.files[1].declarations[1].evidence[0].type, overridden.type);
+    assert.equal(actual.files[1].total, 0);
+    for (const invalid of [{...block, type: 'layout-template-executed'}, {...block, id: 'unknown'},
+        {...block, theme: 'incorrect'}, {...block, unexpectedValue: 'private'}]) {
+        assert.throws(() => merge(manifest, [{...current, events: [invalid]}], sources));
+    }
+    assert.throws(() => merge(manifest, [{...current, run: 'stale'}], sources), /Stale XML request/);
+    assert.throws(() => merge(manifest, [current], {...sources, [file]: Buffer.from('edited')}), /XML source changed/);
+    delete manifest.layoutSources[file].targets[2].ids.block;
+    assert.throws(() => merge(manifest, [current], sources), /does not match manifest provenance/);
+});
+
+test('XML reporting rejects a symlink to an otherwise identical layout source', t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-layout-link-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    const file = 'app/code/Acme/Blog/view/frontend/layout/blog_index_index.xml';
+    const filename = path.join(root, 'src', file);
+    const raw = path.join(root, 'coverage/raw/php/fresh');
+    fs.mkdirSync(path.dirname(filename), {recursive: true});
+    fs.mkdirSync(raw, {recursive: true});
+    const bytes = '<page><body/></page>';
+    const original = path.join(root, 'original.xml');
+    fs.writeFileSync(original, bytes);
+    fs.symlinkSync(original, filename);
+    fs.writeFileSync(path.join(root, 'coverage/run.json'), JSON.stringify({id: 'fresh'}));
+    fs.writeFileSync(path.join(root, 'coverage/xml-manifest.json'), JSON.stringify({
+        run: 'fresh', files: [{path: file, sourceHash: createHash('sha256').update(bytes).digest('hex')}]
+    }));
+    const {spawnSync} = require('node:child_process');
+    const result = spawnSync(process.execPath, [require.resolve('../bin/report-xml.cjs')], {cwd: root, encoding: 'utf8'});
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Symlinked XML source/);
+});

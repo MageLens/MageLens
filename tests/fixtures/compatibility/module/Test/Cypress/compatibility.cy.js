@@ -54,5 +54,12 @@ describe('Magento storefront coverage compatibility', () => {
         cy.window().its('magelensChildScript').should('equal', 'child-ready');
         cy.get('[data-cy="probe-count"]').should('have.text', '0');
         cy.get('[data-cy="probe-name"]').should('have.value', 'initial');
+        cy.visit('/coverageprobe/handle/');
+        cy.get('#layout-wireframe [data-layout-handle]').should(markers => {
+            expect([...markers].map(element => element.textContent)).to.deep.equal(['repeat', 'nested', 'action']);
+        });
+        cy.get('#layout-wireframe [data-layout-registry]').should('have.text', 'MageLens fixture wireframe');
+        cy.visit('/coverageprobe/handle/?variant=selected');
+        cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
     });
 });

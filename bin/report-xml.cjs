@@ -25,6 +25,20 @@ const diFamilies = {
     arguments: {key: 'arguments', title: 'Constructor argument usage', event: 'argument-applied', action: 'applied'},
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
+const layoutEvents = {
+    block: ['layout-block-created', 'layout-block-rendered'],
+    include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
+    template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced'],
+};
+const layoutDecisions = {
+    'layout-template-overridden': 'A later declaration supplied the template used during block generation',
+    'layout-include-duplicate': 'Magento had already processed the included handle',
+    'layout-include-cycle': 'Magento was processing the included handle and skipped recursive re-entry',
+    'layout-include-missing': 'Magento found no package or database layout update for the handle',
+};
+const layoutLimitations = {
+    'missing-layout-origins': 'A layout generated elements without a confirmed source trace. Warm layout caches and untracked XML providers can omit original ownership.',
+};
 function merge(manifest, records, sources) {
     const declarations = new Map(), files = structuredClone(manifest.files);
     for (const file of files) {
@@ -35,7 +49,7 @@ function merge(manifest, records, sources) {
         file.lines = {};
         for (const item of file.declarations) {
             assert.ok(!declarations.has(item.id), 'Duplicate XML declaration');
-            declarations.set(item.id, item);
+            declarations.set(item.id, {item, source: file.path});
             item.hits = 0; item.evidence = [];
         }
     }
@@ -56,6 +70,11 @@ function merge(manifest, records, sources) {
         assert.ok(!enabled || hook, `No functioning XML ${details.title.toLowerCase()} hook observed`);
         diTotals[family] = {total: 0, covered: 0, hook};
     }
+    const layoutHook = records.some(record => record.layoutHook === true);
+    const layoutSourceTrace = records.some(record => record.layoutSourceTrace === true);
+    const layoutTotals = {total: 0, covered: 0, hook: layoutHook, limitations: []};
+    assert.ok(!Object.keys(manifest.layoutSources || {}).length || layoutHook, 'No functioning XML layout hook observed');
+    const requestLimitations = new Set();
     const requests = [];
     const warnings = [];
     for (const record of records) {
@@ -65,15 +84,20 @@ function merge(manifest, records, sources) {
         let scenario = url.searchParams.get('case');
         if (!/\/blog\/index\/configuration\/?$/.test(url.pathname) || !cases.has((scenario || '').replace(/-warm$/, ''))) scenario = null;
         const events = [];
+        for (const limitation of record.layoutLimitations || []) {
+            assert.equal(record.layoutHook, true, 'Layout limitation without a functioning request hook');
+            assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
+            requestLimitations.add(limitation);
+        }
         for (const [id, areas] of Object.entries(record.ambiguousPlugins || {})) {
             assert.equal(record.pluginHook, true);
             for (const [area, callbacks] of Object.entries(areas)) for (const [key, seen] of Object.entries(callbacks)) {
                 assert.equal(seen, true);
-                pluginCallback(declarations.get(id), area, key).callback.ambiguousEntry = true;
+                pluginCallback(declarations.get(id)?.item, area, key).callback.ambiguousEntry = true;
             }
         }
         for (const event of record.events) {
-            const item = declarations.get(event.id);
+            const {item, source} = declarations.get(event.id) || {};
             assert.ok(item?.supported, 'Unknown or unmeasured XML evidence');
             assert.ok(Number.isSafeInteger(event.hits) && event.hits > 0);
             const evidence = {run: record.run, request: record.request, type: event.type};
@@ -114,6 +138,15 @@ function merge(manifest, records, sources) {
                 }
                 outcome.hits = (outcome.hits || 0) + event.hits;
                 Object.assign(evidence, {area: event.area, requested: event.requested, binding: item.binding, resolved: outcome.resolved});
+            } else if (item.family === 'layout') {
+                assert.equal(record.layoutHook, true, 'Layout evidence without a functioning request hook');
+                assert.deepEqual(Object.keys(event).sort(), ['area', 'hits', 'id', 'theme', 'type']);
+                assert.ok(layoutEvents[item.layout.kind]?.includes(event.type), 'Unexpected layout effect');
+                assert.ok(['frontend', 'adminhtml'].includes(event.area), 'Unexpected layout evidence area');
+                assert.ok(typeof event.theme === 'string' && event.theme.startsWith(event.area + '/'), 'Unexpected layout theme');
+                assert.equal(manifest.layoutSources?.[source]?.targets[item.layout.ordinal]?.ids[item.layout.kind],
+                    item.id, 'Layout evidence does not match manifest provenance');
+                Object.assign(evidence, {area: event.area, theme: event.theme});
             } else if (item.family === 'plugins') {
                 assert.equal(record.pluginHook, true, 'Plugin evidence without a functioning request hook');
                 assert.equal(event.type, 'plugin-execute');
@@ -134,8 +167,11 @@ function merge(manifest, records, sources) {
                 assert.equal(typeof event.requestedScope.code, 'string');
                 evidence.requestedScope = event.requestedScope;
             }
-            item.hits += event.hits;
-            if (!item.evidence.some(previous => JSON.stringify(previous) === JSON.stringify(evidence))) item.evidence.push(evidence);
+            if (!Object.hasOwn(layoutDecisions, event.type)) item.hits += event.hits;
+            const sameEvidence = previous => item.family === 'layout'
+                ? previous.type === evidence.type && previous.area === evidence.area && previous.theme === evidence.theme
+                : JSON.stringify(previous) === JSON.stringify(evidence);
+            if (!item.evidence.some(sameEvidence)) item.evidence.push(evidence);
             events.push(event);
         }
         if (events.length || scenario) requests.push({id: record.request, case: scenario, events});
@@ -147,7 +183,19 @@ function merge(manifest, records, sources) {
         if (file.reason) warnings.push({path: file.path, reason: file.reason});
         for (const item of file.declarations) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
-            if (item.areas) {
+            if (item.family === 'layout') {
+                const decisions = [...new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean))].sort();
+                if (item.supported && !item.hits && decisions.length) {
+                    item.state = 'unmeasured';
+                    item.reason = decisions.join('. ');
+                } else if (item.state === 'uncovered' && !layoutSourceTrace && requestLimitations.size) {
+                    item.state = 'unmeasured';
+                    item.reason = 'No measured layout request supplied a source trace';
+                }
+                if (item.state !== 'unmeasured') layoutTotals.total++;
+                if (item.state === 'covered') layoutTotals.covered++;
+                if (item.state === 'unmeasured') warnings.push({path: file.path, declaration: item.id, reason: item.reason});
+            } else if (item.areas) {
                 const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals, ...diTotals}[item.family];
                 for (const [area, outcome] of Object.entries(item.areas)) {
                     outcome.hits ??= 0;
@@ -175,18 +223,19 @@ function merge(manifest, records, sources) {
             for (let line = item.startLine; line <= (item.highlightEndLine ?? item.endLine); line++) {
                 const previous = file.lines[line];
                 const hits = (previous?.hits || 0) + item.hits;
-                const supported = item.supported || previous?.state === 'uncovered' || previous?.state === 'covered';
+                const supported = item.state !== 'unmeasured' || previous?.state === 'uncovered' || previous?.state === 'covered';
                 file.lines[line] = {hits, state: supported ? (hits ? 'covered' : 'uncovered') : 'unmeasured'};
             }
         }
-        const lines = file.family === 'plugins' ? [] : Object.values(file.lines).filter(line => line.state !== 'unmeasured');
+        const lines = ['plugins', 'layout'].includes(file.family) ? [] : Object.values(file.lines).filter(line => line.state !== 'unmeasured');
         file.total = lines.length; file.covered = lines.filter(line => line.hits > 0).length;
     }
+    layoutTotals.limitations = [...requestLimitations].sort().map(key => layoutLimitations[key]);
     const total = files.reduce((sum, file) => sum + file.total, 0);
     const covered = files.reduce((sum, file) => sum + file.covered, 0);
     return {schemaVersion: 1, run: manifest.run, manifest: manifest.id, complete: true, sourcesUnchanged: true,
         collectorErrors: [], observers: {...observerTotals, hook: observerHook}, plugins: {...pluginTotals, hook: pluginHook},
-        preferences: {...preferenceTotals, hook: preferenceHook},
+        preferences: {...preferenceTotals, hook: preferenceHook}, layout: layoutTotals,
         ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])), total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
 }
 const style = 'body{font:15px system-ui;margin:32px;color:#172b3a}a{color:#086b68}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{padding:5px 10px;text-align:left;border-bottom:1px solid #ddd}.covered{background:#dcefe0}.uncovered{background:#fbdada}.unmeasured{background:#eee;color:#555}.neutral{color:#555}.line{display:block}small{display:block}a:focus-visible{outline:2px solid #086b68;outline-offset:3px}td,code,small,h1{overflow-wrap:anywhere}.preferences{max-width:75rem;line-height:1.35}.preference-list,.preference-areas{list-style:none;padding:0}.preference-list>li{padding:12px 0;border-top:1px solid #ddd}.preference-areas{margin-top:6px}.preference-areas li{padding:6px 10px;margin:2px 0;overflow-wrap:anywhere}.preference-areas span{display:block}.line:target{outline:2px solid #086b68;outline-offset:-2px}@media(max-width:480px){body{margin:16px}td,th{padding:5px}.di-details,.di-details tbody,.di-details tr,.di-details td{display:block}.di-details td{border-bottom:0}.di-details tr{border-bottom:1px solid #ddd}}';
@@ -286,6 +335,12 @@ function writeReport(result, sources, directory = 'coverage/xml') {
                 return `<tr><td>${bindingLabel(item, label => `<a href="#L${item.startLine}">${label}</a>`)}
                     <small>Original ${lineLabel(item)}</small></td><td>${preferenceAreas(item, files, prefix)}</td></tr>`;
             }
+            if (item.family === 'layout') {
+                const {element, handle, fileType} = item.layout;
+                const outcomes = item.evidence.map(event =>
+                    `<small>${escape(event.type.replace(/^layout-/, '').replaceAll('-', ' '))} · ${escape(event.theme)}</small>`).join('');
+                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(element)} · ${escape(handle)} · ${escape(fileType)} · ${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}<small>${escape(item.reason || '')}</small></td></tr>`;
+            }
             const outcomes = item.areas
                 ? Object.entries(item.areas).map(([area, outcome]) => {
                     const callbacks = [...Object.values(outcome.callbacks || {}), ...Object.values(outcome.unmeasuredCallbacks || {})].map(callback =>
@@ -296,7 +351,7 @@ function writeReport(result, sources, directory = 'coverage/xml') {
             const type = {events: 'Observer execution', plugins: 'Plugin execution'}[item.family] || item.state;
             return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(item.declaredScope.type)} ${escape(item.declaredScope.code)} · lines ${item.startLine}–${item.endLine}</small></td><td>${escape(type)}${outcomes}</td></tr>`;
         }).join('');
-        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`));
+        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`));
         let parent = path.posix.dirname(file.path);
         if (!directories.has(parent)) directories.set(parent, new Map());
         directories.get(parent).set(path.posix.basename(file.path) + '.html', {label: path.posix.basename(file.path), file});
@@ -309,13 +364,24 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         }
     }
     for (const [name, entries] of directories) {
-        const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
-        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
+        const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file && entry.file.family !== 'layout' ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
+        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
         fs.mkdirSync(path.join(directory, name), {recursive: true});
         fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files))));
     }
     fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
 }
+function readSources(files) {
+    const root = fs.realpathSync('src');
+    return Object.fromEntries(files.map(file => {
+        assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
+        assert.ok(!file.path.split('/').some(part => part === '..' || part === '.'));
+        const filename = path.join(root, file.path);
+        assert.equal(fs.realpathSync(filename), filename, `Symlinked XML source: ${file.path}`);
+        return [file.path, fs.readFileSync(filename)];
+    }));
+}
+
 function report() {
     const read = file => JSON.parse(fs.readFileSync(file));
     assert.equal(fs.existsSync('coverage/.active-run'), false, 'Stop and drain collection before XML reporting');
@@ -329,7 +395,7 @@ function report() {
         assert.ok(request.xml, 'Missing XML request evidence');
         return {...request.xml, uri: request.uri, request: file.slice(0, -5)};
     });
-    const sources = Object.fromEntries(manifest.files.map(file => [file.path, fs.readFileSync(`src/${file.path}`)]));
+    const sources = readSources(manifest.files);
     const result = merge(manifest, records, sources);
     writeReport(result, sources);
     return result;

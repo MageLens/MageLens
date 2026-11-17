@@ -50,4 +50,10 @@ test('starts the next test with fresh state', async ({page}) => {
     expect(await page.evaluate(() => window.magelensChildScript)).toBe('child-ready');
     await expect(page.locator('[data-cy="probe-count"]')).toHaveText('0');
     await expect(page.getByRole('textbox', {name: 'Probe name'})).toHaveValue('initial');
+    await page.goto('/coverageprobe/handle/');
+    const wireframe = page.locator('#layout-wireframe');
+    await expect(wireframe.locator('[data-layout-handle]')).toHaveText(['repeat', 'nested', 'action']);
+    await expect(wireframe.locator('[data-layout-registry]')).toHaveText('MageLens fixture wireframe');
+    await page.goto('/coverageprobe/handle/?variant=selected');
+    await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
 });
