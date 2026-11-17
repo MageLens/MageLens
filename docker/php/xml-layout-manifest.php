@@ -65,6 +65,8 @@ final class LayoutManifest
                     && $node->getAttribute('src') !== '' => 'asset-reference',
                 $fileType === 'page' && $node->tagName === 'action' && $element !== ''
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
+                $fileType === 'page' && $node->tagName === 'argument' && $element !== ''
+                    && $node->parentNode->nodeName === 'action' => 'action-argument',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
                 $fileType === 'page' && self::scalarArgument($node) => 'argument',
                 $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
@@ -112,7 +114,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'argument', 'include', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'include', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',

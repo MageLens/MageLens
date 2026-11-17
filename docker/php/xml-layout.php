@@ -570,11 +570,16 @@ final class LayoutCoverage
         $origins = [];
         foreach ($xml->action as $node) {
             [$origin] = $this->origin($node);
-            $origins[] = $origin['action'] ?? null;
+            $arguments = [];
+            foreach ($node->argument as $argument) {
+                [$argumentOrigin] = $this->origin($argument);
+                if (isset($argumentOrigin['action-argument'])) $arguments[] = $argumentOrigin['action-argument'];
+            }
+            $origins[] = ['id' => $origin['action'] ?? null, 'arguments' => $arguments];
         }
         if (count($origins) !== count($actions)) return;
         $this->actionReads[$xml] = array_map(
-            static fn($action, $id) => ['digest' => self::digest($action), 'id' => $id],
+            static fn($action, $origin) => ['digest' => self::digest($action), ...$origin],
             $actions,
             $origins
         );
@@ -1020,7 +1025,8 @@ final class LayoutCoverage
         $calls = [];
         foreach ($actions as $index => $action) {
             if (self::digest($action) !== $origins[$index]['digest']) return [];
-            $calls[self::digest([$action[0], $action[1]])][] = $origins[$index]['id'];
+            $calls[self::digest([$action[0], $action[1]])][] = [
+                'id' => $origins[$index]['id'], 'arguments' => $origins[$index]['arguments'] ?? []];
         }
         return $calls;
     }
@@ -1036,7 +1042,12 @@ final class LayoutCoverage
         $state = $this->blocks[$block];
         $origins = $state['actions'][self::digest([$method, $arguments])] ?? [];
         $effect = count($origins) === 1 ? 'layout-action-executed' : 'layout-action-ambiguous';
-        foreach ($origins as $id) $this->event($id, $effect, $state['context']);
+        foreach ($origins as $origin) {
+            $this->event($origin['id'], $effect, $state['context']);
+            foreach ($origin['arguments'] as $id) {
+                $this->event($id, count($origins) === 1 ? 'layout-action-argument-applied' : 'layout-action-argument-ambiguous', $state['context']);
+            }
+        }
     }
 
     private function assignTemplate($block, array $params, $result, ?\Throwable $error, string $class): void

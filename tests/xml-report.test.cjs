@@ -349,6 +349,7 @@ test('layout structural and page-value reports require the correct native effect
         'body-class-name': 'layout-body-classes-cleared',
         'body-class-value': 'layout-body-class-rendered',
         'file-override': 'layout-file-override-selected',
+        'action-argument': 'layout-action-argument-applied',
     };
     for (const [kind, type] of Object.entries(effects)) {
         const {manifest, record, sources} = fixture();
