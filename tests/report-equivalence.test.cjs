@@ -311,7 +311,10 @@ test('layout equivalence preserves effects, source and context without exposing 
         layout: {kind: 'template', fileType: 'page', ordinal: 2, element: 'SECRET block', handle: 'SECRET handle',
             instruction: 'block', attribute: 'template'}
     };
-    xml.files[0].declarations = [declaration];
+    const action = {...declaration, id: 'c'.repeat(64), path: '/page/body/block/action', state: 'unmeasured', hits: 0,
+        layout: {...declaration.layout, kind: 'action', ordinal: 3, instruction: 'action', attribute: null},
+        evidence: [{...effect, type: 'layout-action-ambiguous'}]};
+    xml.files[0].declarations = [declaration, action];
     xml.layout = {total: 1, covered: 1, limitations: ['SECRET cache reason']};
     write('xml/coverage.json', xml);
     const original = snapshot(directory);
@@ -324,6 +327,7 @@ test('layout equivalence preserves effects, source and context without exposing 
     for (const change of [
         report => { report.files[0].declarations[0].evidence[0].theme = 'frontend/Acme/different'; },
         report => { report.files[0].declarations[0].evidence[0].type = 'layout-template-selected'; },
+        report => { report.files[0].declarations[1].evidence = []; },
         report => { report.files[0].declarations[0].startLine++; },
         report => { report.layout.limitations.pop(); }
     ]) {

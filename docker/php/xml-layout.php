@@ -7,6 +7,7 @@
 declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
+use Magento\Framework\DataObject;
 use Magento\Framework\Filesystem\File\Read;
 use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Framework\View\Element\Template;
@@ -17,6 +18,7 @@ use Magento\Framework\View\Layout\Reader\Block as BlockReader;
 use Magento\Framework\View\Layout\Reader\Container as ContainerReader;
 use Magento\Framework\View\Layout\Reader\Move as MoveReader;
 use Magento\Framework\View\Layout\ScheduledStructure;
+use Magento\Framework\View\Layout\ScheduledStructure\Helper as SchedulingHelper;
 use Magento\Framework\View\Model\Layout\Merge;
 use Magento\Framework\View\Page\Builder as PageBuilder;
 use Magento\Framework\View\Page\Layout\Reader as WireframeReader;
@@ -34,6 +36,8 @@ final class LayoutCoverage
     private array $appending = [];
     private array $contexts = [];
     private \WeakMap $structures;
+    private \WeakMap $actionReads;
+    private \WeakMap $argumentReads;
     private \WeakMap $moves;
     private \WeakMap $removals;
     private array $removalChanges = [];
@@ -51,6 +55,8 @@ final class LayoutCoverage
     {
         $this->merges = new \WeakMap();
         $this->structures = new \WeakMap();
+        $this->actionReads = new \WeakMap();
+        $this->argumentReads = new \WeakMap();
         $this->moves = new \WeakMap();
         $this->removals = new \WeakMap();
         $this->blocks = new \WeakMap();
@@ -83,11 +89,15 @@ final class LayoutCoverage
             [Merge::class, 'load', $this->resetPageSelection(...), null],
             [Merge::class, '_loadCache', null, $this->cachedUpdate(...)],
             [ScheduledStructure::class, 'populateWithArray', null, $this->cachedStructure(...)],
+            [ScheduledStructure::class, 'setStructureElementData', null, $this->checkScheduledWrite(...)],
+            [ScheduledStructure::class, 'setElement', null, $this->checkScheduledWrite(...)],
             [Merge::class, 'getPageLayout', null, $this->readSelection(...)],
             [PageBuilder::class, 'readPageLayout', $this->beginPageRead(...), $this->completePageRead(...)],
             [WireframeReader::class, 'read', $this->beginWireframe(...), $this->completeWireframe(...)],
             [BlockReader::class, 'scheduleBlock', null, $this->scheduleBlock(...)],
             [BlockReader::class, 'scheduleReference', null, $this->scheduleReference(...)],
+            [BlockReader::class, 'getActions', null, $this->readActions(...)],
+            [BlockReader::class, 'getArguments', null, $this->readArguments(...)],
             [MoveReader::class, 'scheduleMove', null, $this->scheduleMove(...)],
             [GeneratorPool::class, 'moveElementInStructure', $this->beginMove(...), $this->completeMove(...)],
             [ScheduledStructure::class, 'setElementToRemoveList', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
@@ -97,6 +107,8 @@ final class LayoutCoverage
             [Layout::class, 'generateElements', $this->beginElements(...), $this->generateElements(...)],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
+            [BlockGenerator::class, 'generateAction', null, $this->completeAction(...)],
+            [DataObject::class, 'setData', null, $this->applyArguments(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
             [AbstractBlock::class, '_loadCache', null, $this->loadBlockHtml(...)],
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
@@ -298,7 +310,9 @@ final class LayoutCoverage
         if (!$selection || $selection['name'] !== $result) return;
         for ($depth = 2; isset($trace[$depth]) && $trace[$depth]['function'] === 'getPageLayout'; $depth++) {
             if (($trace[$depth]['class'] ?? null) !== PageBuilder::class) continue;
-            $selection['confirmed'] = $depth === 2;
+            $wrapper = get_class($merge);
+            $selection['confirmed'] = $depth === 2 || ($depth === 3 && str_ends_with($wrapper, '\\Interceptor')
+                && ($trace[2]['class'] ?? null) === $wrapper);
             $this->pageBuilders[$frame]['selection'] = $selection;
             return;
         }
@@ -402,6 +416,7 @@ final class LayoutCoverage
                     $identity = $node->getAttribute(match ($node->tagName) {
                         'update' => 'handle',
                         'move' => 'element',
+                        'action' => 'method',
                         default => 'name',
                     });
                     if ($node->tagName !== $declarations['instruction'] || $identity !== $declarations['element']) return;
@@ -437,7 +452,10 @@ final class LayoutCoverage
         [$origin, $context] = $this->origin($xml);
         if ($context !== null) $block['context'] = $context;
         if ($declaration) $block['block'] = $origin['block'] ?? null;
-        $actual = $structure->getStructureElementData($name, [])['attributes']['template'] ?? null;
+        $data = $structure->getStructureElementData($name, []);
+        $block['actions'] = $this->bindActions($xml, $data['actions'] ?? [], $block['actions'] ?? []);
+        $block['arguments'] = $this->bindArguments($xml, $data['arguments'] ?? [], $block['arguments'] ?? []);
+        $actual = $data['attributes']['template'] ?? null;
         if (isset($xml['template']) || ($declaration && $actual === '')) {
             $value = (string) $xml['template'];
             if ($value === $actual) {
@@ -448,6 +466,102 @@ final class LayoutCoverage
         }
         $state[$name] = $block;
         $this->structures[$structure] = $state;
+    }
+
+    private static function digest(array $data): string
+    {
+        return hash('sha256', serialize($data));
+    }
+
+    private function readActions($reader, array $params, $actions, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== BlockReader::class) return;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'updateScheduledData') return;
+        if ((new \ReflectionMethod($reader, 'getActions'))->getDeclaringClass()->getName() !== BlockReader::class) return;
+        $xml = $params[0];
+        $origins = [];
+        foreach ($xml->action as $node) {
+            [$origin] = $this->origin($node);
+            $origins[] = $origin['action'] ?? null;
+        }
+        if (count($origins) !== count($actions)) return;
+        $this->actionReads[$xml] = array_map(
+            static fn($action, $id) => ['digest' => self::digest($action), 'id' => $id],
+            $actions,
+            $origins
+        );
+    }
+
+    private function bindActions($xml, array $actions, array $previous): array
+    {
+        $read = $this->actionReads[$xml] ?? null;
+        unset($this->actionReads[$xml]);
+        if ($read === null || !$actions) return [];
+        $offset = count($actions) - count($read);
+        if ($offset < 0) return [];
+        // The reader appends declarations to the existing list. A repeated
+        // block declaration can replace the list, leaving no prefix.
+        $expected = array_merge(array_slice($previous, 0, $offset), $read);
+        if (count($expected) !== count($actions)) return [];
+        foreach ($actions as $index => $action) {
+            if (self::digest($action) !== $expected[$index]['digest']) return [];
+        }
+        return $expected;
+    }
+
+    private function readArguments($reader, array $params, $arguments, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== BlockReader::class) return;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
+        if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
+        $xml = $params[0];
+        $origins = [];
+        foreach ($xml->arguments[0]->argument ?? [] as $node) {
+            [$origin] = $this->origin($node);
+            $origins[$node->getAttribute('name')] = $origin['argument'] ?? null;
+        }
+        if (array_keys($origins) === array_keys($arguments)) $this->argumentReads[$xml] = $origins;
+    }
+
+    private function bindArguments($xml, array $values, array $previous): array
+    {
+        $read = $this->argumentReads[$xml] ?? null;
+        unset($this->argumentReads[$xml]);
+        if ($read === null) return [];
+        foreach ($read as $name => $id) {
+            unset($previous[$name]);
+            if ($id !== null && array_key_exists($name, $values)
+                && (is_scalar($values[$name]) || $values[$name] === null)) {
+                $previous[$name] = ['id' => $id, 'digest' => self::digest([$values[$name]])];
+            }
+        }
+        return array_filter($previous, static fn($binding, $name) =>
+            array_key_exists($name, $values) && (is_scalar($values[$name]) || $values[$name] === null)
+                && self::digest([$values[$name]]) === $binding['digest'], ARRAY_FILTER_USE_BOTH);
+    }
+
+    private function checkScheduledWrite($schedule, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== ScheduledStructure::class) return;
+        $name = $params[0];
+        $state = $this->structures[$schedule] ?? [];
+        if (empty($state[$name]['arguments']) && empty($state[$name]['actions'])) return;
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
+        $caller = $trace[2] ?? [];
+        $wrapper = get_class($schedule);
+        if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
+            && ($caller['function'] ?? null) === $trace[1]['function']) {
+            $caller = $trace[3] ?? [];
+        }
+        if ((($caller['class'] ?? null) === BlockReader::class
+                && in_array($caller['function'], ['scheduleBlock', 'scheduleReference'], true))
+            || (($caller['class'] ?? null) === SchedulingHelper::class && $caller['function'] === 'scheduleElement')) {
+            return;
+        }
+        unset($state[$name]['arguments'], $state[$name]['actions']);
+        $this->structures[$schedule] = $state;
     }
 
     private function origin($xml): array
@@ -640,7 +754,42 @@ final class LayoutCoverage
     private function beginBlock($generator, array $params, string $class): void
     {
         if ($class !== BlockGenerator::class) return;
-        $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null];
+        $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
+            'generator' => get_class($generator), 'applied' => []];
+    }
+
+    private function applyArguments($block, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($error || $class !== DataObject::class || !$block instanceof AbstractBlock || $index === null) return;
+        $frame = $this->generating[$index];
+        $origins = $frame['source']['arguments'] ?? [];
+        if (!$origins) return;
+        $expected = [
+            [DataObject::class, 'setData', get_class($block)],
+            [DataObject::class, 'addData', get_class($block)],
+            [BlockGenerator::class, 'createBlock', $frame['generator']],
+            [BlockGenerator::class, 'generateBlock', ''],
+        ];
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
+        $depth = 1;
+        foreach ($expected as [$native, $method, $wrapper]) {
+            $call = $trace[$depth++] ?? [];
+            if (($call['class'] ?? null) !== $native || ($call['function'] ?? null) !== $method) return;
+            $caller = $trace[$depth] ?? [];
+            if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
+                && ($caller['function'] ?? null) === $method) {
+                $depth++;
+            }
+        }
+        $key = $params[0] ?? '';
+        $values = is_array($key) ? $key : [$key => $params[1] ?? null];
+        foreach ($values as $name => $value) {
+            $origin = $origins[$name] ?? null;
+            if ($origin && (is_scalar($value) || $value === null) && self::digest([$value]) === $origin['digest']) {
+                $this->generating[$index]['applied'][$origin['id']] = $block;
+            }
+        }
     }
 
     private function completeBlock($generator, array $params, $block, ?\Throwable $error, string $class): void
@@ -657,7 +806,38 @@ final class LayoutCoverage
         }
         $this->event($blockId, 'layout-block-created', $context);
         $this->event($templateId, 'layout-template-selected', $context);
-        $this->blocks[$block] = ['block' => $blockId, 'template' => $templateId, 'context' => $context];
+        foreach ($frame['applied'] as $id => $target) {
+            if ($block === $target) $this->event($id, 'layout-argument-applied', $context);
+        }
+        $this->blocks[$block] = ['block' => $blockId, 'template' => $templateId, 'context' => $context,
+            'actions' => $this->actionCalls($params[0], $params[2], $source['actions'] ?? [])];
+    }
+
+    private function actionCalls($schedule, string $name, array $origins): array
+    {
+        if (!$origins) return [];
+        $actions = $schedule->getElement($name)[1]['actions'] ?? [];
+        if (count($actions) !== count($origins)) return [];
+        $calls = [];
+        foreach ($actions as $index => $action) {
+            if (self::digest($action) !== $origins[$index]['digest']) return [];
+            $calls[self::digest([$action[0], $action[1]])][] = $origins[$index]['id'];
+        }
+        return $calls;
+    }
+
+    private function completeAction($generator, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== BlockGenerator::class) return;
+        [$block, $method, $arguments] = $params;
+        if (empty($this->blocks[$block]['actions'])) return;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (($caller['class'] ?? null) !== BlockGenerator::class || ($caller['function'] ?? null) !== 'process') return;
+        if ((new \ReflectionMethod($generator, 'generateAction'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
+        $state = $this->blocks[$block];
+        $origins = $state['actions'][self::digest([$method, $arguments])] ?? [];
+        $effect = count($origins) === 1 ? 'layout-action-executed' : 'layout-action-ambiguous';
+        foreach ($origins as $id) $this->event($id, $effect, $state['context']);
     }
 
     private function assignTemplate($block, array $params, $result, ?\Throwable $error, string $class): void

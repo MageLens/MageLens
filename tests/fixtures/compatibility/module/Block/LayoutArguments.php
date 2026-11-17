@@ -52,7 +52,7 @@ class LayoutArguments extends Template
             'text-updater' => $this->getData('text_with_updater') === 'fixture',
             'translation' => $this->getData('translated') === 'MageLens translated marker'
                 && $this->getData('untranslated') === 'MageLens layout translation marker',
-            'actions' => $this->calls === ['base', 'overlay'],
+            'actions' => $this->calls === ['base', 'overlay', 'equal'],
             'late-replacement' => $this->getData('replaced') === 'from-php',
         ];
     }

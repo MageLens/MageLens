@@ -33,6 +33,6 @@ function selected(file, kind, state, effect) {
     assert.equal(matches[0].state, state);
     assert.deepEqual([...new Set(matches[0].evidence.map(item => item.type))], [effect]);
 }
-selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection', 'unmeasured', 'layout-wireframe-origin-unconfirmed');
+selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection', 'covered', 'layout-wireframe-selected');
 selected('app/code/MageLens/Compatibility/view/frontend/page_layout/magelens_fixture.xml', 'wireframe', 'covered', 'layout-wireframe-selected');
-console.log('Verified the selected wireframe and the intercepted page-layout attribution limitation.');
+console.log('Verified the original page layout selector and the selected wireframe.');

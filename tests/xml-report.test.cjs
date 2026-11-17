@@ -299,3 +299,28 @@ test('XML reporting rejects a symlink to an otherwise identical layout source', 
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Symlinked XML source/);
 });
+
+test('layout action ambiguity remains visible and contributes zero hits', () => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/view/frontend/layout/blog_index_index.xml';
+    const source = Buffer.from('<page><body><block name="blog"><action method="prepare"/></block></body></page>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    manifest.files.push({path: file, sourceHash, family: 'layout', declarations: [
+        {id: 'action', family: 'layout', path: '/page/body/block/action', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'action', element: 'prepare', ordinal: 3,
+                handle: 'blog_index_index', fileType: 'page', instruction: 'action'}}
+    ]});
+    manifest.layoutSources = {[file]: {hash: sourceHash, targets: {3: {ids: {action: 'action'}}}}};
+    sources[file] = source;
+    const action = {id: 'action', area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
+    const ambiguous = merge(manifest, [{...record, layoutHook: true,
+        events: [{...action, type: 'layout-action-ambiguous'}]}], sources);
+    const declaration = ambiguous.files[1].declarations[0];
+    assert.equal(declaration.hits, 0);
+    assert.equal(declaration.state, 'unmeasured');
+    assert.match(declaration.reason, /Multiple scheduled actions/);
+    assert.equal(declaration.evidence[0].type, 'layout-action-ambiguous');
+    const executed = merge(manifest, [{...record, layoutHook: true,
+        events: [{...action, type: 'layout-action-executed'}]}], sources);
+    assert.equal(executed.files[1].declarations[0].state, 'covered');
+});

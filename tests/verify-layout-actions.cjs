@@ -10,14 +10,17 @@ const layout = 'app/code/MageLens/Compatibility/view/frontend/layout';
 for (const [handle, declaration, state, expected] of [
     ['coverageprobe_layout_arguments', '/page/body/referenceContainer/block/action[1]', 'covered', ['layout-action-executed']],
     ['coverageprobe_layout_arguments', '/page/body/referenceContainer/block/action[2]', 'uncovered', []],
-    ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action', 'covered', ['layout-action-executed']],
+    ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action[1]', 'covered', ['layout-action-executed']],
+    ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action[2]', 'unmeasured', ['layout-action-ambiguous']],
+    ['coverageprobe_layout_arguments_overlay', '/page/body/referenceBlock/action[3]', 'unmeasured', ['layout-action-ambiguous']],
 ]) {
     const source = report.files.find(file => file.path === `${layout}/${handle}.xml`);
     assert.ok(source, `Missing action source ${handle}`);
     const item = source.declarations.find(item => item.node === declaration);
     assert.ok(item, `Missing action declaration ${declaration}`);
     assert.equal(item.state, state, declaration);
+    assert.equal(item.hits > 0, state === 'covered', declaration);
     assert.deepEqual([...new Set(item.evidence.map(entry => entry.type))], expected, declaration);
     assert.ok(item.evidence.every(entry => entry.area === 'frontend'), declaration);
 }
-console.log('Verified two attributable native action calls and zero hits for the guarded action.');
+console.log('Verified two attributable native action calls and zero hits for the guarded and ambiguous actions.');

@@ -11,6 +11,12 @@ License: see LICENSE in the repository root.
             <action method="markArgumentAction">
                 <argument name="marker" xsi:type="string">overlay</argument>
             </action>
+            <action method="markArgumentAction" ifconfig="magelens_layout_fixture/disabled/action">
+                <argument name="marker" xsi:type="string">equal</argument>
+            </action>
+            <action method="markArgumentAction">
+                <argument name="marker" xsi:type="string">equal</argument>
+            </action>
             <arguments>
                 <argument name="matrix" xsi:type="array">
                     <item name="nested" xsi:type="array">

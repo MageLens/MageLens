@@ -39,12 +39,21 @@ final class LayoutManifest
             $element = $node->getAttribute(match ($node->tagName) {
                 'update' => 'handle',
                 'move' => 'element',
+                'action' => 'method',
                 default => 'name',
             });
             $namedBlock = $element !== '' && in_array($node->tagName, ['block', 'referenceBlock'], true)
                 && in_array($fileType, ['page', 'generic'], true);
             $kind = match (true) {
                 $namedBlock && $node->tagName === 'block' => 'block',
+                $fileType === 'page' && $node->tagName === 'action' && $element !== ''
+                    && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
+                $fileType === 'page' && $node->tagName === 'argument' && $element !== ''
+                    && $node->parentNode->nodeName === 'arguments'
+                    && in_array($node->parentNode->parentNode->nodeName, ['block', 'referenceBlock'], true)
+                    && in_array($node->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type'),
+                        ['string', 'number', 'boolean', 'null'], true)
+                    && !$node->getElementsByTagName('updater')->length => 'argument',
                 $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
                 $fileType === 'wireframe' && $index === 0 => 'wireframe',
                 $fileType === 'page' && $node->parentNode === $root && $node->tagName === 'update' && $element !== '' => 'include',
@@ -63,7 +72,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'include', 'move', 'removal', 'wireframe', 'wireframe-selection'], true);
+                $supported = in_array($kind, ['block', 'template', 'action', 'argument', 'include', 'move', 'removal', 'wireframe', 'wireframe-selection'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -91,6 +100,7 @@ final class LayoutManifest
         if ($fileType === 'wireframe') return 'The wireframe reader does not supply source attribution for this instruction';
         if ($fileType === 'custom') return 'Source grammar is outside the supported native layout schemas';
         if ($attribute === 'name' && $node === 'block') return 'Name participates in the block creation identity';
+        if ($attribute === 'method' && $node === 'action') return 'Method participates in the identity of the parent action call';
         if ($attribute === 'remove' && in_array($node, ['referenceBlock', 'referenceContainer'], true)) {
             return 'The removal queue and its cancellations are unmeasured at this reference';
         }
@@ -106,8 +116,9 @@ final class LayoutManifest
             'page', 'layout', 'update' => 'Handle selection or inclusion has no attributable runtime evidence',
             'block', 'referenceBlock', 'container', 'referenceContainer', 'move', 'remove' =>
                 'Structural or visibility effects of this instruction have no source hook',
-            'argument', 'arguments', 'item', 'param', 'updater', 'action' =>
-                'Argument interpretation, application and action execution have no source hook',
+            'argument', 'arguments', 'item', 'param', 'updater' =>
+                'This argument type, nested value, or modifier has no trace to its native interpretation and application',
+            'action' => 'This action declaration or modifier has no trace to a native call or scope decision',
             'uiComponent', 'visibilityCondition' => 'UI component placement and visibility have no source hook',
             'html', 'head', 'body', 'attribute', 'title', 'meta', 'link', 'css', 'script', 'font' =>
                 'Page configuration and asset output have no source hook',

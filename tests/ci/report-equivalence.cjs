@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {isDeepStrictEqual} = require('node:util');
+const {layoutEvents} = require('../../bin/report-xml.cjs');
 const digest = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n')).digest('hex');
 const sort = values => values.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en'));
 const read = (directory, file) => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
@@ -221,13 +222,13 @@ function validateSnapshot(value, run, summary) {
         for (const item of array(file.declarations)) {
             if (item.layout) {
                 const [kind, fileType, ordinal, ...identity] = array(item.layout);
-                assert.ok(['block', 'template', 'include', 'move', 'removal', 'wireframe', 'wireframe-selection', 'instruction', 'attribute'].includes(kind));
+                assert.ok(Object.hasOwn(layoutEvents, kind) || ['instruction', 'attribute'].includes(kind));
                 assert.ok(['page', 'generic', 'wireframe', 'custom', 'registry', 'page-types'].includes(fileType));
                 count(ordinal);
                 assert.equal(identity.length, 6);
                 for (const part of identity) assert.match(part, /^[a-f0-9]{64}$/);
                 for (const [effect, area, theme] of array(item.evidence)) {
-                    assert.match(effect, /^layout-(block-(created|rendered)|wireframe-(selected|origin-unconfirmed)|move-(applied|removed|target-missing|unchanged|unresolved)|removal-(applied|canceled|restored)|include-(traversed|duplicate|cycle|missing)|template-(selected|executed|overridden|replaced))$/);
+                    assert.ok(Object.hasOwn(layoutEvents, kind) && layoutEvents[kind].includes(effect), 'Unexpected layout effect');
                     assert.ok(['frontend', 'adminhtml'].includes(area));
                     assert.match(theme, /^[a-f0-9]{64}$/);
                 }

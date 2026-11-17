@@ -27,6 +27,8 @@ const diFamilies = {
 };
 const layoutEvents = {
     block: ['layout-block-created', 'layout-block-rendered'],
+    action: ['layout-action-executed', 'layout-action-ambiguous'],
+    argument: ['layout-argument-applied'],
     wireframe: ['layout-wireframe-selected'],
     removal: ['layout-removal-applied', 'layout-removal-canceled', 'layout-removal-restored'],
     move: ['layout-move-applied', 'layout-move-removed', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved'],
@@ -35,6 +37,7 @@ const layoutEvents = {
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced'],
 };
 const layoutDecisions = {
+    'layout-action-ambiguous': 'Multiple scheduled actions match the native method and arguments; the executed declaration could not be identified.',
     'layout-removal-canceled': 'Magento canceled this scheduled removal before generating the structure.',
     'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
     'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',
@@ -411,5 +414,5 @@ function report() {
     writeReport(result, sources);
     return result;
 }
-module.exports = {merge, writeReport, report};
+module.exports = {merge, writeReport, report, layoutEvents};
 if (require.main === module) report();
