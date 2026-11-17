@@ -107,6 +107,14 @@ foreach ($leaves as $leaf) {
     checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),
         'Array leaf evidence uses the layout argument application boundary');
 }
+$registrySource = file_get_contents(__DIR__ . '/fixtures/compatibility/module/view/frontend/layouts.xml');
+$registryItems = LayoutManifest::declarations('app/code/MageLens/Compatibility/view/frontend/layouts.xml', $registrySource);
+$registryKinds = array_column(array_column($registryItems, 'layout'), 'kind');
+checkXml(array_slice($registryKinds, 2, 4) === ['registry-entry', 'registry-id', 'registry-label', 'attribute'],
+    'Registry entries, ID attributes, labels and unused translation flags have distinct identities');
+$registryFlag = $registryItems[5];
+checkXml(!$registryFlag['supported'] && str_contains($registryFlag['reason'], 'flag'),
+    'Registry translation flags retain the native ignored-flag limitation');
 echo "XML parsing, source maps, scopes and field identities passed.\n";
 
 require __DIR__ . '/configuration-fixture.test.php';

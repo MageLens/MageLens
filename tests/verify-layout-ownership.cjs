@@ -9,6 +9,8 @@ const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/cover
 const blog = 'app/code/Application/Blog/view/frontend/layout';
 const probe = 'app/code/MageLens/Compatibility/view/frontend/layout';
 const hyva = 'vendor/hyva-themes/magento2-default-theme-csp';
+const theme = process.argv[3] || 'hyva';
+assert.ok(['luma', 'hyva'].includes(theme));
 
 function verify(directory, handle, element, kind, state, types) {
     const file = report.files.find(item => item.path === `${directory}/${handle}.xml`);
@@ -22,7 +24,7 @@ function verify(directory, handle, element, kind, state, types) {
         `${handle}/${element}/${kind} evidence`);
     for (const evidence of item.evidence) {
         assert.equal(evidence.area, 'frontend');
-        assert.equal(evidence.theme, 'frontend/Hyva/default-csp');
+        assert.equal(evidence.theme, theme === 'hyva' ? 'frontend/Hyva/default-csp' : 'frontend/Magento/luma');
     }
 }
 
@@ -30,8 +32,9 @@ const created = ['layout-block-created', 'layout-block-rendered'];
 const executed = ['layout-template-selected', 'layout-template-executed'];
 const overridden = ['layout-template-overridden'];
 verify(blog, 'blog_index_index', 'application.blog', 'block', 'covered', created);
-verify(blog, 'blog_index_index', 'application.blog', 'template', 'unmeasured', overridden);
-verify(blog, 'hyva_blog_index_index', 'application.blog', 'template', 'covered', executed);
+verify(blog, 'blog_index_index', 'application.blog', 'template', theme === 'hyva' ? 'unmeasured' : 'covered',
+    theme === 'hyva' ? overridden : executed);
+if (theme === 'hyva') verify(blog, 'hyva_blog_index_index', 'application.blog', 'template', 'covered', executed);
 
 for (const suffix of ['replaced', 'equal']) {
     const name = `magelens.layout.${suffix}`;
@@ -45,7 +48,7 @@ verify(probe, 'coverageprobe_layout_base', 'magelens.layout.late', 'template', '
 verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'block', 'covered', ['layout-block-created']);
 verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'template', 'covered', ['layout-template-selected']);
 
-for (const [module, handle, element] of [
+if (theme === 'hyva') for (const [module, handle, element] of [
     ['Magento_Catalog', 'catalog_list_item', 'product_list_item'],
     ['Magento_Swatches', 'catalog_list_item', 'category.product.type.details.renderers.configurable'],
     ['Magento_Wishlist', 'default', 'wishlist_sidebar'],
@@ -59,4 +62,4 @@ for (const [module, handle, element] of [
 for (const kind of ['block', 'template']) {
     verify(probe, 'coverageprobe_layout_unvisited', 'magelens.layout.unvisited', kind, 'uncovered', []);
 }
-console.log('Verified exact layout block and template ownership and zero-hit cases on Hyvä CSP.');
+console.log(`Verified exact layout block and template ownership and zero-hit cases on ${theme}.`);

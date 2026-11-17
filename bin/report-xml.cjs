@@ -26,6 +26,12 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'page-type': ['layout-page-type-applied'],
+    'page-type-id': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
+    'page-type-label': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
+    'registry-entry': ['layout-registry-entry-consumed', 'layout-registry-entry-configured', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
+    'registry-id': ['layout-registry-id-consumed', 'layout-registry-overridden', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
+    'registry-label': ['layout-registry-label-consumed', 'layout-registry-overridden', 'layout-registry-label-ignored', 'layout-registry-label-unconfirmed', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
     'file-selection': ['layout-file-selected'],
     'include-handle': ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     'position-name': ['layout-position-name-applied', 'layout-position-replaced'],
@@ -83,6 +89,11 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked');
 const layoutDecisions = {
+    'layout-registry-overridden': 'A later native registry write supplied the field used by the consumer.',
+    'layout-registry-label-ignored': 'The native label merge applied no replacement text and preserved the preceding label fragments.',
+    'layout-registry-label-unconfirmed': 'The mixed-content label merge lacks complete native text assignment evidence.',
+    'layout-registry-snapshot-returned': 'The native API returned the whole registry map. Individual entry and label consumption is unobserved on that path.',
+    'layout-registry-cache-unconfirmed': 'This registry input lacks a verified native file-read lineage in the current request.',
     'layout-file-selected': 'Magento selected this file as merged layout input. Descendant declarations require their own native effect evidence.',
     'layout-xml-ownership-revoked': 'Mutable layout XML was exposed to external PHP or reassigned before native interpretation, so original ownership could not be retained.',
     'layout-position-replaced': 'A later native structure operation replaced this declaration identity, alias or sibling order.',
@@ -131,6 +142,13 @@ const layoutDecisions = {
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
+    'layout-registry-custom-provider': 'A customized registry builder or configuration implementation lacks verified source and native consumer boundaries.',
+    'layout-registry-cache': 'The registry reused inputs without current native file-read provenance.',
+    'layout-registry-limit': 'Registry tracing is bounded to 512 files, 2 MiB of input XML and 16384 retained DOM nodes per request.',
+    'layout-registry-complex-label': 'A mixed-content registry label merge lacks complete native text assignment evidence.',
+    'layout-registry-data-replaced': 'A runtime registry data assignment revoked the original XML ownership.',
+    'layout-page-types-cache': 'Page type configuration reused cached or replaced data without current native file-read provenance.',
+    'layout-registry-context': 'The registry consumer lacked a uniquely associated native layout context or verified source state.',
     'mutable-layout-xml': 'External PHP accessed or reassigned mutable layout XML; direct and equal-valued edits cannot retain verified original declaration ownership.',
     'layout-package-cache': 'Magento reused a package layout cache entry without original file positions.',
     'layout-merge-cache': 'Magento reused a merged handle update without original declaration positions.',

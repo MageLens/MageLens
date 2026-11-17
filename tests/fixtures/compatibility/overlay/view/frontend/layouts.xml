@@ -9,4 +9,6 @@ License: see LICENSE in the repository root.
     <layout id="magelens_registry_equal"><label>Registry equal</label></layout>
     <layout id="magelens_registry_empty"><label/></layout>
     <layout id="magelens_registry_cdata"><label><![CDATA[]]></label></layout>
+    <layout id="magelens_registry_mixed"><label>Ignored prefix<![CDATA[overlay middle]]> ignored suffix</label></layout>
+    <layout id="magelens_registry_cdata_equal"><label><![CDATA[Registry CDATA equal]]></label></layout>
 </page_layouts>

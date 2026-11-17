@@ -13,4 +13,6 @@ License: see LICENSE in the repository root.
     <layout id="magelens_registry_equal"><label>Registry equal</label></layout>
     <layout id="magelens_registry_empty"><label>Registry retained</label></layout>
     <layout id="magelens_registry_cdata"><label>Registry CDATA base</label></layout>
+    <layout id="magelens_registry_mixed"><label>Base prefix<![CDATA[base middle]]> base suffix</label></layout>
+    <layout id="magelens_registry_cdata_equal"><label><![CDATA[Registry CDATA equal]]></label></layout>
 </page_layouts>

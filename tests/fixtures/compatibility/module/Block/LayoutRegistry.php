@@ -19,6 +19,8 @@ class LayoutRegistry extends Template
         Template\Context $context,
         private BuilderInterface $pageLayouts,
         private PageTypeConfig $pageTypes,
+        private \Magento\Theme\Model\PageLayout\Config\BuilderFactory $pageLayoutsFactory,
+        private \Magento\Framework\App\Cache\Type\Layout $layoutCache,
         array $data = []
     ) {
         parent::__construct($context, $data);
@@ -37,7 +39,8 @@ class LayoutRegistry extends Template
 
     public function registryEffects(): array
     {
-        $config = $this->pageLayouts->getPageLayoutsConfig();
+        $this->layoutCache->remove(\Magento\Theme\Model\PageLayout\Config\Builder::CACHE_KEY_LAYOUTS);
+        $config = $this->pageLayoutsFactory->create()->getPageLayoutsConfig();
         $options = array_column($config->toOptionArray(), 'label', 'value');
         $types = $this->pageTypes->getPageTypes();
         return [
@@ -45,6 +48,8 @@ class LayoutRegistry extends Template
             'override' => ($options['magelens_registry_override'] ?? null) === 'Registry overlay',
             'equal' => ($options['magelens_registry_equal'] ?? null) === 'Registry equal',
             'empty' => ($options['magelens_registry_empty'] ?? null) === 'Registry retained',
+            'mixed' => ($options['magelens_registry_mixed'] ?? null) === 'Base prefixoverlay middle base suffix',
+            'cdata-equal' => ($options['magelens_registry_cdata_equal'] ?? null) === 'Registry CDATA equal',
             'cdata' => ($options['magelens_registry_cdata'] ?? null) === '',
             'translation-flag' => ($options['magelens_fixture'] ?? null) === 'MageLens fixture wireframe'
                 && (string) __('MageLens fixture wireframe') === 'Translated wireframe label',

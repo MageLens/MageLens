@@ -18,12 +18,14 @@ use Magento\Framework\View\Result\PageFactory;
 class Index implements HttpGetActionInterface
 {
     // Resolve the application view before layout generation can request it.
-    public function __construct(private PageFactory $pages, private RequestInterface $request, ViewInterface $view)
+    public function __construct(private PageFactory $pages, private RequestInterface $request, ViewInterface $view,
+        private \Magento\Framework\App\Cache\Type\Config $configCache)
     {
     }
 
     public function execute(): Page
     {
+        $this->configCache->remove('page_types_config');
         $page = $this->pages->create();
         if ($this->request->getParam('variant') === 'selected') {
             $page->getLayout()->getUpdate()->addHandle('coverageprobe_layout_dynamic');

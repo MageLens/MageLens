@@ -37,6 +37,8 @@ final class LayoutManifest
         foreach ($document->getElementsByTagName('*') as $index => $node) {
             $position = $node->getNodePath();
             $element = $node->getAttribute(match ($node->tagName) {
+                'layout' => $fileType === 'registry' ? 'id' : 'name',
+                'type' => $fileType === 'page-types' ? 'id' : 'name',
                 'update' => 'handle',
                 'move' => 'element',
                 'action' => 'method',
@@ -46,6 +48,9 @@ final class LayoutManifest
             $blockNode = ($node->tagName === 'block' || ($node->tagName === 'referenceBlock' && $element !== ''))
                 && in_array($fileType, ['page', 'generic', 'wireframe'], true);
             $kind = match (true) {
+                $fileType === 'page-types' && $node->tagName === 'type' => 'page-type',
+                $fileType === 'registry' && $node->tagName === 'layout' => 'registry-entry',
+                $fileType === 'registry' && $node->tagName === 'label' => 'registry-label',
                 in_array($fileType, ['page', 'generic'], true) && $index === 0
                     && preg_match('~/layout/override/(?:base|theme)/~', $path) => 'file-override',
                 in_array($fileType, ['page', 'generic'], true) && $index === 0 => 'file-selection',
@@ -82,6 +87,8 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    $valueKind === 'page-type' && in_array($attribute->nodeName, ['id', 'label'], true) => 'page-type-' . $attribute->nodeName,
+                    $valueKind === 'registry-entry' && $attribute->nodeName === 'id' => 'registry-id',
                     $valueKind === 'include' && $attribute->nodeName === 'handle' => 'include-handle',
                     $valueKind === 'asset-reference' && $attribute->nodeName === 'src' => 'asset-src',
                     $valueKind === 'asset-reference' && $attribute->nodeName === 'src_type' => 'asset-src-type',
@@ -122,7 +129,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -184,6 +191,9 @@ final class LayoutManifest
 
     private static function limitation(string $fileType, string $node, ?string $attribute): string
     {
+        if ($fileType === 'registry' && $node === 'label' && $attribute === 'translate') {
+            return 'The schema fixes this flag to true. Native registry extraction consumes label text and leaves the flag unused';
+        }
         if ($fileType === 'registry' || $fileType === 'page-types') return 'Registry consumers lack a trace back through the merged registry to this declaration';
         if ($fileType === 'wireframe') return 'The wireframe reader does not supply source attribution for this instruction';
         if ($fileType === 'custom') return 'Source grammar is outside the supported native layout schemas';

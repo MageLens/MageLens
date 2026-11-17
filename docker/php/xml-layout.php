@@ -40,6 +40,7 @@ final class LayoutCoverage
     private LayoutPageCoverage $page;
     private LayoutStructureCoverage $structureCoverage;
     private LayoutPositionCoverage $positions;
+    private LayoutRegistryCoverage $registry;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -70,6 +71,7 @@ final class LayoutCoverage
         $this->page = new LayoutPageCoverage($this->origin(...));
         $this->structureCoverage = new LayoutStructureCoverage($this->origin(...));
         $this->positions = new LayoutPositionCoverage($this->origin(...));
+        $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
@@ -89,7 +91,8 @@ final class LayoutCoverage
     public function finish(): array
     {
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
-        return [$this->healthy, $this->sourceTrace, array_keys($this->limitations)];
+        [$registryHealthy, $registryLimits] = $this->registry->finish();
+        return [$this->healthy || $registryHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits]))];
     }
 
     private function hooks(): array
@@ -155,6 +158,7 @@ final class LayoutCoverage
             ...$this->page->hooks(),
             ...$this->structureCoverage->hooks(),
             ...$this->positions->hooks(),
+            ...$this->registry->hooks(),
         ];
     }
 
@@ -398,7 +402,7 @@ final class LayoutCoverage
     {
         if ($class === PageBuilder::class) {
             $method = new \ReflectionMethod($builder, 'getPageLayout');
-            $this->pageBuilders[] = ['selection' => null, 'native' => $method->getDeclaringClass()->getName() === PageBuilder::class];
+            $this->pageBuilders[] = ['builder' => $builder, 'selection' => null, 'native' => $method->getDeclaringClass()->getName() === PageBuilder::class];
         }
     }
 
@@ -1489,6 +1493,27 @@ final class LayoutCoverage
             $state['executed'] = $frame['origin'];
             $this->blocks[$block] = $state;
         }
+    }
+
+    private function registryContext(): ?array
+    {
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 32) as $frame) {
+            if (isset($frame['object'], $this->blocks[$frame['object']])) return $this->blocks[$frame['object']]['context'];
+        }
+        $generation = $this->generating[array_key_last($this->generating)] ?? null;
+        if (!empty($generation['source']['context'])) return $generation['source']['context'];
+        $page = $this->pageBuilders[array_key_last($this->pageBuilders)] ?? null;
+        if (!$page) return null;
+        static $layoutProperty, $xmlProperty;
+        $layoutProperty ??= new \ReflectionProperty(Layout\Builder::class, 'layout');
+        $xmlProperty ??= new \ReflectionProperty(XmlConfig::class, '_xml');
+        $xml = $xmlProperty->getValue($layoutProperty->getValue($page['builder']));
+        if (!$xml instanceof \SimpleXMLElement) return null;
+        $root = dom_import_simplexml($xml)->ownerDocument->documentElement;
+        foreach ($this->documents as $document) {
+            if ($root->isSameNode($document['root'])) return $document['context'];
+        }
+        return null;
     }
 
     private function event(?string $id, string $type, array $context): void
