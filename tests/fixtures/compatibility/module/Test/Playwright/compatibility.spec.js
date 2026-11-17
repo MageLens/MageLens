@@ -119,6 +119,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/boundary/');
     await expect(page.locator('[data-layout-boundary-failure]')).toHaveText('verified');
     await expect(page.locator('[data-layout-boundary-success]')).toHaveText('success-value');
+    await page.goto('/coverageprobe/mutation/');
+    await expect(page.locator('[data-layout-mutation]')).toHaveText(['xml-value', 'php-value', 'xml-value', 'xml-value']);
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

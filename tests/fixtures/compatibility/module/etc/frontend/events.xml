@@ -8,4 +8,7 @@ License: see LICENSE in the repository root.
     <event name="layout_generate_blocks_after">
         <observer name="magelens_layout_runtime_replacement" instance="MageLens\Compatibility\Observer\LayoutReplacement"/>
     </event>
+    <event name="layout_generate_blocks_before">
+        <observer name="magelens_layout_xml_mutation" instance="MageLens\Compatibility\Observer\LayoutXmlMutation"/>
+    </event>
 </config>
