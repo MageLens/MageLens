@@ -36,13 +36,15 @@ foreach ($files as $file) {
 $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
-foreach ([
+$rejected = [
     ['asoc argument', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"asoc\"/></arguments></block></body></page>"],
     ['page standalone removal', $pageSchema, '<page><body><remove name="fixture"/></body></page>'],
     ['generic standalone removal', $genericSchema, '<layout><remove name="fixture"/></layout>'],
     ['metadata property attribute', $pageSchema, '<page><head><meta property="og:title" content="fixture"/></head></page>'],
     ['block custom visibility', $pageSchema, '<page><body><block name="fixture"><visibilityCondition name="fixture" className="Fixture"/></block></body></page>'],
-] as [$name, $schema, $source]) {
+    ['text-only configurable object', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"configurableObject\">Fixture</argument></arguments></block></body></page>"],
+];
+foreach ($rejected as [$name, $schema, $source]) {
     if (!$validate($source, $schema)) throw new RuntimeException('Native schema accepted ' . $name);
 }
-printf("Verified %d native layout/UI schemas and five rejected grammar cases.\n", count($files));
+printf("Verified %d native layout/UI schemas and %d rejected grammar cases.\n", count($files), count($rejected));

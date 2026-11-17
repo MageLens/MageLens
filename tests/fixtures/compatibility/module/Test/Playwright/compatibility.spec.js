@@ -108,6 +108,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-grammar="configurable"]')).toHaveText('generator-error');
     await expect(page.locator('[data-layout-grammar="configuredarray"]')).toHaveText('nested-interpreter-error');
     await expect(page.locator('[data-layout-grammar="constarray"]')).toHaveText('applied');
+    await expect(page.locator('[data-layout-grammar="configureddata"], [data-layout-grammar="configuredvaluearray"]')).toHaveText(['applied', 'applied']);
+    await expect(page.locator('[data-layout-grammar="constenum"]')).toHaveText('structure-serialization-error');
     await expect(page.locator('[data-layout-grammar="updaterenabled"], [data-layout-grammar="updaterorder"]')).toHaveText(['updater-lookup-error', 'updater-lookup-error']);
     await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"]')).toHaveText(['verified', 'verified', 'verified']);
     await page.goto('/coverageprobe/classclear/');

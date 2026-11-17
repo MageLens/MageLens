@@ -24,11 +24,20 @@ for (const [handle, node] of [
     assert.equal(item?.state, 'unmeasured', `${handle}/${node}`);
     assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-argument-mixed-origin']);
 }
-const constant = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_constarray.xml'));
-const value = constant?.declarations.find(item => item.layout.kind === 'argument');
-assert.equal(value?.state, 'covered');
-assert.deepEqual([...new Set(value.evidence.map(event => event.type))].sort(),
-    ['layout-argument-applied', 'layout-argument-evaluated', 'layout-argument-read']);
+for (const handle of ['constarray', 'configureddata', 'configuredvaluearray']) {
+    const source = report.files.find(file => file.path.endsWith(`/layout/coverageprobe_grammar_${handle}.xml`));
+    for (const item of source?.declarations.filter(item => item.layout.kind === 'argument') || []) {
+        assert.equal(item.state, 'covered', handle);
+        assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(),
+            ['layout-argument-applied', 'layout-argument-evaluated', 'layout-argument-read'], handle);
+    }
+    assert.ok(source, handle);
+}
+const enumSource = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_constenum.xml'));
+for (const item of enumSource?.declarations || []) {
+    assert.equal(item.hits, 0, 'Native structure serialization fails before generation');
+}
+assert.ok(enumSource);
 const failure = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_configuredarray.xml'));
 const failedBlock = failure?.declarations.find(item => item.layout.kind === 'block');
 assert.equal(failedBlock?.state, 'unmeasured');

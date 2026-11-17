@@ -22,7 +22,8 @@ class Index implements HttpGetActionInterface
     public function execute(): Raw
     {
         $output = '';
-        foreach (['serviceurl', 'const', 'configurable', 'configuredarray', 'constarray', 'updaterenabled', 'updaterorder'] as $case) {
+        foreach (['serviceurl', 'const', 'configurable', 'configuredarray', 'constarray', 'updaterenabled', 'updaterorder',
+            'configureddata', 'configuredvaluearray', 'constenum'] as $case) {
             $page = $this->pages->create(true, ['isIsolated' => true]);
             $page->addHandle('coverageprobe_grammar_' . $case);
             $outcome = 'unexpected';
@@ -31,13 +32,21 @@ class Index implements HttpGetActionInterface
                 $value = $block?->getData('value');
                 if ($case === 'const' && $value === PHP_INT_MAX) $outcome = 'applied';
                 if ($case === 'constarray' && $value === \MageLens\Compatibility\Model\LayoutArgumentSource::MATRIX) $outcome = 'applied';
+                if ($case === 'configureddata' && $value instanceof \MageLens\Compatibility\Model\LayoutConfiguredData
+                    && $value->getData('tag') === 'configured-data') $outcome = 'applied';
+                if ($case === 'configuredvaluearray'
+                    && $block->getDataByPath('value/source') instanceof \MageLens\Compatibility\Model\LayoutArgumentSource) $outcome = 'applied';
                 if ($case === 'serviceurl' && is_string($value)
                     && str_ends_with((string) parse_url($value, PHP_URL_PATH), '/rest/default/V1/coverageprobe/fragment/index')
                     && parse_url($value, PHP_URL_QUERY) === null) $outcome = 'applied';
-            } catch (\Error $error) {
+            } catch (\Throwable $error) {
                 if ($case === 'configurable'
                     && $error->getMessage() === 'Cannot use object of type MageLens\Compatibility\Model\LayoutArgumentSource as array') {
                     $outcome = 'generator-error';
+                } elseif ($case === 'constenum' && $error instanceof \InvalidArgumentException
+                    && $error->getMessage() === 'Unable to serialize value. Error: Non-backed enums have no default serialization'
+                    && ($error->getTrace()[0]['class'] ?? null) === \Magento\Framework\Serialize\Serializer\Json::class) {
+                    $outcome = 'structure-serialization-error';
                 } elseif ($case === 'configuredarray' && $error instanceof \TypeError
                     && str_starts_with($error->getMessage(),
                         'Magento\Framework\Data\Argument\Interpreter\Composite::evaluate(): Argument #1 ($data) must be of type array, string given')

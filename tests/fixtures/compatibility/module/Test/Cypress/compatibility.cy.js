@@ -118,6 +118,10 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-grammar="configurable"]').should('have.text', 'generator-error');
         cy.get('[data-layout-grammar="configuredarray"]').should('have.text', 'nested-interpreter-error');
         cy.get('[data-layout-grammar="constarray"]').should('have.text', 'applied');
+        for (const entry of ['configureddata', 'configuredvaluearray']) {
+            cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'applied');
+        }
+        cy.get('[data-layout-grammar="constenum"]').should('have.text', 'structure-serialization-error');
         for (const entry of ['updaterenabled', 'updaterorder']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'updater-lookup-error');
         }
