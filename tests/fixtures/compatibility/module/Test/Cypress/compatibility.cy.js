@@ -67,6 +67,10 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.get('#layout-removed, [data-layout-structure="hidden"]').should('not.exist');
         cy.get('[data-layout-structure-outcome]').should('have.text', 'verified');
+        for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
+            'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
+            cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
+        }
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
     });

@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceContainer name="magelens.layout.wireframe">
+            <block class="MageLens\Compatibility\Block\LayoutArguments" name="magelens.layout.arguments" template="MageLens_Compatibility::layout-arguments.phtml">
+                <action method="markArgumentAction">
+                    <argument name="marker" xsi:type="string">base</argument>
+                </action>
+                <action method="markArgumentAction" ifconfig="magelens_layout_fixture/disabled/action">
+                    <argument name="marker" xsi:type="string">suppressed</argument>
+                </action>
+                <arguments>
+                    <argument name="literal" xsi:type="string">fixture-string</argument>
+                    <argument name="amount" xsi:type="number">42</argument>
+                    <argument name="flag" xsi:type="boolean">false</argument>
+                    <argument name="nullable" xsi:type="null"/>
+                    <argument name="matrix" xsi:type="array">
+                        <item name="nested" xsi:type="array">
+                            <item name="winning" xsi:type="string">first</item>
+                            <item name="surviving" xsi:type="number">7</item>
+                        </item>
+                        <item name="equal" xsi:type="string">same</item>
+                    </argument>
+                    <argument name="shared_first" xsi:type="object">MageLens\Compatibility\Model\LayoutArgumentSource</argument>
+                    <argument name="shared_second" xsi:type="object" shared="true">MageLens\Compatibility\Model\LayoutArgumentSource</argument>
+                    <argument name="fresh_first" xsi:type="object" shared="false">MageLens\Compatibility\Model\LayoutArgumentSource</argument>
+                    <argument name="fresh_second" xsi:type="object" shared="false">MageLens\Compatibility\Model\LayoutArgumentSource</argument>
+                    <argument name="options" xsi:type="options" model="MageLens\Compatibility\Model\LayoutArgumentSource"/>
+                    <argument name="helper" xsi:type="helper" helper="MageLens\Compatibility\Model\LayoutArgumentSource::join">
+                        <param name="first">alpha</param>
+                        <param name="second">beta</param>
+                    </argument>
+                    <argument name="route" xsi:type="url" path="coverageprobe/handle/index">
+                        <param name="variant">selected</param>
+                    </argument>
+                    <argument name="updatable" xsi:type="options" model="MageLens\Compatibility\Model\LayoutArgumentSource">
+                        <updater>MageLens\Compatibility\Model\LayoutArgumentSource</updater>
+                    </argument>
+                    <argument name="text_with_updater" xsi:type="string">fixture<updater>MageLens\Compatibility\Model\LayoutArgumentSource</updater></argument>
+                    <argument name="translated" xsi:type="string" translate="true">MageLens layout translation marker</argument>
+                    <argument name="untranslated" xsi:type="string" translate="false">MageLens layout translation marker</argument>
+                    <argument name="unread" xsi:type="string">unused-by-template</argument>
+                    <argument name="replaced" xsi:type="string">from-xml</argument>
+                </arguments>
+            </block>
+        </referenceContainer>
+    </body>
+</page>

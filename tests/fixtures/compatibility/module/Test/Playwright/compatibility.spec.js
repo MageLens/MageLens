@@ -58,6 +58,10 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(wireframe.locator('#layout-right #layout-nested [data-layout-structure]')).toHaveText(['anchor', 'moved']);
     await expect(wireframe.locator('#layout-removed, [data-layout-structure="hidden"]')).toHaveCount(0);
     await expect(wireframe.locator('[data-layout-structure-outcome]')).toHaveText('verified');
+    for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
+        'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
+        await expect(wireframe.locator(`[data-layout-argument="${effect}"]`)).toHaveText('verified');
+    }
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
 });
