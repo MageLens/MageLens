@@ -26,4 +26,28 @@ class LayoutUiProof extends Template
             && $wrapper->getData('layout_only') === null
             && $this->getLayout()->getParentName('magelens_layout_ui') === 'magelens.layout.component';
     }
+    public function structureEffects(): array
+    {
+        $layout = $this->getLayout();
+        $wrapper = $layout->getBlock('magelens_layout_ui');
+        $children = $layout->getChildNames('magelens.layout.component');
+        $group = $layout->getGroupChildNames('magelens.layout.component', 'fixture-ui-group');
+        sort($group);
+        $output = (new \ReflectionProperty(\Magento\Framework\View\Layout::class, '_output'))->getValue($layout);
+        return [
+            'alias' => $layout->getChildName('magelens.layout.component', 'ui.alias') === 'magelens_layout_ui',
+            'ordering' => $children === ['magelens_layout_ui_before', 'magelens.layout.ui-anchor',
+                'magelens_layout_ui', 'magelens.layout.ui-proof', 'magelens.layout.ui-hidden'],
+            'group' => $group === ['magelens_layout_ui', 'magelens_layout_ui_before'],
+            'visibility' => !$layout->hasElement('magelens_layout_ui_denied')
+                && !$layout->hasElement('magelens_layout_ui_config_denied'),
+            'calls' => count(array_filter(\MageLens\Compatibility\Model\LayoutVisibility::$decisions)) === 3
+                && count(\MageLens\Compatibility\Model\LayoutVisibility::$decisions) === 4,
+            'cacheable' => $layout->isCacheable(),
+            'ttl' => $wrapper->getData('ttl') === null,
+            'output' => $layout->getBlock('magelens_layout_ui_detached') instanceof UiComponent
+                && $layout->getParentName('magelens_layout_ui_detached') === 'magelens.layout.ui-hidden'
+                && !isset($output['magelens_layout_ui_detached']),
+        ];
+    }
 }

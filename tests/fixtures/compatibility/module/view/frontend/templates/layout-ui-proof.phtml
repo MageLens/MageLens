@@ -7,3 +7,6 @@
 /** @var \MageLens\Compatibility\Block\LayoutUiProof $block */
 ?>
 <span data-layout-ui-proof><?= $block->hasExpectedPlacement() ? 'verified' : 'unexpected' ?></span>
+<?php foreach ($block->structureEffects() as $effect => $verified): ?>
+    <span data-layout-ui-effect="<?= $block->escapeHtmlAttr($effect) ?>"><?= $verified ? 'verified' : 'unexpected' ?></span>
+<?php endforeach; ?>

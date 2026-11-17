@@ -117,8 +117,11 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('#layout-anonymous [data-layout-anonymous]')).toHaveText('verified');
     await expect(page.locator('[data-layout-order]')).toHaveText(['order.first', 'order.last', 'order.middle']);
     await page.goto('/coverageprobe/component/');
-    await expect(page.locator('#layout-component .entry-edit')).toHaveAttribute('data-bind', "scope: 'magelens_layout_ui.areas'");
+    await expect(page.locator('#layout-component .entry-edit[data-bind*="magelens_layout_ui.areas"]')).toHaveAttribute('data-bind', "scope: 'magelens_layout_ui.areas'");
     await expect(page.locator('[data-layout-ui-proof]')).toHaveText('verified');
+    for (const effect of ['alias', 'ordering', 'group', 'visibility', 'calls', 'cacheable', 'ttl', 'output']) {
+        await expect(page.locator(`[data-layout-ui-effect="${effect}"]`)).toHaveText('verified');
+    }
     await page.goto('/coverageprobe/grammar/');
     await expect(page.locator('[data-layout-grammar="serviceurl"], [data-layout-grammar="const"]')).toHaveText(['applied', 'applied']);
     await expect(page.locator('[data-layout-grammar="configurable"]')).toHaveText('generator-error');
@@ -127,7 +130,7 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-grammar="configureddata"], [data-layout-grammar="configuredvaluearray"]')).toHaveText(['applied', 'applied']);
     await expect(page.locator('[data-layout-grammar="constenum"]')).toHaveText('structure-serialization-error');
     await expect(page.locator('[data-layout-grammar="updaterenabled"], [data-layout-grammar="updaterorder"]')).toHaveText(['updater-lookup-error', 'updater-lookup-error']);
-    await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"]')).toHaveText(['verified', 'verified', 'verified']);
+    await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"], [data-layout-grammar="uiroot"]')).toHaveText(['verified', 'verified', 'verified', 'verified']);
     await page.goto('/coverageprobe/boundary/');
     await expect(page.locator('[data-layout-boundary-failure]')).toHaveText('verified');
     await expect(page.locator('[data-layout-boundary-success]')).toHaveText('success-value');

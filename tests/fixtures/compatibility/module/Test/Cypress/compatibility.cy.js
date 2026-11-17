@@ -128,8 +128,11 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...elements].map(element => element.textContent)).to.deep.equal(['order.first', 'order.last', 'order.middle']);
         });
         cy.visit('/coverageprobe/component/');
-        cy.get('#layout-component .entry-edit').should('have.attr', 'data-bind', "scope: 'magelens_layout_ui.areas'");
+        cy.get('#layout-component .entry-edit[data-bind*="magelens_layout_ui.areas"]').should('have.attr', 'data-bind', "scope: 'magelens_layout_ui.areas'");
         cy.get('[data-layout-ui-proof]').should('have.text', 'verified');
+        for (const effect of ['alias', 'ordering', 'group', 'visibility', 'calls', 'cacheable', 'ttl', 'output']) {
+            cy.get(`[data-layout-ui-effect="${effect}"]`).should('have.text', 'verified');
+        }
         cy.visit('/coverageprobe/grammar/');
         cy.get('[data-layout-grammar="serviceurl"]').should('have.text', 'applied');
         cy.get('[data-layout-grammar="const"]').should('have.text', 'applied');
@@ -143,7 +146,7 @@ describe('Magento storefront coverage compatibility', () => {
         for (const entry of ['updaterenabled', 'updaterorder']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'updater-lookup-error');
         }
-        for (const entry of ['cachefalse', 'cacheremoved', 'cachezero']) {
+        for (const entry of ['cachefalse', 'cacheremoved', 'cachezero', 'uiroot']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'verified');
         }
         cy.visit('/coverageprobe/boundary/');

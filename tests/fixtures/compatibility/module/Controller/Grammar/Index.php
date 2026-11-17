@@ -15,7 +15,9 @@ use Magento\Framework\View\Result\PageFactory;
 
 class Index implements HttpGetActionInterface
 {
-    public function __construct(private PageFactory $pages, private RawFactory $raw, ViewInterface $view)
+    public function __construct(private PageFactory $pages, private RawFactory $raw, ViewInterface $view,
+        private \Magento\Framework\View\Result\LayoutFactory $layouts,
+        private \Magento\Framework\App\State $state)
     {
     }
 
@@ -66,6 +68,19 @@ class Index implements HttpGetActionInterface
             $observed = $page->getLayout()->isCacheable();
             $output .= '<span data-layout-grammar="' . $case . '">' . ($observed === $expected ? 'verified' : 'unexpected') . '</span>';
         }
+        $fragment = $this->layouts->create(['isIsolated' => true]);
+        $fragment->addHandle('coverageprobe_grammar_uiroot');
+        $rootVerified = false;
+        try {
+            $wrapper = $fragment->getLayout()->getBlock('magelens_layout_ui_detached');
+            $rootVerified = $this->state->getMode() !== \Magento\Framework\App\State::MODE_DEVELOPER
+                && $wrapper instanceof \Magento\Ui\Component\Wrapper\UiComponent
+                && $fragment->getLayout()->getOutput() === '';
+        } catch (\Magento\Framework\Config\Dom\ValidationException $error) {
+            $rootVerified = $this->state->getMode() === \Magento\Framework\App\State::MODE_DEVELOPER
+                && str_contains($error->getMessage(), "Element 'uiComponent': This element is not expected.");
+        }
+        $output .= '<span data-layout-grammar="uiroot">' . ($rootVerified ? 'verified' : 'unexpected') . '</span>';
         return $this->raw->create()->setContents($output);
     }
 }
