@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -6,6 +6,10 @@ const {verifyScriptPolicy} = require('../csp-proof');
 describe('Magento storefront coverage compatibility', () => {
     it('collects real PHP, JavaScript and template execution', () => {
         cy.visit('/coverageprobe/');
+        for (const marker of ['replacement', 'equal', 'late']) {
+            cy.get(`[data-layout-origin="${marker}"]`).should('have.length', 1).and('have.text', marker);
+        }
+        cy.get('[data-layout-origin="original"], [data-layout-origin="unvisited"]').should('not.exist');
         if (Cypress.expose('hyvaCsp')) {
             cy.request('/coverageprobe/').then(response => {
                 const policy = response.headers['content-security-policy'];

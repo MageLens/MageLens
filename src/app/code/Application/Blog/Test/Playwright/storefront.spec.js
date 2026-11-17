@@ -8,6 +8,11 @@ test.describe('Blog storefront', () => {
     test('searches, filters, paginates, reads articles, and retains favorites', async ({page}) => {
         const f = fixtures();
         await visitBlog(page, f.query);
+        if (process.env.MAGELENS_THEME === 'hyva') {
+            await expect(get(page, 'blog')).toHaveAttribute('x-data', 'applicationBlog');
+        } else {
+            await expect(get(page, 'blog').locator("[data-bind=\"scope: 'coverageBlog'\"]")).toHaveCount(1);
+        }
         if (f.themePaths[0] === 'Application/coverage') await expect(get(page, 'theme-note')).toContainText('Ideas, engineering');
         await expect(get(page, 'status')).toHaveText('8 articles');
         await expect(get(page, 'post')).toHaveCount(6);
