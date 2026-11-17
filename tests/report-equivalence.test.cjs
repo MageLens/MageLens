@@ -251,3 +251,45 @@ test('preference equivalence retains binding, original provider and per-area res
     write('xml/coverage.json', xml);
     assert.throws(() => snapshot(directory), /Incomplete preference coverage inventory/);
 });
+
+test('factory DI equivalence retains virtual routes and inherited parameter identities', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json'), file = xml.files[0];
+    const resolved = 'SECRET\\Concrete';
+    const add = (family, id, binding, type, expected) => {
+        const origin = {id, path: file.path, startLine: 4, endLine: 5, fingerprint: file.sourceFingerprint};
+        const eligible = {status: 'eligible', origin, resolved: expected, effectiveReplacement: expected, state: 'uncovered', hits: 0};
+        const item = {id, path: 'SECRET declared path', family, binding, declaredScope: {type: 'global', code: ''},
+            startLine: 4, endLine: 5, supported: true, effective: true, state: 'covered',
+            areas: {global: eligible, frontend: {...eligible, state: 'covered', hits: 1},
+                adminhtml: {status: 'ambiguous', state: 'unmeasured', hits: 0, reason: 'SECRET conflicting provider'}},
+            evidence: [{type, binding, area: 'frontend', resolved: expected, request: 'SECRET request', requested: 'SECRET\\AliasChain'}]};
+        file.declarations.push(item);
+        return item;
+    };
+    const alias = add('virtual-types', 'a'.repeat(64), {requested: 'SECRET\\Alias', replacement: resolved}, 'virtual-type-resolved', resolved);
+    const argument = add('arguments', 'b'.repeat(64), {declaringType: resolved, argument: 'SECRET parameter'}, 'argument-applied', null);
+    xml.virtualTypes = {total: 2, covered: 1, hook: true};
+    xml.arguments = {total: 2, covered: 1, hook: true};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    alias.areas.frontend.hits = argument.areas.frontend.hits = 60;
+    argument.evidence.push({...argument.evidence[0], request: 'another'});
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    const last = report => report.files[0].declarations.at(-1);
+    for (const alter of [
+        value => { last(value).binding.argument = 'changed'; },
+        value => { last(value).evidence[0].requested = 'different requester'; },
+        value => { last(value).areas.global.origin.fingerprint = 'f'.repeat(64); },
+        value => { last(value).areas.frontend.hits = 0; last(value).areas.frontend.state = 'uncovered'; value.arguments.covered = 0; }
+    ]) {
+        const changed = structuredClone(xml);
+        alter(changed);
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+});

@@ -27,7 +27,7 @@ final class PluginManifest
     private const ORIGIN = 'magelens-origin-';
 
     /** Run the installed reader on original and annotated snapshots in resolver order. */
-    public static function sources(Dom $reader, array $known, bool $preferences = false): array
+    public static function sources(Dom $reader, array $known, bool $preferences = false, bool $diUsage = false): array
     {
         $resolver = new \ReflectionProperty(Dom::class, '_fileResolver');
         $converter = new \ReflectionProperty(Dom::class, '_converter');
@@ -58,7 +58,7 @@ final class PluginManifest
             }
         };
         $converter->setValue($annotated, $capture);
-        $config = $tagged = $sources = $providers = $bindings = [];
+        $config = $tagged = $sources = $providers = $bindings = $usage = [];
         foreach (['primary', ...self::AREAS] as $scope) {
             $input->files = [];
             foreach ($original->get('di.xml', $scope) as $file => $bytes) {
@@ -77,15 +77,18 @@ final class PluginManifest
                         if ($node->hasAttribute($attribute)) $node->setAttribute(self::ORIGIN . $attribute, $id);
                     }
                 }
-                if ($preferences) {
-                    $nodes = (new \DOMXPath($document))->query('/config/preference');
+                if ($preferences || $diUsage) {
+                    $query = $preferences ? '/config/preference' : '';
+                    if ($diUsage) $query .= ($query ? ' | ' : '') . DiUsageManifest::NODES;
+                    $nodes = (new \DOMXPath($document))->query($query);
                     $ranges = $nodes->length ? Xml::ranges($bytes, $document) : [];
                     $path = str_starts_with($file, BP . '/') ? substr($file, strlen(BP) + 1) : $file;
                     $fingerprint = $nodes->length ? hash('sha256', str_replace("\r\n", "\n", $bytes)) : null;
                     foreach ($nodes as $node) {
                         $nodePath = $node->getNodePath();
                         $id = $known[$file][$nodePath] ?? hash('sha256', "$path\0$nodePath");
-                        $node->setAttribute(self::ORIGIN . 'preference', $id);
+                        if ($node->tagName === 'preference') $node->setAttribute(self::ORIGIN . 'preference', $id);
+                        else DiUsageManifest::annotate($node, $id);
                         $locations[$id] = ['id' => $id, 'path' => $path, ...$ranges[$nodePath],
                             'fingerprint' => $fingerprint];
                     }
@@ -98,6 +101,9 @@ final class PluginManifest
                 throw new \RuntimeException('Cannot reproduce Magento DI reader provenance');
             }
             $tagged[$scope] = self::tag($config[$scope], $capture->document);
+            if ($diUsage && $capture->document) {
+                $usage[$scope] = DiUsageManifest::origins($capture->document, $config[$scope], $locations);
+            }
             if ($preferences && $capture->document) {
                 $origins = [];
                 foreach ((new \DOMXPath($capture->document))->query('/config/preference') as $node) {
@@ -109,7 +115,7 @@ final class PluginManifest
                 foreach ($origins as $name => $origin) $bindings[$scope][ltrim($name, '\\')] = $origin;
             }
         }
-        return [$config, $tagged, $sources, $providers, $bindings];
+        return [$config, $tagged, $sources, $providers, $bindings, $usage];
     }
 
     private static function nodes(\DOMDocument $document): \DOMNodeList

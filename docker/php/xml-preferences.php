@@ -41,7 +41,9 @@ final class Preferences
                 $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
                 $site = self::scopeSite($trace[2] ?? []);
                 if ($site && !$error && $class === ConfigLoader::class && is_array($result)) {
-                    self::$loaded = [$site, $params[0] ?? null, PreferenceManifest::deltaHash($result)];
+                    $area = $params[0] ?? null;
+                    $arguments = isset(self::$areas[$area]['diUsage']['argumentDelta']) ? DiUsageManifest::argumentDelta($result) : null;
+                    self::$loaded = [$site, $area, PreferenceManifest::deltaHash($result), $arguments];
                 }
             }],
             [ObjectManager::class, 'configure', null, static function ($manager, array $params, $result, ?\Throwable $error, string $class) {
@@ -61,7 +63,9 @@ final class Preferences
                 $data = $params[0];
                 // Out-of-band preference edits invalidate origin even if
                 // a provider writes exactly the same mapping.
-                if (isset($data['preferences']) || array_filter($data, static fn($entry) => isset($entry['type']))) {
+                $arguments = class_exists(DiUsage::class, false) && DiUsage::hasArgumentMeasurement();
+                if (isset($data['preferences']) || array_filter($data, static fn($entry) => isset($entry['type'])
+                    || ($arguments && !empty($entry['arguments'])))) {
                     self::$stale ??= 'DI changed outside native area loading';
                 }
             }, null],
@@ -95,7 +99,7 @@ final class Preferences
                     if ($class === ObjectManager::class && self::$manager?->get() === $manager) self::returned($method, $result, $error);
                 }];
         }
-        return $hooks;
+        return class_exists(DiUsage::class, false) ? array_merge($hooks, DiUsage::hooks($areas)) : $hooks;
     }
 
     private static function scopeSite(array $frame): ?string
@@ -120,10 +124,16 @@ final class Preferences
             self::$broken = true;
             return;
         }
-        [, $area, $delta] = $loaded;
+        [, $area, $delta, $arguments] = $loaded;
         $expected = self::$areas[$area] ?? null;
         self::$area = null;
-        if (!$expected) return;
+        if (!$expected) {
+            if (class_exists(DiUsage::class, false) && self::$manager?->get() === $manager) {
+                $instance = new \ReflectionClass(ObjectManager::class);
+                DiUsage::area(null, $instance->getProperty('_factory')->getValue($manager), self::$config->get());
+            }
+            return;
+        }
         $reflection = new \ReflectionClass(ObjectManager::class);
         $config = $reflection->getProperty('_config')->getValue($manager);
         $factory = $reflection->getProperty('_factory')->getValue($manager);
@@ -141,6 +151,12 @@ final class Preferences
             self::$stale ??= 'live DI maps changed';
             return;
         }
+        if (isset($expected['diUsage']['argumentDelta']) && ($arguments !== $expected['diUsage']['argumentDelta']
+            || DiUsageManifest::argumentHash($config) !== $expected['diUsage']['argumentsHash'])) {
+            self::$stale ??= 'constructor arguments changed';
+            return;
+        }
+        if (class_exists(DiUsage::class, false)) DiUsage::area($area, $factory, $config, $expected['diUsage'] ?? []);
         self::$manager = \WeakReference::create($manager);
         self::$config = \WeakReference::create($config);
         self::$managerFile = $reflection->getFileName();

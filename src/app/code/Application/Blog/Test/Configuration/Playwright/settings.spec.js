@@ -43,6 +43,7 @@ test('uses inherited journal settings and shows the selected Admin fields', asyn
     await expect(page.locator('#application_blog_display-state')).toHaveValue('1');
     await expect(page.locator('#application_blog_display_heading')).toBeVisible();
     const adminResponse = await page.reload();
+    expect(await adminResponse.headerValue('x-magelens-admin-argument')).toBe('admin label');
     expect(await adminResponse.headerValue('x-magelens-admin-preference')).toBe('resolved');
     expect(await adminResponse.headerValue('x-magelens-admin-observer')).toBe('executed');
     expect(await adminResponse.headerValue('x-magelens-admin-plugin')).toBe('short:startbbbb|after|after');

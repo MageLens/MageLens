@@ -42,7 +42,9 @@ function prepareXmlManifests($om, array $run): array
             default => null,
         };
         $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
-        if ($family === 'plugins') $declarations = array_merge($declarations, Xml::declarations($path, $bytes, 'preferences'));
+        if ($family === 'plugins') foreach (['preferences', 'virtual-types', 'arguments'] as $diFamily) {
+            $declarations = array_merge($declarations, Xml::declarations($path, $bytes, $diFamily));
+        }
         $files[$path] = ['path' => $path, 'sourceHash' => $hash, 'family' => $family,
             'reason' => $declarations ? null : 'Unsupported XML family, location or schema', 'declarations' => $declarations];
         if ($family === 'config') foreach ($declarations as $item) $ids[$item['id']] = true;

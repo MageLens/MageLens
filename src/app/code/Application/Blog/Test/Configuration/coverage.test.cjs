@@ -216,7 +216,7 @@ test('reports preference resolution by native binding and original configuration
     const root = 'app/code/Application/Blog/etc/';
     const globalFile = result.files.find(file => file.path === root + 'di.xml');
     assert.deepEqual([globalFile.covered, globalFile.total], [0, 0]);
-    assert.equal(globalFile.lines[30], undefined, 'Virtual type declaration remains outside XML totals');
+    assert.equal(globalFile.lines[30].state, 'covered');
     const model = 'Application\\Blog\\Model\\Journal';
     const bind = (name, scope = 'global') => declaration(result,
         root + (scope === 'global' ? '' : scope + '/') + 'di.xml', model + name, scope);
@@ -271,4 +271,44 @@ test('reports preference resolution by native binding and original configuration
     assert.match(html, /Preference usage/);
     assert.match(html, /6\/26 eligible declaration–area pairs resolved/);
     assert.match(html, /href="app\/code\/Application\/Blog\/etc\/di.xml.html#L21"/);
+});
+
+test('reports only factory-resolved virtual types and applied constructor arguments', () => {
+    const result = report();
+    assert.deepEqual(result.virtualTypes, {total: 9, covered: 5, hook: true});
+    assert.deepEqual(result.arguments, {total: 15, covered: 7, hook: true});
+    const root = 'app/code/Application/Blog/etc/';
+    const model = 'Application\\Blog\\Model\\Journal';
+    const site = (type, scope = 'global', argument = '') => declaration(result,
+        root + (scope === 'global' ? '' : scope + '/') + 'di.xml', model + type + (argument ? '/' + argument : ''), scope);
+    const alias = site('ArgumentAlias'), frontend = site('ArgumentAlias', 'frontend'), admin = site('ArgumentAlias', 'adminhtml');
+    const chain = site('ArgumentChain'), serviceType = site('VirtualTarget');
+    const argument = name => site('ArgumentProbe', 'global', name);
+    const frontendLabel = site('ArgumentAlias', 'frontend', 'label'), adminLabel = site('ArgumentAlias', 'adminhtml', 'label');
+    assert.deepEqual([alias.startLine, alias.highlightEndLine, alias.endLine], [42, 43, 45]);
+    assert.equal(alias.areas.frontend.status, 'overridden');
+    assert.equal(alias.areas.frontend.origin.id, frontend.id);
+    assert.equal(frontend.areas.frontend.resolved, model + 'ArgumentProbe');
+    assert.deepEqual([argument('options').startLine, argument('options').endLine], [35, 37]);
+    assert.equal(argument('ignored').areas.frontend.state, 'uncovered');
+    assert.equal(frontendLabel.areas.frontend.state, 'covered');
+    assert.equal(adminLabel.areas.adminhtml.state, 'covered');
+    assert.equal(admin.areas.adminhtml.state, 'covered');
+    assert.deepEqual(site('ArgumentAlias', 'global', 'label').evidence, []);
+    for (const name of ['preference-resolution', 'preference-resolution-warm']) {
+        const events = request(result, name).events.filter(event => ['virtual-type-resolved', 'argument-applied'].includes(event.type));
+        const expected = [
+            [serviceType, 'VirtualTarget'], [chain, 'ArgumentChain'], [frontend, 'ArgumentChain'], [frontend, 'ArgumentAlias'],
+            [frontendLabel, 'ArgumentChain'], [argument('options'), 'ArgumentChain'], [argument('options'), 'ArgumentAlias'],
+            [argument('options'), 'ArgumentProbe'], [argument('service'), 'ArgumentChain'], [argument('service'), 'ArgumentAlias'],
+            [argument('service'), 'ArgumentProbe'], [argument('label'), 'ArgumentProbe'],
+        ];
+        assert.deepEqual(events.map(event => [event.id, event.requested, event.hits]).sort(),
+            expected.map(([item, type]) => [item.id, model + type, 1]).sort());
+    }
+    const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
+    assert.match(html, /Virtual type usage/);
+    assert.match(html, /Constructor argument usage/);
+    assert.match(html, /5\/9 eligible declaration–area pairs resolved/);
+    assert.match(html, /7\/15 eligible declaration–area pairs applied/);
 });

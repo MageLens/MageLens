@@ -49,8 +49,12 @@ final class Recorder
     }
     public static function preference(string $id, string $area, string $requested): void
     {
-        $key = "$id\0preference-resolved\0$area\0$requested";
-        self::$events[$key] ??= ['id' => $id, 'type' => 'preference-resolved', 'area' => $area,
+        self::diUsage($id, 'preference-resolved', $area, $requested);
+    }
+    public static function diUsage(string $id, string $type, string $area, string $requested): void
+    {
+        $key = "$id\0$type\0$area\0$requested";
+        self::$events[$key] ??= ['id' => $id, 'type' => $type, 'area' => $area,
             'requested' => $requested, 'hits' => 0];
         self::$events[$key]['hits']++;
     }
@@ -188,6 +192,7 @@ final class Recorder
             'renderHook' => self::$renderHook, 'observerHook' => Observers::finish(), 'events' => array_values(self::$events)];
         [$data['pluginHook'], $data['ambiguousPlugins']] = class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
         $data['preferenceHook'] = class_exists(Preferences::class, false) && Preferences::finish();
+        $data['diUsageHooks'] = class_exists(DiUsage::class, false) ? DiUsage::finish() : [];
         return $data;
     }
 }

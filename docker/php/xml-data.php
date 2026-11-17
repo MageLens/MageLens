@@ -22,7 +22,7 @@ final class Xml
 
     // DOM supplies semantic nodes; this lexical pass retains inclusive original
     // closing lines, including CDATA, comments and quoted > in attributes.
-    public static function ranges(string $source, \DOMDocument $dom): array
+    public static function ranges(string $source, \DOMDocument $dom, bool $opening = false): array
     {
         preg_match_all('~<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|</?[A-Za-z_](?:[^>"\']|"[^"]*"|\'[^\']*\')*>~s', $source, $matches, PREG_OFFSET_CAPTURE);
         $ranges = []; $stack = [];
@@ -37,6 +37,7 @@ final class Xml
             } else {
                 $index = count($ranges);
                 $ranges[] = ['startLine' => $start, 'endLine' => $end];
+                if ($opening) $ranges[$index]['highlightEndLine'] = $end;
                 if (!preg_match('~/\s*>$~', $token)) $stack[] = $index;
             }
         }
@@ -136,11 +137,36 @@ final class Xml
             'config' => 'urn:magento:module:Magento_Store:etc/config.xsd',
             'system' => 'urn:magento:module:Magento_Config:etc/system_file.xsd',
             'events' => 'urn:magento:framework:Event/etc/events.xsd',
-            'plugins', 'preferences' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
+            'plugins', 'preferences', 'virtual-types', 'arguments' => 'urn:magento:framework:ObjectManager/etc/config.xsd',
         };
         if ($dom->documentElement->tagName !== 'config' || $schema !== $expected) return [];
-        $ranges = self::ranges($source, $dom);
+        $ranges = self::ranges($source, $dom, $family === 'virtual-types');
         $xpath = new \DOMXPath($dom);
+        if (in_array($family, ['virtual-types', 'arguments'], true)) {
+            $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
+            $query = $family === 'virtual-types' ? '/config/virtualType[@name]'
+                : '/config/type/arguments/argument[@name] | /config/virtualType/arguments/argument[@name]';
+            $result = []; $seen = [];
+            foreach ($xpath->query($query) as $node) {
+                if ($family === 'virtual-types') {
+                    $name = ltrim($node->getAttribute('name'), '\\');
+                    $binding = ['requested' => $name, 'replacement' => ltrim($node->getAttribute('type'), '\\')];
+                    $key = $name;
+                } else {
+                    $type = ltrim($node->parentNode->parentNode->getAttribute('name'), '\\');
+                    $name = $node->getAttribute('name');
+                    $binding = ['declaringType' => $type, 'argument' => $name];
+                    $key = "$type/$name";
+                }
+                $index = $seen[$key] ?? 0;
+                $seen[$key] = $index + 1;
+                $result[] = ['id' => hash('sha256', "$path\0$family\0$key\0$index"),
+                    'path' => $key, 'family' => $family, 'declaredScope' => ['type' => $scope, 'code' => ''],
+                    ...$ranges[$node->getNodePath()], 'node' => $node->getNodePath(), 'binding' => $binding,
+                    'supported' => false, 'reason' => null];
+            }
+            return $result;
+        }
         if ($family === 'preferences') {
             $scope = preg_match('~/etc/([^/]+)/di\.xml$~', $path, $match) ? $match[1] : 'global';
             $result = []; $seen = [];

@@ -7,6 +7,8 @@
 declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
+require_once __DIR__ . '/xml-di-usage-manifest.php';
+
 use Magento\Framework\App\ObjectManager as AppObjectManager;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
 use Magento\Framework\App\ObjectManager\Environment\Developer as DeveloperEnvironment;
@@ -80,39 +82,34 @@ final class PreferenceManifest
             $edges[$terminal] = true;
             $terminal = $preferences[$terminal];
         }
-        $resolved = $terminal;
-        $visited = [];
-        while (isset($virtualTypes[$resolved])) {
-            if (isset($visited[$resolved])) return [array_keys($edges), $terminal, null];
-            $visited[$resolved] = true;
-            $resolved = $virtualTypes[$resolved];
-        }
-        return [array_keys($edges), $terminal, $resolved !== '' ? $resolved : null];
+        [, $resolved] = DiUsageManifest::virtualPath($terminal, $virtualTypes);
+        return [array_keys($edges), $terminal, $resolved];
     }
 
     public static function prepare($om, array &$files): array
     {
-        $items = $known = $paths = [];
+        $items = $usage = $known = $paths = [];
         foreach ($files as $path => &$file) {
             if ($file['family'] !== 'plugins') continue;
             foreach ($file['declarations'] as &$item) {
                 $known[BP . '/' . $path][$item['node']] = $item['id'];
-                if ($item['family'] !== 'preferences') continue;
-                $items[$item['id']] = &$item;
+                if ($item['family'] === 'preferences') $items[$item['id']] = &$item;
+                elseif (in_array($item['family'], ['virtual-types', 'arguments'], true)) $usage[$item['id']] = &$item;
+                else continue;
                 $paths[$item['id']] = [$path, $file['sourceHash']];
             }
             unset($item);
         }
         unset($file);
-        if (!$items) return [[], null];
+        if (!$items && !$usage) return [[], null];
 
-        $snapshot = PluginManifest::sources($om->get(Dom::class), $known, true);
-        [$configs, , $sources, , $origins] = $snapshot;
+        $snapshot = PluginManifest::sources($om->get(Dom::class), $known, (bool)$items, (bool)$usage);
+        [$configs, , $sources, , $origins, $usageOrigins] = $snapshot;
         $active = [];
-        foreach ($items as $id => $item) {
+        foreach ($items + $usage as $id => $item) {
             [$path, $hash] = $paths[$id];
             $provider = $sources[$item['declaredScope']['type']][BP . '/' . $path] ?? null;
-            if ($provider !== null && $provider !== $hash) throw new \RuntimeException('Runtime preference XML differs from its inventoried source');
+            if ($provider !== null && $provider !== $hash) throw new \RuntimeException('Runtime DI XML differs from its inventoried source');
             $active[$id] = $provider !== null;
         }
 
@@ -128,6 +125,12 @@ final class PreferenceManifest
             !self::nativeHooks() => 'Installed DI methods differ from the verified hook paths',
             default => null,
         };
+        $nativeArguments = $usage && DiUsageManifest::nativeArguments();
+        if ($nativeArguments && $unsupported === null) {
+            $nativeConfig = (new \ReflectionProperty(ObjectManager::class, '_config'))->getValue($om);
+            $nativeArguments = get_class((new \ReflectionProperty(Config::class, '_relations'))->getValue($nativeConfig))
+                === \Magento\Framework\ObjectManager\Relations\Runtime::class;
+        }
         $runtime = [];
         foreach (self::AREAS as $area) {
             $scopes = $area === 'global' ? ['primary', 'global'] : ['primary', 'global', $area];
@@ -166,8 +169,14 @@ final class PreferenceManifest
                 }
             }
             unset($item);
+            $diUsage = DiUsageManifest::prepareArea($usage, $active, $usageOrigins, $config, $scopes, $area, $unsupported, $nativeArguments);
             if ($unsupported !== null) continue;
-            if (self::deltaHash($loader->load($area)) !== self::deltaHash($configs[$area])) self::stale();
+            $loaded = $loader->load($area);
+            if ($diUsage['names'] ?? []) {
+                $diUsage['argumentDelta'] = DiUsageManifest::argumentDelta($configs[$area]);
+                if ($diUsage['argumentDelta'] !== DiUsageManifest::argumentDelta($loaded)) self::stale('loaded constructor arguments changed');
+            }
+            if (self::deltaHash($loaded) !== self::deltaHash($configs[$area])) self::stale();
             $routes = [];
             foreach ($preferences as $requested => $replacement) {
                 [$edges, $terminal, $resolved] = self::resolve($requested, $preferences, $virtualTypes);
@@ -176,9 +185,10 @@ final class PreferenceManifest
                 if ($resolved !== null && $ids) $routes[$requested] = ['terminal' => $terminal, 'resolved' => $resolved, 'ids' => $ids];
             }
             $runtime[$area] = ['delta' => self::deltaHash($configs[$area]), 'config' => self::configHash($config),
-                'routes' => $routes];
+                'routes' => $routes, 'diUsage' => $diUsage];
         }
-        foreach ($items as &$item) {
+        $all = $items + $usage;
+        foreach ($all as &$item) {
             $scope = $item['declaredScope']['type'];
             if (!in_array($scope, self::AREAS, true)) {
                 $item['areas'][$scope] = ['status' => 'unsupported', 'reason' => 'Configuration area is outside synchronous storefront and Admin collection',

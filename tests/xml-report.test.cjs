@@ -187,3 +187,44 @@ test('preference reports validate effective routes and publish healthy zero-hit 
     writeReport(zero, sources, root);
     assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /0\/2 eligible declaration–area pairs resolved/);
 });
+
+test('virtual and constructor usage require live evidence and preserve independent totals and source highlights', t => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/di.xml';
+    sources[file] = Buffer.from('<config>\n<virtualType name="AcmeAlias" type="AcmeType">\n <argument/>\n</virtualType>\n</config>');
+    const fingerprint = createHash('sha256').update(sources[file]).digest('hex');
+    const virtual = {id: 'virtual', family: 'virtual-types', binding: {requested: 'AcmeAlias', replacement: 'AcmeType'},
+        path: 'AcmeAlias', startLine: 2, endLine: 4, highlightEndLine: 2};
+    const argument = {id: 'argument', family: 'arguments', binding: {declaringType: 'AcmeAlias', argument: 'unused'},
+        path: 'AcmeAlias/unused', startLine: 3, endLine: 3};
+    for (const item of [virtual, argument]) {
+        Object.assign(item, {declaredScope: {type: 'frontend', code: ''}, supported: true, areas: {frontend: {
+            status: 'eligible', origin: {id: item.id, path: file, startLine: item.startLine, endLine: item.endLine, fingerprint},
+            resolved: item === virtual ? 'AcmeType' : null
+        }}});
+    }
+    const diUsage = {eligible: {'virtual-types': {virtual: true}, arguments: {argument: true}},
+        virtualRoutes: {AcmeAlias: {ids: ['virtual'], resolved: 'AcmeType'}}};
+    manifest.preferences = {frontend: {routes: {}, diUsage}};
+    manifest.files.push({path: file, family: 'plugins', sourceHash: fingerprint, declarations: [virtual, argument]});
+    const healthy = {...record, preferenceHook: true, diUsageHooks: {'virtual-types': true, arguments: true}};
+    const resolution = {id: 'virtual', type: 'virtual-type-resolved', area: 'frontend', requested: 'AcmeAlias', hits: 1};
+    const report = merge(manifest, [{...healthy, events: [...record.events, resolution]}], sources);
+    assert.deepEqual(report.virtualTypes, {total: 1, covered: 1, hook: true});
+    assert.deepEqual(report.arguments, {total: 1, covered: 0, hook: true});
+    assert.equal(report.files[1].lines[2].state, 'covered');
+    assert.equal(report.files[1].lines[3].state, 'uncovered');
+    assert.equal(report.files[1].lines[4], undefined);
+    assert.equal(report.files[1].total, 0);
+    assert.throws(() => merge(manifest, [{...healthy, diUsageHooks: {'virtual-types': true}}], sources), /constructor argument usage hook/);
+    assert.throws(() => merge(manifest, [{...healthy, events: [{...resolution, requested: 'AcmeType'}]}], sources), /factory route/);
+    const applied = {id: 'argument', type: 'argument-applied', area: 'frontend', requested: 'AcmeAlias', hits: 3};
+    assert.throws(() => merge(manifest, [{...healthy, events: [{...applied, value: 'secret'}]}], sources));
+    assert.deepEqual(merge(manifest, [{...healthy, events: [applied]}], sources).arguments, {total: 1, covered: 1, hook: true});
+    const output = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-di-usage-'));
+    t.after(() => fs.rmSync(output, {recursive: true, force: true}));
+    writeReport(report, sources, output);
+    const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+    assert.match(index, /Virtual type usage/);
+    assert.match(index, /Constructor argument usage/);
+});

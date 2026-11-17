@@ -37,6 +37,7 @@ class Configuration implements \Magento\Framework\App\Action\HttpGetActionInterf
             case 'baseline': break;
             case 'preference-resolution':
                 $result = \Application\Blog\Model\JournalPreferenceProbe::exercise();
+                $result['arguments'] = \Application\Blog\Model\JournalArgumentProbe::exercise();
                 break;
             case 'backend-reads':
                 $result['heading'] = $this->backend->getValue('application_blog/backend/heading');

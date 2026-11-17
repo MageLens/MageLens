@@ -20,6 +20,10 @@ function pluginCallback(item, area, key) {
 const cases = new Set(['baseline', 'preference-resolution', 'observer-dispatch', 'default-read', 'backend-reads', 'store-alias-read', 'website-read', 'store-read', 'store-inherits-website',
     'store-inherits-default', 'website-inherits-default', 'database-override', 'value-reads', 'subtree-read',
     'missing-read', 'warmup-only']);
+const diFamilies = {
+    'virtual-types': {key: 'virtualTypes', title: 'Virtual type usage', event: 'virtual-type-resolved', action: 'resolved'},
+    arguments: {key: 'arguments', title: 'Constructor argument usage', event: 'argument-applied', action: 'applied'},
+};
 function merge(manifest, records, sources) {
     const declarations = new Map(), files = structuredClone(manifest.files);
     for (const file of files) {
@@ -44,6 +48,13 @@ function merge(manifest, records, sources) {
     const preferenceMeasurement = Object.keys(manifest.preferences || {}).length > 0;
     const preferenceHook = records.some(record => record.preferenceHook === true);
     assert.ok(!preferenceMeasurement || preferenceHook, 'No functioning XML preference resolution hook observed');
+    const diTotals = {};
+    for (const [family, details] of Object.entries(diFamilies)) {
+        const enabled = Object.values(manifest.preferences || {}).some(area => Object.keys(area.diUsage?.eligible?.[family] || {}).length);
+        const hook = records.some(record => record.diUsageHooks?.[family] === true);
+        assert.ok(!enabled || hook, `No functioning XML ${details.title.toLowerCase()} hook observed`);
+        diTotals[family] = {total: 0, covered: 0, hook};
+    }
     const requests = [];
     const warnings = [];
     for (const record of records) {
@@ -86,6 +97,22 @@ function merge(manifest, records, sources) {
                     'Preference evidence does not match effective provenance');
                 outcome.hits = (outcome.hits || 0) + event.hits;
                 Object.assign(evidence, {area: event.area, requested: event.requested, binding: item.binding, resolved: outcome.resolved});
+            } else if (Object.hasOwn(diFamilies, item.family)) {
+                assert.equal(record.diUsageHooks?.[item.family], true, 'DI evidence without a functioning request hook');
+                assert.equal(event.type, diFamilies[item.family].event);
+                assert.deepEqual(Object.keys(event).sort(), ['area', 'hits', 'id', 'requested', 'type']);
+                assert.ok(typeof event.requested === 'string' && event.requested);
+                const outcome = item.areas[event.area];
+                const usage = manifest.preferences?.[event.area]?.diUsage;
+                assert.equal(outcome?.status, 'eligible', 'DI evidence for an ineligible area');
+                assert.equal(outcome.origin?.id, item.id, 'DI evidence does not match the source declaration');
+                assert.equal(usage?.eligible?.[item.family]?.[item.id], true, 'DI evidence does not match effective provenance');
+                if (item.family === 'virtual-types') {
+                    const route = Object.hasOwn(usage.virtualRoutes || {}, event.requested) ? usage.virtualRoutes[event.requested] : null;
+                    assert.ok(route?.ids.includes(item.id) && route.resolved === outcome.resolved, 'Virtual type evidence does not match the factory route');
+                }
+                outcome.hits = (outcome.hits || 0) + event.hits;
+                Object.assign(evidence, {area: event.area, requested: event.requested, binding: item.binding, resolved: outcome.resolved});
             } else if (item.family === 'plugins') {
                 assert.equal(record.pluginHook, true, 'Plugin evidence without a functioning request hook');
                 assert.equal(event.type, 'plugin-execute');
@@ -120,7 +147,7 @@ function merge(manifest, records, sources) {
         for (const item of file.declarations) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
             if (item.areas) {
-                const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals}[item.family];
+                const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals, ...diTotals}[item.family];
                 for (const [area, outcome] of Object.entries(item.areas)) {
                     outcome.hits ??= 0;
                     outcome.state = outcome.status === 'eligible' ? (outcome.hits ? 'covered' : 'uncovered') : 'unmeasured';
@@ -144,7 +171,7 @@ function merge(manifest, records, sources) {
                     }
                 }
             } else if (!item.supported) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
-            for (let line = item.startLine; line <= item.endLine; line++) {
+            for (let line = item.startLine; line <= (item.highlightEndLine ?? item.endLine); line++) {
                 const previous = file.lines[line];
                 const hits = (previous?.hits || 0) + item.hits;
                 const supported = item.supported || previous?.state === 'uncovered' || previous?.state === 'covered';
@@ -158,7 +185,8 @@ function merge(manifest, records, sources) {
     const covered = files.reduce((sum, file) => sum + file.covered, 0);
     return {schemaVersion: 1, run: manifest.run, manifest: manifest.id, complete: true, sourcesUnchanged: true,
         collectorErrors: [], observers: {...observerTotals, hook: observerHook}, plugins: {...pluginTotals, hook: pluginHook},
-        preferences: {...preferenceTotals, hook: preferenceHook}, total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
+        preferences: {...preferenceTotals, hook: preferenceHook},
+        ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])), total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
 }
 const style = 'body{font:15px system-ui;margin:32px;color:#172b3a}a{color:#086b68}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{padding:5px 10px;text-align:left;border-bottom:1px solid #ddd}.covered{background:#dcefe0}.uncovered{background:#fbdada}.unmeasured{background:#eee;color:#555}.neutral{color:#555}.line{display:block}small{display:block}a:focus-visible{outline:2px solid #086b68;outline-offset:3px}td,code,small,h1{overflow-wrap:anywhere}.preferences{max-width:75rem;line-height:1.35}.preference-list,.preference-areas{list-style:none;padding:0}.preference-list>li{padding:12px 0;border-top:1px solid #ddd}.preference-areas{margin-top:6px}.preference-areas li{padding:6px 10px;margin:2px 0;overflow-wrap:anywhere}.preference-areas span{display:block}.line:target{outline:2px solid #086b68;outline-offset:-2px}@media(max-width:480px){body{margin:16px}td,th{padding:5px}.di-details,.di-details tbody,.di-details tr,.di-details td{display:block}.di-details td{border-bottom:0}.di-details tr{border-bottom:1px solid #ddd}}';
 function page(title, body) { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>${style}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`; }
@@ -173,16 +201,21 @@ function typeName(name) {
 }
 function preferenceAreas(item, files, prefix) {
     const content = Object.entries(item.areas).map(([area, outcome]) => {
-        const status = outcome.status === 'eligible' ? (outcome.hits ? 'Resolved' : 'Uncovered') : `Unmeasured · ${outcome.status}`;
+        const status = outcome.status === 'eligible' ? (outcome.hits ? (item.family === 'arguments' ? 'Applied' : 'Resolved') : 'Uncovered') : `Unmeasured · ${outcome.status}`;
         const origin = outcome.origin;
         let details = '';
         if (outcome.resolved) details += `<span>Effective type ${typeName(outcome.resolved)}</span>`;
+        if (item.family === 'arguments' && outcome.hits) {
+            const types = [...new Set(item.evidence.filter(event => event.area === area).map(event => event.requested))].sort();
+            if (types.length) details += `<details><summary>Applied for ${types.length} requested ${types.length === 1 ? 'type' : 'types'}</summary>
+                ${types.map(type => `<span>${typeName(type)}</span>`).join('')}</details>`;
+        }
         if (outcome.status === 'overridden' && origin) {
             const label = `${origin.path} · ${lineLabel(origin)}`;
             const provider = files.has(origin.path)
                 ? `<a href="${escape(sourceHref(origin.path, origin.startLine, prefix))}">${escape(label)}</a>`
                 : escape(label);
-            if (outcome.effectiveReplacement !== outcome.resolved) {
+            if (outcome.effectiveReplacement && outcome.effectiveReplacement !== outcome.resolved) {
                 details += `<span>Effective binding to ${typeName(outcome.effectiveReplacement)}</span>`;
             }
             details += `<span>${files.has(origin.path) ? 'Effective source' : 'Effective source outside this report'} ${provider}</span>`;
@@ -208,6 +241,25 @@ function preferenceSection(result, files) {
         : '<p>No preference declarations found in the XML source inventory.</p>';
     return `<section class="preferences" aria-labelledby="preference-usage"><h2 id="preference-usage">Preference usage</h2>${content}</section>`;
 }
+function bindingLabel(item, linkedType = value => value) {
+    const binding = item.binding;
+    if (item.family === 'arguments') return `${linkedType(typeName(binding.declaringType))} · ${typeName('$' + binding.argument)}`;
+    return linkedType(typeName(binding.requested)) + (binding.replacement ? ' → ' + typeName(binding.replacement) : '');
+}
+function diSections(result, files) {
+    return Object.entries(diFamilies).map(([family, details]) => {
+        const {covered, total} = result[details.key] ?? {covered: 0, total: 0};
+        const rows = result.files.flatMap(file => file.declarations.filter(item => item.family === family).map(item =>
+            `<li>${bindingLabel(item)}<small><a href="${escape(sourceHref(file.path, item.startLine))}">${escape(file.path)} · ${lineLabel(item)}</a></small>
+                ${preferenceAreas(item, files, '')}</li>`));
+        const content = rows.length
+            ? `<p>${covered}/${total} eligible declaration–area pairs ${details.action}. These pairs sit outside the XML line totals.</p>
+                ${total ? '' : '<p>All inventoried declarations are unmeasured in the supported areas.</p>'}
+                <ul class="preference-list">${rows.join('')}</ul>`
+            : '<p>No matching declarations in the XML source inventory.</p>';
+        return `<section class="preferences" aria-labelledby="${family}-usage"><h2 id="${family}-usage">${details.title}</h2>${content}</section>`;
+    }).join('');
+}
 function writeReport(result, sources, directory = 'coverage/xml') {
     fs.mkdirSync(directory, {recursive: true});
     const directories = new Map([['', new Map()]]);
@@ -221,8 +273,8 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         }).join('');
         const prefix = '../'.repeat(file.path.split('/').length - 1);
         const details = file.declarations.map(item => {
-            if (item.family === 'preferences') {
-                return `<tr><td><a href="#L${item.startLine}">${typeName(item.binding.requested)}</a> → ${typeName(item.binding.replacement)}
+            if (item.family === 'preferences' || Object.hasOwn(diFamilies, item.family)) {
+                return `<tr><td>${bindingLabel(item, label => `<a href="#L${item.startLine}">${label}</a>`)}
                     <small>Original ${lineLabel(item)}</small></td><td>${preferenceAreas(item, files, prefix)}</td></tr>`;
             }
             const outcomes = item.areas
@@ -249,9 +301,9 @@ function writeReport(result, sources, directory = 'coverage/xml') {
     }
     for (const [name, entries] of directories) {
         const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
-        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or preference resolution. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
+        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
         fs.mkdirSync(path.join(directory, name), {recursive: true});
-        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files))));
+        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files))));
     }
     fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
 }

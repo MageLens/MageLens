@@ -10,4 +10,7 @@ License: see LICENSE in the repository root.
         <plugin name="journal_frontend" type="Application\Blog\Plugin\JournalBefore" sortOrder="23"/>
     </type>
     <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalFrontendPreference"/>
+    <virtualType name="Application\Blog\Model\JournalArgumentAlias" type="Application\Blog\Model\JournalArgumentProbe">
+        <arguments><argument name="label" xsi:type="string">frontend label</argument></arguments>
+    </virtualType>
 </config>

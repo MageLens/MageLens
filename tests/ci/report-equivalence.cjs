@@ -84,6 +84,12 @@ function preferenceOrigin(origin) {
     const source = /(?:^|\/)app\/etc\/di\.xml$/.test(file) ? 'app/etc/di.xml' : fileKey(file);
     return [origin.id, source, origin.startLine, origin.endLine, origin.fingerprint];
 }
+function diAreas(areas) {
+    return sort(Object.entries(object(areas)).map(([area, outcome]) =>
+        [area, outcome.status, outcome.state, hit(outcome.hits), digest(outcome.reason || ''),
+            preferenceOrigin(outcome.origin), outcome.effectiveReplacement == null ? null : digest(outcome.effectiveReplacement),
+            outcome.resolved == null ? null : digest(outcome.resolved)]));
+}
 function snapshot(directory) {
     const run = read(directory, 'run.json');
     const php = read(directory, 'php/coverage-summary.json');
@@ -111,6 +117,8 @@ function snapshot(directory) {
             observers: {total: count(xml.observers?.total), covered: count(xml.observers?.covered)},
             plugins: {total: count(xml.plugins?.total ?? 0), covered: count(xml.plugins?.covered ?? 0)},
             preferences: {total: count(xml.preferences?.total ?? 0), covered: count(xml.preferences?.covered ?? 0)},
+            virtualTypes: {total: count(xml.virtualTypes?.total ?? 0), covered: count(xml.virtualTypes?.covered ?? 0)},
+            arguments: {total: count(xml.arguments?.total ?? 0), covered: count(xml.arguments?.covered ?? 0)},
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
@@ -133,18 +141,25 @@ function snapshot(directory) {
                     } : {}),
                     ...(item.family === 'preferences' ? {
                         preference: [digest(item.binding.requested), digest(item.binding.replacement)],
-                        preferenceAreas: sort(Object.entries(object(item.areas)).map(([area, outcome]) =>
-                            [area, outcome.status, outcome.state, hit(outcome.hits), digest(outcome.reason || ''),
-                                preferenceOrigin(outcome.origin), outcome.effectiveReplacement === null ? null : digest(outcome.effectiveReplacement),
-                                outcome.resolved === null ? null : digest(outcome.resolved)]))
+                        preferenceAreas: diAreas(item.areas)
+                    } : {}),
+                    ...(item.family === 'virtual-types' ? {
+                        virtualType: [digest(item.binding.requested), digest(item.binding.replacement)],
+                        virtualTypeAreas: diAreas(item.areas)
+                    } : {}),
+                    ...(item.family === 'arguments' ? {
+                        argument: [digest(item.binding.declaringType), digest(item.binding.argument)],
+                        argumentAreas: diAreas(item.areas)
                     } : {}),
                     evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(event.type === 'observer-execute'
                         ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
                         : event.type === 'plugin-execute'
                             ? [event.type, event.area, digest(event.registration.target), digest(event.registration.name), ...pluginIdentity(event.callback)]
-                            : event.type === 'preference-resolved'
+                            : ['preference-resolved', 'virtual-type-resolved'].includes(event.type)
                                 ? [event.type, event.area, digest(event.requested), digest(event.binding.requested), digest(event.binding.replacement), digest(event.resolved)]
-                                : [event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
+                                : event.type === 'argument-applied'
+                                    ? [event.type, event.area, digest(event.requested), digest(event.binding.declaringType), digest(event.binding.argument)]
+                                    : [event.type, event.requestedScope.type, digest(event.requestedScope.code)])))].map(value => JSON.parse(value)))
                 })))
             }))},
         php: {totals: totals({total: php.total, covered: php.covered, percent: php.percent}),
@@ -179,6 +194,8 @@ function validateSnapshot(value, run, summary) {
     const observerTotals = {total: 0, covered: 0};
     const pluginTotals = {total: 0, covered: 0};
     const preferenceTotals = {total: 0, covered: 0};
+    const virtualTotals = {total: 0, covered: 0};
+    const argumentTotals = {total: 0, covered: 0};
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
         object(file.lines);
@@ -205,10 +222,11 @@ function validateSnapshot(value, run, summary) {
                     if (executed) pluginTotals.covered++;
                 }
             }
-            if (item.preference) {
-                assert.equal(array(item.preference).length, 2);
-                for (const part of item.preference) assert.match(part, /^[a-f0-9]{64}$/);
-                const areas = array(item.preferenceAreas);
+            for (const [kind, total] of [['preference', preferenceTotals], ['virtualType', virtualTotals], ['argument', argumentTotals]]) {
+                if (!item[kind]) continue;
+                assert.equal(array(item[kind]).length, 2);
+                for (const part of item[kind]) assert.match(part, /^[a-f0-9]{64}$/);
+                const areas = array(item[kind + 'Areas']);
                 assert.equal(new Set(areas.map(outcome => outcome[0])).size, areas.length);
                 for (const area of ['global', 'frontend', 'adminhtml']) assert.ok(areas.some(outcome => outcome[0] === area));
                 for (const [area, status, state, resolved, reason, origin, replacement, type] of areas) {
@@ -227,10 +245,12 @@ function validateSnapshot(value, run, summary) {
                     assert.equal(state, status === 'eligible' ? (resolved ? 'covered' : 'uncovered') : 'unmeasured');
                     if (status === 'eligible') {
                         assert.equal(origin?.[0], item.id);
-                        assert.equal(replacement, item.preference[1]);
-                        assert.ok(type);
-                        preferenceTotals.total++;
-                        if (resolved) preferenceTotals.covered++;
+                        if (kind !== 'argument') {
+                            assert.equal(replacement, item[kind][1]);
+                            assert.ok(type);
+                        }
+                        total.total++;
+                        if (resolved) total.covered++;
                     } else {
                         assert.equal(resolved, false);
                     }
@@ -257,6 +277,8 @@ function validateSnapshot(value, run, summary) {
     assert.deepEqual(value.xml.observers, observerTotals, 'Incomplete observer coverage inventory');
     assert.deepEqual(value.xml.plugins, pluginTotals, 'Incomplete plugin coverage inventory');
     assert.deepEqual(value.xml.preferences ?? {total: 0, covered: 0}, preferenceTotals, 'Incomplete preference coverage inventory');
+    assert.deepEqual(value.xml.virtualTypes ?? {total: 0, covered: 0}, virtualTotals, 'Incomplete virtual type coverage inventory');
+    assert.deepEqual(value.xml.arguments ?? {total: 0, covered: 0}, argumentTotals, 'Incomplete constructor argument coverage inventory');
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
         assert.match(line, /^[1-9]\d*$/, 'Invalid PHP line');
