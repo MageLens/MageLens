@@ -56,6 +56,24 @@ The combined report and badges are published after all tests pass and the covera
 
 If a process is forcibly terminated, check for active installation or coverage processes before removing `.runtime/workflow.lock` and rerunning the command. For the demo's patch recovery command, see [Cypress patch notes](../patches/cypress/README.md).
 
+## CLI tests
+
+Add CLI test files named `*.test.cjs` under `cli/e2e/` or a module's `Test/Cli/` directory. The same files run with either Cypress or Playwright when you use `./bin/run-coverage`.
+
+Import `test`, `magento` and `magerun` from `cli/support.cjs`. Both command helpers take an array of arguments and return `{code, stdout, stderr}`. Commands run in the Magento PHP container using the installed application's configuration. n98-magerun2 uses the database settings from `app/etc/env.php` and downloads a checksum-verified PHAR on first use.
+
+```js
+const assert = require('node:assert/strict');
+const {test, magento, magerun} = require('../support.cjs');
+
+test('reads Magento status and queries its database', async () => {
+    assert.match((await magento(['cache:status'])).stdout, /config/);
+    assert.match((await magerun(['db:query', 'SELECT 42 AS result'])).stdout, /42/);
+});
+```
+
+Use `{timeout: 30000}` to change the default 60-second command timeout, or `{expectedExitCode: 2}` to assert a specific error exit. Keep fixture writes scoped to an isolated installation and remove them during cleanup. Set `use_separate_process` to `0` for a cron test group to collect the job’s PHP execution in the same command. CLI test results are written to `coverage/cli-results.json`.
+
 ## Watch a test run
 
 Open `https://magelens.test:6080/`, then start `./bin/run-coverage` in your terminal. For both Cypress and Playwright, the noVNC viewer shows the browser running inside Docker during warm-up and tests. Between runs, it displays a waiting screen. Viewing is read-only, so watching a run does not send mouse or keyboard input to the tests. You do not need a browser installation or graphical desktop on the host to execute tests.
@@ -70,7 +88,7 @@ Both runners supply the missing Prototype dependency in Braintree 4.8's Admin se
 
 ## PHP coverage
 
-[PCOV](https://github.com/VitaliyBoyko/pcov) collects PHP execution from Magento HTTP requests made during the current browser run. CLI execution is outside the collection scope.
+[PCOV](https://github.com/VitaliyBoyko/pcov) collects PHP execution from Magento HTTP requests and CLI test commands in the current run.
 
 The PHP report measures executable lines. Unvisited files are included through static analysis with zero hits. `phpunit/php-code-coverage` generates HTML and Clover reports.
 
@@ -148,13 +166,13 @@ XML configuration coverage appears separately in `coverage/xml/index.html`, with
 
 Configuration coverage includes Backend value and flag reads and Magento's lowercase aliases for store codes. Explicit paths and subtrees requested through these accessors earn credit for their native values before plugins decorate the result. Internal storage reads and whole-configuration snapshots, including accessor calls without a path, grant no execution credit. Replacements that bypass the native getter provide no XML evidence. Empty-node conflicts and empty CDATA whose exact ownership cannot be preserved are shown as unmeasured.
 
-The XML report also shows synchronous HTTP `events.xml` observer execution for global, frontend, adminhtml, REST (`webapi_rest`), and GraphQL (`graphql`) configuration. An observer earns credit when Magento reaches its underlying `execute()` method. The report links each registration to its original lines and shows covered and uncovered outcomes by area, even for observers that share a PHP class. Disabled, overridden, ambiguous and unsupported registrations are outside the observer totals for the affected area. Browser warm-up contributes no observer hits. If the collector reports stale event configuration, rerun `./bin/run-coverage --refresh-cache`.
+The XML report also shows synchronous `events.xml` observer execution for global, frontend, adminhtml, REST (`webapi_rest`), GraphQL (`graphql`), and the CLI cron area (`crontab`). An observer earns credit when Magento reaches its underlying `execute()` method. The report links each registration to its original lines and shows covered and uncovered outcomes by area, even for observers that share a PHP class. Disabled, overridden, ambiguous and unsupported registrations are outside the observer totals for the affected area. Browser warm-up contributes no observer hits. If the collector reports stale event configuration, rerun `./bin/run-coverage --refresh-cache`.
 
-The XML report measures `di.xml` usage during authorized developer and production HTTP requests in those same configuration areas. Run `./bin/deploy-production` to switch the local application to production, run Magento’s compiler and static deployment, and record the DI source and generated metadata fingerprints. Then run `./bin/run-coverage`. Redeploy when the DI sources or compiled metadata change. Use `--refresh-assets` to rebuild production static files from current instrumented sources without recompiling DI.
+The XML report measures `di.xml` usage during developer and production HTTP requests and CLI tests in those same configuration areas. Run `./bin/deploy-production` to switch the local application to production, run Magento’s compiler and static deployment, and record the DI source and generated metadata fingerprints. Then run `./bin/run-coverage`. Redeploy when the DI sources or compiled metadata change. Use `--refresh-assets` to rebuild production static files from current instrumented sources without recompiling DI.
 
 **Plugin execution** counts registered before, around or after callbacks that Magento reaches. Around callbacks earn credit when they short-circuit, as do enclosing after callbacks that run. The source view links inherited registrations to their unique sources and shows the effective subject, intercepted method, phase, and registration outcomes by area.
 
-**Preference usage** shows which `di.xml` bindings Magento selected in a successful Object Manager resolution. It also includes attributable pre-resolved constructor dependencies in production. Shared returns count, and a chain can credit each binding with a unique original source. The report shows the requested and replacement types, the effective type, and the original lines. Unvisited bindings are uncovered, and overridden, inactive, ambiguous or unsupported bindings are unmeasured. Direct construction, isolated lookups, failed resolutions, CLI, background work, and warm-up grant no hits.
+**Preference usage** shows which `di.xml` bindings Magento selected in a successful Object Manager resolution. It also includes attributable pre-resolved constructor dependencies in production. Shared returns count, and a chain can credit each binding with a unique original source. The report shows the requested and replacement types, the effective type, and the original lines. Unvisited bindings are uncovered, and overridden, inactive, ambiguous or unsupported bindings are unmeasured. Direct construction, isolated lookups, failed resolutions, untracked background work, and warm-up grant no hits.
 
 **Virtual type usage** records virtual aliases selected when Magento’s factory successfully returns an object. Each uniquely sourced alias in a chain counts. Retrieving an already shared instance adds no factory evidence. An area declaration that only supplies arguments can contribute to argument usage while inheriting its virtual target.
 

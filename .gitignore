@@ -23,6 +23,7 @@
 !/bin/application-domain
 !/bin/badges.cjs
 !/bin/browser-navigation.cjs
+!/bin/cli-relay
 !/bin/common
 !/bin/compose-project
 !/bin/dependencies
@@ -40,6 +41,7 @@
 !/bin/report-index.cjs
 !/bin/report-xml.cjs
 !/bin/run-browser.cjs
+!/bin/run-cli.cjs
 !/bin/run-playwright.cjs
 !/bin/run-coverage
 !/bin/runner

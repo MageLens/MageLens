@@ -85,7 +85,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for file in bin docker patches cypress playwright tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
+for file in bin docker patches cypress playwright cli tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
     cp -a "$file" "$scratch/"
 done
 if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
@@ -202,6 +202,7 @@ fi
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs
     ./bin/runner node tests/verify-scenarios.cjs
+    ./bin/runner node tests/verify-cli-coverage.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
     if [[ "$runner" == cypress ]]; then

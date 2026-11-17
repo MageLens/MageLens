@@ -7,10 +7,23 @@
 
 declare(strict_types=1);
 
-// Installed only into this application's FPM SAPI. CLI setup and unrelated browser
-// requests cannot contribute to the report.
-$token = $_SERVER['HTTP_X_APPLICATION_COVERAGE'] ?? $_COOKIE['application_coverage'] ?? '';
-if (PHP_SAPI !== 'fpm-fcgi' || !is_string($token) || !preg_match('/^[a-f0-9]{32}$/D', $token)) {
+// FPM is configured at image build time. CLI collection is enabled only for
+// the specific Magento process started by the test command executor.
+$commandId = $tool = null;
+if (PHP_SAPI === 'cli') {
+    $invocation = getenv('MAGELENS_CLI_COVERAGE', true);
+    if (!is_string($invocation) || !preg_match('/^([a-f0-9]{32}):([a-f0-9]{32}):(magento|magerun)$/D', $invocation, $matches)) {
+        return;
+    }
+    [, $token, $commandId, $tool] = $matches;
+    // Child commands are outside this invocation and must not replace its record.
+    putenv('MAGELENS_CLI_COVERAGE');
+} elseif (PHP_SAPI === 'fpm-fcgi') {
+    $token = $_SERVER['HTTP_X_APPLICATION_COVERAGE'] ?? $_COOKIE['application_coverage'] ?? '';
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{32}$/D', $token)) {
+        return;
+    }
+} else {
     return;
 }
 require_once __DIR__ . '/collection.php';
@@ -20,7 +33,7 @@ if ($active === false || !hash_equals(trim($active), $token)) {
     fclose($collectionLock);
     return;
 }
-$record = '/coverage/raw/php/' . $token . '/' . bin2hex(random_bytes(16));
+$record = '/coverage/raw/php/' . $token . '/' . ($commandId ?? bin2hex(random_bytes(16)));
 if (!function_exists('pcov\\export')) {
     file_put_contents($record . '.error', 'VitaliyBoyko PCOV native export is unavailable');
     return;
@@ -34,9 +47,9 @@ try {
     return;
 }
 pcov\start();
-// Retain the shared lock until request shutdown. Reporting takes an exclusive
+// Retain the shared lock until process shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
-register_shutdown_function(static function () use ($record, $token, $state, $collectionLock): void {
+register_shutdown_function(static function () use ($record, $token, $state, $collectionLock, $commandId, $tool): void {
     pcov\stop();
     try {
         $xmlRecord = \MageLens\XmlCoverage\Recorder::finish();
@@ -49,12 +62,15 @@ register_shutdown_function(static function () use ($record, $token, $state, $col
         if (!chmod($record . '.pcov', 0644)) {
             throw new RuntimeException('Cannot make the request record readable by the reporting container');
         }
-        file_put_contents($record . '.json', json_encode([
-            'xml' => $xmlRecord,
-            'run' => $token,
+        $origin = $commandId === null ? [
             'uri' => $_SERVER['REQUEST_URI'],
             'method' => $_SERVER['REQUEST_METHOD'],
             'status' => http_response_code(),
+        ] : ['commandId' => $commandId, 'tool' => $tool];
+        file_put_contents($record . '.json', json_encode([
+            'xml' => $xmlRecord,
+            'run' => $token,
+            ...$origin,
             'mode' => $result['mode'],
             'cache' => $result['cache'] ?? 'bypass',
             'reason' => $result['reason'],

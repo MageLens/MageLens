@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 use Magento\Framework\App\Area;
+use Magento\Framework\App\Cron;
 use Magento\Framework\App\Http;
 use Magento\Framework\App\StaticResource;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
@@ -118,6 +119,7 @@ final class Preferences
         return match ($method) {
             [DeveloperEnvironment::class, 'configureObjectManager'], [CompiledEnvironment::class, 'configureObjectManager'] => 'bootstrap',
             [Http::class, 'launch'] => 'http',
+            [Cron::class, 'launch'] => 'cron',
             [StaticResource::class, 'launch'] => 'static',
             [Area::class, '_initConfig'] => 'area',
             default => null,

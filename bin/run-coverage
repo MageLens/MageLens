@@ -23,7 +23,7 @@ for option in "$@"; do
             cat <<'HELP'
 Usage: ./bin/run-coverage [options]
 
-Run the selected browser suite and create fresh coverage reports using the running environment.
+Run the selected browser suite and shared CLI tests, then create fresh coverage reports using the running environment.
 
   --start           Start stopped application services before the run
   --refresh-cache   Clean Magento caches (for example after layout/config changes)
@@ -137,6 +137,8 @@ dc exec -T phpfpm php /application/docker/php/manifest.php
 dc exec -T phpfpm php /application/docker/php/collection.php start
 say "Running the full $runner suite (preparation: ${SECONDS}s)"
 dc exec -T runner node "$browser_script"
+say 'Running shared Magento CLI tests'
+"$ROOT/bin/cli-relay"
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
 dc exec -T phpfpm php /application/docker/php/xml-manifest.php check

@@ -22,15 +22,21 @@ const runner = run.runner || 'cypress';
 assert.ok(['cypress', 'playwright'].includes(runner));
 const label = runner === 'playwright' ? 'Playwright' : 'Cypress';
 const tests = read(`coverage/${runner}-results.json`);
-assert.equal(tests.run, run.id);
+const cli = read('coverage/cli-results.json');
+for (const results of [tests, cli]) {
+    assert.equal(results.run, run.id);
+    assert.equal(results.totalPassed, results.totalTests);
+    assert.equal(results.totalFailed, 0);
+    assert.equal(results.totalPending, 0);
+    assert.equal(results.totalSkipped, 0);
+}
 assert.ok(tests.totalTests > 0);
-assert.equal(tests.totalPassed, tests.totalTests);
-assert.equal(tests.totalFailed, 0);
-assert.equal(tests.totalPending, 0);
-assert.equal(tests.totalSkipped, 0);
 assert.equal(php.run, run.id);
 assert.ok(php.requests.length > 0, 'No current-run PHP requests were collected');
-if (php.collection === 'manifest') assert.ok(php.requests.every(request => request.mode === 'hit-only'), 'Expected validated native hit-only exports');
+assert.equal(php.commands.length, cli.commands, 'Missing or extra current-run CLI PHP coverage');
+if (php.collection === 'manifest') {
+    assert.ok([...php.requests, ...php.commands].every(record => record.mode === 'hit-only'), 'Expected validated native hit-only exports');
+}
 assert.equal(templates.schemaVersion, 2);
 assert.ok(templates.templates.every(template => template.path.endsWith('.html') || template.path.endsWith('.phtml') && template.kind === 'browser-phtml'), 'Only HTML and browser PHTML belong in template coverage');
 for (const [covered, total] of [[php.covered, php.total], [js.total.statements.covered, js.total.statements.total], [templates.lines.covered, templates.lines.total], [xml.covered, xml.total]]) {
@@ -55,10 +61,10 @@ for (const [type, metric] of Object.entries(metrics).filter(([type]) => type !==
 const generatedAt = new Date().toISOString();
 fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics,
     templateLimitations: templateLimitations(templates)}, null, 2));
-writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests});
+writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli});
 if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
     `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
 ).join('\n') + `\n\nFull ${label} run: \`${run.id}\` · ${generatedAt}`);
 fs.rmSync('coverage/.active-run', {force: true});
-console.log('Verified all reports, current HTTP collection and unchanged original sources.');
+console.log('Verified all reports, current PHP collection and unchanged original sources.');
 console.log(JSON.stringify(metrics, null, 2));

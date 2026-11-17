@@ -19,12 +19,12 @@ function templateLimitations(templates) {
     };
 }
 
-function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests}) {
+function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli}) {
     const runner = run.runner === 'playwright' ? 'Playwright' : 'Cypress';
     const reports = [
         ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines', description: `Runtime config value consumption and Admin field rendering. ${xml.warnings?.length || 0} measurement warnings; unsupported XML remains unmeasured.`}] : []),
         {key: 'php', covered: php.covered, total: php.total, unit: 'lines',
-            description: 'Executable PHP in .php and .phtml files; original source, without HTML or JavaScript lines.'},
+            description: 'Executable PHP lines from HTTP requests and Magento CLI commands.'},
         {key: 'js', covered: js.total.statements.covered, total: js.total.statements.total, unit: 'statements',
             description: 'Whole .js files executed in the browser.'},
         {key: 'templates', covered: templates.lines.covered, total: templates.lines.total, unit: 'template lines',
@@ -84,6 +84,7 @@ code { overflow-wrap: anywhere; }
 <body>
 <main>
 <span class="status">${runner} passed · ${tests.totalPassed}/${tests.totalTests} tests</span>
+${cli.totalTests ? `<span class="status">CLI passed · ${cli.totalPassed}/${cli.totalTests} tests</span>` : ''}
 <h1>MageLens coverage report</h1>
 <p class="intro">PHP, JavaScript, browser-template and XML configuration coverage from the same ${runner} run. Open a report to inspect individual files.</p>
 <div class="reports">

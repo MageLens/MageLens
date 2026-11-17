@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/cron_groups.xsd">
+    <group id="magelens_probe">
+        <schedule_generate_every>15</schedule_generate_every>
+        <schedule_ahead_for>1</schedule_ahead_for>
+        <schedule_lifetime>15</schedule_lifetime>
+        <history_cleanup_every>10</history_cleanup_every>
+        <history_success_lifetime>60</history_success_lifetime>
+        <history_failure_lifetime>60</history_failure_lifetime>
+        <use_separate_process>0</use_separate_process>
+    </group>
+</config>

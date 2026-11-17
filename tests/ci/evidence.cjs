@@ -5,9 +5,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const {browserTitles, cliTitles, verifyScenarios} = require('../verify-scenarios.cjs');
 const {cases} = require('./cases.cjs');
 const {snapshot} = require('./report-equivalence.cjs');
-const {execFileSync} = require('node:child_process');
 const {evidence: previewEvidence} = require('./dependency-previews.cjs');
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => key in value).map(key => [key, value[key]]));
 const blog = file => file.includes('/Application/Blog/');
@@ -32,6 +32,7 @@ function sanitizedCoverage(source) {
             ...(installation.runnerBuild ? {runnerBuild: pick(installation.runnerBuild, buildKeys)} : {})},
         'project-fixtures.json': {Application_Blog: {themePaths: read(path.join(source, 'project-fixtures.json')).Application_Blog.themePaths}},
         [`${runner}-results.json`]: testResults(results),
+        'cli-results.json': testResults(read(path.join(source, 'cli-results.json'))),
         'summary.json': pick(read(path.join(source, 'summary.json')), ['run', 'generatedAt', 'metrics']),
         'php/line-coverage.json': Object.fromEntries(Object.entries(read(path.join(source, 'php/line-coverage.json'))).filter(([file]) => blog(file))),
         'js/coverage-final.json': Object.fromEntries(Object.entries(read(path.join(source, 'js/coverage-final.json'))).filter(([file]) => blog(file)).map(([file, data]) =>
@@ -93,7 +94,7 @@ function writeEvidence() {
         fs.mkdirSync(`${directory}/coverage/xml`, {recursive: true});
         fs.writeFileSync(`${directory}/coverage/xml/coverage-summary.json`, JSON.stringify(complete.xml) + '\n');
         fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(complete) + '\n');
-        execFileSync(process.execPath, ['tests/verify-scenarios.cjs', `${directory}/coverage`], {stdio: 'inherit'});
+        verifyScenarios(`${directory}/coverage`);
         report.passed = !report.diagnostics && !report.previewError && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {
         // Errors can contain arbitrary subprocess output; publish a fixed diagnostic.
@@ -113,7 +114,7 @@ function writeEvidence() {
         throw new Error(report.incomplete);
     }
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        `## ${entry.id}\n\n${report.passed ? `PASS: ${report.counts.totalPassed}/${report.counts.totalTests} acceptance scenarios and all harness checks.` : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
+        `## ${entry.id}\n\n${report.passed ? `PASS: ${browserTitles.length} browser and ${cliTitles.length} CLI scenarios, and all harness checks.` : 'INCOMPLETE: full matrix cannot pass.'}\n\nCommit: \`${report.sha}\`\n`);
     if (report.steps.e2e?.outcome === 'success' && !report.passed) process.exitCode = 1;
 }
 module.exports = {sanitizedCoverage, testResults};

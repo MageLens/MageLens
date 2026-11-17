@@ -9,11 +9,11 @@ namespace MageLens\XmlCoverage;
 
 final class Xml
 {
-    public const HTTP_AREAS = ['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql'];
+    public const AREAS = ['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql', 'crontab'];
 
-    public static function enabledHttpAreas(array $registeredAreas): array
+    public static function enabledAreas(array $registeredAreas): array
     {
-        return array_values(array_intersect(self::HTTP_AREAS, ['global', ...$registeredAreas]));
+        return array_values(array_intersect(self::AREAS, ['global', ...$registeredAreas]));
     }
 
     public static function document(string $source): \DOMDocument

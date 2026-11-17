@@ -21,7 +21,7 @@ use Magento\Framework\ObjectManager\InterceptableValidator;
 
 final class PluginManifest
 {
-    public const AREAS = Xml::HTTP_AREAS;
+    public const AREAS = Xml::AREAS;
     public const PHASES = [DefinitionInterface::LISTENER_BEFORE => 'before', DefinitionInterface::LISTENER_AROUND => 'around',
         DefinitionInterface::LISTENER_AFTER => 'after'];
     private const ORIGIN = 'magelens-origin-';
@@ -423,7 +423,7 @@ final class PluginManifest
             InlinePluginManifest::prepare($om, $runtime);
         }
         foreach ($items as &$item) {
-            $item['areas'] ??= [$item['declaredScope']['type'] => self::outcome('unsupported', 'Configuration scope is outside HTTP plugin coverage')];
+            $item['areas'] ??= [$item['declaredScope']['type'] => self::outcome('unsupported', 'Configuration scope is outside plugin coverage')];
             foreach ($item['areas'] as &$outcome) {
                 if ($outcome['status'] !== 'eligible' && !empty($outcome['unmeasuredCallbacks'])) {
                     $outcome['status'] = 'unsupported';
