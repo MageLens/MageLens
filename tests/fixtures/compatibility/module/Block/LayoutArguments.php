@@ -28,6 +28,9 @@ class LayoutArguments extends Template
     protected function _beforeToHtml()
     {
         $this->setData('replaced', 'from-php');
+        $this->setData('equal_replaced', 'same');
+        $this->unsetData('unset_nullable');
+        $this['offset_replaced'] = 'same';
         return parent::_beforeToHtml();
     }
 
@@ -39,7 +42,7 @@ class LayoutArguments extends Template
         $urlPath = parse_url((string) $this->getData('route'), PHP_URL_PATH);
 
         return [
-            'string' => $this->getData('literal') === 'fixture-string',
+            'string' => $this->getDataByKey('literal') === 'fixture-string',
             'number' => $this->getData('amount') === '42',
             'boolean' => $this->getData('flag') === false,
             'null' => $this->hasData('nullable') && $this->getData('nullable') === null,
@@ -59,6 +62,11 @@ class LayoutArguments extends Template
                 && $this->getData('untranslated') === 'MageLens layout translation marker',
             'actions' => $this->calls === ['base', 'configured:argument', 'overlay', 'equal'],
             'late-replacement' => $this->getData('replaced') === 'from-php',
+            'equal-replacement' => $this->getData('equal_replaced') === 'same',
+            'unset-value' => !$this->hasData('unset_nullable') && $this->getData('unset_nullable') === null,
+            'offset-replacement' => $this->getData('offset_replaced') === 'same',
+            'offset-read' => $this['offset_read'] === 'array-access',
+            'array-path' => $this->getData('matrix/nested/surviving') === '7',
         ];
     }
 }

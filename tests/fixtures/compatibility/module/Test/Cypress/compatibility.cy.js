@@ -73,7 +73,8 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('#layout-wireframe [data-layout-structure="config-allowed"]').should('have.text', 'config-allowed');
         cy.get('#layout-wireframe [data-layout-structure="config-denied"]').should('not.exist');
         for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
-            'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
+            'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement',
+            'equal-replacement', 'unset-value', 'offset-replacement', 'offset-read', 'array-path']) {
             cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
         }
         cy.title().should('equal', 'Effective fixture title');

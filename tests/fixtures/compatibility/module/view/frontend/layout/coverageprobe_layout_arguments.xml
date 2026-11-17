@@ -52,6 +52,10 @@ License: see LICENSE in the repository root.
                     <argument name="untranslated" xsi:type="string" translate="false">MageLens layout translation marker</argument>
                     <argument name="unread" xsi:type="string">unused-by-template</argument>
                     <argument name="replaced" xsi:type="string">from-xml</argument>
+                    <argument name="equal_replaced" xsi:type="string">same</argument>
+                    <argument name="unset_nullable" xsi:type="null"/>
+                    <argument name="offset_replaced" xsi:type="string">same</argument>
+                    <argument name="offset_read" xsi:type="string">array-access</argument>
                 </arguments>
             </block>
         </referenceContainer>

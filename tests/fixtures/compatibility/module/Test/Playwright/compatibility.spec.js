@@ -64,7 +64,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(wireframe.locator('[data-layout-structure="config-allowed"]')).toHaveText('config-allowed');
     await expect(wireframe.locator('[data-layout-structure="config-denied"]')).toHaveCount(0);
     for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
-        'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
+        'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement',
+        'equal-replacement', 'unset-value', 'offset-replacement', 'offset-read', 'array-path']) {
         await expect(wireframe.locator(`[data-layout-argument="${effect}"]`)).toHaveText('verified');
     }
     await expect(page).toHaveTitle('Effective fixture title');
