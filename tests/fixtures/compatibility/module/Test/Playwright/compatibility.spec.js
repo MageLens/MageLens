@@ -71,6 +71,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('body')).toHaveClass(/\blayout-head-fixture\b/);
     await expect(page.locator('head meta[name="description"]')).toHaveAttribute('content', 'Effective fixture description');
     await expect(page.locator('head meta[name="magelens-layout"]')).toHaveAttribute('content', 'fixture metadata');
+    await expect(page.locator('head meta[name="magelens-replaced"]')).toHaveAttribute('content', 'same');
+    await expect(page.locator('body')).toHaveAttribute('data-layout-replaced', 'same');
     await expect(page.locator('head link[href*="/css/layout-head.css"]')).toHaveAttribute('media', 'screen');
     await expect(page.locator('head link[href*="/css/layout-removed.css"], head link[href*="/css/layout-absent.css"]')).toHaveCount(0);
     await expect(page.locator('head script[src*="/js/layout-head.js"]')).toHaveAttribute('defer', 'defer');
@@ -84,4 +86,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/component/');
     await expect(page.locator('#layout-component .entry-edit')).toHaveAttribute('data-bind', "scope: 'magelens_layout_ui.areas'");
     await expect(page.locator('[data-layout-ui-proof]')).toHaveText('verified');
+    await page.goto('/coverageprobe/grammar/');
+    await expect(page.locator('[data-layout-grammar="serviceurl"], [data-layout-grammar="const"]')).toHaveText(['applied', 'applied']);
+    await expect(page.locator('[data-layout-grammar="configurable"]')).toHaveText('generator-error');
+    await expect(page.locator('[data-layout-grammar="cachefalse"], [data-layout-grammar="cacheremoved"], [data-layout-grammar="cachezero"]')).toHaveText(['verified', 'verified', 'verified']);
 });

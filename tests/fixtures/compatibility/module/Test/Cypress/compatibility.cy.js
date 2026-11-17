@@ -80,6 +80,8 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('body').should('have.class', 'layout-head-fixture');
         cy.get('head meta[name="description"]').should('have.attr', 'content', 'Effective fixture description');
         cy.get('head meta[name="magelens-layout"]').should('have.attr', 'content', 'fixture metadata');
+        cy.get('head meta[name="magelens-replaced"]').should('have.attr', 'content', 'same');
+        cy.get('body').should('have.attr', 'data-layout-replaced', 'same');
         cy.get('head link[href*="/css/layout-head.css"]').should('have.length', 1).and('have.attr', 'media', 'screen');
         cy.get('head link[href*="/css/layout-removed.css"], head link[href*="/css/layout-absent.css"]').should('not.exist');
         cy.get('head script[src*="/js/layout-head.js"]').should('have.attr', 'defer', 'defer');
@@ -93,5 +95,12 @@ describe('Magento storefront coverage compatibility', () => {
         cy.visit('/coverageprobe/component/');
         cy.get('#layout-component .entry-edit').should('have.attr', 'data-bind', "scope: 'magelens_layout_ui.areas'");
         cy.get('[data-layout-ui-proof]').should('have.text', 'verified');
+        cy.visit('/coverageprobe/grammar/');
+        cy.get('[data-layout-grammar="serviceurl"]').should('have.text', 'applied');
+        cy.get('[data-layout-grammar="const"]').should('have.text', 'applied');
+        cy.get('[data-layout-grammar="configurable"]').should('have.text', 'generator-error');
+        for (const entry of ['cachefalse', 'cacheremoved', 'cachezero']) {
+            cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'verified');
+        }
     });
 });

@@ -15,6 +15,11 @@ License: see LICENSE in the repository root.
                 <action method="markArgumentAction" ifconfig="magelens_layout_fixture/disabled/action">
                     <argument name="marker" xsi:type="string">suppressed</argument>
                 </action>
+                <action method="acceptConfiguredArgument">
+                    <argument name="source" xsi:type="configurableObject">
+                        <argument name="class" xsi:type="string">MageLens\Compatibility\Model\LayoutArgumentSource</argument>
+                    </argument>
+                </action>
                 <arguments>
                     <argument name="literal" xsi:type="string">fixture-string</argument>
                     <argument name="amount" xsi:type="number">42</argument>

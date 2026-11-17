@@ -14,6 +14,7 @@ License: see LICENSE in the repository root.
         <title>Original fixture title</title>
         <meta name="description" content="Original fixture description"/>
         <meta name="magelens-layout" content="fixture metadata"/>
+        <meta name="magelens-replaced" content="same"/>
         <css src="MageLens_Compatibility::css/layout-head.css" media="print"/>
         <css src="MageLens_Compatibility::css/layout-removed.css"/>
         <script src="MageLens_Compatibility::js/layout-head.js" defer="defer"/>
@@ -23,5 +24,6 @@ License: see LICENSE in the repository root.
     <body>
         <attribute name="data-layout-body" value="fixture"/>
         <attribute name="class" value="layout-head-fixture"/>
+        <attribute name="data-layout-replaced" value="same"/>
     </body>
 </page>

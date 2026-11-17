@@ -20,6 +20,11 @@ class LayoutArguments extends Template
         $this->calls[] = $marker;
     }
 
+    public function acceptConfiguredArgument(LayoutArgumentSource $source): void
+    {
+        $this->calls[] = $source->join('configured', 'argument');
+    }
+
     protected function _beforeToHtml()
     {
         $this->setData('replaced', 'from-php');
@@ -52,7 +57,7 @@ class LayoutArguments extends Template
             'text-updater' => $this->getData('text_with_updater') === 'fixture',
             'translation' => $this->getData('translated') === 'MageLens translated marker'
                 && $this->getData('untranslated') === 'MageLens layout translation marker',
-            'actions' => $this->calls === ['base', 'overlay', 'equal'],
+            'actions' => $this->calls === ['base', 'configured:argument', 'overlay', 'equal'],
             'late-replacement' => $this->getData('replaced') === 'from-php',
         ];
     }

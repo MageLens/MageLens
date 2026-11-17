@@ -9,5 +9,6 @@ License: see LICENSE in the repository root.
     <body>
         <referenceBlock name="magelens.layout.restored" remove="false"/>
         <referenceContainer name="magelens.layout.left" htmlClass="layout-effective"/>
+        <referenceBlock name="magelens.layout.anchor" class="Magento\Framework\View\Element\Template" group="effective-group"/>
     </body>
 </page>

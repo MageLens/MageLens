@@ -17,7 +17,7 @@ License: see LICENSE in the repository root.
             </container>
             <container name="magelens.layout.right" htmlTag="section" htmlId="layout-right">
                 <container name="magelens.layout.right.nested" htmlTag="div" htmlId="layout-nested">
-                    <block class="Magento\Framework\View\Element\Template" name="magelens.layout.anchor" as="anchor-alias" template="MageLens_Compatibility::layout-structure.phtml"/>
+                    <block class="Magento\Framework\View\Element\Template" name="magelens.layout.anchor" as="anchor-alias" group="original-group" ttl="17" template="MageLens_Compatibility::layout-structure.phtml"/>
                 </container>
             </container>
             <container name="magelens.layout.removed" htmlTag="section" htmlId="layout-removed"/>

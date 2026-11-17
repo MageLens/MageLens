@@ -26,6 +26,10 @@ class LayoutStructure extends Template
             && !$layout->getParentName('magelens.layout.absent')
             && !$layout->getBlock('magelens.layout.moved-removed')
             && $layout->getBlock('magelens.layout.restored') instanceof Template
-            && $layout->getBlock('magelens.layout.hidden') instanceof Template;
+            && $layout->getBlock('magelens.layout.hidden') instanceof Template
+            && $layout->getBlock('magelens.layout.anchor') instanceof Template
+            && $layout->getBlock('magelens.layout.anchor')->getTtl() === 17
+            && $layout->getGroupChildNames($right, 'effective-group') === ['magelens.layout.anchor']
+            && $layout->getGroupChildNames($right, 'original-group') === [];
     }
 }
