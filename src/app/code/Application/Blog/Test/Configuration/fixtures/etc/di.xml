@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <type name="Application\Blog\Model\JournalPluginSubjectInterface">
+        <plugin name="journal_shared"
+                type="Application\Blog\Plugin\JournalBefore" sortOrder="10"/>
+    </type>
+    <type name="Application\Blog\Model\JournalPluginSubject">
+        <plugin name="journal_outer_after" type="Application\Blog\Plugin\JournalAfter" sortOrder="5"/>
+        <plugin name="journal_duplicate" type="Application\Blog\Plugin\JournalBefore" sortOrder="20"/>
+        <plugin name="journal_disabled" type="Application\Blog\Plugin\JournalBefore" sortOrder="21"/>
+        <plugin name="journal_external" type="Application\Blog\Plugin\JournalBefore" sortOrder="22"/>
+        <plugin name="journal_short" type="Application\Blog\Plugin\JournalAround" sortOrder="30"/>
+        <plugin name="journal_inner_after" type="Application\Blog\Plugin\JournalAfter" sortOrder="40"/>
+        <plugin name="journal_warm" type="Application\Blog\Plugin\JournalWarm"/>
+    </type>
+</config>

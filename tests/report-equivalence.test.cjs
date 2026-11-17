@@ -153,3 +153,52 @@ test('observer equivalence retains registration, per-area outcomes, source and w
     matrix[1].snapshot = snapshot(directory);
     assert.equal(compareThemes(matrix, cases).passed, false);
 });
+
+test('plugin equivalence preserves phase, registration and outcomes while normalizing repeat counts', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json'), [file] = xml.files;
+    const registration = {target: 'SECRET\\Contract', name: 'SECRET_registration'};
+    const callback = {subject: 'SECRET\\Subject', method: 'save', phase: 'before'};
+    const plugin = {id: 'plugin', family: 'plugins', path: 'SECRET declaration', declaredScope: {type: 'global', code: ''},
+        startLine: 3, endLine: 4, supported: true, effective: true, state: 'covered', registration,
+        areas: {frontend: {status: 'eligible', state: 'covered', hits: 1, callbacks: {key: {...callback, state: 'covered', hits: 1}}},
+            adminhtml: {status: 'ambiguous', state: 'unmeasured', hits: 0, callbacks: [], reason: 'SECRET reason'}},
+        evidence: [{type: 'plugin-execute', area: 'frontend', registration, callback, request: 'SECRET request'}]};
+    file.declarations.push(plugin);
+    xml.plugins = {total: 1, covered: 1, hook: true};
+    xml.warnings.push({path: file.path, declaration: plugin.id, area: 'adminhtml', reason: 'SECRET reason'});
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    plugin.areas.frontend.hits = plugin.areas.frontend.callbacks.key.hits = 99;
+    plugin.evidence.push({...plugin.evidence[0], request: 'repeat'});
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    for (const mutate of [
+        item => {item.registration.name = 'Different';},
+        item => {item.areas.frontend.callbacks.key.phase = 'around';},
+        item => {item.areas.frontend.callbacks.key.ambiguousEntry = true;},
+        item => {item.areas.adminhtml.status = 'unsupported';}
+    ]) {
+        const changed = structuredClone(xml);
+        mutate(changed.files[0].declarations.at(-1));
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+    write('xml/coverage.json', xml);
+    const withoutGeneratorWarning = snapshot(directory);
+    const warning = {path: file.path, declaration: plugin.id, area: 'frontend',
+        reason: 'SECRET Subject::stream (around) — Generator callback bodies execute on iteration outside synchronous plugin coverage'};
+    xml.warnings.push(warning);
+    write('xml/coverage.json', xml);
+    const withGeneratorWarning = snapshot(directory);
+    const matrix = reports(withoutGeneratorWarning);
+    matrix[1].snapshot = withGeneratorWarning;
+    assert.equal(compareThemes(matrix, cases).passed, false);
+    assert.doesNotMatch(JSON.stringify(withGeneratorWarning), /SECRET/);
+    xml.plugins.total = 0;
+    write('xml/coverage.json', xml);
+    assert.throws(() => snapshot(directory), /Incomplete plugin coverage inventory/);
+});

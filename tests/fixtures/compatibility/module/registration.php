@@ -12,3 +12,4 @@
 \Magento\Framework\Component\ComponentRegistrar::register(\Magento\Framework\Component\ComponentRegistrar::MODULE,
     'MageLens_ObserverOverride', __DIR__ . '/Test/ObserverOverride');
 require __DIR__ . '/Test/ObserverOverride/ExternalObserver.php';
+require __DIR__ . '/Test/ObserverOverride/ExternalPlugin.php';

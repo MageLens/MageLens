@@ -5,7 +5,7 @@
 // Shared real HTTP expectations for both pinned browser runners.
 const journeys = [
     ['baseline', {}],
-    ['observer-dispatch', {hits: 2, external: true}],
+    ['observer-dispatch', {hits: 2, external: true, plugin: 'short:startbbxb|after'}],
     ['default-read', {heading: 'Journal'}],
     ['backend-reads', {heading: 'Backend journal', enabled: true}],
     ['store-alias-read', {heading: 'Website journal', lowercase: 'Website journal'}],

@@ -11,8 +11,11 @@ use Magento\Framework\Event\{Observer, ObserverInterface};
 
 class AdminJournalProbe implements ObserverInterface
 {
+    public function __construct(private \Application\Blog\Model\JournalPluginSubject $pluginSubject) {}
+
     public function execute(Observer $observer): void
     {
         $observer->getData('response')->setHeader('X-MageLens-Admin-Observer', 'executed', true);
+        $observer->getData('response')->setHeader('X-MageLens-Admin-Plugin', $this->pluginSubject->probe('start'), true);
     }
 }

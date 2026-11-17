@@ -45,7 +45,10 @@ describe('Blog configuration', () => {
         cy.get('#application_blog_display_heading').should('be.visible');
         cy.intercept({method: 'GET', url: '**/system_config/edit/**', times: 1}).as('reloadSettings');
         cy.reload();
-        cy.wait('@reloadSettings').its('response.headers.x-magelens-admin-observer').should('equal', 'executed');
+        cy.wait('@reloadSettings').its('response.headers').should('include', {
+            'x-magelens-admin-observer': 'executed',
+            'x-magelens-admin-plugin': 'short:startbbbb|after|after'
+        });
         cy.get('#application_blog_display_heading').should('be.visible').and('have.value', 'Journal');
     });
 });

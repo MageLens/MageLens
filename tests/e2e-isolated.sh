@@ -93,7 +93,7 @@ if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
 fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
-cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php "$scratch/docker/php/e2e/"
+cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -164,6 +164,14 @@ fi
     mkdir -p coverage
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-observers.test.php
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php /application/docker/php/e2e/xml-plugins.test.php
+    if [[ "$platform" == mageos ]]; then
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-plugins.test.php inline
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-plugins.test.php inline stale-inline
+    fi
     ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage

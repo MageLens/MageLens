@@ -7,7 +7,8 @@
 declare(strict_types=1);
 require_once __DIR__ . '/xml-data.php';
 require_once __DIR__ . '/xml-observer-manifest.php';
-use MageLens\XmlCoverage\{Xml, ObserverManifest};
+require_once __DIR__ . '/xml-plugin-manifest.php';
+use MageLens\XmlCoverage\{Xml, ObserverManifest, PluginManifest};
 
 function xmlFingerprint($om): string
 {
@@ -36,6 +37,7 @@ function prepareXmlManifests($om, array $run): array
             (bool) preg_match('~/etc/config\.xml$~', $path) => 'config',
             (bool) preg_match('~/etc/adminhtml/system\.xml$~', $path) => 'system',
             (bool) preg_match('~/etc/(?:[^/]+/)?events\.xml$~', $path) => 'events',
+            (bool) preg_match('~/etc/(?:[^/]+/)?di\.xml$~', $path) => 'plugins',
             default => null,
         };
         $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
@@ -157,6 +159,8 @@ function prepareXmlManifests($om, array $run): array
     foreach ($stores->getStores(true) as $store) $scopes['stores'][(string) $store->getId()] = $store->getCode();
     $scopeCodes = [];
     foreach (['websites', 'stores'] as $type) $scopeCodes[$type] = array_fill_keys(array_keys($fresh[$type] ?? []), true);
+    [$plugins, $pluginProviders] = PluginManifest::prepare($om, $files, array_keys($run['sources']));
+    $providers += $pluginProviders;
     ksort($providers); ksort($files);
     // Public method shape guards. Unsupported versions fail preparation explicitly.
     foreach ([\Magento\Framework\App\Config::class => ['getValue', 'isSetFlag'],
@@ -170,6 +174,7 @@ function prepareXmlManifests($om, array $run): array
         [
             'run' => $run['id'],
             'observers' => $observers,
+            'plugins' => $plugins,
             'scopes' => $scopes,
             'scopeCodes' => $scopeCodes,
             'fieldHashes' => $fieldHashes,

@@ -27,7 +27,12 @@ if (!function_exists('pcov\\export')) {
 }
 $state = json_decode(file_get_contents('/coverage/collector.json'), true, flags: JSON_THROW_ON_ERROR);
 require_once '/application/docker/php/xml-hooks.php';
-startXmlHooks($token);
+try {
+    startXmlHooks($token);
+} catch (Throwable) {
+    file_put_contents($record . '.error', 'Cannot initialize XML runtime hooks');
+    return;
+}
 pcov\start();
 // Retain the shared lock until request shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
