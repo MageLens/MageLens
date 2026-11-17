@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <html>
+        <attribute name="data-layout-html" value="fixture"/>
+    </html>
+    <head>
+        <attribute name="data-layout-head" value="fixture"/>
+        <title>Original fixture title</title>
+        <meta name="description" content="Original fixture description"/>
+        <meta name="magelens-layout" content="fixture metadata"/>
+        <css src="MageLens_Compatibility::css/layout-head.css" media="print"/>
+        <css src="MageLens_Compatibility::css/layout-removed.css"/>
+        <script src="MageLens_Compatibility::js/layout-head.js" defer="defer"/>
+        <link src="https://example.invalid/layout-alternate" src_type="url" rel="alternate" hreflang="en-US"/>
+        <font src="fonts/MUI-Icons/MUI-Icons.woff2"/>
+    </head>
+    <body>
+        <attribute name="data-layout-body" value="fixture"/>
+        <attribute name="class" value="layout-head-fixture"/>
+    </body>
+</page>

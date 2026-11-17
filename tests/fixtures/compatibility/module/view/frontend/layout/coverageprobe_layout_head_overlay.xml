@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <head>
+        <title>Effective fixture title</title>
+        <meta name="description" content="Effective fixture description"/>
+        <css src="MageLens_Compatibility::css/layout-head.css" media="screen"/>
+        <remove src="MageLens_Compatibility::css/layout-removed.css"/>
+        <remove src="MageLens_Compatibility::css/layout-absent.css"/>
+    </head>
+</page>

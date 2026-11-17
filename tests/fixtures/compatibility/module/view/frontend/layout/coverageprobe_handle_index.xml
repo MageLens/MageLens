@@ -12,6 +12,8 @@ License: see LICENSE in the repository root.
     <update handle="coverageprobe_layout_structure_restore"/>
     <update handle="coverageprobe_layout_arguments"/>
     <update handle="coverageprobe_layout_arguments_overlay"/>
+    <update handle="coverageprobe_layout_head"/>
+    <update handle="coverageprobe_layout_head_overlay"/>
     <body>
         <referenceContainer name="magelens.layout.wireframe">
             <block class="MageLens\Compatibility\Block\LayoutRegistry" name="magelens.layout.handle.action" template="MageLens_Compatibility::layout-handle.phtml">

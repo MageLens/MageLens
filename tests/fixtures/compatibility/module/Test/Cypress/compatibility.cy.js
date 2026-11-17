@@ -71,6 +71,18 @@ describe('Magento storefront coverage compatibility', () => {
             'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
             cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
         }
+        cy.title().should('equal', 'Effective fixture title');
+        for (const element of ['html', 'head', 'body']) {
+            cy.get(element).should('have.attr', `data-layout-${element}`, 'fixture');
+        }
+        cy.get('body').should('have.class', 'layout-head-fixture');
+        cy.get('head meta[name="description"]').should('have.attr', 'content', 'Effective fixture description');
+        cy.get('head meta[name="magelens-layout"]').should('have.attr', 'content', 'fixture metadata');
+        cy.get('head link[href*="/css/layout-head.css"]').should('have.length', 1).and('have.attr', 'media', 'screen');
+        cy.get('head link[href*="/css/layout-removed.css"], head link[href*="/css/layout-absent.css"]').should('not.exist');
+        cy.get('head script[src*="/js/layout-head.js"]').should('have.attr', 'defer', 'defer');
+        cy.get('head link[href="https://example.invalid/layout-alternate"]').should('have.attr', 'rel', 'alternate');
+        cy.get('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]').should('have.length', 1);
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
     });

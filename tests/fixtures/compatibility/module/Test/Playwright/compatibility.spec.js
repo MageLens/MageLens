@@ -62,6 +62,18 @@ test('starts the next test with fresh state', async ({page}) => {
         'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
         await expect(wireframe.locator(`[data-layout-argument="${effect}"]`)).toHaveText('verified');
     }
+    await expect(page).toHaveTitle('Effective fixture title');
+    for (const element of ['html', 'head', 'body']) {
+        await expect(page.locator(element)).toHaveAttribute(`data-layout-${element}`, 'fixture');
+    }
+    await expect(page.locator('body')).toHaveClass(/\blayout-head-fixture\b/);
+    await expect(page.locator('head meta[name="description"]')).toHaveAttribute('content', 'Effective fixture description');
+    await expect(page.locator('head meta[name="magelens-layout"]')).toHaveAttribute('content', 'fixture metadata');
+    await expect(page.locator('head link[href*="/css/layout-head.css"]')).toHaveAttribute('media', 'screen');
+    await expect(page.locator('head link[href*="/css/layout-removed.css"], head link[href*="/css/layout-absent.css"]')).toHaveCount(0);
+    await expect(page.locator('head script[src*="/js/layout-head.js"]')).toHaveAttribute('defer', 'defer');
+    await expect(page.locator('head link[href="https://example.invalid/layout-alternate"]')).toHaveAttribute('rel', 'alternate');
+    await expect(page.locator('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]')).toHaveCount(1);
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
 });
