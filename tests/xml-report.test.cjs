@@ -348,6 +348,7 @@ test('layout structural and page-value reports require the correct native effect
         'body-class': 'layout-body-class-rendered',
         'body-class-name': 'layout-body-classes-cleared',
         'body-class-value': 'layout-body-class-rendered',
+        'file-override': 'layout-file-override-selected',
     };
     for (const [kind, type] of Object.entries(effects)) {
         const {manifest, record, sources} = fixture();
@@ -366,6 +367,10 @@ test('layout structural and page-value reports require the correct native effect
         const event = {id: 'effect', type, area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
         const covered = merge(manifest, [{...record, layoutHook: true, events: [event]}], sources);
         assert.equal(covered.files[1].declarations[0].state, 'covered', kind);
+        const displaced = merge(manifest, [{...record, layoutHook: true,
+            events: [{...event, type: 'layout-file-overridden'}]}], sources).files[1].declarations[0];
+        assert.equal(displaced.state, 'unmeasured', kind);
+        assert.equal(displaced.hits, 0, kind);
         assert.throws(() => merge(manifest, [{...record, layoutHook: true,
             events: [{...event, type: 'layout-template-executed'}]}], sources), kind);
         assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [event]}], sources), /Stale XML request/);

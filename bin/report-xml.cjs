@@ -26,6 +26,7 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'file-override': ['layout-file-override-selected', 'layout-file-override-unconfirmed'],
     'asset-order': ['layout-asset-group-applied', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
     'asset-condition': ['layout-asset-condition-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
     'body-class': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
@@ -70,7 +71,10 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
+for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden');
 const layoutDecisions = {
+    'layout-file-override-unconfirmed': 'The override source was selected without an attributable native file-list replacement.',
+    'layout-file-overridden': 'A selected native file-list replacement displaced this source in the effective theme.',
     'layout-asset-attributes-discarded': 'The native font renderer supplied its fixed preload attributes and discarded these XML attributes.',
     'layout-body-class-duplicate': 'The native body class assignment found this sanitized class already present.',
     'layout-body-class-canceled': 'An empty class assignment suppressed all scheduled XML body classes, including later additions.',

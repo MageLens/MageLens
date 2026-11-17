@@ -46,6 +46,8 @@ final class LayoutManifest
             $namedBlock = $element !== '' && in_array($node->tagName, ['block', 'referenceBlock'], true)
                 && in_array($fileType, ['page', 'generic'], true);
             $kind = match (true) {
+                in_array($fileType, ['page', 'generic'], true) && $index === 0
+                    && preg_match('~/layout/override/(?:base|theme)/~', $path) => 'file-override',
                 $namedBlock && $node->tagName === 'block' => 'block',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
                     && $node->tagName === 'container' && $element !== '' => 'container',
@@ -67,7 +69,8 @@ final class LayoutManifest
                 $fileType === 'page' && self::scalarArgument($node) => 'argument',
                 $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
                 $fileType === 'wireframe' && $index === 0 => 'wireframe',
-                $fileType === 'page' && $node->parentNode === $root && $node->tagName === 'update' && $element !== '' => 'include',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                    && $node->parentNode === $root && $node->tagName === 'update' && $element !== '' => 'include',
                 default => 'instruction',
             };
             $valueKind = $kind;
@@ -114,7 +117,7 @@ final class LayoutManifest
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',
-                    'condition-ifconfig', 'condition-aclResource', 'condition-acl'], true);
+                    'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override'], true);
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
                         'body-class', 'body-class-name', 'body-class-value'], true);

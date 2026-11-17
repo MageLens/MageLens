@@ -12,6 +12,8 @@ use Magento\Framework\Data\Structure as DataStructure;
 use Magento\Framework\Filesystem\File\Read;
 use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Framework\View\Element\Template;
+use Magento\Framework\View\File;
+use Magento\Framework\View\File\FileList;
 use Magento\Framework\View\Layout;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
 use Magento\Framework\View\Layout\GeneratorPool;
@@ -28,6 +30,7 @@ use Magento\Framework\View\TemplateEngine\Php;
 final class LayoutCoverage
 {
     private array $packages = [];
+    private array $replacingFiles = [];
     private array $entries = [];
     private array $handles = [];
     private array $pageBuilders = [];
@@ -85,6 +88,7 @@ final class LayoutCoverage
     {
         return [
             [Merge::class, '_loadFileLayoutUpdatesXml', $this->beginPackage(...), $this->completePackage(...)],
+            [FileList::class, 'replace', $this->beginFileReplacement(...), $this->completeFileReplacement(...)],
             [Read::class, 'readAll', null, $this->readFile(...)],
             [Merge::class, '_loadXmlString', null, $this->parseFile(...)],
             [Merge::class, '_fetchRecursiveUpdates', $this->beginEntry(...), $this->traverseEntry(...)],
@@ -130,7 +134,39 @@ final class LayoutCoverage
 
     private function beginPackage($merge, array $params, string $class): void
     {
-        if ($class === Merge::class) $this->packages[] = ['merge' => $merge, 'files' => [], 'pending' => null];
+        if ($class === Merge::class) $this->packages[] = ['merge' => $merge, 'files' => [], 'pending' => null, 'replacements' => []];
+    }
+
+    private static function viewFiles(FileList $list): array
+    {
+        static $files;
+        $files ??= new \ReflectionProperty(FileList::class, 'files');
+        return $files->getValue($list);
+    }
+
+    private function beginFileReplacement($list, array $params, string $class): void
+    {
+        if ($class !== FileList::class) return;
+        $index = array_key_last($this->packages);
+        $this->replacingFiles[] = $index === null ? null
+            : ['package' => $index, 'before' => self::viewFiles($list), 'incoming' => $params[0]];
+    }
+
+    private function completeFileReplacement($list, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== FileList::class) return;
+        $frame = array_pop($this->replacingFiles);
+        if ($error || !$frame || $frame['package'] !== array_key_last($this->packages)) return;
+        foreach (self::viewFiles($list) as $identifier => $file) {
+            $before = $frame['before'][$identifier] ?? null;
+            if (!$file instanceof File || !$before instanceof File || $file === $before
+                || !in_array($file, $frame['incoming'], true)) continue;
+            $index = $frame['package'];
+            $path = $file->getFilename();
+            $previous = $before->getFilename();
+            $displaced = $this->packages[$index]['replacements'][$previous] ?? [];
+            $this->packages[$index]['replacements'][$path] = array_values(array_unique([...$displaced, $previous]));
+        }
     }
 
     private function readFile($reader, array $params, $bytes, ?\Throwable $error, string $class): void
@@ -162,6 +198,7 @@ final class LayoutCoverage
             'handle' => basename($pending['path'], '.xml'),
             'hash' => hash('sha256', $xml->innerXml()),
             'targets' => $pending['source']['targets'] ?? [],
+            'replacements' => $this->packages[$index]['replacements'][$pending['path']] ?? [],
         ];
     }
 
@@ -173,14 +210,16 @@ final class LayoutCoverage
         $package = array_pop($this->packages);
         if ($error || !$xml instanceof Layout\Element || !$package || count($xml->children()) !== count($package['files'])) return;
         $entries = [];
+        $replacements = [];
         foreach ($xml->children() as $entry) {
             $file = $package['files'][count($entries)];
             $digest = hash('sha256', $entry->innerXml());
             if ($entry->getAttribute('id') !== $file['handle'] || $digest !== $file['hash']) return;
             $entries[dom_import_simplexml($entry)->getNodePath()] = $file['targets'];
+            if ($file['replacements']) $replacements[dom_import_simplexml($entry)->getNodePath()] = $file['replacements'];
         }
         $state = $this->merges[$merge] ?? [];
-        $state['package'] = ['root' => dom_import_simplexml($xml), 'entries' => $entries];
+        $state['package'] = ['root' => dom_import_simplexml($xml), 'entries' => $entries, 'replacements' => $replacements];
         $this->merges[$merge] = $state;
     }
 
@@ -199,6 +238,23 @@ final class LayoutCoverage
         $updates = [];
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $source = $package['entries'][$entry->getNodePath()] ?? [];
+            $replaced = $package['replacements'][$entry->getNodePath()] ?? [];
+            if (isset($source[0]['ids']['file-override'])) {
+                $theme = $merge->getTheme();
+                $this->event($source[0]['ids']['file-override'], $replaced
+                    ? 'layout-file-override-selected' : 'layout-file-override-unconfirmed',
+                    ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
+            }
+            if ($replaced) {
+                $theme = $merge->getTheme();
+                $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+                foreach ($replaced as $path) {
+                    $relative = str_starts_with($path, BP . '/') ? substr($path, strlen(BP) + 1) : '';
+                    foreach ($this->sources[$relative]['targets'] ?? [] as $target) {
+                        foreach ($target['ids'] as $id) $this->event($id, 'layout-file-overridden', $context);
+                    }
+                }
+            }
             $this->findWireframe($merge, $entry, $source[0]['ids']['wireframe'] ?? null);
             foreach ($entry->getElementsByTagName('*') as $index => $node) {
                 if (!$node->parentNode->isSameNode($entry) || strtolower($node->tagName) !== 'update'
