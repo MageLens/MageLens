@@ -60,6 +60,9 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...markers].map(element => element.textContent)).to.deep.equal(['repeat', 'nested', 'action']);
         });
         cy.get('#layout-wireframe [data-layout-registry]').should('have.text', 'MageLens fixture wireframe');
+        for (const effect of ['membership', 'override', 'equal', 'empty', 'cdata', 'translation-flag', 'page-type', 'page-type-equal']) {
+            cy.get(`#layout-wireframe [data-layout-registry-effect="${effect}"]`).should('have.text', 'verified');
+        }
         for (const effect of ['move', 'removal', 'nested-block', 'ignored-body']) {
             cy.get(`#layout-wireframe [data-layout-wireframe-proof="${effect}"]`).should('have.text', 'verified');
         }

@@ -11,11 +11,16 @@ namespace MageLens\Compatibility\Block;
 
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\View\Model\PageLayout\Config\BuilderInterface;
+use Magento\Framework\View\Layout\PageType\Config as PageTypeConfig;
 
 class LayoutRegistry extends Template
 {
-    public function __construct(Template\Context $context, private BuilderInterface $pageLayouts, array $data = [])
-    {
+    public function __construct(
+        Template\Context $context,
+        private BuilderInterface $pageLayouts,
+        private PageTypeConfig $pageTypes,
+        array $data = []
+    ) {
         parent::__construct($context, $data);
     }
 
@@ -27,6 +32,25 @@ class LayoutRegistry extends Template
             'removal' => !$layout->hasElement('magelens.layout.wireframe.removed'),
             'nested-block' => $layout->getBlock('magelens.layout.wireframe.nested-block') instanceof Template,
             'ignored-body' => !$layout->hasElement('magelens.layout.wireframe.ignored-body'),
+        ];
+    }
+
+    public function registryEffects(): array
+    {
+        $config = $this->pageLayouts->getPageLayoutsConfig();
+        $options = array_column($config->toOptionArray(), 'label', 'value');
+        $types = $this->pageTypes->getPageTypes();
+        return [
+            'membership' => $config->hasPageLayout('magelens_fixture') && !$config->hasPageLayout('magelens_registry_missing'),
+            'override' => ($options['magelens_registry_override'] ?? null) === 'Registry overlay',
+            'equal' => ($options['magelens_registry_equal'] ?? null) === 'Registry equal',
+            'empty' => ($options['magelens_registry_empty'] ?? null) === 'Registry retained',
+            'cdata' => ($options['magelens_registry_cdata'] ?? null) === '',
+            'translation-flag' => ($options['magelens_fixture'] ?? null) === 'MageLens fixture wireframe'
+                && (string) __('MageLens fixture wireframe') === 'Translated wireframe label',
+            'page-type' => ($types['magelens_page_type_fixture'] ?? null)?->getData('id') === 'magelens_page_type_fixture'
+                && $types['magelens_page_type_fixture']->getData('label') === 'Translated page type overlay',
+            'page-type-equal' => ($types['magelens_page_type_equal'] ?? null)?->getData('label') === 'Page type equal',
         ];
     }
 

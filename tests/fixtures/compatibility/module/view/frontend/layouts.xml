@@ -9,4 +9,8 @@ License: see LICENSE in the repository root.
     <layout id="magelens_fixture">
         <label translate="true">MageLens fixture wireframe</label>
     </layout>
+    <layout id="magelens_registry_override"><label>Registry base</label></layout>
+    <layout id="magelens_registry_equal"><label>Registry equal</label></layout>
+    <layout id="magelens_registry_empty"><label>Registry retained</label></layout>
+    <layout id="magelens_registry_cdata"><label>Registry CDATA base</label></layout>
 </page_layouts>

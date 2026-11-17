@@ -22,6 +22,9 @@ foreach (['app/code/MageLens/Compatibility/view', 'app/code/MageLens/LayoutOverl
         if ($file->getExtension() === 'xml') $files[] = $file->getPathname();
     }
 }
+foreach (['Compatibility', 'LayoutOverlay'] as $module) {
+    $files[] = BP . '/app/code/MageLens/' . $module . '/etc/frontend/page_types.xml';
+}
 sort($files);
 foreach ($files as $file) {
     $source = file_get_contents($file);
@@ -37,6 +40,7 @@ $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
+    ['disabled registry translation', 'urn:magento:framework:View/PageLayout/etc/layouts.xsd', '<page_layouts><layout id="fixture"><label translate="false">Fixture</label></layout></page_layouts>'],
     ['disabled output membership', $genericSchema, '<layout><container name="fixture" output="0"/></layout>'],
     ['asoc argument', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"asoc\"/></arguments></block></body></page>"],
     ['page standalone removal', $pageSchema, '<page><body><remove name="fixture"/></body></page>'],

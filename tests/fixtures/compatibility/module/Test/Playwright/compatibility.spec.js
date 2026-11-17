@@ -55,6 +55,9 @@ test('starts the next test with fresh state', async ({page}) => {
     const wireframe = page.locator('#layout-wireframe');
     await expect(wireframe.locator('[data-layout-handle]')).toHaveText(['repeat', 'nested', 'action']);
     await expect(wireframe.locator('[data-layout-registry]')).toHaveText('MageLens fixture wireframe');
+    for (const effect of ['membership', 'override', 'equal', 'empty', 'cdata', 'translation-flag', 'page-type', 'page-type-equal']) {
+        await expect(wireframe.locator(`[data-layout-registry-effect="${effect}"]`)).toHaveText('verified');
+    }
     for (const effect of ['move', 'removal', 'nested-block', 'ignored-body']) {
         await expect(wireframe.locator(`[data-layout-wireframe-proof="${effect}"]`)).toHaveText('verified');
     }
