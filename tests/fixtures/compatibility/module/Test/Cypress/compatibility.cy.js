@@ -133,6 +133,11 @@ describe('Magento storefront coverage compatibility', () => {
         for (const effect of ['alias', 'ordering', 'group', 'visibility', 'calls', 'cacheable', 'ttl', 'output']) {
             cy.get(`[data-layout-ui-effect="${effect}"]`).should('have.text', 'verified');
         }
+        for (const route of ['conditionmutation', 'readermutation']) {
+            cy.visit(`/coverageprobe/${route}/`);
+            cy.get('[data-layout-ui-proof]').should('have.text', 'verified');
+            cy.get('[data-layout-ui-effect="calls"]').should('have.text', 'verified');
+        }
         cy.visit('/coverageprobe/grammar/');
         cy.get('[data-layout-grammar="serviceurl"]').should('have.text', 'applied');
         cy.get('[data-layout-grammar="const"]').should('have.text', 'applied');

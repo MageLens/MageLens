@@ -122,6 +122,11 @@ test('starts the next test with fresh state', async ({page}) => {
     for (const effect of ['alias', 'ordering', 'group', 'visibility', 'calls', 'cacheable', 'ttl', 'output']) {
         await expect(page.locator(`[data-layout-ui-effect="${effect}"]`)).toHaveText('verified');
     }
+    for (const route of ['conditionmutation', 'readermutation']) {
+        await page.goto(`/coverageprobe/${route}/`);
+        await expect(page.locator('[data-layout-ui-proof]')).toHaveText('verified');
+        await expect(page.locator('[data-layout-ui-effect="calls"]')).toHaveText('verified');
+    }
     await page.goto('/coverageprobe/grammar/');
     await expect(page.locator('[data-layout-grammar="serviceurl"], [data-layout-grammar="const"]')).toHaveText(['applied', 'applied']);
     await expect(page.locator('[data-layout-grammar="configurable"]')).toHaveText('generator-error');
