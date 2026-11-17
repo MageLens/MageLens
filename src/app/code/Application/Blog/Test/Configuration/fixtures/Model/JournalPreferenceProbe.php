@@ -24,7 +24,7 @@ class JournalPreferenceProbe
         $failed = false;
         try {
             $om->create(__NAMESPACE__ . '\\JournalFailedPreference');
-        } catch (\ReflectionException $error) {
+        } catch (\DomainException) {
             $failed = true;
         }
         return ['shared' => $first === $second && $first === $chain && $first === $direct,
