@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
+const {formatPercent} = require('./badges.cjs');
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, character => ({
@@ -31,12 +32,13 @@ function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests})
     ];
     const rows = reports.map(report => {
         const metric = metrics[report.key];
-        const percent = metric.percent.toFixed(2);
+        const percent = formatPercent(metric.percent);
+        const track = metric.percent === null ? '' : `<div class="track" aria-hidden="true"><span style="width:${metric.percent.toFixed(2)}%"></span></div>`;
         return `<tr>
 <th scope="row"><a href="${report.key}/index.html">${escapeHtml(metric.label)} <span aria-hidden="true">↗</span></a><small>${report.description}</small></th>
 <td>${report.covered} / ${report.total}<small>${report.unit} covered</small></td>
 <td>${report.total - report.covered}<small>${report.unit} uncovered</small></td>
-<td><strong>${percent}%</strong><div class="track" aria-hidden="true"><span style="width:${percent}%"></span></div></td>
+<td><strong>${percent}</strong>${track}</td>
 </tr>`;
     }).join('\n');
     const javascript = fs.existsSync('coverage/javascript-summary.json') ? JSON.parse(fs.readFileSync('coverage/javascript-summary.json')) : null;

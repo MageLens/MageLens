@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const {sourceHashes} = require('./prepare.cjs');
-const {badge, cypressBadge, setBadgeSection} = require('./badges.cjs');
+const {badge, cypressBadge, setBadgeSection, formatPercent} = require('./badges.cjs');
 const {writeIndex, templateLimitations} = require('./report-index.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const run = read('coverage/run.json');
@@ -57,7 +57,7 @@ fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generated
     templateLimitations: templateLimitations(templates)}, null, 2));
 writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests});
 if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
-    `[![${metric.label}: ${metric.percent.toFixed(2)}%](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
+    `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
 ).join('\n') + `\n\nFull ${label} run: \`${run.id}\` · ${generatedAt}`);
 fs.rmSync('coverage/.active-run', {force: true});
 console.log('Verified all reports, current HTTP collection and unchanged original sources.');

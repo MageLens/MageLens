@@ -99,3 +99,27 @@ for (const runner of ['cypress', 'playwright']) {
         });
     }
 }
+
+for (const runner of ['cypress', 'playwright']) {
+    for (const updateReadme of [false, true]) {
+        test(`${runner}: empty executable templates publish N/A (update README: ${updateReadme})`, t => {
+            const fixture = reports(t, 1, runner);
+            const file = `${fixture.root}/coverage/templates/coverage-summary.json`;
+            const templates = JSON.parse(fs.readFileSync(file));
+            templates.lines = {total: 0, covered: 0, uncovered: 0, percent: null};
+            templates.summary = {covered: 4, eligible: 4, percent: 100};
+            fs.writeFileSync(file, JSON.stringify(templates));
+            const result = fixture.run(updateReadme ? ['--update-readme'] : []);
+            assert.equal(result.status, 0, result.stderr);
+            const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+            assert.match(html, /<strong>N\/A<\/strong><\/td>/);
+            assert.match(html, /DOM presence: 4\/4 templates \(100%\)/);
+            assert.doesNotMatch(html, /N\/A%|width:null|width:N\/A/);
+            assert.match(fs.readFileSync(`${fixture.root}/coverage/badges/templates.svg`, 'utf8'), /Template executable lines: N\/A/);
+            assert.equal(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).metrics.templates.percent, null);
+            assert.deepEqual(JSON.parse(fs.readFileSync(file)), templates);
+            assert.ok(!fs.existsSync(`${fixture.root}/coverage/.active-run`));
+            if (updateReadme) assert.match(fs.readFileSync(`${fixture.root}/README.md`, 'utf8'), /Template executable lines: N\/A\]/);
+        });
+    }
+}
