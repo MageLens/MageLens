@@ -44,6 +44,7 @@ final class LayoutCoverage
     private \WeakMap $structures;
     private \WeakMap $actionReads;
     private \WeakMap $argumentReads;
+    private \WeakMap $argumentBindings;
     private \WeakMap $moves;
     private \WeakMap $removals;
     private array $removalChanges = [];
@@ -66,6 +67,7 @@ final class LayoutCoverage
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
+        $this->argumentBindings = new \WeakMap();
         $this->moves = new \WeakMap();
         $this->removals = new \WeakMap();
         $this->blocks = new \WeakMap();
@@ -122,6 +124,13 @@ final class LayoutCoverage
             [DataObject::class, 'setData', null, $this->assignedTtl(...)],
             [BlockGenerator::class, 'generateAction', null, $this->completeAction(...)],
             [DataObject::class, 'setData', null, $this->applyArguments(...)],
+            [DataObject::class, 'unsetData', null, $this->removeArgumentData(...)],
+            [DataObject::class, 'offsetSet', null, $this->removeArgumentData(...)],
+            [DataObject::class, 'offsetUnset', null, $this->removeArgumentData(...)],
+            [DataObject::class, 'getData', null, $this->consumeArgument(...)],
+            [DataObject::class, 'getDataByKey', null, $this->consumeArgument(...)],
+            [DataObject::class, 'getDataByPath', null, $this->consumeArgument(...)],
+            [DataObject::class, 'offsetGet', null, $this->consumeArgument(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
             [AbstractBlock::class, '_loadCache', null, $this->loadBlockHtml(...)],
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
@@ -954,7 +963,10 @@ final class LayoutCoverage
     private function applyArguments($block, array $params, $result, ?\Throwable $error, string $class): void
     {
         $index = array_key_last($this->generating);
-        if ($error || $class !== DataObject::class || !$block instanceof AbstractBlock || $index === null) return;
+        if ($error || $class !== DataObject::class || !$block instanceof AbstractBlock) return;
+        $key = $params[0] ?? '';
+        $this->invalidateArgumentData($block, is_array($key) ? null : [$key]);
+        if ($index === null) return;
         $frame = $this->generating[$index];
         $origins = $frame['source']['arguments'] ?? [];
         if (!$origins) return;
@@ -975,10 +987,73 @@ final class LayoutCoverage
                 $depth++;
             }
         }
-        $key = $params[0] ?? '';
         $values = is_array($key) ? $key : [$key => $params[1] ?? null];
-        foreach ($this->appliedArgumentIds($this->matchingArguments($origins, $values)) as $id) {
+        $matched = $this->matchingArguments($origins, $values);
+        foreach ($this->appliedArgumentIds($matched) as $id) {
             $this->generating[$index]['applied'][$id] = $block;
+        }
+        if ($matched) {
+            $binding = $this->argumentBindings[$block] ?? ['origins' => []];
+            $binding['origins'] = array_replace($binding['origins'], $matched);
+            $binding['context'] = $frame['source']['context'];
+            $this->argumentBindings[$block] = $binding;
+        }
+    }
+
+    private function invalidateArgumentData(AbstractBlock $block, ?array $keys): void
+    {
+        $binding = $this->argumentBindings[$block] ?? null;
+        if (!$binding) return;
+        if ($keys !== null) $keys = array_map(self::dataKey(...), $keys);
+        $removed = $keys === null ? $binding['origins'] : array_intersect_key($binding['origins'], array_fill_keys($keys, true));
+        foreach ($this->appliedArgumentIds($removed) as $id) $this->event($id, 'layout-argument-replaced', $binding['context']);
+        $binding['origins'] = array_diff_key($binding['origins'], $removed);
+        $this->argumentBindings[$block] = $binding;
+    }
+
+    private static function dataKey($key): string|int
+    {
+        return is_bool($key) || is_float($key) || is_resource($key) ? (int) $key : ($key ?? '');
+    }
+
+    private function removeArgumentData($block, array $params, $result, ?\Throwable $error, string $class, string $function): void
+    {
+        if ($error || $class !== DataObject::class || !$block instanceof AbstractBlock) return;
+        $key = $params[0] ?? null;
+        if ($function === 'unsetData') {
+            // Arrays delegate to unsetData once per key inside the native method.
+            if (is_array($key) || ($key !== null && !is_string($key))) return;
+            $this->invalidateArgumentData($block, $key === null ? null : [$key]);
+            return;
+        }
+        $this->invalidateArgumentData($block, [self::dataKey($key)]);
+    }
+
+    private function consumeArgument($block, array $params, $value, ?\Throwable $error, string $class, string $function): void
+    {
+        if ($error || $class !== DataObject::class || !isset($this->blocks[$block], $this->argumentBindings[$block])) return;
+        $key = $params[0] ?? null;
+        if (!is_scalar($key) && $key !== null) return;
+        if ($function === 'getData' && ($key === null || $key === '' || ($params[1] ?? null) !== null)) return;
+        $path = $function === 'getDataByPath';
+        if ($function === 'getData' && str_contains((string) $key, '/')) return;
+        if ($path && $value === null) return;
+        $keys = $path ? explode('/', (string) $key) : [self::dataKey($key)];
+        $binding = $this->argumentBindings[$block];
+        $origins = $binding['origins'];
+        static $data;
+        $data ??= new \ReflectionProperty(DataObject::class, '_data');
+        $values = $data->getValue($block);
+        $origin = null;
+        foreach ($keys as $part) {
+            if (!is_array($values) || !array_key_exists($part, $values)) return;
+            $values = $values[$part];
+            $origin = $origins[$part] ?? null;
+            $origins = $origin['children'] ?? [];
+        }
+        if (isset($origin['id'], $origin['digest']) && (is_scalar($value) || $value === null)
+            && self::digest([$value]) === $origin['digest']) {
+            $this->event($origin['id'], 'layout-argument-read', $binding['context']);
         }
     }
 

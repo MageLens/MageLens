@@ -17,6 +17,8 @@ for (const [handle, path, state] of [
     const item = file?.declarations.find(item => item.node === path);
     assert.ok(item, `Missing leaf ${handle}/${path}`);
     assert.equal(item.state, state, `${handle}/${path}`);
-    assert.deepEqual([...new Set(item.evidence.map(event => event.type))], state === 'covered' ? ['layout-argument-applied'] : []);
+    const effects = state === 'covered' ? ['layout-argument-applied'] : [];
+    if (handle === 'arguments' && path.endsWith('/item[1]/item[2]')) effects.push('layout-argument-read');
+    assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(), effects.sort());
 }
 console.log('Verified independently attributed array leaves, surviving children and an equal-valued overlay.');

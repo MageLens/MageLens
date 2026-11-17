@@ -16,7 +16,10 @@ for (const [index, name] of [[1, 'literal'], [2, 'amount'], [3, 'flag'], [4, 'nu
     const item = source.declarations.find(item => item.node === `${path}[${index}]`);
     assert.equal(item?.layout.element, name);
     assert.equal(item.state, 'covered', name);
-    assert.deepEqual([...new Set(item.evidence.map(entry => entry.type))], ['layout-argument-applied'], name);
+    const effects = ['layout-argument-applied'];
+    if (name === 'replaced') effects.push('layout-argument-replaced');
+    else if (name !== 'unread') effects.push('layout-argument-read');
+    assert.deepEqual([...new Set(item.evidence.map(entry => entry.type))].sort(), effects.sort(), name);
 }
 for (const [index, name] of [[5, 'matrix'], [6, 'shared_first'], [10, 'options'], [11, 'helper'],
     [12, 'route'], [13, 'updatable'], [14, 'text_with_updater']]) {
