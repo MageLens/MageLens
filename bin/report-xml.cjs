@@ -58,6 +58,7 @@ const layoutEvents = {
     block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous'],
+    'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
     argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
         'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed'],
     'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
@@ -75,6 +76,9 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden');
 const layoutDecisions = {
+    'layout-updater-ignored': 'The native argument parser omitted this updater from the argument metadata.',
+    'layout-updater-failed': 'The native updater call failed before returning a value.',
+    'layout-updater-ambiguous': 'Multiple argument origins supplied identical updater metadata at the native interpreter boundary.',
     'layout-block-reading-failed': 'The native block reader failed before completing scheduling and argument interpretation.',
     'layout-argument-mixed-origin': 'The assembled argument retains multiple or unconfirmed XML contributors, so its parent has no unique application origin.',
     'layout-argument-overridden': 'A later XML value replaced this argument before native value generation.',

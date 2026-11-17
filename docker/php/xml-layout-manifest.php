@@ -69,6 +69,8 @@ final class LayoutManifest
                     && $node->parentNode->nodeName === 'action' => 'action-argument',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
                 $fileType === 'page' && self::blockArgument($node) => 'argument',
+                $fileType === 'page' && $node->tagName === 'updater'
+                    && self::blockArgument($node->parentNode) => 'argument-updater',
                 $fileType === 'page' && $node->tagName === 'move' && $element !== '' => 'move',
                 $fileType === 'wireframe' && $index === 0 => 'wireframe',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
@@ -114,7 +116,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'include', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',

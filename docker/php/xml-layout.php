@@ -16,6 +16,7 @@ use Magento\Framework\View\File;
 use Magento\Framework\View\File\FileList;
 use Magento\Framework\View\Layout;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
+use Magento\Framework\View\Layout\Argument\Interpreter\Decorator\Updater;
 use Magento\Framework\View\Layout\GeneratorPool;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
 use Magento\Framework\View\Layout\Reader\Container as ContainerReader;
@@ -46,6 +47,7 @@ final class LayoutCoverage
     private \WeakMap $argumentReads;
     private \WeakMap $argumentBindings;
     private array $argumentSchedules = [];
+    private array $updatingArguments = [];
     private \WeakMap $moves;
     private \WeakMap $removals;
     private array $removalChanges = [];
@@ -121,6 +123,8 @@ final class LayoutCoverage
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
             [BlockGenerator::class, 'evaluateArguments', null, $this->evaluatedArguments(...)],
+            [Updater::class, 'evaluate', $this->beginArgumentUpdate(...), $this->completeArgumentUpdate(...)],
+            [Updater::class, 'applyUpdater', null, $this->appliedArgumentUpdater(...)],
             [BlockGenerator::class, 'getBlockInstance', $this->beginClass(...), $this->constructedClass(...)],
             [DataStructure::class, 'addToParentGroup', null, $this->registeredGroup(...)],
             [DataObject::class, 'setData', null, $this->assignedTtl(...)],
@@ -639,7 +643,22 @@ final class LayoutCoverage
         $xml = $params[0];
         $origins = [];
         foreach ($xml->arguments[0]->argument ?? [] as $node) {
-            $origins[$node->getAttribute('name')] = $this->argumentOrigins($node);
+            $name = $node->getAttribute('name');
+            $origins[$name] = $this->argumentOrigins($node);
+            $updaters = [];
+            foreach ($node->updater as $updater) {
+                [$source, $context] = $this->origin($updater);
+                if (isset($source['argument-updater'])) $updaters[] = $source['argument-updater'];
+            }
+            $parsed = $arguments[$name]['updater'] ?? null;
+            if ($parsed === null) {
+                foreach ($updaters as $id) $this->event($id, 'layout-updater-ignored', $context);
+            } elseif (is_array($parsed) && count($parsed) === count($updaters)) {
+                $origins[$name]['updaters'] = array_map(
+                    static fn($id, $value) => ['id' => $id, 'input' => self::valueFingerprint($value)],
+                    $updaters, array_values($parsed)
+                );
+            }
         }
         if (array_keys($origins) === array_keys($arguments)) $this->argumentReads[$xml] = $origins;
     }
@@ -679,7 +698,8 @@ final class LayoutCoverage
                     $entry['overridden'] = [...$entry['overridden'], ...self::argumentRootIds($before)];
                 } elseif (!isset($existing[$name])) {
                     $identity = self::valueFingerprint($values[$name]);
-                    if ($identity) $entry['pending'] = ['id' => $origin['id'], 'input' => $identity];
+                    if ($identity) $entry['pending'] = ['id' => $origin['id'], 'input' => $identity,
+                        'updaters' => $origin['updaters'] ?? []];
                     else $entry['limited'] = [$origin['id']];
                 } else {
                     $entry['mixed'] = [...$entry['mixed'], ...self::argumentRootIds($before), $origin['id']];
@@ -1009,6 +1029,51 @@ final class LayoutCoverage
         $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
             'generator' => get_class($generator), 'applied' => [], 'arguments' => [],
             'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
+    }
+
+    private function beginArgumentUpdate($interpreter, array $params, string $class): void
+    {
+        if ($class !== Updater::class) return;
+        $frame = null;
+        $index = array_key_last($this->generating);
+        $caller = self::nativeCaller($interpreter, 'evaluate');
+        if ($index !== null && ($caller['class'] ?? null) === BlockGenerator::class
+            && ($caller['function'] ?? null) === 'evaluateArguments') {
+            $source = $this->generating[$index]['source'];
+            $candidates = [];
+            foreach ($source['arguments'] ?? [] as $origin) {
+                $pending = $origin['pending'] ?? null;
+                if ($pending && $pending['updaters'] && self::matchesFingerprint($pending['input'], $params[0])) {
+                    $candidates[] = $pending['updaters'];
+                }
+            }
+            if (count($candidates) === 1) $frame = ['sources' => $candidates[0], 'next' => 0, 'context' => $source['context']];
+            elseif ($candidates) {
+                foreach ($candidates as $candidate) {
+                    foreach ($candidate as $origin) $this->event($origin['id'], 'layout-updater-ambiguous', $source['context']);
+                }
+            }
+        }
+        $this->updatingArguments[] = $frame;
+    }
+
+    private function appliedArgumentUpdater($interpreter, array $params, $value, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->updatingArguments);
+        if ($class !== Updater::class || $index === null || !$this->updatingArguments[$index]) return;
+        $caller = self::nativeCaller($interpreter, 'applyUpdater');
+        if (($caller['class'] ?? null) !== Updater::class || ($caller['function'] ?? null) !== 'evaluate') return;
+        $frame = $this->updatingArguments[$index];
+        $origin = $frame['sources'][$frame['next']] ?? null;
+        $this->updatingArguments[$index]['next']++;
+        if ($origin && $origin['input'] && self::matchesFingerprint($origin['input'], $params[1])) {
+            $this->event($origin['id'], $error ? 'layout-updater-failed' : 'layout-updater-executed', $frame['context']);
+        }
+    }
+
+    private function completeArgumentUpdate($interpreter, array $params, $value, ?\Throwable $error, string $class): void
+    {
+        if ($class === Updater::class) array_pop($this->updatingArguments);
     }
 
     private function evaluatedArguments($generator, array $params, $values, ?\Throwable $error, string $class): void
