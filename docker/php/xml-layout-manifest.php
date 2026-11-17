@@ -43,14 +43,14 @@ final class LayoutManifest
                 'remove' => $node->parentNode->nodeName === 'head' ? 'src' : 'name',
                 default => 'name',
             });
-            $namedBlock = $element !== '' && in_array($node->tagName, ['block', 'referenceBlock'], true)
+            $blockNode = ($node->tagName === 'block' || ($node->tagName === 'referenceBlock' && $element !== ''))
                 && in_array($fileType, ['page', 'generic'], true);
             $kind = match (true) {
                 in_array($fileType, ['page', 'generic'], true) && $index === 0
                     && preg_match('~/layout/override/(?:base|theme)/~', $path) => 'file-override',
-                $namedBlock && $node->tagName === 'block' => 'block',
+                $blockNode && $node->tagName === 'block' => 'block',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
-                    && $node->tagName === 'container' && $element !== '' => 'container',
+                    && $node->tagName === 'container' => 'container',
                 in_array($fileType, ['page', 'generic'], true) && $node->tagName === 'uiComponent'
                     && $element !== '' => 'ui-placement',
                 $fileType === 'page' && $node->tagName === 'attribute'
@@ -91,24 +91,24 @@ final class LayoutManifest
                     in_array($valueKind, ['page-attribute', 'metadata', 'body-class'], true)
                         && in_array($attribute->nodeName, $valueKind === 'metadata' ? ['name', 'content'] : ['name', 'value'], true) =>
                             $valueKind . '-' . $attribute->nodeName,
-                    in_array($fileType, ['page', 'generic', 'wireframe'], true) && $element !== ''
-                        && in_array($node->tagName, ['container', 'referenceContainer'], true)
-                        && in_array($attribute->nodeName, ['htmlTag', 'htmlId', 'htmlClass', 'display'], true) =>
+                    in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                        && ($node->tagName === 'container' || ($node->tagName === 'referenceContainer' && $element !== ''))
+                        && in_array($attribute->nodeName, ['htmlTag', 'htmlId', 'htmlClass', 'display', 'label'], true) =>
                             'container-' . $attribute->nodeName,
-                    $namedBlock && $attribute->nodeName === 'display' => 'block-display',
+                    $blockNode && $attribute->nodeName === 'display' => 'block-display',
                     in_array($fileType, ['page', 'generic'], true) && $element !== ''
                         && in_array($node->tagName, ['block', 'uiComponent'], true)
                         && in_array($attribute->nodeName, ['ifconfig', 'aclResource', 'acl'], true) =>
                             'condition-' . $attribute->nodeName,
-                    $namedBlock && in_array($attribute->nodeName, ['class', 'group', 'ttl'], true) =>
+                    $blockNode && in_array($attribute->nodeName, ['class', 'group', 'ttl'], true) =>
                         'block-' . $attribute->nodeName,
-                    $namedBlock && $node->tagName === 'block' && $attribute->nodeName === 'cacheable'
+                    $blockNode && $node->tagName === 'block' && $attribute->nodeName === 'cacheable'
                         && $attribute->nodeValue === 'false' => 'cacheability',
                     $fileType === 'page' && $attribute->nodeName === 'remove' && $element !== ''
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
                         && $attribute->nodeName === 'src' && $element !== '' => 'asset-removal',
-                    $namedBlock && $attribute->nodeName === 'template' && $attribute->nodeValue !== '' => 'template',
+                    $blockNode && $attribute->nodeName === 'template' && $attribute->nodeValue !== '' => 'template',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'layout'
                         && $attribute->nodeValue !== '' => 'wireframe-selection',
                     default => 'attribute',
@@ -118,7 +118,7 @@ final class LayoutManifest
             foreach ($instructions as [$attribute, $kind]) {
                 $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
-                    'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-display', 'block-display', 'ui-placement',
+                    'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',
                     'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override'], true);
@@ -168,6 +168,9 @@ final class LayoutManifest
         if ($fileType === 'custom') return 'Source grammar is outside the supported native layout schemas';
         if ($node === 'uiComponent' && $attribute === 'component') {
             return 'The native layout generator creates the component by name and does not pass this component attribute to its factory';
+        }
+        if ($attribute === 'output') {
+            return 'The native layout automatically outputs root containers and does not use this output attribute to register blocks or containers';
         }
         if ($attribute === 'name' && $node === 'block') return 'Name participates in the block creation identity';
         if ($attribute === 'method' && $node === 'action') return 'Method participates in the identity of the parent action call';

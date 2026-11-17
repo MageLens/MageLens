@@ -116,7 +116,7 @@ final class LayoutStructureCoverage
             $entry['container'] = ['id' => $ids['container'], 'context' => $context];
         }
         $attributes = $schedule->getStructureElementData($name, [])['attributes'] ?? [];
-        foreach (['htmlTag', 'htmlId', 'htmlClass', 'display'] as $attribute) {
+        foreach (['htmlTag', 'htmlId', 'htmlClass', 'display', 'label'] as $attribute) {
             if (!isset($xml[$attribute])) continue;
             $previous = $entry['attributes'][$attribute] ?? null;
             unset($entry['attributes'][$attribute]);
@@ -338,7 +338,10 @@ final class LayoutStructureCoverage
             && in_array([$caller['class'] ?? '', $caller['function'] ?? ''],
                 [[ContainerGenerator::class, 'generateContainer'], [BlockGenerator::class, 'generateBlock']], true)) {
             $origin = $frame['state'][$name]['attributes'][$attribute] ?? null;
-            if ($origin) $state[$name][$attribute] = $origin;
+            if ($origin) {
+                $state[$name][$attribute] = $origin;
+                if ($attribute === 'label') self::record($origin, 'layout-container-label-applied');
+            }
         } elseif ($previous) {
             self::record($previous, 'layout-container-attribute-replaced');
         }
@@ -360,6 +363,13 @@ final class LayoutStructureCoverage
 
     private function readAttribute($structure, array $params, $result, ?\Throwable $error, string $class): void
     {
+        if (!$error && $class === DataStructure::class && ($params[1] ?? null) === 'label') {
+            $caller = self::caller($structure, 'getAttribute');
+            $origin = $this->structures[$structure][$params[0]]['label'] ?? null;
+            if ($origin && ($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'getElementProperty') {
+                self::record($origin, 'layout-container-label-read');
+            }
+        }
         $index = array_key_last($this->wrapping);
         if ($error || $class !== DataStructure::class || $index === null || !$result) return;
         [$name, $attribute] = $params;

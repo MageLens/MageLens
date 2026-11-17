@@ -46,6 +46,7 @@ const layoutEvents = {
     metadata: ['layout-metadata-rendered', 'layout-metadata-overridden', 'layout-metadata-replaced'],
     'metadata-name': ['layout-metadata-rendered', 'layout-metadata-overridden', 'layout-metadata-replaced'],
     'metadata-content': ['layout-metadata-rendered', 'layout-metadata-overridden', 'layout-metadata-replaced'],
+    'container-label': ['layout-container-label-applied', 'layout-container-label-read', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'container-htmlTag': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'container-htmlId': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'container-htmlClass': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
