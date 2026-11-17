@@ -38,6 +38,7 @@ final class LayoutCoverage
     private array $wireframes = [];
     private LayoutPageCoverage $page;
     private LayoutStructureCoverage $structureCoverage;
+    private LayoutPositionCoverage $positions;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -67,6 +68,7 @@ final class LayoutCoverage
         $this->merges = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
         $this->structureCoverage = new LayoutStructureCoverage($this->origin(...));
+        $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
@@ -144,6 +146,7 @@ final class LayoutCoverage
             [Php::class, 'render', null, $this->renderTemplate(...)],
             ...$this->page->hooks(),
             ...$this->structureCoverage->hooks(),
+            ...$this->positions->hooks(),
         ];
     }
 
@@ -366,6 +369,7 @@ final class LayoutCoverage
         if ($error || $class !== ScheduledStructure::class) return;
         unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
         $this->structureCoverage->reset($structure);
+        $this->positions->reset($structure);
         $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'generateElements') {
             $this->limitations['scheduled-layout-cache'] = true;
@@ -979,6 +983,7 @@ final class LayoutCoverage
             unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
             $this->page->reset($context->getPageConfigStructure());
             $this->structureCoverage->reset($structure);
+            $this->positions->reset($structure);
         }
     }
 
@@ -1007,13 +1012,13 @@ final class LayoutCoverage
         $context = self::readerContext($layout);
         $source = $context->getScheduledStructure();
         $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? [], $this->removals[$source] ?? [],
-            $this->page->snapshot($context->getPageConfigStructure()), $this->structureCoverage->snapshot($source)];
+            $this->page->snapshot($context->getPageConfigStructure()), $this->structureCoverage->snapshot($source), $this->positions->snapshot($source)];
     }
 
     private function mirrorContext($layout, array $params, $context, ?\Throwable $error, string $class): void
     {
         if ($class !== Layout::class) return;
-        [$blocks, $moves, $removals, $page, $containers] = array_pop($this->contexts);
+        [$blocks, $moves, $removals, $page, $containers, $positions] = array_pop($this->contexts);
         if ($error) return;
         $schedule = $context->getScheduledStructure();
         if ($blocks) $this->structures[$schedule] = $blocks;
@@ -1021,6 +1026,7 @@ final class LayoutCoverage
         if ($removals) $this->removals[$schedule] = $removals;
         $this->page->restore($context->getPageConfigStructure(), $page);
         $this->structureCoverage->restore($schedule, $containers);
+        $this->positions->restore($schedule, $positions);
     }
 
     private function beginBlock($generator, array $params, string $class): void

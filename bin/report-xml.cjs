@@ -26,6 +26,10 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'position-name': ['layout-position-name-applied', 'layout-position-replaced'],
+    'position-as': ['layout-position-alias-applied', 'layout-position-replaced'],
+    'position-before': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],
+    'position-after': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],
     'file-override': ['layout-file-override-selected', 'layout-file-override-unconfirmed'],
     'asset-order': ['layout-asset-group-applied', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
     'asset-condition': ['layout-asset-condition-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
@@ -77,6 +81,9 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden');
 const layoutDecisions = {
+    'layout-position-replaced': 'A later native structure operation replaced this declaration identity, alias or sibling order.',
+    'layout-position-ignored': 'The native scheduling helper selected after and ignored this before attribute.',
+    'layout-position-order-unchanged': 'The native ordering operation left the child order unchanged.',
     'layout-updater-ignored': 'The native argument parser omitted this updater from the argument metadata.',
     'layout-updater-failed': 'The native updater call failed before returning a value.',
     'layout-updater-ambiguous': 'Multiple argument origins supplied identical updater metadata at the native interpreter boundary.',

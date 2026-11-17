@@ -95,6 +95,9 @@ final class LayoutManifest
                         && ($node->tagName === 'container' || ($node->tagName === 'referenceContainer' && $element !== ''))
                         && in_array($attribute->nodeName, ['htmlTag', 'htmlId', 'htmlClass', 'display', 'label'], true) =>
                             'container-' . $attribute->nodeName,
+                    in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                        && in_array($node->tagName, ['block', 'container', 'uiComponent'], true)
+                        && in_array($attribute->nodeName, ['name', 'as', 'before', 'after'], true) => 'position-' . $attribute->nodeName,
                     $blockNode && $attribute->nodeName === 'display' => 'block-display',
                     in_array($fileType, ['page', 'generic'], true) && $element !== ''
                         && in_array($node->tagName, ['block', 'uiComponent'], true)
@@ -121,6 +124,7 @@ final class LayoutManifest
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',
+                    'position-name', 'position-as', 'position-before', 'position-after',
                     'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override'], true);
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
