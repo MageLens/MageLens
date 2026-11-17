@@ -18,6 +18,7 @@ final class Recorder
     private static bool $readHook = false;
     private static bool $renderHook = false;
     private static ?LayoutCoverage $layout = null;
+    private static int $layoutEventCount = 0;
 
     public static function start(string $run): void
     {
@@ -68,6 +69,13 @@ final class Recorder
     public static function layout(string $id, string $type, array $context): void
     {
         $key = "$id\0$type\0{$context['area']}\0{$context['theme']}";
+        if (!isset(self::$events[$key])) {
+            if (self::$layoutEventCount >= 32768) {
+                self::$errors['layout-event-limit'] = 'Layout evidence exceeded 32768 distinct events in one request';
+                return;
+            }
+            self::$layoutEventCount++;
+        }
         self::$events[$key] ??= ['id' => $id, 'type' => $type, ...$context, 'hits' => 0];
         self::$events[$key]['hits']++;
     }
