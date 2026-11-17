@@ -383,3 +383,28 @@ test('layout structural and page-value reports require the correct native effect
         assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [event]}], sources), /Stale XML request/);
     }
 });
+
+test('native file selection remains a zero-hit observation and cannot substitute for effect hook health', () => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/view/frontend/layout/empty.xml';
+    const source = Buffer.from('<page/>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const item = {id: 'file-selected', family: 'layout', path: '/page', node: '/page', startLine: 1, endLine: 1,
+        supported: false, reason: 'Merged input observation', declaredScope: {type: 'frontend', code: ''},
+        layout: {kind: 'file-selection', element: '', ordinal: 0, handle: 'empty', fileType: 'page', instruction: 'page'}};
+    manifest.files.push({path: file, sourceHash, family: 'layout', declarations: [item]});
+    manifest.layoutSources = {[file]: {hash: sourceHash, targets: {0: {ids: {'file-selection': item.id}}}}};
+    sources[file] = source;
+    const event = {id: item.id, type: 'layout-file-selected', hits: 4, area: 'frontend', theme: 'frontend/Acme/theme'};
+    const request = {...record, layoutHook: false, events: [event]};
+    const result = merge(manifest, [request], sources);
+    assert.deepEqual(result.layout, {total: 0, covered: 0, hook: false, limitations: []});
+    assert.equal(result.files[1].declarations[0].hits, 0);
+    assert.equal(result.files[1].declarations[0].state, 'unmeasured');
+    assert.deepEqual(result.files[1].declarations[0].evidence.map(item => item.type), ['layout-file-selected']);
+    assert.throws(() => merge(manifest, [{...request, events: [{...event, type: 'layout-block-created'}]}], sources),
+        /Unexpected layout effect/);
+    manifest.files[1].declarations.push({...item, id: 'block', supported: true,
+        layout: {...item.layout, kind: 'block', ordinal: 1, instruction: 'block'}});
+    assert.throws(() => merge(manifest, [request], sources), /No functioning XML layout hook/);
+});

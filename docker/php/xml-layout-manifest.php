@@ -133,7 +133,7 @@ final class LayoutManifest
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
                         'body-class', 'body-class-name', 'body-class-value'], true);
                 $ignoredWrapper = $fileType === 'wireframe' && self::wireframeWrapper($node);
-                if ($ignoredWrapper) $supported = false;
+                if ($ignoredWrapper || $kind === 'file-selection') $supported = false;
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -148,9 +148,11 @@ final class LayoutManifest
                         ...($kind === 'wireframe-selection' ? ['selection' => $node->getAttribute('layout')] : []),
                         ...($kind === 'move' ? ['destination' => $node->getAttribute('destination')] : [])],
                     'supported' => $supported,
-                    'reason' => $supported ? null : ($ignoredWrapper
+                    'reason' => $kind === 'file-selection'
+                        ? 'This root records native file selection at the merged-XML stage. Coverage requires an attributable instruction effect'
+                        : ($supported ? null : ($ignoredWrapper
                         ? 'The installed wireframe root reader pool ignores head and body branches, including their descendants'
-                        : self::limitation($fileType, $node->tagName, $attribute)),
+                        : self::limitation($fileType, $node->tagName, $attribute))),
                 ];
             }
         }
@@ -225,7 +227,7 @@ final class LayoutManifest
             if ($file['family'] !== 'layout') continue;
             $targets = [];
             foreach ($file['declarations'] as $item) {
-                if (!$item['supported']) continue;
+                if (!$item['supported'] && $item['layout']['kind'] !== 'file-selection') continue;
                 $details = $item['layout'];
                 $targets[$details['ordinal']]['element'] = $details['element'];
                 $targets[$details['ordinal']]['instruction'] = $details['instruction'];

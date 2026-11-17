@@ -83,6 +83,7 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked');
 const layoutDecisions = {
+    'layout-file-selected': 'Magento selected this file as merged layout input. Descendant declarations require their own native effect evidence.',
     'layout-xml-ownership-revoked': 'Mutable layout XML was exposed to external PHP or reassigned before native interpretation, so original ownership could not be retained.',
     'layout-position-replaced': 'A later native structure operation replaced this declaration identity, alias or sibling order.',
     'layout-position-ignored': 'The native scheduling helper selected after and ignored this before attribute.',
@@ -170,7 +171,8 @@ function merge(manifest, records, sources) {
     const layoutHook = records.some(record => record.layoutHook === true);
     const layoutSourceTrace = records.some(record => record.layoutSourceTrace === true);
     const layoutTotals = {total: 0, covered: 0, hook: layoutHook, limitations: []};
-    assert.ok(!Object.keys(manifest.layoutSources || {}).length || layoutHook, 'No functioning XML layout hook observed');
+    const layoutMeasurement = [...declarations.values()].some(({item}) => item.family === 'layout' && item.supported);
+    assert.ok(!layoutMeasurement || layoutHook, 'No functioning XML layout hook observed');
     const requestLimitations = new Set();
     const requests = [];
     const warnings = [];
@@ -196,7 +198,7 @@ function merge(manifest, records, sources) {
         }
         for (const event of record.events) {
             const {item, source} = declarations.get(event.id) || {};
-            assert.ok(item?.supported, 'Unknown or unmeasured XML evidence');
+            assert.ok(item?.supported || (item?.family === 'layout' && item.layout.kind === 'file-selection'), 'Unknown or unmeasured XML evidence');
             assert.ok(Number.isSafeInteger(event.hits) && event.hits > 0);
             const evidence = {run: record.run, request: record.request, type: event.type};
             if (item.family === 'events') {
@@ -237,7 +239,7 @@ function merge(manifest, records, sources) {
                 outcome.hits = (outcome.hits || 0) + event.hits;
                 Object.assign(evidence, {area: event.area, requested: event.requested, binding: item.binding, resolved: outcome.resolved});
             } else if (item.family === 'layout') {
-                assert.equal(record.layoutHook, true, 'Layout evidence without a functioning request hook');
+                assert.ok(record.layoutHook === true || item.layout.kind === 'file-selection', 'Layout evidence without a functioning request hook');
                 assert.deepEqual(Object.keys(event).sort(), ['area', 'hits', 'id', 'theme', 'type']);
                 assert.ok(layoutEvents[item.layout.kind]?.includes(event.type), 'Unexpected layout effect');
                 assert.ok(['frontend', 'adminhtml'].includes(event.area), 'Unexpected layout evidence area');
