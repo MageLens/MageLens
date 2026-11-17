@@ -67,6 +67,8 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.get('#layout-removed, [data-layout-structure="hidden"]').should('not.exist');
         cy.get('[data-layout-structure-outcome]').should('have.text', 'verified');
+        cy.get('#layout-left').should('have.class', 'layout-effective');
+        cy.get('#layout-empty, #layout-hidden-container, [data-layout-structure="hidden-container-child"]').should('not.exist');
         for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
             'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
             cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
@@ -85,5 +87,11 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]').should('have.length', 1);
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
+        cy.visit('/coverageprobe/fragment/');
+        cy.get('#layout-fragment [data-layout-structure="fragment-marker"]').should('have.text', 'fragment-marker');
+        cy.get('title').should('not.exist');
+        cy.visit('/coverageprobe/component/');
+        cy.get('#layout-component .entry-edit').should('have.attr', 'data-bind', "scope: 'magelens_layout_ui.areas'");
+        cy.get('[data-layout-ui-proof]').should('have.text', 'verified');
     });
 });

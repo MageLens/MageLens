@@ -8,5 +8,6 @@ License: see LICENSE in the repository root.
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceBlock name="magelens.layout.restored" remove="false"/>
+        <referenceContainer name="magelens.layout.left" htmlClass="layout-effective"/>
     </body>
 </page>

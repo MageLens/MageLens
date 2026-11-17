@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.layout.component" htmlTag="div" htmlId="layout-component" output="1">
+        <uiComponent name="magelens_layout_ui" component="ignored-layout-component">
+            <argument name="layout_only" xsi:type="string">unused-layout-value</argument>
+        </uiComponent>
+        <block class="MageLens\Compatibility\Block\LayoutUiProof" name="magelens.layout.ui-proof" template="MageLens_Compatibility::layout-ui-proof.phtml"/>
+    </container>
+</layout>

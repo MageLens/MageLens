@@ -58,6 +58,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(wireframe.locator('#layout-right #layout-nested [data-layout-structure]')).toHaveText(['anchor', 'moved']);
     await expect(wireframe.locator('#layout-removed, [data-layout-structure="hidden"]')).toHaveCount(0);
     await expect(wireframe.locator('[data-layout-structure-outcome]')).toHaveText('verified');
+    await expect(wireframe.locator('#layout-left')).toHaveClass('layout-effective');
+    await expect(wireframe.locator('#layout-empty, #layout-hidden-container, [data-layout-structure="hidden-container-child"]')).toHaveCount(0);
     for (const effect of ['string', 'number', 'boolean', 'null', 'array', 'shared', 'nonshared', 'options',
         'helper', 'url', 'updater', 'text-updater', 'translation', 'actions', 'late-replacement']) {
         await expect(wireframe.locator(`[data-layout-argument="${effect}"]`)).toHaveText('verified');
@@ -76,4 +78,10 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('head link[href$="/fonts/MUI-Icons/MUI-Icons.woff2"]')).toHaveCount(1);
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
+    await page.goto('/coverageprobe/fragment/');
+    await expect(page.locator('#layout-fragment [data-layout-structure="fragment-marker"]')).toHaveText('fragment-marker');
+    await expect(page.locator('title')).toHaveCount(0);
+    await page.goto('/coverageprobe/component/');
+    await expect(page.locator('#layout-component .entry-edit')).toHaveAttribute('data-bind', "scope: 'magelens_layout_ui.areas'");
+    await expect(page.locator('[data-layout-ui-proof]')).toHaveText('verified');
 });

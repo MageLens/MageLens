@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceContainer name="magelens.layout.wireframe">
-            <container name="magelens.layout.left" htmlTag="section" htmlId="layout-left">
+            <container name="magelens.layout.left" htmlTag="section" htmlId="layout-left" htmlClass="layout-original">
                 <block class="Magento\Framework\View\Element\Template" name="magelens.layout.restored" template="MageLens_Compatibility::layout-structure.phtml"/>
                 <block class="Magento\Framework\View\Element\Template" name="magelens.layout.first" before="-" template="MageLens_Compatibility::layout-structure.phtml"/>
                 <block class="Magento\Framework\View\Element\Template" name="magelens.layout.moved" as="starting-alias" template="MageLens_Compatibility::layout-structure.phtml"/>
@@ -21,6 +21,10 @@ License: see LICENSE in the repository root.
                 </container>
             </container>
             <container name="magelens.layout.removed" htmlTag="section" htmlId="layout-removed"/>
+            <container name="magelens.layout.empty" htmlTag="div" htmlId="layout-empty"/>
+            <container name="magelens.layout.hidden-container" htmlTag="section" htmlId="layout-hidden-container">
+                <block name="magelens.layout.hidden-container-child" template="MageLens_Compatibility::layout-structure.phtml"/>
+            </container>
             <block class="MageLens\Compatibility\Block\LayoutStructure" name="magelens.layout.structure-proof" template="MageLens_Compatibility::layout-structure.phtml"/>
         </referenceContainer>
         <move element="magelens.layout.moved" destination="magelens.layout.right.nested" as="moved-alias" after="anchor-alias"/>
@@ -29,5 +33,6 @@ License: see LICENSE in the repository root.
         <referenceContainer name="magelens.layout.removed" remove="true"/>
         <referenceBlock name="magelens.layout.restored" remove="true"/>
         <referenceBlock name="magelens.layout.hidden" display="false"/>
+        <referenceContainer name="magelens.layout.hidden-container" display="false"/>
     </body>
 </page>
