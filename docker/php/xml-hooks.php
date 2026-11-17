@@ -14,6 +14,7 @@ require_once __DIR__ . '/xml-preference-manifest.php';
 require_once __DIR__ . '/xml-preferences.php';
 require_once __DIR__ . '/xml-di-usage.php';
 require_once __DIR__ . '/xml-layout.php';
+require_once __DIR__ . '/xml-layout-page.php';
 use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences};
 
 function startXmlHooks(string $run): void

@@ -29,6 +29,8 @@ const layoutEvents = {
     block: ['layout-block-created', 'layout-block-rendered'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     argument: ['layout-argument-applied'],
+    'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
+    'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
     removal: ['layout-removal-applied', 'layout-removal-canceled', 'layout-removal-restored'],
     move: ['layout-move-applied', 'layout-move-removed', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved'],
@@ -38,6 +40,9 @@ const layoutEvents = {
 };
 const layoutDecisions = {
     'layout-action-ambiguous': 'Multiple scheduled actions match the native method and arguments; the executed declaration could not be identified.',
+    'layout-title-overridden': 'A later title replaced this declaration before the page configuration was applied.',
+    'layout-title-replaced': 'A runtime title assignment replaced this declaration before attribution at the renderer.',
+    'layout-asset-removal-target-missing': 'The scheduled removal had no asset in the native page configuration.',
     'layout-removal-canceled': 'Magento canceled this scheduled removal before generating the structure.',
     'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
     'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',

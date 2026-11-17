@@ -40,6 +40,7 @@ final class LayoutManifest
                 'update' => 'handle',
                 'move' => 'element',
                 'action' => 'method',
+                'remove' => $node->parentNode->nodeName === 'head' ? 'src' : 'name',
                 default => 'name',
             });
             $namedBlock = $element !== '' && in_array($node->tagName, ['block', 'referenceBlock'], true)
@@ -48,6 +49,7 @@ final class LayoutManifest
                 $namedBlock && $node->tagName === 'block' => 'block',
                 $fileType === 'page' && $node->tagName === 'action' && $element !== ''
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
+                $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
                 $fileType === 'page' && $node->tagName === 'argument' && $element !== ''
                     && $node->parentNode->nodeName === 'arguments'
                     && in_array($node->parentNode->parentNode->nodeName, ['block', 'referenceBlock'], true)
@@ -64,6 +66,8 @@ final class LayoutManifest
                 $kind = match (true) {
                     $fileType === 'page' && $attribute->nodeName === 'remove' && $element !== ''
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
+                    $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
+                        && $attribute->nodeName === 'src' && $element !== '' => 'asset-removal',
                     $namedBlock && $attribute->nodeName === 'template' && $attribute->nodeValue !== '' => 'template',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'layout'
                         && $attribute->nodeValue !== '' => 'wireframe-selection',
@@ -72,7 +76,8 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'argument', 'include', 'move', 'removal', 'wireframe', 'wireframe-selection'], true);
+                $supported = in_array($kind, ['block', 'template', 'action', 'argument', 'include', 'move', 'removal',
+                    'wireframe', 'wireframe-selection', 'page-title', 'asset-removal'], true);
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),

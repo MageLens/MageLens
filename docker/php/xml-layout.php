@@ -31,6 +31,7 @@ final class LayoutCoverage
     private array $handles = [];
     private array $pageBuilders = [];
     private array $wireframes = [];
+    private LayoutPageCoverage $page;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -54,6 +55,7 @@ final class LayoutCoverage
     private function __construct(private readonly array $sources)
     {
         $this->merges = new \WeakMap();
+        $this->page = new LayoutPageCoverage($this->origin(...));
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
@@ -114,6 +116,7 @@ final class LayoutCoverage
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
             [Template::class, 'fetchView', $this->beginTemplate(...), $this->completeTemplate(...)],
             [Php::class, 'render', null, $this->renderTemplate(...)],
+            ...$this->page->hooks(),
         ];
     }
 
@@ -417,6 +420,7 @@ final class LayoutCoverage
                         'update' => 'handle',
                         'move' => 'element',
                         'action' => 'method',
+                        'remove' => $node->parentNode->nodeName === 'head' ? 'src' : 'name',
                         default => 'name',
                     });
                     if ($node->tagName !== $declarations['instruction'] || $identity !== $declarations['element']) return;
@@ -713,8 +717,12 @@ final class LayoutCoverage
     private function beginElements($layout, array $params, string $class): void
     {
         if ($class !== Layout::class) return;
-        $structure = self::readerContext($layout)?->getScheduledStructure();
-        if ($structure !== null) unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
+        $context = self::readerContext($layout);
+        if ($context !== null) {
+            $structure = $context->getScheduledStructure();
+            unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
+            $this->page->reset($context->getPageConfigStructure());
+        }
     }
 
     private function generateElements($layout, array $params, $result, ?\Throwable $error, string $class): void
@@ -724,8 +732,10 @@ final class LayoutCoverage
         $xml = $layout->getNode();
         if (!$xml instanceof Layout\Element) return;
         $node = dom_import_simplexml($xml);
+        $context = self::readerContext($layout);
         foreach ($this->documents as $document) {
-            if ($node->isSameNode($document['root']) && isset($this->structures[self::readerContext($layout)->getScheduledStructure()])) {
+            if ($node->isSameNode($document['root']) && (isset($this->structures[$context->getScheduledStructure()])
+                || $this->page->snapshot($context->getPageConfigStructure()))) {
                 $this->sourceTrace = true;
                 return;
             }
@@ -736,19 +746,22 @@ final class LayoutCoverage
     private function snapshotContext($layout, array $params, string $class): void
     {
         if ($class !== Layout::class) return;
-        $source = self::readerContext($layout)->getScheduledStructure();
-        $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? [], $this->removals[$source] ?? []];
+        $context = self::readerContext($layout);
+        $source = $context->getScheduledStructure();
+        $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? [], $this->removals[$source] ?? [],
+            $this->page->snapshot($context->getPageConfigStructure())];
     }
 
     private function mirrorContext($layout, array $params, $context, ?\Throwable $error, string $class): void
     {
         if ($class !== Layout::class) return;
-        [$blocks, $moves, $removals] = array_pop($this->contexts);
+        [$blocks, $moves, $removals, $page] = array_pop($this->contexts);
         if ($error) return;
         $schedule = $context->getScheduledStructure();
         if ($blocks) $this->structures[$schedule] = $blocks;
         if ($moves) $this->moves[$schedule] = $moves;
         if ($removals) $this->removals[$schedule] = $removals;
+        $this->page->restore($context->getPageConfigStructure(), $page);
     }
 
     private function beginBlock($generator, array $params, string $class): void
