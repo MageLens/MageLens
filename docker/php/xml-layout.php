@@ -597,16 +597,21 @@ final class LayoutCoverage
     {
         if ($class !== Merge::class) return;
         $count = array_pop($this->appending);
-        if ($error || !isset($this->merges[$merge]['pending'])) return;
+        if ($error) return;
         $caller = self::nativeCaller($merge, 'addUpdate');
+        $updates = self::updates($merge);
+        $index = array_key_last($updates);
+        $appended = count($updates) === $count + 1 && $updates[$index] === $params[0];
+        if ($appended && (($caller['class'] ?? null) !== Merge::class
+            || !in_array($caller['function'] ?? null, ['_fetchPackageLayoutUpdates', '_fetchDbLayoutUpdates', 'load'], true))) {
+            $this->limitations['layout-programmatic-update'] = true;
+        }
+        if (!isset($this->merges[$merge]['pending'])) return;
         if (($caller['class'] ?? null) !== Merge::class || ($caller['function'] ?? null) !== '_fetchPackageLayoutUpdates') return;
         $state = $this->merges[$merge];
         $pending = $state['pending'];
         unset($state['pending']);
-        $updates = self::updates($merge);
-        $index = array_key_last($updates);
-        if (count($updates) === $count + 1 && $updates[$index] === $params[0]
-            && $pending['hash'] === hash('sha256', $params[0])) {
+        if ($appended && $pending['hash'] === hash('sha256', $params[0])) {
             $state['updates'][$index] = $pending;
         }
         $this->merges[$merge] = $state;
@@ -961,7 +966,7 @@ final class LayoutCoverage
                 [$argumentOrigin] = $this->origin($argument);
                 if (isset($argumentOrigin['action-argument'])) $arguments[] = $argumentOrigin['action-argument'];
             }
-            $origins[] = ['id' => $origin['action'] ?? null, 'arguments' => $arguments];
+            $origins[] = ['id' => $origin['action'] ?? null, 'methodId' => $origin['action-method'] ?? null, 'arguments' => $arguments];
         }
         if (count($origins) !== count($actions)) return;
         $this->actionReads[$xml] = array_map(
@@ -1073,11 +1078,20 @@ final class LayoutCoverage
                 $nested = isset($existing[$name]) ? array_fill_keys(array_keys($values[$name]), true) : [];
                 $entry['children'] = $this->bindArgumentLeaves($origin['children'], $values[$name], $before['children'] ?? [], $nested);
             }
+            if (!isset($origin['id']) && array_key_exists($name, $values)) {
+                if (isset($entry['children'])) {
+                    $entry['mixed'] = [...$entry['mixed'], ...self::argumentRootIds($before)];
+                } else {
+                    $entry['overridden'] = [...$entry['overridden'], ...self::argumentTreeIds($before)];
+                    $entry['mixed'] = [];
+                }
+            }
             if (isset($origin['id']) && array_key_exists($name, $values)) {
                 if (is_scalar($values[$name]) || $values[$name] === null) {
                     $entry['id'] = $origin['id'];
                     $entry['digest'] = self::digest([$values[$name]]);
-                    $entry['overridden'] = [...$entry['overridden'], ...self::argumentRootIds($before)];
+                    $entry['overridden'] = [...$entry['overridden'], ...self::argumentTreeIds($before)];
+                    $entry['mixed'] = [];
                 } elseif (!isset($existing[$name])) {
                     $identity = self::valueFingerprint($values[$name]);
                     if ($identity) $entry['pending'] = ['id' => $origin['id'], 'input' => $identity,
@@ -1118,6 +1132,14 @@ final class LayoutCoverage
             if ($entry) $matched[$name] = $entry;
         }
         return $matched;
+    }
+
+    private static function argumentTreeIds(array $origin): array
+    {
+        $ids = [...self::argumentRootIds($origin), ...($origin['mixed'] ?? []),
+            ...($origin['overridden'] ?? []), ...($origin['limited'] ?? [])];
+        foreach ($origin['children'] ?? [] as $child) $ids = [...$ids, ...self::argumentTreeIds($child)];
+        return array_values(array_unique($ids));
     }
 
     private static function argumentRootIds(array $origin): array
@@ -1909,7 +1931,8 @@ final class LayoutCoverage
         foreach ($actions as $index => $action) {
             if (self::digest($action) !== $origins[$index]['digest']) return [];
             $calls[self::digest([$action[0], $action[1]])][] = [
-                'id' => $origins[$index]['id'], 'arguments' => $origins[$index]['arguments'] ?? []];
+                'id' => $origins[$index]['id'], 'methodId' => $origins[$index]['methodId'] ?? null,
+                'arguments' => $origins[$index]['arguments'] ?? []];
         }
         return $calls;
     }
@@ -1945,6 +1968,7 @@ final class LayoutCoverage
         $effect = count($origins) === 1 ? 'layout-action-executed' : 'layout-action-ambiguous';
         foreach ($origins as $origin) {
             $this->event($origin['id'], $effect, $state['context']);
+            $this->event($origin['methodId'] ?? null, $effect, $state['context']);
             foreach ($origin['arguments'] as $position => $id) {
                 $name = array_keys($arguments)[$position] ?? null;
                 $argumentEffect = in_array($name, $evaluation['unconfirmed'] ?? [], true) ? 'layout-argument-origin-unconfirmed'

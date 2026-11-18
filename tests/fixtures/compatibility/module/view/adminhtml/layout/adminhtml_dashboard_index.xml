@@ -10,6 +10,8 @@ License: see LICENSE in the repository root.
             <block name="magelens.layout.acl-dashboard" aclResource="Magento_Backend::dashboard" template="MageLens_Compatibility::layout-structure.phtml"/>
             <block name="magelens.layout.acl-blog" aclResource="Application_Blog::manage" template="MageLens_Compatibility::layout-structure.phtml"/>
             <block name="magelens.layout.acl-alias" acl="Application_Blog::manage" template="MageLens_Compatibility::layout-structure.phtml"/>
+            <uiComponent name="magelens_layout_ui_acl_dashboard" aclResource="Magento_Backend::dashboard"/>
+            <uiComponent name="magelens_layout_ui_acl_blog" aclResource="Application_Blog::manage"/>
         </referenceContainer>
     </body>
 </page>

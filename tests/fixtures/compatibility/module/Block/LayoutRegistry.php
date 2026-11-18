@@ -33,6 +33,8 @@ class LayoutRegistry extends Template
             'move' => $layout->getParentName('magelens.layout.wireframe.movable') === 'magelens.layout.wireframe',
             'removal' => !$layout->hasElement('magelens.layout.wireframe.removed'),
             'nested-block' => $layout->getBlock('magelens.layout.wireframe.nested-block') instanceof Template,
+            'ttl' => $layout->getBlock('magelens.layout.wireframe.nested-block')->getData('ttl') === 47,
+            'cacheable' => $layout->isCacheable(),
             'ignored-body' => !$layout->hasElement('magelens.layout.wireframe.ignored-body'),
         ];
     }

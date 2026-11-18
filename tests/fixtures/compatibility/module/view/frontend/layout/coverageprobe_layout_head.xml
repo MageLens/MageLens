@@ -15,6 +15,7 @@ License: see LICENSE in the repository root.
         <meta name="description" content="Original fixture description"/>
         <meta name="magelens-layout" content="fixture metadata"/>
         <meta name="magelens-replaced" content="same"/>
+        <meta name="magelens-ignored-attributes" content="native-content" http-equiv="X-MageLens-Fixture" charset="utf-16" scheme="fixture-scheme"/>
         <css src="MageLens_Compatibility::css/layout-head.css" media="print"/>
         <css src="MageLens_Compatibility::css/layout-removed.css"/>
         <script src="MageLens_Compatibility::js/layout-head.js" defer="defer" async="async" charset="utf-8" type="text/javascript"/>

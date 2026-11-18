@@ -89,6 +89,7 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
                     $valueKind === 'visibility' && $attribute->nodeName === 'name' => 'visibility-name',
                     $valueKind === 'visibility' && $attribute->nodeName === 'className' => 'visibility-class',
                     $valueKind === 'ui-placement' && $attribute->nodeName === 'group' => 'ui-group',
@@ -134,7 +135,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'template', 'action', 'action-method', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -209,6 +210,12 @@ final class LayoutManifest
             return 'The schema fixes this flag to true. Native registry extraction consumes label text and leaves the flag unused';
         }
         if ($fileType === 'registry' || $fileType === 'page-types') return 'Registry consumers lack a trace back through the merged registry to this declaration';
+        if ($fileType === 'wireframe' && $node === 'block' && $attribute === 'cacheable') {
+            return 'The native page-cache selector scans the main merged layout XML and does not visit wireframe block declarations';
+        }
+        if ($fileType === 'page' && $node === 'meta' && in_array($attribute, ['http-equiv', 'charset', 'scheme'], true)) {
+            return 'The native head reader consumes only the metadata name/property and content, leaving this attribute unused';
+        }
         if ($fileType === 'wireframe') return 'The wireframe reader does not supply source attribution for this instruction';
         if ($fileType === 'custom') return 'Source grammar is outside the supported native layout schemas';
         if ($node === 'uiComponent' && $attribute === 'component') {

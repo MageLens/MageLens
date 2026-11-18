@@ -327,6 +327,7 @@ test('layout action ambiguity remains visible and contributes zero hits', () => 
 
 test('layout structural and page-value reports require the correct native effect and retain zero-hit inventory', () => {
     const effects = {
+        'action-method': 'layout-action-executed',
         container: 'layout-container-created',
         'container-htmlTag': 'layout-container-wrapper-rendered',
         'container-htmlId': 'layout-container-wrapper-rendered',

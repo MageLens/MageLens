@@ -9,7 +9,7 @@ License: see LICENSE in the repository root.
     <update handle="1column"/>
     <referenceContainer name="content">
         <container name="magelens.layout.wireframe" htmlTag="section" htmlId="layout-wireframe">
-            <block name="magelens.layout.wireframe.nested-block" template="MageLens_Compatibility::layout-structure.phtml"/>
+            <block name="magelens.layout.wireframe.nested-block" cacheable="false" ttl="47" template="MageLens_Compatibility::layout-structure.phtml"/>
             <container name="magelens.layout.wireframe.removed"/>
         </container>
         <container name="magelens.layout.wireframe.movable" htmlTag="div" htmlId="layout-wireframe-move"/>

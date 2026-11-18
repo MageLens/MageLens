@@ -58,7 +58,7 @@ test('starts the next test with fresh state', async ({page}) => {
     for (const effect of ['membership', 'override', 'equal', 'empty', 'cdata', 'mixed', 'cdata-equal', 'translation-flag', 'page-type', 'page-type-equal']) {
         await expect(wireframe.locator(`[data-layout-registry-effect="${effect}"]`)).toHaveText('verified');
     }
-    for (const effect of ['move', 'removal', 'nested-block', 'ignored-body']) {
+    for (const effect of ['move', 'removal', 'nested-block', 'ttl', 'cacheable', 'ignored-body']) {
         await expect(wireframe.locator(`[data-layout-wireframe-proof="${effect}"]`)).toHaveText('verified');
     }
     await expect(wireframe.locator('#layout-wireframe-move [data-layout-structure]')).toHaveText('wireframe-move-marker');
@@ -86,6 +86,12 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('body')).toHaveClass(/\bpage-wide\b/);
     await expect(page.locator('head meta[name="description"]')).toHaveAttribute('content', 'Effective fixture description');
     await expect(page.locator('head meta[name="magelens-layout"]')).toHaveAttribute('content', 'fixture metadata');
+    const ignoredMetadata = page.locator('head meta[name="magelens-ignored-attributes"]');
+    await expect(ignoredMetadata).toHaveAttribute('content', 'native-content');
+    for (const attribute of ['http-equiv', 'charset', 'scheme']) {
+        expect(await ignoredMetadata.getAttribute(attribute)).toBeNull();
+    }
+    await expect(page.locator('meta[http-equiv="X-MageLens-Fixture"], meta[charset="utf-16"]')).toHaveCount(0);
     await expect(page.locator('head meta[name="magelens-replaced"]')).toHaveAttribute('content', 'same');
     await expect(page.locator('body')).toHaveAttribute('data-layout-replaced', 'same');
     await expect(page.locator('head link[href*="/css/layout-head.css"]')).toHaveAttribute('media', 'screen');
@@ -162,6 +168,9 @@ test('starts the next test with fresh state', async ({page}) => {
         await page.goto(`/coverageprobe/cachepage/cleanup/?probe=${cacheNonce}`);
         await expect(page.locator('[data-layout-page-cache-cleanup]')).toHaveText('cleaned');
     }
+    await page.goto('/coverageprobe/dynamic/');
+    await expect(page.locator('[data-layout-dynamic]')).toHaveText(['xml-value', 'xml-value', 'xml-value', 'xml-value']);
+    await expect(page.locator('[data-layout-dynamic-nested]')).toHaveText(['xml-value|xml-value', 'xml-value|xml-value', 'xml-value|xml-value', 'xml-value']);
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');
@@ -178,10 +187,14 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-structure="acl-dashboard"]')).toHaveText('acl-dashboard');
     await expect(page.locator('[data-layout-structure="acl-blog"]')).toHaveText('acl-blog');
     await expect(page.locator('[data-layout-structure="acl-alias"]')).toHaveText('acl-alias');
+    await expect(page.locator('[data-layout-structure="ui-acl-dashboard"]')).toHaveText('ui-acl-dashboard');
+    await expect(page.locator('[data-layout-structure="ui-acl-blog"]')).toHaveText('ui-acl-blog');
     await page.goto('/');
     await page.context().clearCookies();
     const fixture = admin.fixtures();
     await admin.login(page, fixture.readerUser, fixture.readerPassword);
     await expect(page.locator('[data-layout-structure="acl-dashboard"]')).toHaveText('acl-dashboard');
     await expect(page.locator('[data-layout-structure="acl-blog"], [data-layout-structure="acl-alias"]')).toHaveCount(0);
+    await expect(page.locator('[data-layout-structure="ui-acl-dashboard"]')).toHaveText('ui-acl-dashboard');
+    await expect(page.locator('[data-layout-structure="ui-acl-blog"]')).toHaveCount(0);
 });

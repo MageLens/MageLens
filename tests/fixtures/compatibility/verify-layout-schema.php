@@ -19,7 +19,7 @@ foreach (['app/code/MageLens/Compatibility/view', 'app/code/MageLens/LayoutOverl
     'app/design/frontend/MageLens/parent', 'app/design/frontend/MageLens/child',
     'app/design/frontend/MageLens/inactive'] as $directory) {
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(BP . '/' . $directory, FilesystemIterator::SKIP_DOTS)) as $file) {
-        if ($file->getExtension() === 'xml') $files[] = $file->getPathname();
+        if (in_array($file->getExtension(), ['xml', 'xhtml'], true)) $files[] = $file->getPathname();
     }
 }
 foreach (['Compatibility', 'LayoutOverlay'] as $module) {

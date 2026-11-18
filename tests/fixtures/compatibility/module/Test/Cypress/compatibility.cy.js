@@ -63,7 +63,7 @@ describe('Magento storefront coverage compatibility', () => {
         for (const effect of ['membership', 'override', 'equal', 'empty', 'cdata', 'mixed', 'cdata-equal', 'translation-flag', 'page-type', 'page-type-equal']) {
             cy.get(`#layout-wireframe [data-layout-registry-effect="${effect}"]`).should('have.text', 'verified');
         }
-        for (const effect of ['move', 'removal', 'nested-block', 'ignored-body']) {
+        for (const effect of ['move', 'removal', 'nested-block', 'ttl', 'cacheable', 'ignored-body']) {
             cy.get(`#layout-wireframe [data-layout-wireframe-proof="${effect}"]`).should('have.text', 'verified');
         }
         cy.get('#layout-wireframe-move [data-layout-structure]').should('have.text', 'wireframe-move-marker');
@@ -95,6 +95,11 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('body').should('have.class', 'page-wide');
         cy.get('head meta[name="description"]').should('have.attr', 'content', 'Effective fixture description');
         cy.get('head meta[name="magelens-layout"]').should('have.attr', 'content', 'fixture metadata');
+        cy.get('head meta[name="magelens-ignored-attributes"]').should('have.attr', 'content', 'native-content');
+        for (const attribute of ['http-equiv', 'charset', 'scheme']) {
+            cy.get('head meta[name="magelens-ignored-attributes"]').should('not.have.attr', attribute);
+        }
+        cy.get('meta[http-equiv="X-MageLens-Fixture"], meta[charset="utf-16"]').should('not.exist');
         cy.get('head meta[name="magelens-replaced"]').should('have.attr', 'content', 'same');
         cy.get('body').should('have.attr', 'data-layout-replaced', 'same');
         cy.get('head link[href*="/css/layout-head.css"]').should('have.length', 1).and('have.attr', 'media', 'screen');
@@ -188,6 +193,13 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-page-cache]').should('have.text', 'cached-layout');
         cy.visit(`/coverageprobe/cachepage/cleanup/?probe=${cacheNonce}`);
         cy.get('[data-layout-page-cache-cleanup]').should('have.text', 'cleaned');
+        cy.visit('/coverageprobe/dynamic/');
+        cy.get('[data-layout-dynamic]').should(markers => {
+            expect([...markers].map(marker => marker.textContent)).to.deep.equal(['xml-value', 'xml-value', 'xml-value', 'xml-value']);
+        });
+        cy.get('[data-layout-dynamic-nested]').should(markers => {
+            expect([...markers].map(marker => marker.textContent)).to.deep.equal(['xml-value|xml-value', 'xml-value|xml-value', 'xml-value|xml-value', 'xml-value']);
+        });
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');
@@ -205,7 +217,7 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.get('[data-layout-structure="provider.inactive"], [data-layout-structure="provider.replaced-empty"]').should('not.exist');
         admin.login();
-        for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias']) {
+        for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias', 'ui-acl-dashboard', 'ui-acl-blog']) {
             cy.get(`[data-layout-structure="${entry}"]`).should('have.text', entry);
         }
         cy.visit('/');
@@ -214,5 +226,7 @@ describe('Magento storefront coverage compatibility', () => {
         admin.login(fixture.readerUser, fixture.readerPassword);
         cy.get('[data-layout-structure="acl-dashboard"]').should('have.text', 'acl-dashboard');
         cy.get('[data-layout-structure="acl-blog"], [data-layout-structure="acl-alias"]').should('not.exist');
+        cy.get('[data-layout-structure="ui-acl-dashboard"]').should('have.text', 'ui-acl-dashboard');
+        cy.get('[data-layout-structure="ui-acl-blog"]').should('not.exist');
     });
 });

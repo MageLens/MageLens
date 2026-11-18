@@ -75,6 +75,7 @@ const layoutEvents = {
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
     block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
+    'action-method': ['layout-action-executed', 'layout-action-ambiguous'],
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
     'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
     argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
@@ -161,6 +162,7 @@ const layoutDecisions = {
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
+    'layout-programmatic-update': 'A native programmatic XML update appended input without original file provenance.',
     'full-page-cache-origin': 'A native full-page cache lookup returned a response. Its original XML/template lineage and fresh layout execution are unverified.',
     'block-html-cache-origin': 'A native block HTML cache lookup returned data. Its original XML/template lineage is unverified.',
     'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',

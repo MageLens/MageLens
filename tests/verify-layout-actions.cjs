@@ -23,5 +23,8 @@ for (const [handle, declaration, state, expected] of [
     assert.equal(item.hits > 0, state === 'covered', declaration);
     assert.deepEqual([...new Set(item.evidence.map(entry => entry.type))], expected, declaration);
     assert.ok(item.evidence.every(entry => entry.area === 'frontend'), declaration);
+    const method = source.declarations.find(item => item.node === declaration + '/@method');
+    assert.equal(method?.state, state, declaration + '/@method');
+    assert.deepEqual([...new Set(method.evidence.map(entry => entry.type))], expected, declaration + '/@method');
 }
 console.log('Verified native scalar and configurable-object action calls and zero hits for the guarded and ambiguous actions.');

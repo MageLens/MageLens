@@ -10,6 +10,7 @@ for (const [name, kind, events] of [
     ['magelens.layout.wireframe', 'container', ['layout-container-created']],
     ['magelens.layout.wireframe', 'container-htmlTag', ['layout-container-wrapper-rendered']],
     ['magelens.layout.wireframe.nested-block', 'block', ['layout-block-created', 'layout-block-rendered']],
+    ['magelens.layout.wireframe.nested-block', 'block-ttl', ['layout-block-ttl-applied']],
     ['magelens.layout.wireframe.nested-block', 'template', ['layout-template-executed', 'layout-template-selected']],
     ['magelens.layout.wireframe.movable', 'move', ['layout-move-applied']],
     ['magelens.layout.wireframe.removed', 'removal', ['layout-removal-applied']],
@@ -23,6 +24,12 @@ for (const item of wireframe.declarations.filter(item => /\/layout\/(head|body)(
     assert.equal(item.hits, 0);
     assert.match(item.reason, /wireframe.*head and body/);
 }
+const cacheable = wireframe.declarations.find(item => item.layout.element === 'magelens.layout.wireframe.nested-block'
+    && item.layout.attribute === 'cacheable');
+assert.equal(cacheable?.state, 'unmeasured');
+assert.equal(cacheable.hits, 0);
+assert.deepEqual(cacheable.evidence, []);
+assert.match(cacheable.reason, /main merged layout XML.*does not visit wireframe block/);
 const generic = report.files.find(file => file.path.endsWith('/layout/coverageprobe_generic_index.xml'));
 for (const kind of ['action', 'action-argument', 'argument', 'move', 'removal']) {
     const items = generic?.declarations.filter(item => item.layout.kind === kind);
