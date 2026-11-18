@@ -217,6 +217,13 @@ test('starts the next test with fresh state', async ({page}) => {
         await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
     }
     await expect(page.locator('[data-layout-renderfailure-output="after"]')).toHaveCount(0);
+    await page.goto('/coverageprobe/falsy/');
+    await expect(page.locator('[data-layout-falsy-proof]')).toHaveText('verified');
+    expect(await page.locator('[data-layout-falsy]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-layout-falsy'))))
+        .toEqual(['native', 'zero', 'empty', 'padded', 'signed', 'override.zero', 'override.empty', 'wrapper.child', 'restored.block', 'restored.child'].map(name => 'magelens.falsy.' + name));
+    const zeroClassWrapper = page.locator('[data-layout-falsy="magelens.falsy.wrapper.child"]').locator('..');
+    await expect(zeroClassWrapper).toHaveJSProperty('tagName', 'SECTION0');
+    expect(await zeroClassWrapper.getAttribute('class')).toBeNull();
     await page.goto('/coverageprobe/references/');
     await expect(page.locator('[data-layout-reference-proof]')).toHaveText('verified');
     await expect(page.locator('#layout-reference-inner')).toHaveClass('reference-effective');

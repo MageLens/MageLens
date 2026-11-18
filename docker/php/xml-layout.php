@@ -208,6 +208,7 @@ final class LayoutCoverage
             [WireframeReader::class, 'read', $this->beginWireframe(...), $this->completeWireframe(...)],
             [BlockReader::class, 'scheduleBlock', $this->beginArgumentSchedule(...), $this->scheduleBlock(...)],
             [BlockReader::class, 'scheduleReference', $this->beginArgumentSchedule(...), $this->scheduleReference(...)],
+            [ContainerReader::class, 'containerReference', null, $this->ignoredRemoval(...)],
             [BlockReader::class, 'getActions', null, $this->readActions(...)],
             [BlockReader::class, 'getArguments', null, $this->readArguments(...)],
             [BlockReader::class, 'evaluateArguments', $this->beginReaderArguments(...), $this->completeReaderArguments(...)],
@@ -1010,9 +1011,19 @@ final class LayoutCoverage
     {
         if ($class !== BlockReader::class) return;
         $existing = array_pop($this->argumentSchedules);
+        $this->ignoredRemoval($reader, $params, $result, $error, $class);
         if (!$error && !filter_var($params[1]->getAttribute('remove'), FILTER_VALIDATE_BOOLEAN)) {
             $this->schedule($params[0], $params[1], false, $existing);
         }
+    }
+
+    private function ignoredRemoval($reader, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || !in_array($class, [BlockReader::class, ContainerReader::class], true)) return;
+        $xml = $params[1];
+        if (!isset($xml['remove']) || !in_array((string) $xml['remove'], ['', '0'], true)) return;
+        [$ids, $context] = $this->origin($xml);
+        $this->event($ids['removal'] ?? null, 'layout-removal-empty-ignored', $context);
     }
 
     private function schedule($structure, $xml, bool $declaration, array $existing): void
@@ -1035,6 +1046,12 @@ final class LayoutCoverage
                 $block['attributes'][$attribute] = ['id' => $id, 'value' => (string) $xml[$attribute]];
             }
         }
+        if (isset($xml['display'])) {
+            unset($block['display']);
+            if (isset($origin['block-display']) && ($data['attributes']['display'] ?? null) === (string) $xml['display']) {
+                $block['display'] = ['id' => $origin['block-display'], 'value' => (string) $xml['display']];
+            }
+        }
         $block['actions'] = $this->bindActions($xml, $data['actions'] ?? [], $block['actions'] ?? []);
         $block['arguments'] = $this->bindArguments($xml, $data['arguments'] ?? [], $block['arguments'] ?? [], $existing);
         $actual = $data['attributes']['template'] ?? null;
@@ -1044,6 +1061,7 @@ final class LayoutCoverage
                 $new = $origin['template'] ?? null;
                 if (!empty($block['template']) && $block['template'] !== $new) $block['overridden'][$block['template']] = true;
                 $block['template'] = $new;
+                $block['templateValue'] = $value;
             }
         }
         $state[$name] = $block;
@@ -2241,6 +2259,17 @@ final class LayoutCoverage
             $this->errors['Missing native layout generator argument batch hook evidence'] = true;
         }
         $context = $source['context'];
+        if (isset($source['template']) && array_key_exists('templateValue', $source) && empty($source['templateValue'])) {
+            $this->event($source['template'], 'layout-template-empty-ignored', $context);
+        }
+        foreach (['group', 'ttl'] as $attribute) {
+            if (isset($source['attributes'][$attribute]) && empty($source['attributes'][$attribute]['value'])) {
+                $this->event($source['attributes'][$attribute]['id'], 'layout-block-' . $attribute . '-empty-ignored', $context);
+            }
+        }
+        if (isset($source['display']) && empty($source['display']['value'])) {
+            $this->event($source['display']['id'], 'layout-display-empty-ignored', $context);
+        }
         $blockId = $source['block'] ?? null;
         $templateId = $frame['selected'] === $block ? ($source['template'] ?? null) : null;
         foreach (array_keys($source['overridden'] ?? []) as $previous) {

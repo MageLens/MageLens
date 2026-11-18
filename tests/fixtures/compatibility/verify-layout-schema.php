@@ -69,6 +69,11 @@ $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
+    ['spaced block TTL', $genericSchema, '<layout><block name="fixture" ttl=" 0 "/></layout>'],
+    ['zero container ID', $genericSchema, '<layout><container name="fixture" htmlId="0"/></layout>'],
+    ['block display attribute', $genericSchema, '<layout><block name="fixture" display="0"/></layout>'],
+    ['empty reference display', $genericSchema, '<layout><referenceBlock name="fixture" display=""/></layout>'],
+    ['empty block TTL', $genericSchema, '<layout><block name="fixture" ttl=""/></layout>'],
     ['layout item sort order', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"array\"><item name=\"child\" xsi:type=\"string\" sortOrder=\"1\">fixture</item></argument></arguments></block></body></page>"],
     ['layout init parameter', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"init_parameter\">fixture</argument></arguments></block></body></page>"],
     ['zero move alias', $genericSchema, '<layout><move element="source" destination="target" as="0"/></layout>'],

@@ -672,3 +672,34 @@ test('full-page cache observations preserve a functioning zero-hit layout invent
     assert.deepEqual(report.requests[0].layoutLimitations, report.layout.limitations);
     assert.throws(() => merge(manifest, [{...warm, layoutHook: false}], sources), /No functioning XML layout hook/);
 });
+
+test('empty layout operands remain zero-hit decisions while zero class interpolation records output', () => {
+    for (const [kind, type, covered] of [
+        ['template', 'layout-template-empty-ignored', false],
+        ['block-group', 'layout-block-group-empty-ignored', false],
+        ['block-ttl', 'layout-block-ttl-empty-ignored', false],
+        ['block-display', 'layout-display-empty-ignored', false],
+        ['removal', 'layout-removal-empty-ignored', false],
+        ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted', true],
+    ]) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/empty.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+            {id: 'operand', family: 'layout', path: '/layout/block/@field', startLine: 1, endLine: 1, supported: true,
+                declaredScope: {type: 'frontend', code: ''}, layout: {kind, ordinal: 1, element: 'fixture',
+                    handle: 'empty', fileType: 'generic', instruction: 'block'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {[kind]: 'operand'}}}}};
+        const healthy = {...record, layoutHook: true};
+        assert.equal(merge(manifest, [healthy], sources).files[1].declarations[0].state, 'uncovered');
+        const event = {id: 'operand', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'};
+        const item = merge(manifest, [{...healthy, events: [event]}], sources).files[1].declarations[0];
+        assert.equal(item.state, covered ? 'covered' : 'unmeasured');
+        assert.equal(item.hits, covered ? 1 : 0);
+        if (!covered) assert.match(item.reason, /empty|zero|0/);
+        manifest.files[1].declarations[0].layout.kind = 'block';
+        assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /Unexpected layout effect/);
+    }
+});

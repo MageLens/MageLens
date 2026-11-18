@@ -264,3 +264,12 @@ checkXml($names->related('value-0', 'layout-argument-applied') === ['name-0', 'l
     && $names->related('value-0', 'layout-argument-evaluated') === null,
     'A native key assignment never infers fresh name evaluation or later key consumption');
 echo "Argument name assignments retain a bounded independent evidence boundary.\n";
+
+foreach (['', '0'] as $emptyTemplate) {
+    $declarations = LayoutManifest::declarations('app/code/Fixture/view/frontend/layout/empty.xml',
+        '<layout><block name="fixture" template="' . $emptyTemplate . '"/></layout>');
+    $template = array_values(array_filter($declarations, static fn($item) => $item['layout']['attribute'] === 'template'))[0];
+    checkXml($template['supported'] && $template['layout']['kind'] === 'template',
+        'Empty and zero template attributes retain original template identities');
+}
+echo "Native empty template operands retain original inventory identities.\n";

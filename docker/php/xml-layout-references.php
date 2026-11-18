@@ -28,11 +28,14 @@ final class LayoutReferenceCoverage
         'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed',
         'layout-action-executed', 'layout-action-ambiguous',
         'layout-container-wrapper-rendered', 'layout-container-label-applied', 'layout-container-label-read',
+        'layout-container-wrapper-zero-class-emitted', 'layout-template-empty-ignored',
+        'layout-block-group-empty-ignored', 'layout-block-ttl-empty-ignored', 'layout-display-empty-ignored',
+        'layout-removal-empty-ignored',
         'layout-container-attribute-overridden', 'layout-container-attribute-replaced',
         'layout-block-class-applied', 'layout-block-group-applied', 'layout-block-ttl-applied',
         'layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted', 'layout-block-ttl-origin-unconfirmed',
         'layout-block-attribute-overridden', 'layout-display-allowed', 'layout-display-denied',
-        'layout-removal-applied', 'layout-removal-restored', 'layout-removal-cancelled', 'layout-removal-missing',
+        'layout-removal-applied', 'layout-removal-restored', 'layout-removal-canceled', 'layout-removal-missing',
     ];
     private array $definitions = [];
     private array $owners = [];

@@ -602,7 +602,7 @@ final class LayoutStructureCoverage
     private function beginWrapper($layout, array $params, string $class): void
     {
         if ($class === Layout::class) $this->wrapping[] = ['structure' => self::structure($layout),
-            'name' => $params[0], 'tagReads' => 0, 'origins' => []];
+            'name' => $params[0], 'tagReads' => 0, 'origins' => [], 'zeroClasses' => []];
     }
 
     private function readAttribute($structure, array $params, $result, ?\Throwable $error, string $class): void
@@ -615,7 +615,7 @@ final class LayoutStructureCoverage
             }
         }
         $index = array_key_last($this->wrapping);
-        if ($error || $class !== DataStructure::class || $index === null || !$result) return;
+        if ($error || $class !== DataStructure::class || $index === null || (!$result && !($result === '0' && ($params[1] ?? null) === 'htmlClass'))) return;
         [$name, $attribute] = $params;
         $frame = $this->wrapping[$index];
         if ($frame['structure'] !== $structure || $frame['name'] !== $name) return;
@@ -623,6 +623,10 @@ final class LayoutStructureCoverage
         if (($caller['class'] ?? null) !== Layout::class || ($caller['function'] ?? null) !== '_renderContainer') return;
         if ($attribute === 'htmlTag') $this->wrapping[$index]['tagReads']++;
         $origin = $this->structures[$structure][$name][$attribute] ?? null;
+        if ($origin && $attribute === 'htmlClass' && $result === '0') {
+            $this->wrapping[$index]['zeroClasses'][$origin['id']] = $origin;
+            return;
+        }
         if ($origin && in_array($attribute, ['htmlTag', 'htmlId', 'htmlClass'], true)) {
             $this->wrapping[$index]['origins'][$origin['id']] = $origin;
         }
@@ -634,6 +638,7 @@ final class LayoutStructureCoverage
         $frame = array_pop($this->wrapping);
         if ($error || $frame['tagReads'] !== 2) return;
         foreach ($frame['origins'] as $origin) $this->record($origin, 'layout-container-wrapper-rendered');
+        foreach ($frame['zeroClasses'] as $origin) $this->record($origin, 'layout-container-wrapper-zero-class-emitted');
     }
 
     private function display($layout, array $params, $result, ?\Throwable $error, string $class): void
@@ -691,7 +696,7 @@ final class LayoutStructureCoverage
         if (in_array($effect, ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-name-applied',
             'layout-condition-class-selected', 'layout-condition-argument-applied', 'layout-ui-group-applied',
             'layout-ui-created', 'layout-ui-rendered', 'layout-container-created', 'layout-container-label-applied',
-            'layout-container-label-read', 'layout-container-wrapper-rendered', 'layout-display-allowed',
+            'layout-container-label-read', 'layout-container-wrapper-rendered', 'layout-container-wrapper-zero-class-emitted', 'layout-display-allowed',
             'layout-display-denied', 'layout-cacheability-denied'], true)) $this->healthy = true;
         Recorder::layout($origin['id'], $effect, $origin['context']);
     }

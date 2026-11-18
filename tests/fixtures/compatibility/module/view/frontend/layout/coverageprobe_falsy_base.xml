@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.falsy.root" output="1" htmlTag="section" htmlId="magelens-falsy-root">
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.native" template="MageLens_Compatibility::layout-falsy.phtml" group="active" ttl="19" cacheable="true"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.zero" template="0" group="0" ttl="0" cacheable="0"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.empty" template="" group="" ttl="0"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.padded" group="00" ttl="00"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.signed" ttl="-0"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.override.zero" template="MageLens_Compatibility::layout-falsy.phtml"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.override.empty" template="MageLens_Compatibility::layout-falsy.phtml"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.false"/>
+        <container name="magelens.falsy.hidden" htmlTag="section">
+            <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.hidden.child"/>
+        </container>
+        <container name="magelens.falsy.wrapper" htmlTag="section" htmlClass="0" label="0">
+            <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.wrapper.child"/>
+        </container>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.removed.block"/>
+        <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.restored.block"/>
+        <container name="magelens.falsy.removed.container" htmlTag="section">
+            <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.removed.child"/>
+        </container>
+        <container name="magelens.falsy.restored.container" htmlTag="section">
+            <block class="MageLens\Compatibility\Block\LayoutFalsyDefaults" name="magelens.falsy.restored.child"/>
+        </container>
+    </container>
+    <referenceBlock name="magelens.falsy.removed.block" remove="1"/>
+    <referenceBlock name="magelens.falsy.restored.block" remove="true"/>
+    <referenceContainer name="magelens.falsy.removed.container" remove="1"/>
+    <referenceContainer name="magelens.falsy.restored.container" remove="true"/>
+</layout>

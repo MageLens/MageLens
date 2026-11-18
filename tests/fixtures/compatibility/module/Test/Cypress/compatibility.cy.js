@@ -249,6 +249,16 @@ describe('Magento storefront coverage compatibility', () => {
             cy.get(`[data-layout-renderfailure="${effect}"]`).should('have.text', 'verified');
         }
         cy.get('[data-layout-renderfailure-output="after"]').should('not.exist');
+        cy.visit('/coverageprobe/falsy/');
+        cy.get('[data-layout-falsy-proof]').should('have.text', 'verified');
+        cy.get('[data-layout-falsy]').then(elements => {
+            expect([...elements].map(element => element.getAttribute('data-layout-falsy')))
+                .to.deep.equal(['native', 'zero', 'empty', 'padded', 'signed', 'override.zero', 'override.empty', 'wrapper.child', 'restored.block', 'restored.child'].map(name => 'magelens.falsy.' + name));
+        });
+        cy.get('[data-layout-falsy="magelens.falsy.wrapper.child"]').parent().should(wrapper => {
+            expect(wrapper[0].tagName).to.equal('SECTION0');
+            expect(wrapper[0].getAttribute('class')).to.equal(null);
+        });
         cy.visit('/coverageprobe/references/');
         cy.get('[data-layout-reference-proof]').should('have.text', 'verified');
         cy.get('#layout-reference-inner').should('have.class', 'reference-effective');

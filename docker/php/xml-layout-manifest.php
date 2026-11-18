@@ -137,7 +137,7 @@ final class LayoutManifest
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
                         && $attribute->nodeName === 'src' && $element !== '' => 'asset-removal',
-                    $blockNode && $attribute->nodeName === 'template' && $attribute->nodeValue !== '' => 'template',
+                    $blockNode && $attribute->nodeName === 'template' => 'template',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'layout'
                         && $attribute->nodeValue !== '' => 'wireframe-selection',
                     default => 'attribute',

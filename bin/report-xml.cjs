@@ -107,15 +107,25 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
+for (const [kind, type] of [
+    ['template', 'layout-template-empty-ignored'], ['block-group', 'layout-block-group-empty-ignored'],
+    ['block-ttl', 'layout-block-ttl-empty-ignored'], ['block-display', 'layout-display-empty-ignored'],
+    ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
+]) layoutEvents[kind].push(type);
 const referenceEvents = [...new Set(['template', 'argument', 'action', 'container-htmlTag', 'container-label',
     'block-class', 'block-group', 'block-ttl', 'block-display', 'removal'].flatMap(kind => layoutEvents[kind]))]
     .filter(type => !['layout-argument-evaluated', 'layout-argument-mixed-origin', 'layout-argument-overridden',
         'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed'].includes(type));
 for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...referenceEvents,
     'layout-reference-target-observed', 'layout-reference-unchanged', 'layout-reference-target-missing',
-    'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced'];
+    'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-template-empty-ignored': 'The native block generator treats the original empty string or zero template spelling as empty and skips its template assignment. Any PHP default template has a separate origin.',
+    'layout-block-group-empty-ignored': 'The native block generator treats this empty string or zero group name as empty and skips group registration.',
+    'layout-block-ttl-empty-ignored': 'The native block generator treats the zero TTL spelling as empty and skips its assignment. A constructor or other provider can retain its own TTL.',
+    'layout-display-empty-ignored': 'The native block generator treats the original zero display spelling as empty and skips the structural attribute. Container display processing has different semantics.',
+    'layout-removal-empty-ignored': 'The native reference reader treats the empty or zero remove spelling as false in both its removal and cancellation branches. It leaves any earlier removal queued.',
     'layout-argument-name-overridden': 'A later declaration replaced the value associated with this original parser key before its native block-data assignment.',
     'layout-argument-name-mixed-origin': 'The value at this parser key combines original declarations. The assignment cannot choose one complete original name operand.',
     'layout-argument-name-origin-unconfirmed': 'The native value or assignment handoff does not establish this original name operand for the applied key.',
