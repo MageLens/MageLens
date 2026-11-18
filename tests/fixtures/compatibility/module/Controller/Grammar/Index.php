@@ -68,7 +68,7 @@ class Index implements HttpGetActionInterface
             $observed = $page->getLayout()->isCacheable();
             $output .= '<span data-layout-grammar="' . $case . '">' . ($observed === $expected ? 'verified' : 'unexpected') . '</span>';
         }
-        $fragment = $this->layouts->create(['isIsolated' => true]);
+        $fragment = $this->layouts->create();
         $fragment->addHandle('coverageprobe_grammar_uiroot');
         $rootVerified = false;
         try {

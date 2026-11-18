@@ -39,6 +39,24 @@ class LayoutRegistry extends Template
         ];
     }
 
+    public function handleMetadataEffects(): array
+    {
+        $updates = $this->getLayout()->getUpdate();
+        $metadata = $updates->getAllDesignAbstractions();
+        $custom = $metadata['coverageprobe_metadata_custom'] ?? [];
+        $wireframe = $metadata['coverageprobe_metadata_wireframe'] ?? [];
+        $containers = $updates->getContainers();
+        return [
+            'custom' => ($custom['label'] ?? null) === 'Registry custom label' && $updates->isCustomerDesignAbstraction($custom),
+            'wireframe' => ($wireframe['label'] ?? null) === 'Registry wireframe label'
+                && $updates->isPageLayoutDesignAbstraction($wireframe),
+            'equal' => ($metadata['coverageprobe_metadata_equal']['label'] ?? null) === 'Registry equal label',
+            'filtered' => !isset($metadata['coverageprobe_metadata_untyped']),
+            'available' => in_array('coverageprobe_metadata_untyped', $updates->getAvailableHandles(), true),
+            'containers' => ($containers['magelens.layout.metadata-container'] ?? null) === 'Snapshot container label',
+        ];
+    }
+
     public function registryEffects(): array
     {
         $this->layoutCache->remove(\Magento\Theme\Model\PageLayout\Config\Builder::CACHE_KEY_LAYOUTS);

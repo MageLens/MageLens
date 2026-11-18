@@ -58,6 +58,9 @@ test('starts the next test with fresh state', async ({page}) => {
     for (const effect of ['membership', 'override', 'equal', 'empty', 'cdata', 'mixed', 'cdata-equal', 'translation-flag', 'page-type', 'page-type-equal']) {
         await expect(wireframe.locator(`[data-layout-registry-effect="${effect}"]`)).toHaveText('verified');
     }
+    for (const effect of ['custom', 'wireframe', 'equal', 'filtered', 'available', 'containers']) {
+        await expect(wireframe.locator(`[data-layout-handle-metadata="${effect}"]`)).toHaveText('verified');
+    }
     for (const effect of ['move', 'removal', 'nested-block', 'ttl', 'cacheable', 'ignored-body']) {
         await expect(wireframe.locator(`[data-layout-wireframe-proof="${effect}"]`)).toHaveText('verified');
     }
@@ -171,6 +174,36 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/dynamic/');
     await expect(page.locator('[data-layout-dynamic]')).toHaveText(['xml-value', 'xml-value', 'xml-value', 'xml-value']);
     await expect(page.locator('[data-layout-dynamic-nested]')).toHaveText(['xml-value|xml-value', 'xml-value|xml-value', 'xml-value|xml-value', 'xml-value']);
+    for (const fixtureCase of ['native', 'equal', 'nested', 'scalar']) {
+        await page.goto(`/coverageprobe/database/?case=${fixtureCase}`);
+        await expect(page.locator('[data-layout-database]')).toHaveText('xml-value');
+        await expect(page.locator('[data-layout-database-nested]')).toHaveText(
+            fixtureCase === 'scalar' ? 'xml-value' : 'xml-value|xml-value');
+    }
+    await page.goto('/coverageprobe/shared/');
+    await expect(page.locator('[data-layout-shared]')).toHaveText(['second-value', 'second-value', 'second-value', 'second-value']);
+    await expect(page.locator('[data-layout-shared="first"]')).toHaveCount(0);
+    await expect(page.locator('[data-layout-shared="second"]')).toHaveCount(4);
+    for (const renderPath of ['native', 'direct']) {
+        await expect(page.locator(`[data-layout-shared-path="${renderPath}"] [data-layout-shared]`)).toHaveCount(2);
+    }
+    for (const fixtureCase of ['native', 'inline', 'custom', 'expired']) {
+        await page.goto(`/coverageprobe/cms/?case=${fixtureCase}`);
+        await expect(page).toHaveTitle('CMS runtime title');
+        await expect(page.locator('[data-layout-cms-content]')).toHaveText('CMS fixture body');
+        await expect(page.locator('[data-layout-cms="xml"]')).toHaveText('xml-value');
+        await expect(page.locator('[data-layout-cms="selected"]')).toHaveText('selected-file');
+        const inline = page.locator('[data-layout-cms="inline"]');
+        if (fixtureCase === 'native') await expect(inline).toHaveCount(0);
+        else {
+            await expect(inline).toHaveText(fixtureCase === 'custom' ? 'custom-value' : 'inline-value');
+            await expect(inline).toHaveAttribute('data-layout-cms-template', 'xml');
+        }
+    }
+    await page.goto('/coverageprobe/renderfailure/');
+    for (const effect of ['empty', 'missing', 'throw']) {
+        await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
+    }
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

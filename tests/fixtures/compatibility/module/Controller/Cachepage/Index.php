@@ -23,7 +23,7 @@ class Index implements HttpGetActionInterface
     public function execute(): Raw
     {
         $nonce = LayoutPageCache::nonce($this->request);
-        $fragment = $this->layouts->create(['isIsolated' => true]);
+        $fragment = $this->layouts->create();
         $fragment->addHandle('coverageprobe_cachepage_index');
         return $this->raw->create()->setContents($fragment->getLayout()->getOutput())
             ->setHeader('Content-Type', 'text/html; charset=UTF-8', true)

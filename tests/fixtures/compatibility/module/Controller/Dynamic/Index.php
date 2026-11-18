@@ -22,7 +22,7 @@ class Index implements HttpGetActionInterface
     {
         $output = '';
         foreach (['native', 'equal', 'nested', 'scalar'] as $case) {
-            $fragment = $this->layouts->create(['isIsolated' => true]);
+            $fragment = $this->layouts->create();
             $fragment->addHandle('coverageprobe_dynamic_' . $case);
             $layout = $fragment->getLayout();
             $update = $layout->getUpdate();

@@ -23,6 +23,7 @@ License: see LICENSE in the repository root.
             <block class="MageLens\Compatibility\Block\LayoutRegistry" name="magelens.layout.handle.action" template="MageLens_Compatibility::layout-handle.phtml">
                 <arguments><argument name="marker" xsi:type="string">action</argument></arguments>
             </block>
+            <container name="magelens.layout.metadata-container" label="Snapshot container label"/>
         </referenceContainer>
     </body>
 </page>

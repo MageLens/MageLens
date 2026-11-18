@@ -63,6 +63,9 @@ describe('Magento storefront coverage compatibility', () => {
         for (const effect of ['membership', 'override', 'equal', 'empty', 'cdata', 'mixed', 'cdata-equal', 'translation-flag', 'page-type', 'page-type-equal']) {
             cy.get(`#layout-wireframe [data-layout-registry-effect="${effect}"]`).should('have.text', 'verified');
         }
+        for (const effect of ['custom', 'wireframe', 'equal', 'filtered', 'available', 'containers']) {
+            cy.get(`#layout-wireframe [data-layout-handle-metadata="${effect}"]`).should('have.text', 'verified');
+        }
         for (const effect of ['move', 'removal', 'nested-block', 'ttl', 'cacheable', 'ignored-body']) {
             cy.get(`#layout-wireframe [data-layout-wireframe-proof="${effect}"]`).should('have.text', 'verified');
         }
@@ -200,6 +203,37 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-dynamic-nested]').should(markers => {
             expect([...markers].map(marker => marker.textContent)).to.deep.equal(['xml-value|xml-value', 'xml-value|xml-value', 'xml-value|xml-value', 'xml-value']);
         });
+        for (const fixtureCase of ['native', 'equal', 'nested', 'scalar']) {
+            cy.visit(`/coverageprobe/database/?case=${fixtureCase}`);
+            cy.get('[data-layout-database]').should('have.text', 'xml-value');
+            cy.get('[data-layout-database-nested]').should('have.text',
+                fixtureCase === 'scalar' ? 'xml-value' : 'xml-value|xml-value');
+        }
+        cy.visit('/coverageprobe/shared/');
+        cy.get('[data-layout-shared]').should(markers => {
+            expect([...markers].map(marker => marker.textContent)).to.deep.equal(['second-value', 'second-value', 'second-value', 'second-value']);
+        });
+        cy.get('[data-layout-shared="first"]').should('not.exist');
+        cy.get('[data-layout-shared="second"]').should('have.length', 4);
+        for (const renderPath of ['native', 'direct']) {
+            cy.get(`[data-layout-shared-path="${renderPath}"] [data-layout-shared]`).should('have.length', 2);
+        }
+        for (const fixtureCase of ['native', 'inline', 'custom', 'expired']) {
+            cy.visit(`/coverageprobe/cms/?case=${fixtureCase}`);
+            cy.title().should('equal', 'CMS runtime title');
+            cy.get('[data-layout-cms-content]').should('have.text', 'CMS fixture body');
+            cy.get('[data-layout-cms="xml"]').should('have.text', 'xml-value');
+            cy.get('[data-layout-cms="selected"]').should('have.text', 'selected-file');
+            if (fixtureCase === 'native') cy.get('[data-layout-cms="inline"]').should('not.exist');
+            else {
+                cy.get('[data-layout-cms="inline"]').should('have.text', fixtureCase === 'custom' ? 'custom-value' : 'inline-value')
+                    .and('have.attr', 'data-layout-cms-template', 'xml');
+            }
+        }
+        cy.visit('/coverageprobe/renderfailure/');
+        for (const effect of ['empty', 'missing', 'throw']) {
+            cy.get(`[data-layout-renderfailure="${effect}"]`).should('have.text', 'verified');
+        }
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');
