@@ -155,6 +155,11 @@ final class LayoutManifest
                         'body-class', 'body-class-name', 'body-class-value'], true);
                 $ignoredWrapper = $fileType === 'wireframe' && self::wireframeWrapper($node);
                 if ($ignoredWrapper || $kind === 'file-selection') $supported = false;
+                $typeAttribute = $attribute === null ? null : $node->getAttributeNode($attribute);
+                $discardedType = in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                    && in_array($node->tagName, ['argument', 'item'], true)
+                    && $typeAttribute && $typeAttribute->namespaceURI === 'http://www.w3.org/2001/XMLSchema-instance'
+                    && $typeAttribute->localName === 'type' && $typeAttribute->nodeName !== 'xsi:type';
                 $identity = $position . ($attribute === null ? '' : '/@' . $attribute);
                 $result[] = [
                     'id' => hash('sha256', "$path\0layout\0$identity"),
@@ -175,7 +180,9 @@ final class LayoutManifest
                         ? 'This root records native file selection at the merged-XML stage. Coverage requires an attributable instruction effect'
                         : ($supported ? null : ($ignoredWrapper
                         ? 'The installed wireframe root reader pool ignores head and body branches, including their descendants'
-                        : self::limitation($fileType, $node->tagName, $attribute)))),
+                        : ($discardedType
+                        ? 'The reviewed native layout serializer preserves type attributes only under the literal xsi prefix. This namespace-equivalent attribute is discarded before argument interpretation'
+                        : self::limitation($fileType, $node->tagName, $attribute))))),
                 ];
             }
         }

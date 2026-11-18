@@ -167,6 +167,9 @@ describe('Magento storefront coverage compatibility', () => {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'applied');
         }
         cy.get('[data-layout-grammar="constenum"]').should('have.text', 'structure-serialization-error');
+        for (const variant of ['typeprefix', 'typelocalprefix']) {
+            cy.get(`[data-layout-grammar="${variant}"]`).should('have.text', 'type-erased');
+        }
         for (const entry of ['updaterenabled', 'updaterorder']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'updater-lookup-error');
         }

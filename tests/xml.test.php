@@ -115,6 +115,14 @@ $aliasedHint = LayoutManifest::declarations('app/code/Fixture/Module/view/fronte
 checkXml($aliasedHint[1]['layout']['kind'] === 'schema-hint' && !$aliasedHint[1]['supported']
     && $aliasedHint[1]['layout']['attribute'] === 'grammar:noNamespaceSchemaLocation',
     'Schema-hint identity preserves the original namespace prefix while semantics use the namespace URI');
+foreach (['typeprefix', 'typelocalprefix'] as $variant) {
+    $file = 'coverageprobe_grammar_' . $variant . '.xml';
+    $declarations = LayoutManifest::declarations(dirname($originFile) . '/' . $file, file_get_contents($layoutDirectory . $file));
+    $type = array_values(array_filter($declarations, static fn($item) => $item['layout']['attribute'] === 'typed:type'))[0];
+    checkXml(!$type['supported'] && str_contains($type['reason'], 'literal xsi prefix')
+        && str_contains($type['reason'], 'discarded before argument interpretation'),
+        'Namespace-equivalent type attributes retain the verified native serialization limitation');
+}
 foreach ([['layout', 'page', 'page'], ['layout', 'layout', 'generic'], ['page_layout', 'layout', 'wireframe']] as [$directory, $root, $type]) {
     foreach (['', ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="unused.xsd"'] as $hintAttribute) {
         $declarations = LayoutManifest::declarations("app/code/Fixture/Module/view/frontend/$directory/hint.xml", "<$root$hintAttribute/>");

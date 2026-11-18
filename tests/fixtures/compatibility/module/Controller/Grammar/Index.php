@@ -25,7 +25,7 @@ class Index implements HttpGetActionInterface
     {
         $output = '';
         foreach (['serviceurl', 'const', 'configurable', 'configuredarray', 'constarray', 'updaterenabled', 'updaterorder',
-            'configureddata', 'configuredvaluearray', 'constenum'] as $case) {
+            'configureddata', 'configuredvaluearray', 'constenum', 'typeprefix', 'typelocalprefix'] as $case) {
             $page = $this->pages->create(true, ['isIsolated' => true]);
             $page->addHandle('coverageprobe_grammar_' . $case);
             $outcome = 'unexpected';
@@ -42,7 +42,16 @@ class Index implements HttpGetActionInterface
                     && str_ends_with((string) parse_url($value, PHP_URL_PATH), '/rest/default/V1/coverageprobe/fragment/index')
                     && parse_url($value, PHP_URL_QUERY) === null) $outcome = 'applied';
             } catch (\Throwable $error) {
-                if ($case === 'configurable'
+                if (in_array($case, ['typeprefix', 'typelocalprefix'], true)
+                    && $error instanceof \Magento\Framework\Config\Dom\ValidationException
+                    && $this->state->getMode() === \Magento\Framework\App\State::MODE_DEVELOPER
+                    && str_contains($error->getMessage(), "Element 'argument': The type definition is abstract.")) {
+                    $outcome = 'type-erased';
+                } elseif (in_array($case, ['typeprefix', 'typelocalprefix'], true) && $error instanceof \InvalidArgumentException
+                    && $this->state->getMode() !== \Magento\Framework\App\State::MODE_DEVELOPER
+                    && $error->getMessage() === 'Value for key "xsi:type" is missing in the argument data.') {
+                    $outcome = 'type-erased';
+                } elseif ($case === 'configurable'
                     && $error->getMessage() === 'Cannot use object of type MageLens\Compatibility\Model\LayoutArgumentSource as array') {
                     $outcome = 'generator-error';
                 } elseif ($case === 'constenum' && $error instanceof \InvalidArgumentException

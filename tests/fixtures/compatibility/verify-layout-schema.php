@@ -52,10 +52,25 @@ foreach (['xsi', 'grammar'] as $prefix) {
     }
 }
 echo "Verified configured native validation and omitted source schema hints with two namespace prefixes.\n";
+foreach (['xsi', 'typed'] as $prefix) {
+    $source = '<argument xmlns:' . $prefix . '="http://www.w3.org/2001/XMLSchema-instance" '
+        . 'name="value" ' . $prefix . ':type="string">fixture</argument>';
+    $element = new \Magento\Framework\View\Layout\Element($source);
+    if ((string) $element->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'string') {
+        throw new RuntimeException('Expected a namespace-equivalent source type attribute');
+    }
+    $serialized = new DOMDocument();
+    $serialized->loadXML('<root xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' . $element->asNiceXml() . '</root>');
+    $type = $serialized->documentElement->firstElementChild->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type');
+    if ($type !== ($prefix === 'xsi' ? 'string' : '')) throw new RuntimeException('Native type serialization prefix behavior changed');
+}
+echo "Verified the native layout serializer retains only the literal xsi type prefix.\n";
 $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
+    ['layout item sort order', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"array\"><item name=\"child\" xsi:type=\"string\" sortOrder=\"1\">fixture</item></argument></arguments></block></body></page>"],
+    ['layout init parameter', $pageSchema, "<page $namespace><body><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"init_parameter\">fixture</argument></arguments></block></body></page>"],
     ['zero move alias', $genericSchema, '<layout><move element="source" destination="target" as="0"/></layout>'],
     ['empty move alias', $genericSchema, '<layout><move element="source" destination="target" as=""/></layout>'],
     ['empty move sibling', $genericSchema, '<layout><move element="source" destination="target" after=""/></layout>'],
