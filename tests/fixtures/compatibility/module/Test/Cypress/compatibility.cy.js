@@ -169,6 +169,10 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-mutation]').then(elements => {
             expect([...elements].map(element => element.textContent)).to.deep.equal(['xml-value', 'xml-value', 'xml-value']);
         });
+        cy.visit('/coverageprobe/templateownership/');
+        cy.get('[data-layout-mutation]').should('have.length', 4).each(element => {
+            cy.wrap(element).should('have.text', 'xml-value');
+        });
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');

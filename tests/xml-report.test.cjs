@@ -407,6 +407,30 @@ test('layout structural and page-value reports require the correct native effect
     }
 });
 
+test('template selection and an unconfirmed execution input retain independent evidence', () => {
+    const {manifest, record, sources} = fixture();
+    const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
+    const source = Buffer.from('<page><body/></page>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+        {id: 'template', family: 'layout', path: '/page/body/block/@template', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'template', element: 'fixture', ordinal: 1,
+                handle: 'fixture', fileType: 'page', instruction: 'block'}}
+    ]});
+    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {template: 'template'}}}}};
+    sources[path] = source;
+    const event = {id: 'template', type: 'layout-template-origin-unconfirmed', area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
+    const unconfirmed = merge(manifest, [{...record, layoutHook: true, events: [event]}], sources).files[1].declarations[0];
+    assert.equal(unconfirmed.state, 'unmeasured');
+    assert.equal(unconfirmed.hits, 0);
+    assert.match(unconfirmed.reason, /unverified template getter or filename resolver/);
+    const selected = merge(manifest, [{...record, layoutHook: true,
+        events: [{...event, type: 'layout-template-selected'}, event]}], sources).files[1].declarations[0];
+    assert.equal(selected.state, 'covered');
+    assert.equal(selected.hits, 1);
+    assert.ok(selected.evidence.some(event => event.type === 'layout-template-origin-unconfirmed'));
+});
+
 test('native file selection remains a zero-hit observation and cannot substitute for effect hook health', () => {
     const {manifest, record, sources} = fixture();
     const file = 'app/code/Acme/Blog/view/frontend/layout/empty.xml';

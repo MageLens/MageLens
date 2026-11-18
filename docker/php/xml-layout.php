@@ -46,6 +46,7 @@ final class LayoutCoverage
     private LayoutXmlOwnership $ownership;
     private LayoutPackageEvents $packageEvents;
     private LayoutArgumentOwnership $argumentOwnership;
+    private LayoutTemplateOwnership $templateOwnership;
     private array $actionEvaluations = [];
     private int $actionEvaluationOverflow = 0;
     private \WeakMap $merges;
@@ -83,6 +84,7 @@ final class LayoutCoverage
         $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
+        $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
         $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
             fn($xml) => $this->observeXmlReceiver($xml, false, false));
@@ -105,6 +107,7 @@ final class LayoutCoverage
     public function finish(): array
     {
         $this->ownership->finish();
+        $this->templateOwnership->finish();
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
         if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
@@ -198,6 +201,7 @@ final class LayoutCoverage
             ...$this->structureCoverage->hooks(),
             ...$this->positions->hooks(),
             ...$this->registry->hooks(),
+            ...$this->templateOwnership->hooks(),
         ];
     }
 
@@ -1943,6 +1947,7 @@ final class LayoutCoverage
     private function beginRender($block, array $params, string $class): void
     {
         if (isset($this->blocks[$block])) {
+            if ($block instanceof Template) $this->templateOwnership->watch($block);
             $state = $this->blocks[$block];
             unset($state['executed'], $state['html']);
             $this->blocks[$block] = $state;
@@ -1973,6 +1978,10 @@ final class LayoutCoverage
         $caller = self::nativeCaller($block, 'fetchView');
         $origin = $class === Template::class && ($caller['class'] ?? null) === Template::class
             && ($caller['function'] ?? null) === '_toHtml' ? ($this->blocks[$block]['template'] ?? null) : null;
+        if ($origin !== null && !$this->templateOwnership->consume($block, $params[0])) {
+            $this->event($origin, 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
+            $origin = null;
+        }
         static $property;
         $property ??= new \ReflectionProperty(Template::class, 'templateContext');
         $this->fetching[] = ['origin' => $origin, 'executed' => false, 'file' => $params[0],

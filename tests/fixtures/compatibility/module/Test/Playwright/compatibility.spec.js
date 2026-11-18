@@ -145,6 +145,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-mutation]')).toHaveText(['xml-value', 'xml-value']);
     await page.goto('/coverageprobe/argumentownership/');
     await expect(page.locator('[data-layout-mutation]')).toHaveText(['xml-value', 'xml-value', 'xml-value']);
+    await page.goto('/coverageprobe/templateownership/');
+    await expect(page.locator('[data-layout-mutation]')).toHaveText(['xml-value', 'xml-value', 'xml-value', 'xml-value']);
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

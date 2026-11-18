@@ -17,6 +17,7 @@ require_once __DIR__ . '/xml-layout.php';
 require_once __DIR__ . '/xml-layout-ownership.php';
 require_once __DIR__ . '/xml-layout-package-events.php';
 require_once __DIR__ . '/xml-layout-argument-ownership.php';
+require_once __DIR__ . '/xml-layout-template-ownership.php';
 require_once __DIR__ . '/xml-layout-page.php';
 require_once __DIR__ . '/xml-layout-page-values.php';
 require_once __DIR__ . '/xml-layout-structure.php';
