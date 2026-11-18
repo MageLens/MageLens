@@ -347,3 +347,35 @@ test('layout equivalence preserves effects, source and context without exposing 
         assert.equal(compareThemes(matrix, cases).passed, false);
     }
 });
+
+test('native Admin context names are platform metadata while every source and effect remains exact', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    const effect = {type: 'layout-block-created', area: 'adminhtml', theme: 'adminhtml/Magento/backend'};
+    xml.files[0].declarations = [{id: 'a'.repeat(64), family: 'layout', path: '/page/body/block',
+        declaredScope: {type: 'adminhtml', code: ''}, startLine: 1, endLine: 1, supported: true,
+        state: 'covered', hits: 1, evidence: [effect], layout: {kind: 'block', fileType: 'page', ordinal: 1,
+            element: 'fixture', handle: 'fixture', instruction: 'block', attribute: null}}];
+    xml.layout = {total: 1, covered: 1, limitations: []};
+    write('xml/coverage.json', xml);
+    const magento = snapshot(directory);
+    effect.theme = 'adminhtml/MageOS/m137-admin-theme';
+    write('xml/coverage.json', xml);
+    const mageos = snapshot(directory);
+    assert.notDeepEqual(magento.xml, mageos.xml, 'The actual contexts must remain in the saved snapshots');
+    const matrix = cases.map(entry => ({...entry, snapshot: structuredClone(entry.platform === 'mageos' ? mageos : magento)}));
+    const original = structuredClone(matrix);
+    assert.equal(compareThemes(matrix, cases).passed, true);
+    assert.deepEqual(matrix, original, 'Comparison must not rewrite the original snapshots');
+    const declaration = value => Object.values(value.xml.files)[0].declarations[0];
+    for (const alter of [
+        value => { declaration(value).evidence[0][2] = 'f'.repeat(64); },
+        value => { declaration(value).evidence[0][0] = 'layout-block-rendered'; },
+        value => { Object.values(value.xml.files)[0].source = 'f'.repeat(64); },
+        value => { declaration(value).state = 'uncovered'; declaration(value).evidence = []; value.xml.layout.covered = 0; },
+    ]) {
+        const changed = structuredClone(matrix);
+        alter(changed[1].snapshot);
+        assert.equal(compareThemes(changed, cases).passed, false);
+    }
+});

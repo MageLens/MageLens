@@ -73,7 +73,7 @@ const layoutEvents = {
     'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
     'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden'],
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
-    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed'],
+    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed', 'layout-block-render-origin-unconfirmed', 'layout-block-registration-origin-unconfirmed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     'action-method': ['layout-action-executed', 'layout-action-ambiguous'],
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
@@ -89,12 +89,21 @@ const layoutEvents = {
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed', 'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed'],
 };
+for (const kind of ['label', 'type']) {
+    layoutEvents['handle-' + kind] = ['layout-handle-' + kind + '-evaluated', 'layout-handle-metadata-returned',
+        'layout-handle-metadata-overridden', 'layout-handle-metadata-origin-unconfirmed'];
+}
 for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 'rev', 'sizes', 'target', 'type', 'integrity', 'crossorigin', 'as']) {
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-block-registration-origin-unconfirmed': 'The block registration passed through an unverified setter or scope-dependent generated implementation. The resulting layout element has no verified original registration origin.',
+    'layout-handle-metadata-returned': 'The native API returned a handle metadata snapshot. Later PHP array offsets and classification calls do not preserve per-field origin identity.',
+    'layout-handle-metadata-overridden': 'A later package entry with the same handle replaced this metadata in the native result map.',
+    'layout-handle-metadata-origin-unconfirmed': 'The metadata API passed through an unverified implementation or plugin. Native field evaluation and final result ownership remain separate.',
+    'layout-block-render-origin-unconfirmed': 'A shared block object has multiple original layout declarations. A direct PHP render lacks a unique layout element origin.',
     'layout-block-cache-unconfirmed': 'The native block HTML cache path supplied data while fresh template execution was bypassed. The original source of the cached bytes is unverified.',
     'layout-template-cache-unconfirmed': 'Cached block HTML bypassed this selected template. Cached bytes do not establish fresh original XML template execution.',
     'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, so native XML selection cannot establish original template execution ownership.',
@@ -155,7 +164,7 @@ const layoutDecisions = {
     'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
     'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',
     'layout-move-unresolved': 'The scheduled move did not establish the requested parent.',
-    'layout-wireframe-origin-unconfirmed': 'An intercepted page-layout getter can replace the XML selection with an equal value.',
+    'layout-wireframe-origin-unconfirmed': 'The page-layout getter or active plugin lacks a verified original-source handoff. An equal result alone cannot establish ownership; selector identities longer than 4096 bytes are also unmeasured.',
     'layout-template-overridden': 'A later declaration supplied the template used during block generation',
     'layout-include-duplicate': 'Magento had already processed the included handle',
     'layout-include-cycle': 'Magento was processing the included handle and skipped recursive re-entry',
@@ -168,6 +177,11 @@ const layoutLimitations = {
     'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',
     'layout-processor-unconfirmed': 'A layout processor implementation falls outside the verified native merge path.',
     'layout-theme-context-unconfirmed': 'Native file resolution returned no bounded area or theme path for original-source layout evidence.',
+    'layout-shared-block-origin': 'A shared block object was rendered directly without a uniquely attributable layout element. Native element rendering and template execution retain independent evidence.',
+    'layout-block-registration-origin': 'A native block registration used an unverified setter handoff. Block construction and template execution retain independent evidence; layout element render attribution requires a verified registration.',
+    'layout-database-update': 'Magento appended a database layout update through its native merge path. Database and widget row origins have no original XML file location; displaced file effects lose ownership.',
+    'layout-cms-update': 'The native CMS helper appended a CMS layout update from page data. Its inline or dated custom values have no original XML file location; surviving file effects retain independent evidence.',
+    'layout-handle-metadata-snapshot': 'Magento returned a handle metadata snapshot. Native XML field evaluation is measured; later individual PHP array reads and classification calls lack source identity.',
     'mutable-layout-package': 'External PHP or an unverified getter received mutable package layout XML. Future selected entries lack verified original ownership.',
     'layout-serialization-unconfirmed': 'Layout serialization or XML conversion used an unverified implementation or plugin. Evidence is limited to independently confirmed native calls.',
     'layout-updates-reset': 'A discarded native update list was used again after reset without current original-source lineage.',

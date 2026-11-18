@@ -343,6 +343,25 @@ function validateSnapshot(value, run, summary) {
         for (const key of ['lineSummary', 'statementSummary', 'functionSummary', 'branchSummary']) totals(file.totals[key]);
     }
 }
+function comparableXml(xml, platform) {
+    // Native Admin theme names are platform run metadata. Keep the actual
+    // contexts in each artifact and normalize only the expected native name
+    // for this platform. Every source, effect and other context stays intact.
+    const native = {magento: 'adminhtml/Magento/backend', mageos: 'adminhtml/MageOS/m137-admin-theme'}[platform];
+    if (!native) return xml;
+    const expected = digest(native);
+    const normalized = digest('adminhtml/platform-native');
+    const result = structuredClone(xml);
+    for (const file of Object.values(result.files)) {
+        for (const item of file.declarations) {
+            if (!item.layout) continue;
+            for (const evidence of item.evidence) {
+                if (evidence[1] === 'adminhtml' && evidence[2] === expected) evidence[2] = normalized;
+            }
+        }
+    }
+    return result;
+}
 function compareThemes(reports, expected) {
     const errors = [];
     const expectedIds = expected.map(entry => entry.id).sort();
@@ -355,7 +374,8 @@ function compareThemes(reports, expected) {
         const baseline = entries[0];
         for (const report of entries.slice(1)) {
             for (const section of ['metrics', 'php', 'js', 'templates', 'xml']) {
-                const left = baseline.snapshot[section], right = report.snapshot[section];
+                const left = section === 'xml' ? comparableXml(baseline.snapshot.xml, baseline.platform) : baseline.snapshot[section];
+                const right = section === 'xml' ? comparableXml(report.snapshot.xml, report.platform) : report.snapshot[section];
                 if (isDeepStrictEqual(left, right)) continue;
                 if (section === 'metrics') differences.push({case: report.id, section});
                 else {

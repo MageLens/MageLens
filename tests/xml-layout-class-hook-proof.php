@@ -21,7 +21,7 @@ if (!in_array($mode, ['native', 'native-production', 'fallback', 'compiled-fallb
     'factory-fallback', 'factory-plugin', 'compiled-factory-plugin', 'generator-plugin', 'compiled-generator-plugin',
     'around', 'compiled-around', 'no-parent', 'empty-class', 'missing-factory', 'missing-creation', 'missing-wrapper',
     'missing-creation-pre', 'missing-creation-post', 'missing-manager', 'missing-manager-pre', 'missing-manager-post',
-    'manager-depth', 'registration-limit'], true)) {
+    'manager-depth', 'registration-limit', 'missing-registration', 'missing-render-path', 'missing-block-process'], true)) {
     throw new RuntimeException('Unknown class proof mode');
 }
 $handle = $mode === 'empty-class' ? 'coverageprobe_classdefault_index' : 'coverageprobe_packagemutation_native';
@@ -45,6 +45,10 @@ if ($mode === 'manager-depth') {
     (new ReflectionProperty(LayoutCoverage::class, 'blockObjectCreations'))->setValue($collector, array_fill(0, 256, null));
 }
 foreach ($callbacks as [$class, $method, $pre, $post]) {
+    if ($mode === 'missing-registration' && $class === \Magento\Framework\View\Layout::class && $method === 'setBlock') continue;
+    if ($mode === 'missing-render-path' && $class === \Magento\Framework\View\Layout::class && $method === '_renderBlock') continue;
+    if ($mode === 'missing-block-process' && $class === BlockGenerator::class && $method === 'process'
+        && $pre instanceof Closure && (new ReflectionFunction($pre))->getClosureThis() instanceof \MageLens\XmlCoverage\LayoutBlockRendering) continue;
     if ($class === \Magento\Framework\ObjectManagerInterface::class && $method === 'create') {
         if ($mode === 'missing-manager') continue;
         if ($mode === 'missing-manager-pre') $pre = null;
@@ -117,7 +121,8 @@ if ($mode === 'manager-restore') {
     }
 }
 $block = $page->getLayout()->getBlock('magelens.layout.package.native');
-if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>') || $block->getData('late') !== 'xml-value') {
+$html = $mode === 'missing-render-path' ? $page->getLayout()->renderElement('magelens.layout.package.native') : $block->toHtml();
+if (!str_contains($html, 'data-layout-mutation>xml-value</span>') || $block->getData('late') !== 'xml-value') {
     throw new RuntimeException('Native class replacement changed the fixture output');
 }
 if ($mode === 'factory' && \MageLens\Compatibility\Model\LayoutBlockFactory::$calls === 0) {
@@ -134,7 +139,10 @@ try {
     $collector->finish();
     if (str_starts_with($mode, 'missing-') || in_array($mode, ['registration-limit', 'manager-depth'], true)) throw new LogicException('Missing native block factory observation was accepted');
 } catch (RuntimeException $error) {
-    $expected = ['missing-factory' => 'Missing native block factory hook evidence',
+    $expected = ['missing-registration' => ['Missing native layout block registration hook evidence', 'Missing native layout producer hook evidence'],
+        'missing-render-path' => 'Missing native layout block rendering hook evidence',
+        'missing-block-process' => 'Missing native block process hook evidence',
+        'missing-factory' => 'Missing native block factory hook evidence',
         'missing-creation' => 'Missing native block creation hook evidence',
         'missing-wrapper' => 'Missing generated layout producer hook evidence',
         'missing-creation-pre' => 'Unbalanced layout producer hook evidence',
@@ -144,7 +152,7 @@ try {
         'missing-manager-pre' => 'Missing native block object manager hook evidence',
         'missing-manager-post' => 'Unbalanced block object creation hook evidence',
         'manager-depth' => 'Layout block object creation nesting exceeded 256 calls'][$mode] ?? null;
-    if (!$expected || !str_contains($error->getMessage(), $expected)) throw $error;
+    if (!$expected || !array_filter((array) $expected, static fn($message) => str_contains($error->getMessage(), $message))) throw $error;
     echo "Verified native block creation publication guard for $mode.\n";
     exit;
 }

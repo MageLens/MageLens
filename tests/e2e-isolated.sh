@@ -97,7 +97,7 @@ mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-page-cache-hook-proof.php tests/xml-config-theme-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-page-cache-hook-proof.php tests/xml-layout-shared-hook-proof.php tests/xml-layout-metadata-hook-proof.php tests/xml-layout-selection-hook-proof.php tests/xml-config-theme-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -207,7 +207,7 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-reader-hook-proof.php "$reader_case"
     done
-    merge_cases=(native theme-getter unused-parser exposed reset document-limit string-plugin xml-plugin parser-plugin late-parser-plugin string-no-parent xml-no-parent package-no-parent opaque-update native-selection selection-no-parent missing-string missing-document missing-package)
+    merge_cases=(native theme-getter theme-context theme-context-limit missing-theme-area missing-theme-path unused-parser exposed reset document-limit string-plugin xml-plugin parser-plugin late-parser-plugin string-no-parent xml-no-parent package-no-parent opaque-update native-selection standard-selection-plugin selection-no-parent missing-string missing-document missing-package)
     if [[ "$platform" == mageos ]]; then merge_cases+=(compiled-selection); fi
     if [[ "$theme" == hyva ]]; then
         merge_cases+=(package-event package-event-disabled missing-event-manager missing-event-config missing-event-invoker missing-event-observer event-depth observer-depth)
@@ -216,12 +216,34 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-merge-hook-proof.php "$merge_case"
     done
-    class_cases=(native native-production fallback factory object-manager manager-restore factory-fallback factory-plugin generator-plugin around no-parent missing-factory missing-creation missing-wrapper missing-creation-pre missing-creation-post missing-manager missing-manager-pre missing-manager-post manager-depth registration-limit)
+    class_cases=(native native-production fallback factory object-manager manager-restore factory-fallback factory-plugin generator-plugin around no-parent missing-factory missing-creation missing-wrapper missing-creation-pre missing-creation-post missing-manager missing-manager-pre missing-manager-post manager-depth registration-limit missing-registration missing-block-process missing-render-path)
     if [[ "$platform" == mageos ]]; then class_cases+=(compiled-fallback compiled-generator-plugin compiled-factory-plugin compiled-around); fi
     for class_case in "${class_cases[@]}"; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-class-hook-proof.php "$class_case"
     done
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php /application/docker/php/e2e/xml-layout-shared-hook-proof.php
+    if [[ "$platform" == mageos ]]; then
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-shared-hook-proof.php unverified-scope
+    fi
+    for metadata_case in native missing-api missing-attribute missing-label missing-type depth; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-metadata-hook-proof.php "$metadata_case"
+    done
+    for selection_area in frontend adminhtml; do
+        for selection_case in native missing-getter; do
+            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                php /application/docker/php/e2e/xml-layout-selection-hook-proof.php "$selection_area" "$selection_case"
+        done
+    done
+    if [[ "$platform" == mageos ]]; then
+        for selection_case in standard missing-plugin missing-condition missing-lookup; do
+            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                php /application/docker/php/e2e/xml-layout-selection-hook-proof.php adminhtml "$selection_case"
+        done
+    fi
     template_cases=(native unmapped unmapped-first getter file resolver engine engine-inherited engine-inherited-fallback fallback resolver-fallback engine-fallback getter-plugin file-plugin resolver-plugin engine-plugin around engine-around custom-theme-plugin missing-getter missing-file missing-resolver missing-getter-pre missing-getter-post missing-theme-plugin missing-plugin-lookup missing-engine missing-engine-pre missing-engine-post missing-engine-wrapper missing-engine-pool resolution-depth rendering-depth before-plugin-depth)
     if [[ "$theme" == hyva ]]; then template_cases+=(missing-engine-plugin missing-engine-lookup); fi
     if [[ "$platform" == mageos ]]; then template_cases+=(compiled-fallback compiled-resolver-fallback compiled-engine-fallback compiled-getter-plugin compiled-file-plugin compiled-resolver-plugin compiled-engine-plugin compiled-around compiled-engine-around); fi
@@ -288,6 +310,7 @@ fi
             tests/verify-layout-admin.cjs) ./bin/runner node "$layout_check" "$platform" ;;
             tests/verify-layout-handles.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$platform" ;;
             tests/verify-layout-ui-structure.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
+            tests/verify-layout-render-failures.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
             tests/verify-layout-ownership.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$theme" ;;
             *) ./bin/runner node "$layout_check" ;;
         esac

@@ -92,6 +92,8 @@ final class LayoutManifest
                         && $attribute->namespaceURI === 'http://www.w3.org/2001/XMLSchema-instance'
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
+                    $fileType === 'page' && $index === 0 && $attribute->nodeName === 'label' => 'handle-label',
+                    $fileType === 'page' && $index === 0 && $attribute->nodeName === 'design_abstraction' => 'handle-type',
                     $valueKind === 'visibility' && $attribute->nodeName === 'name' => 'visibility-name',
                     $valueKind === 'visibility' && $attribute->nodeName === 'className' => 'visibility-class',
                     $valueKind === 'ui-placement' && $attribute->nodeName === 'group' => 'ui-group',
@@ -143,6 +145,7 @@ final class LayoutManifest
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',
                     'position-name', 'position-as', 'position-before', 'position-after',
+                    'handle-label', 'handle-type',
                     'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override',
                     'visibility', 'visibility-name', 'visibility-class', 'visibility-argument', 'ui-group'], true);
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')

@@ -239,6 +239,16 @@ final class LayoutXmlOwnership
         return $tokens($source) === $tokens($expected);
     }
 
+    public static function configurationScope(object $object): ?string
+    {
+        if (!(new \ReflectionObject($object))->hasProperty('____scope')) return null;
+        $scope = (new \ReflectionProperty($object, '____scope'))->getValue($object);
+        if (!$scope instanceof \Magento\Framework\Config\Scope
+            || (new \ReflectionMethod($scope, 'getCurrentScope'))->getDeclaringClass()->getName() !== \Magento\Framework\Config\Scope::class) return null;
+        $value = (new \ReflectionProperty(\Magento\Framework\Config\Scope::class, '_currentScope'))->getValue($scope);
+        return is_string($value) && strlen($value) <= 64 ? $value : null;
+    }
+
     private function read($object, array $params, string $class, string $method): void
     {
         $xml = $params[in_array($method, ['interpret', 'scheduleStructure'], true) ? 1 : 0] ?? null;

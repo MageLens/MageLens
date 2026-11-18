@@ -54,6 +54,11 @@ final class LayoutCoverage
     private LayoutPackageEvents $packageEvents;
     private LayoutArgumentOwnership $argumentOwnership;
     private LayoutTemplateOwnership $templateOwnership;
+    private LayoutBlockRendering $blockRendering;
+    private LayoutHandleMetadata $handleMetadata;
+    private LayoutSelectionOwnership $selectionOwnership;
+    private array $blockRenders = [];
+    private int $blockRenderOverflow = 0;
     private LayoutBeforePluginOwnership $engineBeforePlugin;
     private array $actionEvaluations = [];
     private int $actionEvaluationOverflow = 0;
@@ -100,6 +105,9 @@ final class LayoutCoverage
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
+        $this->blockRendering = new LayoutBlockRendering($this->ownership);
+        $this->handleMetadata = new LayoutHandleMetadata($this->ownership, $this->packageOrigin(...));
+        $this->selectionOwnership = new LayoutSelectionOwnership($this->ownership, $this->readSelection(...));
         $this->engineBeforePlugin = new LayoutBeforePluginOwnership([
             'native' => Php::class, 'method' => 'render', 'name' => 'php_template_engine_plugin',
             'plugin' => 'Hyva\\Theme\\Plugin\\TemplateEngine\\PhpPlugin', 'callback' => 'beforeRender',
@@ -128,6 +136,10 @@ final class LayoutCoverage
     {
         $this->ownership->finish();
         $this->templateOwnership->finish();
+        $this->selectionOwnership->finish();
+        $blockLimits = $this->blockRendering->finish();
+        $metadataLimits = $this->handleMetadata->finish();
+        if ($this->blockRenders || $this->blockRenderOverflow) $this->errors['Unbalanced block render hook evidence'] = true;
         $this->engineBeforePlugin->finish();
         if ($this->fetching || $this->fetchingOverflow) $this->errors['Unbalanced template rendering hook evidence'] = true;
         if ($this->loadingPages || $this->loadingPagesOverflow) $this->errors['Unbalanced full-page cache hook evidence'] = true;
@@ -139,7 +151,7 @@ final class LayoutCoverage
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
-        return [$this->healthy || $registryHealthy || $structureHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits]))];
+        return [$this->healthy || $registryHealthy || $structureHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits, ...$blockLimits, ...$metadataLimits]))];
     }
 
     private function hooks(): array
@@ -148,6 +160,9 @@ final class LayoutCoverage
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
             ...$this->argumentOwnership->hooks(),
+            ...$this->blockRendering->hooks(),
+            ...$this->handleMetadata->hooks(),
+            ...$this->selectionOwnership->hooks(),
             [\Magento\Framework\View\File\CollectorInterface::class, 'getFiles', $this->expectTheme(...), null],
             [Merge::class, 'generateCacheId', $this->expectTheme(...), null],
             [\Magento\Framework\View\Design\ThemeInterface::class, 'getArea', null, $this->observeTheme(...)],
@@ -171,7 +186,6 @@ final class LayoutCoverage
             [ScheduledStructure::class, 'populateWithArray', null, $this->cachedStructure(...)],
             [ScheduledStructure::class, 'setStructureElementData', null, $this->checkScheduledWrite(...)],
             [ScheduledStructure::class, 'setElement', null, $this->checkScheduledWrite(...)],
-            [Merge::class, 'getPageLayout', null, $this->readSelection(...)],
             [PageBuilder::class, 'readPageLayout', $this->beginPageRead(...), $this->completePageRead(...)],
             [WireframeReader::class, 'read', $this->beginWireframe(...), $this->completeWireframe(...)],
             [BlockReader::class, 'scheduleBlock', $this->beginArgumentSchedule(...), $this->scheduleBlock(...)],
@@ -541,22 +555,20 @@ final class LayoutCoverage
         if ($class === PageBuilder::class) array_pop($this->pageBuilders);
     }
 
-    private function readSelection($merge, array $params, $result, ?\Throwable $error, string $class): void
+    private function readSelection(Merge $merge, $result, bool $trusted, ?string $nativeSignature): void
     {
         $frame = array_key_last($this->pageBuilders);
-        if ($frame === null || !$this->pageBuilders[$frame]['native'] || $error || $class !== Merge::class) return;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 6);
+        if ($frame === null || !$this->pageBuilders[$frame]['native']) return;
         $selection = $this->merges[$merge]['pageLayout'] ?? null;
-        if (!$selection || $selection['name'] !== $result) return;
-        for ($depth = 2; isset($trace[$depth]) && $trace[$depth]['function'] === 'getPageLayout'; $depth++) {
-            if (($trace[$depth]['class'] ?? null) !== PageBuilder::class) continue;
-            $wrapper = get_class($merge);
-            $selection['confirmed'] = LayoutXmlOwnership::nativeMethod($merge, Merge::class, 'getPageLayout')
-                && ($depth === 2 || ($depth === 3 && str_ends_with($wrapper, '\\Interceptor')
-                    && ($trace[2]['class'] ?? null) === $wrapper));
-            $this->pageBuilders[$frame]['selection'] = $selection;
+        $caller = LayoutXmlOwnership::caller($merge, 'getPageLayout');
+        if (!$selection || ($caller['class'] ?? null) !== PageBuilder::class || ($caller['function'] ?? null) !== 'getPageLayout') return;
+        if (!is_string($result) || strlen($result) > 4096) {
+            $this->event($selection['id'], 'layout-wireframe-origin-unconfirmed', $this->themeContext($merge));
             return;
         }
+        $selection['confirmed'] = $trusted && LayoutSelectionOwnership::signature($selection['name']) === $nativeSignature;
+        $selection['name'] = $result;
+        $this->pageBuilders[$frame]['selection'] = $selection;
     }
 
     private function beginWireframe($reader, array $params, string $class): void
@@ -606,6 +618,14 @@ final class LayoutCoverage
         $updates = self::updates($merge);
         $index = array_key_last($updates);
         $appended = count($updates) === $count + 1 && $updates[$index] === $params[0];
+        if ($appended && ($caller['class'] ?? null) === Merge::class
+            && ($caller['function'] ?? null) === '_fetchDbLayoutUpdates') {
+            $this->limitations['layout-database-update'] = true;
+        }
+        if ($appended && ($caller['class'] ?? null) === \Magento\Cms\Helper\Page::class
+            && ($caller['function'] ?? null) === 'prepareResultPage') {
+            $this->limitations['layout-cms-update'] = true;
+        }
         if ($appended && (($caller['class'] ?? null) !== Merge::class
             || !in_array($caller['function'] ?? null, ['_fetchPackageLayoutUpdates', '_fetchDbLayoutUpdates', 'load'], true))) {
             $this->limitations['layout-programmatic-update'] = true;
@@ -729,6 +749,7 @@ final class LayoutCoverage
             return;
         }
         if (!$merge instanceof Merge) return;
+        if (in_array($method, ['getPageLayout', 'getAllDesignAbstractions'], true)) return;
         if ($method !== 'getFileLayoutUpdatesXml') {
             $this->limitations['layout-serialization-unconfirmed'] = true;
             return;
@@ -1300,6 +1321,15 @@ final class LayoutCoverage
             }
         }
         return [[], null];
+    }
+
+    private function packageOrigin(Merge $merge, \SimpleXMLElement $xml): array
+    {
+        $package = $this->merges[$merge]['package'] ?? null;
+        if (!$package || !empty($package['revoked'])) return [[], null];
+        $node = dom_import_simplexml($xml);
+        if (!$node->ownerDocument->documentElement->isSameNode($package['root'])) return [[], null];
+        return [$package['entries'][$node->getNodePath()][0]['ids'] ?? [], $this->themeContext($merge)];
     }
 
     private function scheduleMove($reader, array $params, $result, ?\Throwable $error, string $class): void
@@ -1935,6 +1965,10 @@ final class LayoutCoverage
     {
         if ($class !== BlockGenerator::class) return;
         $frame = array_pop($this->generating);
+        if (!$error && $block instanceof AbstractBlock) {
+            $this->blockRendering->expectRegistration($generator, $params[2]);
+            $this->blockRendering->generated($block, $params[2], null, []);
+        }
         if (empty($frame['source']['context'])) return;
         if ($error) {
             $this->event($frame['source']['block'] ?? null, 'layout-block-generation-failed', $frame['source']['context']);
@@ -1960,6 +1994,7 @@ final class LayoutCoverage
             if ($previous !== $templateId) $this->event($previous, 'layout-template-overridden', $context);
         }
         $this->event($blockId, 'layout-block-created', $context);
+        $this->blockRendering->generated($block, $params[2], $blockId, $context);
         $this->event($templateId, 'layout-template-selected', $context);
         foreach (array_keys($source['overriddenAttributes'] ?? []) as $id) {
             $this->event($id, 'layout-block-attribute-overridden', $context);
@@ -2056,6 +2091,12 @@ final class LayoutCoverage
 
     private function beginRender($block, array $params, string $class): void
     {
+        if ($this->blockRenderOverflow || count($this->blockRenders) >= 256) {
+            $this->blockRenderOverflow++;
+            $this->errors['Block render nesting exceeded 256 calls'] = true;
+            return;
+        }
+        $this->blockRenders[] = ['block' => $block, 'origin' => $this->blockRendering->origin($block)];
         if ($block instanceof Template) $this->templateOwnership->watch($block, isset($this->blocks[$block]));
         if (isset($this->blocks[$block])) {
             $state = $this->blocks[$block];
@@ -2170,9 +2211,17 @@ final class LayoutCoverage
 
     private function completeRender($block, array $params, $result, ?\Throwable $error, string $class): void
     {
+        if ($this->blockRenderOverflow) { $this->blockRenderOverflow--; return; }
+        $frame = array_pop($this->blockRenders);
+        if (!$frame || $frame['block'] !== $block) {
+            $this->errors['Unbalanced block render hook evidence'] = true;
+            return;
+        }
         if ($error || !isset($this->blocks[$block])) return;
         $evidence = $this->blocks[$block];
-        if (!empty($evidence['html'])) $this->event($evidence['block'], 'layout-block-rendered', $evidence['context']);
+        if (!empty($evidence['html']) && $frame['origin'] !== null) {
+            $this->event($frame['origin']['id'], 'layout-block-rendered', $frame['origin']['context']);
+        }
         $this->event($evidence['executed'] ?? null, 'layout-template-executed', $evidence['context']);
     }
 

@@ -35,8 +35,6 @@ function selected(file, kind, state, effect) {
     assert.equal(matches[0].state, state);
     assert.deepEqual([...new Set(matches[0].evidence.map(item => item.type))], [effect]);
 }
-selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection',
-    platform === 'mageos' ? 'unmeasured' : 'covered',
-    platform === 'mageos' ? 'layout-wireframe-origin-unconfirmed' : 'layout-wireframe-selected');
+selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection', 'covered', 'layout-wireframe-selected');
 selected('app/code/MageLens/Compatibility/view/frontend/page_layout/magelens_fixture.xml', 'wireframe', 'covered', 'layout-wireframe-selected');
 console.log('Verified the page layout selector evidence boundary and the selected wireframe.');

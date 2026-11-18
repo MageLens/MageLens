@@ -118,7 +118,7 @@ if ($mode === 'before-plugin-depth') {
 if ($mode === 'resolution-depth') {
     $templates = (new ReflectionProperty(LayoutCoverage::class, 'templateOwnership'))->getValue($collector);
     (new ReflectionProperty(\MageLens\XmlCoverage\LayoutTemplateOwnership::class, 'resolving'))->setValue($templates,
-        array_fill(0, 256, ['block' => new stdClass()]));
+        array_fill(0, 256, ['block' => new stdClass(), 'attributable' => false]));
 }
 $cache = $objects->get(\Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html', 'full_page'] as $type) $cache->setEnabled($type, false);

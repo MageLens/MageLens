@@ -444,6 +444,31 @@ test('template selection and an unconfirmed execution input retain independent e
     assert.match(cached.reason, /Cached block HTML bypassed this selected template/);
 });
 
+test('shared objects and unverified registrations cannot turn construction into layout render evidence', () => {
+    const {manifest, record, sources} = fixture();
+    const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
+    const source = Buffer.from('<layout><block name="fixture"/></layout>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+        {id: 'block', family: 'layout', path: '/layout/block', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'block', element: 'fixture', ordinal: 1,
+                handle: 'fixture', fileType: 'generic', instruction: 'block'}}
+    ]});
+    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {block: 'block'}}}}};
+    sources[path] = source;
+    for (const type of ['layout-block-render-origin-unconfirmed', 'layout-block-registration-origin-unconfirmed']) {
+        const uncertain = {id: 'block', type, area: 'frontend', theme: 'frontend/Acme/theme', hits: 4};
+        const empty = merge(manifest, [{...record, layoutHook: true, events: [uncertain]}], sources).files[1].declarations[0];
+        assert.equal(empty.hits, 0);
+        assert.equal(empty.state, 'unmeasured');
+        const created = merge(manifest, [{...record, layoutHook: true,
+            events: [{...uncertain, type: 'layout-block-created', hits: 1}, uncertain]}], sources).files[1].declarations[0];
+        assert.equal(created.hits, 1);
+        assert.deepEqual(created.evidence.map(event => event.type), ['layout-block-created', type]);
+        assert.equal(created.evidence.some(event => event.type === 'layout-block-rendered'), false);
+    }
+});
+
 test('native file selection remains a zero-hit observation and cannot substitute for effect hook health', () => {
     const {manifest, record, sources} = fixture();
     const file = 'app/code/Acme/Blog/view/frontend/layout/empty.xml';
