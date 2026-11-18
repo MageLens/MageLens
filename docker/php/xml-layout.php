@@ -1610,6 +1610,7 @@ final class LayoutCoverage
         $factories = [\Magento\Framework\ObjectManager\Factory\Dynamic\Developer::class,
             \Magento\Framework\ObjectManager\Factory\Dynamic\Production::class, \Magento\Framework\ObjectManager\Factory\Compiled::class];
         $configs = [\Magento\Framework\Interception\ObjectManager\Config\Developer::class,
+            \Magento\Framework\Interception\ObjectManager\Config\Compiled::class,
             \Magento\Framework\ObjectManager\Config\Compiled::class, \Magento\Framework\ObjectManager\Config\Config::class];
         return in_array(get_class($objectFactory), $factories, true) && in_array(get_class($config), $configs, true);
     }

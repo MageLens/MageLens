@@ -177,7 +177,8 @@ foreach ($declarations as $declaration) {
             'empty-class' => 'layout-block-class-defaulted',
             default => 'layout-block-class-origin-unconfirmed',
         };
-        if ($effects !== [$expected]) throw new RuntimeException('Equal runtime class replacement retained original XML class ownership');
+        if ($effects !== [$expected]) throw new RuntimeException('Block class evidence differs for ' . $mode
+            . ': expected ' . $expected . ', observed ' . implode(', ', $effects));
     } elseif ($declaration['layout']['kind'] === 'block' && !in_array('layout-block-rendered', $effects, true)) {
         throw new RuntimeException('Native block instruction lost its independent render origin');
     } elseif ($declaration['layout']['kind'] === 'template' && !in_array('layout-template-executed', $effects, true)) {

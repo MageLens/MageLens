@@ -45,6 +45,35 @@ function layoutNativeInterceptor(
     $file = $generator->generate();
     if (!$file) throw new RuntimeException('Native layout interceptor generation failed');
     require_once $file;
-    $manager->configure(['preferences' => [$native => $interceptor]]);
+    $configuration = $manager->get(\Magento\Framework\ObjectManager\ConfigInterface::class);
+    if ($configuration instanceof \Magento\Framework\ObjectManager\Config\Compiled) {
+        $arguments = (new ReflectionProperty(\Magento\Framework\ObjectManager\Config\Compiled::class, 'arguments'))
+            ->getRawValue($configuration);
+        $replace = static function (array $data) use (&$replace, $native, $interceptor): array {
+            foreach ($data as $key => $value) {
+                if (in_array($key, ['_i_', '_ins_'], true) && $value === $native) $data[$key] = $interceptor;
+                elseif (is_array($value)) $data[$key] = $replace($value);
+            }
+            return $data;
+        };
+        $arguments = $replace($arguments);
+        $parameters = (new ReflectionMethod($interceptor, '__construct'))->getParameters();
+        $names = array_fill_keys(array_map(static fn($parameter) => $parameter->getName(), $parameters), true);
+        if (isset($arguments[$interceptor]) && is_array($arguments[$interceptor])) {
+            // Retain only dependencies accepted by the newly generated constructor.
+            $arguments[$interceptor] = array_intersect_key($arguments[$interceptor], $names);
+        }
+        // Match the compiler's constructor dependency references. Mapping a
+        // native class to its interceptor as a virtual type creates a cycle
+        // in native plugin inheritance, so instanceTypes stays unchanged.
+        $configuration->extend(['arguments' => $arguments]);
+    }
+    $preferences = [$native => $interceptor];
+    if ($native === \Magento\Framework\View\Model\Layout\Merge::class) {
+        // Compiled configuration flattens interface preference chains. Bind
+        // the processor factory's interface to the requested native fixture.
+        $preferences[\Magento\Framework\View\Layout\ProcessorInterface::class] = $interceptor;
+    }
+    $manager->configure(['preferences' => $preferences]);
     return $interceptor;
 }
