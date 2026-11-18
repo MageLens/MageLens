@@ -95,6 +95,21 @@ final class Xml
         return $data;
     }
 
+    public static function maskConfiguration(array $data, string $prefix = ''): array
+    {
+        foreach ($data as $key => &$value) {
+            $path = $prefix === '' ? (string)$key : $prefix . '/' . $key;
+            if (self::transformedThemePath($path)) continue;
+            $value = is_array($value) ? self::maskConfiguration($value, $path) : '__magelens_external__';
+        }
+        return $data;
+    }
+
+    public static function transformedThemePath(string $path): bool
+    {
+        return preg_match('~^(?:default|(?:websites|stores)/[^/]+)/design/theme/theme_id$~D', $path) === 1;
+    }
+
     public static function symbolicSources(array $sources, array $known): array
     {
         $documents = []; $counts = []; $occurrences = []; $firstEmpty = []; $nullText = []; $unmeasured = [];
@@ -108,6 +123,9 @@ final class Xml
             }
             foreach ((new \DOMXPath($dom))->query($query) as $node) {
                 $key = $node->getNodePath();
+                if (self::transformedThemePath(substr($key, strlen('/config/')))) {
+                    $unmeasured[$key] = 'Native theme identifier transformation lacks a source-preserving symbolic value';
+                }
                 if (!isset($counts[$key])) $firstEmpty[$key] = !$node->hasChildNodes();
                 $counts[$key] = ($counts[$key] ?? 0) + 1;
                 if ($node->childNodes->length === 1 && $node->firstChild instanceof \DOMText

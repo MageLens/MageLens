@@ -103,7 +103,7 @@ function prepareXmlManifests($om, array $run): array
         $isModular = in_array($class, [\Magento\Config\App\Config\Source\ModularConfigSource::class,
             \Magento\Config\App\Config\Source\ModularConfigSource::class . '\\Interceptor'], true);
         if ($isModular && $om->get(\Magento\Framework\Interception\PluginListInterface::class)->getNext(\Magento\Config\App\Config\Source\ModularConfigSource::class, 'get')) $isModular = false;
-        $data = $isModular ? $modular : Xml::mask($source->get() ?? []);
+        $data = $isModular ? $modular : Xml::maskConfiguration($source->get() ?? []);
         $symbolic = array_replace_recursive($symbolic, $data);
     }
     // Use the platform preprocessor and fallback for scope inheritance, including
@@ -111,7 +111,9 @@ function prepareXmlManifests($om, array $run): array
     $symbolic = $om->get(\Magento\Framework\App\Config\PreProcessorComposite::class)->process($symbolic);
     $symbolic = $om->get(\Magento\Store\Model\Config\Processor\Fallback::class)->process($symbolic);
     $origins = [];
-    foreach (Xml::leaves($symbolic) as $key => $id) if (is_string($id) && isset($ids[$id])) $origins[$key] = $id;
+    foreach (Xml::leaves($symbolic) as $key => $id) {
+        if (!Xml::transformedThemePath($key) && is_string($id) && isset($ids[$id])) $origins[$key] = $id;
+    }
     ksort($origins);
 
     // Compare observed cached values against a fresh read through the platform's

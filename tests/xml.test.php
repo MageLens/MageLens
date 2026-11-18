@@ -65,6 +65,26 @@ checkXml(count($fields) === 5, 'Inventory hidden and unopened fields as well as 
 checkXml(count(array_unique(array_column($fields, 'id'))) === 5, 'Shared config_path does not collapse fields');
 checkXml(Xml::mask(['a' => ['x' => 'secret', 'y' => null]]) === ['a' => ['x' => '__magelens_external__', 'y' => '__magelens_external__']], 'External overrides retain ownership even for null/equal values');
 
+$themeSources = ['fixture.xml' => '<config><default><design><theme><theme_id>frontend/Magento/blank</theme_id></theme></design></default>'
+    . '<websites><base><design><theme><theme_id>7</theme_id></theme></design></base></websites>'
+    . '<stores><reading><design><theme><theme_id><![CDATA[frontend/Magento/blank]]></theme_id></theme></design></reading></stores></config>'];
+$themeSymbols = Xml::symbolicSources($themeSources, []);
+checkXml(count($themeSymbols['unmeasured']) === 3, 'Every native theme transformation has an explicit provenance limitation');
+$themeDocument = Xml::document($themeSymbols['sources']['fixture.xml']);
+checkXml(array_map(static fn($node) => $node->textContent,
+    iterator_to_array((new DOMXPath($themeDocument))->query('//theme_id')))
+    === ['frontend/Magento/blank', '7', 'frontend/Magento/blank'], 'Disposable symbolic inputs preserve native theme values and CDATA');
+$themeData = ['default' => ['design' => ['theme' => ['theme_id' => 'frontend/Magento/blank']], 'secret' => 'hidden'],
+    'stores' => ['reading' => ['design' => ['theme' => ['theme_id' => 7]], 'secret' => 'hidden']],
+    'websites' => ['base' => ['design' => ['theme' => ['theme_id' => null]]]]];
+$maskedThemes = Xml::maskConfiguration($themeData);
+checkXml($maskedThemes['default']['design'] === $themeData['default']['design']
+    && $maskedThemes['stores']['reading']['design'] === $themeData['stores']['reading']['design']
+    && $maskedThemes['websites'] === $themeData['websites']
+    && $maskedThemes['default']['secret'] === '__magelens_external__'
+    && $maskedThemes['stores']['reading']['secret'] === '__magelens_external__',
+    'External sources preserve only native transformed theme values while masking other scalar data');
+
 $fields[1]['supported'] = false;
 $shared = ['run' => 'test', 'observers' => ['global' => ['event' => ['hash' => 'observer-hash']]]];
 $path = $headings[0]['path'];
