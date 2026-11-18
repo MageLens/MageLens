@@ -149,6 +149,19 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-mutation]')).toHaveText(['xml-value', 'xml-value', 'xml-value', 'xml-value', 'xml-value']);
     await page.goto('/coverageprobe/cache/');
     await expect(page.locator('[data-layout-block-cache]')).toHaveText(['cold-value', 'cold-value']);
+    const cacheNonce = Date.now().toString(36);
+    const cachedUrl = `/coverageprobe/cachepage/?probe=${cacheNonce}`;
+    try {
+        const cold = await page.goto(cachedUrl);
+        expect(cold.headers()['x-magelens-fixture-cache']).toBe('miss');
+        await expect(page.locator('[data-layout-page-cache]')).toHaveText('cached-layout');
+        const warm = await page.goto(cachedUrl);
+        expect(warm.headers()['x-magelens-fixture-cache']).toBe('hit');
+        await expect(page.locator('[data-layout-page-cache]')).toHaveText('cached-layout');
+    } finally {
+        await page.goto(`/coverageprobe/cachepage/cleanup/?probe=${cacheNonce}`);
+        await expect(page.locator('[data-layout-page-cache-cleanup]')).toHaveText('cleaned');
+    }
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

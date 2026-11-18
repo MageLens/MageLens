@@ -177,6 +177,17 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-block-cache]').should(elements => {
             expect([...elements].map(element => element.textContent)).to.deep.equal(['cold-value', 'cold-value']);
         });
+        const cacheNonce = Date.now().toString(36);
+        const cachedUrl = `/coverageprobe/cachepage/?probe=${cacheNonce}`;
+        cy.intercept('GET', '**/coverageprobe/cachepage/?probe=*').as('layoutPageCache');
+        cy.visit(cachedUrl);
+        cy.wait('@layoutPageCache').its('response.headers.x-magelens-fixture-cache').should('equal', 'miss');
+        cy.get('[data-layout-page-cache]').should('have.text', 'cached-layout');
+        cy.visit(cachedUrl);
+        cy.wait('@layoutPageCache').its('response.headers.x-magelens-fixture-cache').should('equal', 'hit');
+        cy.get('[data-layout-page-cache]').should('have.text', 'cached-layout');
+        cy.visit(`/coverageprobe/cachepage/cleanup/?probe=${cacheNonce}`);
+        cy.get('[data-layout-page-cache-cleanup]').should('have.text', 'cleaned');
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');

@@ -161,6 +161,7 @@ const layoutDecisions = {
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
+    'full-page-cache-origin': 'A native full-page cache lookup returned a response. Its original XML/template lineage and fresh layout execution are unverified.',
     'block-html-cache-origin': 'A native block HTML cache lookup returned data. Its original XML/template lineage is unverified.',
     'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',
     'layout-processor-unconfirmed': 'A layout processor implementation falls outside the verified native merge path.',
@@ -325,7 +326,9 @@ function merge(manifest, records, sources) {
             if (!item.evidence.some(sameEvidence)) item.evidence.push(evidence);
             events.push(event);
         }
-        if (events.length || scenario) requests.push({id: record.request, case: scenario, events});
+        const limitations = [...new Set(record.layoutLimitations || [])].sort().map(key => layoutLimitations[key]);
+        if (events.length || scenario || limitations.length) requests.push({id: record.request, case: scenario, events,
+            ...(limitations.length ? {layoutLimitations: limitations} : {})});
     }
     const pluginTotals = {total: 0, covered: 0};
     const observerTotals = {total: 0, covered: 0};
@@ -339,7 +342,8 @@ function merge(manifest, records, sources) {
                 if (item.supported && !item.hits && decisions.length) {
                     item.state = 'unmeasured';
                     item.reason = decisions.join('. ');
-                } else if (item.state === 'uncovered' && !layoutSourceTrace && requestLimitations.size) {
+                } else if (item.state === 'uncovered' && !layoutSourceTrace
+                    && [...requestLimitations].some(key => key !== 'full-page-cache-origin')) {
                     item.state = 'unmeasured';
                     item.reason = 'No measured layout request supplied a source trace';
                 }

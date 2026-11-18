@@ -467,3 +467,27 @@ test('native file selection remains a zero-hit observation and cannot substitute
         layout: {...item.layout, kind: 'block', ordinal: 1, instruction: 'block'}});
     assert.throws(() => merge(manifest, [request], sources), /No functioning XML layout hook/);
 });
+
+test('full-page cache observations preserve a functioning zero-hit layout inventory', () => {
+    const {manifest, record, sources} = fixture();
+    const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
+    const source = Buffer.from('<layout><container name="fixture"/></layout>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+        {id: 'container', family: 'layout', path: '/layout/container', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'container', element: 'fixture', ordinal: 1,
+                handle: 'fixture', fileType: 'generic', instruction: 'container'}}
+    ]});
+    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {container: 'container'}}}}};
+    sources[path] = source;
+    const warm = {...record, layoutHook: true, layoutSourceTrace: false, events: [],
+        layoutLimitations: ['full-page-cache-origin']};
+    const report = merge(manifest, [warm], sources);
+    assert.equal(report.layout.covered, 0);
+    assert.equal(report.files[1].declarations[0].state, 'uncovered');
+    assert.deepEqual(report.files[1].declarations[0].evidence, []);
+    assert.match(report.layout.limitations[0], /native full-page cache lookup returned a response/);
+    assert.deepEqual(report.requests[0].events, []);
+    assert.deepEqual(report.requests[0].layoutLimitations, report.layout.limitations);
+    assert.throws(() => merge(manifest, [{...warm, layoutHook: false}], sources), /No functioning XML layout hook/);
+});

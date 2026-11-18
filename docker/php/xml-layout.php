@@ -70,6 +70,8 @@ final class LayoutCoverage
     private array $blockObjectCreations = [];
     private int $blockObjectOverflow = 0;
     private \WeakMap $blocks;
+    private array $loadingPages = [];
+    private int $loadingPagesOverflow = 0;
     private array $loadingHtml = [];
     private int $loadingHtmlOverflow = 0;
     private array $fetching = [];
@@ -119,6 +121,7 @@ final class LayoutCoverage
         $this->templateOwnership->finish();
         $this->engineBeforePlugin->finish();
         if ($this->fetching || $this->fetchingOverflow) $this->errors['Unbalanced template rendering hook evidence'] = true;
+        if ($this->loadingPages || $this->loadingPagesOverflow) $this->errors['Unbalanced full-page cache hook evidence'] = true;
         if ($this->loadingHtml || $this->loadingHtmlOverflow) $this->errors['Unbalanced block HTML cache hook evidence'] = true;
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
@@ -205,6 +208,7 @@ final class LayoutCoverage
             [DataObject::class, 'getDataByPath', null, $this->consumeArgument(...)],
             [DataObject::class, 'offsetGet', null, $this->consumeArgument(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
+            [\Magento\Framework\App\PageCache\Kernel::class, 'load', $this->beginPageCache(...), $this->loadedPageCache(...)],
             [AbstractBlock::class, '_loadCache', $this->beginBlockHtml(...), $this->loadBlockHtml(...)],
             [\Magento\Framework\App\CacheInterface::class, 'load', null, $this->loadedBlockCache(...)],
             [\Magento\Framework\Cache\LockGuardedCacheLoader::class, 'lockedLoadData', $this->beginBlockCacheLoader(...), null],
@@ -1974,6 +1978,32 @@ final class LayoutCoverage
             $state = $this->blocks[$block];
             unset($state['executed'], $state['html']);
             $this->blocks[$block] = $state;
+        }
+    }
+
+    private function beginPageCache($kernel, array $params, string $class): void
+    {
+        if ($class !== \Magento\Framework\App\PageCache\Kernel::class) return;
+        if (count($this->loadingPages) >= 256 || $this->loadingPagesOverflow) {
+            $this->loadingPagesOverflow++;
+            $this->errors['Layout full-page cache nesting exceeded 256 calls'] = true;
+            return;
+        }
+        $this->loadingPages[] = $kernel;
+    }
+
+    private function loadedPageCache($kernel, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== \Magento\Framework\App\PageCache\Kernel::class) return;
+        if ($this->loadingPagesOverflow) { $this->loadingPagesOverflow--; return; }
+        if (array_pop($this->loadingPages) !== $kernel) {
+            $this->errors['Unbalanced full-page cache hook evidence'] = true;
+            return;
+        }
+        if ($error) return;
+        $this->healthy = true;
+        if ($result instanceof \Magento\Framework\App\Response\Http) {
+            $this->limitations['full-page-cache-origin'] = true;
         }
     }
 

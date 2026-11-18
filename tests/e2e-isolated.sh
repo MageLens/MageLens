@@ -97,7 +97,7 @@ mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-page-cache-hook-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -232,6 +232,10 @@ fi
     for cache_case in native equal ui missing-read missing-loader missing-pre missing-post depth; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-cache-hook-proof.php "$cache_case"
+    done
+    for page_cache_case in native warm equal missing-pre missing-post depth; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-page-cache-hook-proof.php "$page_cache_case"
     done
     (
         invalid_class=src/app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_classdefault_index.xml
