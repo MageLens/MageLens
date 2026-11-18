@@ -53,6 +53,7 @@ $collector = $mode === 'seed' ? null : $register();
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
+$objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
 $state = $objects->get(\Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html'] as $type) $state->setEnabled($type, false);
 $state->setEnabled('full_page', true);

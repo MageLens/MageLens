@@ -33,6 +33,13 @@ use Magento\Framework\View\TemplateEngine\Php;
 
 final class LayoutCoverage
 {
+    private const THEME_READERS = [
+        \Magento\Framework\View\File\Collector\Base::class => 'area',
+        \Magento\Framework\View\File\Collector\Theme::class => 'theme',
+        \Magento\Framework\View\File\Collector\ThemeModular::class => 'theme',
+        \Magento\Framework\View\File\Collector\Override\Base::class => 'theme',
+        \Magento\Framework\View\File\Collector\Override\ThemeModular::class => 'theme',
+    ];
     private array $packages = [];
     private array $replacingFiles = [];
     private array $entries = [];
@@ -51,6 +58,7 @@ final class LayoutCoverage
     private array $actionEvaluations = [];
     private int $actionEvaluationOverflow = 0;
     private \WeakMap $merges;
+    private \WeakMap $themeContexts;
     private array $documents = [];
     private array $appending = [];
     private array $contexts = [];
@@ -85,6 +93,7 @@ final class LayoutCoverage
     private function __construct(private readonly array $sources)
     {
         $this->merges = new \WeakMap();
+        $this->themeContexts = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
         $this->structureCoverage = new LayoutStructureCoverage($this->origin(...), self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->positions = new LayoutPositionCoverage($this->origin(...));
@@ -139,6 +148,10 @@ final class LayoutCoverage
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
             ...$this->argumentOwnership->hooks(),
+            [\Magento\Framework\View\File\CollectorInterface::class, 'getFiles', $this->expectTheme(...), null],
+            [Merge::class, 'generateCacheId', $this->expectTheme(...), null],
+            [\Magento\Framework\View\Design\ThemeInterface::class, 'getArea', null, $this->observeTheme(...)],
+            [\Magento\Framework\View\Design\ThemeInterface::class, 'getFullPath', null, $this->observeTheme(...)],
             [Merge::class, '_loadFileLayoutUpdatesXml', $this->beginPackage(...), $this->completePackage(...)],
             [Layout\ProcessorInterface::class, 'getFileLayoutUpdatesXml', $this->beginPackageAccess(...), $this->packageAccess(...)],
             [FileList::class, 'replace', $this->beginFileReplacement(...), $this->completeFileReplacement(...)],
@@ -347,20 +360,16 @@ final class LayoutCoverage
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $source = $package['entries'][$entry->getNodePath()] ?? [];
             if (!empty($package['revoked'])) {
-                $theme = self::mergeTheme($merge);
-                $this->revokeSources([$source], ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()], true);
+                $this->revokeSources([$source], $this->themeContext($merge), true);
                 $source = [];
             }
             $replaced = empty($package['revoked']) ? ($package['replacements'][$entry->getNodePath()] ?? []) : [];
             if (isset($source[0]['ids']['file-override'])) {
-                $theme = self::mergeTheme($merge);
                 $this->event($source[0]['ids']['file-override'], $replaced
-                    ? 'layout-file-override-selected' : 'layout-file-override-unconfirmed',
-                    ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
+                    ? 'layout-file-override-selected' : 'layout-file-override-unconfirmed', $this->themeContext($merge));
             }
             if ($replaced) {
-                $theme = self::mergeTheme($merge);
-                $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+                $context = $this->themeContext($merge);
                 foreach ($replaced as $path) {
                     $relative = str_starts_with($path, BP . '/') ? substr($path, strlen(BP) + 1) : '';
                     foreach ($this->sources[$relative]['targets'] ?? [] as $target) {
@@ -420,8 +429,7 @@ final class LayoutCoverage
         $handle = array_pop($this->handles);
         if ($error || !$handle || $handle['id'] === null) return;
         $effect = $handle['effect'] ?? ($handle['found'] ? 'traversed' : 'missing');
-        $theme = self::mergeTheme($merge);
-        $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        $context = $this->themeContext($merge);
         $this->event($handle['id'], 'layout-include-' . $effect, $context);
         $this->event($handle['handleId'], 'layout-include-' . $effect, $context);
     }
@@ -438,9 +446,7 @@ final class LayoutCoverage
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $targets = empty($package['revoked']) ? ($package['entries'][$entry->getNodePath()] ?? []) : [];
             $state['pending'] = ['hash' => hash('sha256', $params[0]->innerXml()), 'targets' => $targets];
-            $theme = self::mergeTheme($merge);
-            $this->event($targets[0]['ids']['file-selection'] ?? null, 'layout-file-selected',
-                ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
+            $this->event($targets[0]['ids']['file-selection'] ?? null, 'layout-file-selected', $this->themeContext($merge));
             if (isset($targets[0]['selection']) && $entry->getAttribute('layout') === $targets[0]['selection']) {
                 $state['pageLayout'] = ['name' => $targets[0]['selection'], 'id' => $targets[0]['ids']['wireframe-selection']];
             }
@@ -480,8 +486,7 @@ final class LayoutCoverage
         $this->healthy = true;
         $this->limitations[$error ? 'layout-validation-failed' : 'layout-validation-warning'] = true;
         if (!$error) return;
-        $theme = self::mergeTheme($merge);
-        $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        $context = $this->themeContext($merge);
         $updates = self::updates($merge);
         foreach ($this->merges[$merge]['updates'] ?? [] as $index => $source) {
             if (!isset($updates[$index]) || $source['hash'] !== hash('sha256', $updates[$index])) continue;
@@ -570,8 +575,7 @@ final class LayoutCoverage
         static $property;
         $property ??= new \ReflectionProperty(WireframeReader::class, 'pageLayoutMerge');
         if ($property->getValue($this->wireframes[$index]['reader']) !== $merge) return;
-        $theme = self::mergeTheme($merge);
-        $this->wireframes[$index]['context'] = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        $this->wireframes[$index]['context'] = $this->themeContext($merge);
         if ($id !== null) $this->wireframes[$index]['roots'][$id] = true;
     }
 
@@ -622,6 +626,60 @@ final class LayoutCoverage
         static $property;
         $property ??= new \ReflectionProperty(Merge::class, 'theme');
         return $property->getValue($merge);
+    }
+
+    private function observeTheme($theme, array $params, $value, ?\Throwable $error, string $class, string $method): void
+    {
+        $caller = LayoutXmlOwnership::caller($theme, $method, false);
+        $consumer = (($caller['class'] ?? null) === Merge::class && ($caller['function'] ?? null) === 'generateCacheId')
+            || (($caller['function'] ?? null) === 'getFiles' && isset(self::THEME_READERS[$caller['class'] ?? '']));
+        if (!$consumer) return;
+        $context = $this->themeState($theme);
+        if ($context === null) return;
+        $key = $method === 'getArea' ? 'area' : 'theme';
+        $context[$key . 'Observed'] = true;
+        $context[$key] = !$error && is_string($value) && $value !== '' && strlen($value) <= 1024 ? $value : null;
+        $this->themeContexts[$theme] = $context;
+    }
+
+    private function themeState(object $theme): ?array
+    {
+        if (!isset($this->themeContexts[$theme]) && count($this->themeContexts) >= 256) {
+            $this->errors['Layout theme context observations exceeded 256 themes'] = true;
+            return null;
+        }
+        return $this->themeContexts[$theme] ?? [];
+    }
+
+    private function expectTheme($consumer, array $params, string $class): void
+    {
+        if (in_array($class, [\Magento\Framework\View\File\Collector\Override\Base::class,
+            \Magento\Framework\View\File\Collector\Override\ThemeModular::class], true)) return;
+        $key = $class === Merge::class ? 'area' : (self::THEME_READERS[$class] ?? null);
+        if ($key === null) return;
+        $theme = $class === Merge::class ? self::mergeTheme($consumer) : ($params[0] ?? null);
+        if (!is_object($theme)) return;
+        $context = $this->themeState($theme);
+        if ($context === null) return;
+        $context[$key . 'Expected'] = true;
+        $this->themeContexts[$theme] = $context;
+    }
+
+    private function themeContext(Merge $merge): ?array
+    {
+        $theme = self::mergeTheme($merge);
+        $context = is_object($theme) ? ($this->themeContexts[$theme] ?? []) : [];
+        foreach (['area', 'theme'] as $key) {
+            if (!empty($context[$key . 'Expected']) && empty($context[$key . 'Observed'])) {
+                $this->errors['Missing native layout theme context hook evidence'] = true;
+                return null;
+            }
+        }
+        if (!isset($context['area'], $context['theme'])) {
+            $this->limitations['layout-theme-context-unconfirmed'] = true;
+            return null;
+        }
+        return array_intersect_key($context, ['area' => true, 'theme' => true]);
     }
 
     private static function updates($merge): array
@@ -720,7 +778,7 @@ final class LayoutCoverage
         $this->merges[$merge] = ['retired' => $state['updates'] ?? $state['retired'] ?? []];
     }
 
-    private function revokeSources(array $packets, array $context, bool $selection = false, string $effect = 'layout-xml-ownership-revoked'): void
+    private function revokeSources(array $packets, ?array $context, bool $selection = false, string $effect = 'layout-xml-ownership-revoked'): void
     {
         foreach ($packets as $targets) {
             foreach ($targets as $target) {
@@ -744,8 +802,9 @@ final class LayoutCoverage
         $this->merges[$merge] = $state;
         if ($error) return;
         $sources = $state['updates'] ?? [];
-        $theme = self::mergeTheme($merge);
-        $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        if (!$sources && empty($state['retired'])) return;
+        $context = $this->themeContext($merge);
+        if ($context === null) return;
         if (!empty($state['retired']) && self::updates($merge)) {
             $this->revokeSources(array_column($state['retired'], 'targets'), $context);
             $this->limitations['layout-updates-reset'] = true;
@@ -2248,8 +2307,8 @@ final class LayoutCoverage
         return null;
     }
 
-    private function event(?string $id, string $type, array $context): void
+    private function event(?string $id, string $type, ?array $context): void
     {
-        if ($id !== null) Recorder::layout($id, $type, $context);
+        if ($id !== null && $context !== null) Recorder::layout($id, $type, $context);
     }
 }

@@ -167,6 +167,7 @@ const layoutLimitations = {
     'block-html-cache-origin': 'A native block HTML cache lookup returned data. Its original XML/template lineage is unverified.',
     'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',
     'layout-processor-unconfirmed': 'A layout processor implementation falls outside the verified native merge path.',
+    'layout-theme-context-unconfirmed': 'Native file resolution returned no bounded area or theme path for original-source layout evidence.',
     'mutable-layout-package': 'External PHP or an unverified getter received mutable package layout XML. Future selected entries lack verified original ownership.',
     'layout-serialization-unconfirmed': 'Layout serialization or XML conversion used an unverified implementation or plugin. Evidence is limited to independently confirmed native calls.',
     'layout-updates-reset': 'A discarded native update list was used again after reset without current original-source lineage.',

@@ -32,13 +32,19 @@ $declarations = LayoutManifest::declarations($path, $source);
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets([
     ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source), 'declarations' => $declarations],
 ]));
+$resolverOwnership = (new ReflectionProperty(LayoutCoverage::class, 'templateOwnership'))->getValue($collector);
+$resolverPlugin = (new ReflectionProperty(\MageLens\XmlCoverage\LayoutTemplateOwnership::class, 'beforePlugin'))->getValue($resolverOwnership);
+$enginePlugin = (new ReflectionProperty(LayoutCoverage::class, 'engineBeforePlugin'))->getValue($collector);
 foreach ($callbacks as [$class, $method, $pre, $post]) {
     $missing = ['missing-getter' => [Template::class, 'getTemplate'], 'missing-file' => [Template::class, 'getTemplateFile'],
         'missing-resolver' => [Template\File\Resolver::class, 'getTemplateFileName']][$mode] ?? null;
     if ($missing === [$class, $method]) continue;
     if ($mode === 'missing-theme-plugin' && $class === \Magento\ProductAlert\Model\UpdateThemeParams::class) continue;
-    if ($mode === 'missing-plugin-lookup' && $class === \Magento\Framework\Interception\PluginListInterface::class && $method === 'getPlugin') continue;
-    if ($mode === 'missing-engine-lookup' && $class === \Magento\Framework\Interception\PluginListInterface::class && $method === 'getPlugin') continue;
+    if ($class === \Magento\Framework\Interception\PluginListInterface::class && $method === 'getPlugin' && $post instanceof Closure) {
+        $owner = (new ReflectionFunction($post))->getClosureThis();
+        if (($mode === 'missing-plugin-lookup' && $owner === $resolverPlugin)
+            || ($mode === 'missing-engine-lookup' && $owner === $enginePlugin)) continue;
+    }
     if ($mode === 'missing-engine-plugin' && $class === 'Hyva\\Theme\\Plugin\\TemplateEngine\\PhpPlugin') continue;
     if ($mode === 'missing-engine-pool' && $class === \Magento\Framework\View\TemplateEnginePool::class) continue;
     if ($class === \Magento\Framework\View\TemplateEngine\Php::class && $method === 'render') {
@@ -55,6 +61,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
+$objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
 $plugin = match ($mode) {
     'getter-plugin', 'compiled-getter-plugin' => \MageLens\Compatibility\Model\LayoutTemplateGetterPlugin::class,
     'file-plugin', 'compiled-file-plugin' => \MageLens\Compatibility\Model\LayoutTemplateFilePlugin::class,

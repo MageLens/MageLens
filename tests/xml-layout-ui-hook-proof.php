@@ -42,6 +42,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
 $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $manager->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
+$manager->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
 $cacheState = $manager->get(\Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html', 'full_page'] as $type) $cacheState->setEnabled($type, false);
 $fragment = $manager->create(\Magento\Framework\View\Result\Layout::class, ['isIsolated' => true]);

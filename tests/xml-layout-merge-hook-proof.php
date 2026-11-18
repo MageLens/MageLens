@@ -16,11 +16,12 @@ use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, Recorder};
 
 $mode = $argv[1] ?? 'native';
 $modes = [
-    'native', 'theme-getter', 'exposed', 'reset', 'document-limit', 'string-plugin', 'xml-plugin',
+    'native', 'theme-getter', 'theme-context', 'theme-context-limit', 'missing-theme-area', 'missing-theme-path',
+    'exposed', 'reset', 'document-limit', 'string-plugin', 'xml-plugin',
     'parser-plugin', 'late-parser-plugin', 'unused-parser', 'string-no-parent',
     'xml-no-parent', 'package-no-parent', 'opaque-update', 'missing-string',
     'missing-document', 'missing-package', 'compiled-selection', 'selection-no-parent',
-    'native-selection', 'package-event', 'package-event-disabled', 'missing-event-manager',
+    'native-selection', 'standard-selection-plugin', 'package-event', 'package-event-disabled', 'missing-event-manager',
     'missing-event-config', 'missing-event-invoker', 'missing-event-observer', 'event-depth', 'observer-depth',
 ];
 if (!in_array($mode, $modes, true)) throw new RuntimeException('Unknown merge proof mode');
@@ -32,6 +33,16 @@ foreach (glob(BP . '/app/code/MageLens/Compatibility/view/frontend/layout/*.xml'
         'declarations' => LayoutManifest::declarations($path, $source)];
 }
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
+if ($mode === 'theme-context-limit') {
+    $retainedThemeContexts = [];
+    $themeContexts = new WeakMap();
+    for ($index = 0; $index < 256; $index++) {
+        $theme = new stdClass();
+        $retainedThemeContexts[] = $theme;
+        $themeContexts[$theme] = [];
+    }
+    (new ReflectionProperty(LayoutCoverage::class, 'themeContexts'))->setValue($collector, $themeContexts);
+}
 if ($mode === 'document-limit') {
     $document = new \DOMDocument();
     $document->loadXML('<layout/>');
@@ -44,6 +55,9 @@ if (in_array($mode, ['event-depth', 'observer-depth'], true)) {
         $mode === 'event-depth' ? 'dispatching' : 'invoking'))->setValue($events, array_fill(0, 256, null));
 }
 foreach ($callbacks as [$class, $method, $pre, $post]) {
+    if ($class === \Magento\Framework\View\Design\ThemeInterface::class
+        && (($mode === 'missing-theme-area' && $method === 'getArea')
+            || ($mode === 'missing-theme-path' && $method === 'getFullPath'))) continue;
     $eventHook = ['missing-event-manager' => [\Magento\Framework\Event\ManagerInterface::class, 'dispatch'],
         'missing-event-config' => [\Magento\Framework\Event\ConfigInterface::class, 'getObservers'],
         'missing-event-invoker' => [\Magento\Framework\Event\InvokerInterface::class, 'dispatch'],
@@ -57,6 +71,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
 $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $manager->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
+$manager->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
 $cacheState = $manager->get(\Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html', 'full_page'] as $type) $cacheState->setEnabled($type, false);
 if (in_array($mode, ['string-plugin', 'xml-plugin'], true)) {
@@ -69,7 +84,7 @@ $replacement = match ($mode) {
     'string-no-parent' => \MageLens\Compatibility\Model\LayoutStringReplacement::class,
     'xml-no-parent' => \MageLens\Compatibility\Model\LayoutDocumentReplacement::class,
     'package-no-parent' => \MageLens\Compatibility\Model\LayoutPackageReplacement::class,
-    'compiled-selection' => \MageLens\Compatibility\Model\LayoutPageLayoutReplacement::class,
+    'compiled-selection', 'standard-selection-plugin' => \MageLens\Compatibility\Model\LayoutPageLayoutReplacement::class,
     'selection-no-parent' => \MageLens\Compatibility\Model\LayoutPageLayoutNoParent::class,
     default => null,
 };
@@ -108,14 +123,28 @@ if (in_array($mode, ['package-event', 'package-event-disabled'], true)) {
 }
 $manager->get(\Magento\Framework\App\ViewInterface::class);
 $page = $manager->get(\Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
+if ($mode === 'theme-context') {
+    $merge = $page->getLayout()->getUpdate();
+    $property = new ReflectionProperty(\Magento\Framework\View\Model\Layout\Merge::class, 'theme');
+    $originalTheme = $property->getValue($merge);
+    $theme = $manager->create(\MageLens\Compatibility\Model\LayoutThemeContext::class);
+    $theme->load($originalTheme->getId());
+    if (!$theme->getId() || !$theme->getFullPath() || $theme->getArea() !== $originalTheme->getArea()
+        || $theme->getFullPath() !== $originalTheme->getFullPath()) {
+        throw new RuntimeException('Native theme fixture changed the effective area or theme path');
+    }
+    $property->setValue($merge, $theme);
+}
 $fixture = $mode === 'unused-parser' ? 'unused' : 'native';
-if (in_array($mode, ['compiled-selection', 'selection-no-parent', 'native-selection'], true)) {
+if (in_array($mode, ['compiled-selection', 'selection-no-parent', 'native-selection', 'standard-selection-plugin'], true)) {
     $page->addHandle('coverageprobe_selector_index');
     $page->getLayout()->getBlock('magelens.layout.selector');
     if (!$page->getLayout()->hasElement('magelens.layout.selector')
         || ($replacement !== null && $replacement::$calls === 0)) {
         throw new RuntimeException('Native compiled page-layout replacement changed the wireframe');
     }
+    echo "Verified native wireframe construction and getter replacement for $mode.\n";
+    if (in_array('--native-only', $argv, true)) exit;
     $collector->finish();
     $events = (new ReflectionProperty(Recorder::class, 'events'))->getValue();
     foreach ($files as $file) {
@@ -123,7 +152,7 @@ if (in_array($mode, ['compiled-selection', 'selection-no-parent', 'native-select
         $selection = array_values(array_filter($file['declarations'], static fn($item) => $item['layout']['kind'] === 'wireframe-selection'))[0];
     }
     $effects = array_values(array_unique(array_column(array_filter($events, static fn($event) => $event['id'] === $selection['id']), 'type')));
-    if ($effects !== [$mode === 'native-selection' ? 'layout-wireframe-selected' : 'layout-wireframe-origin-unconfirmed']) throw new RuntimeException('Compiled getter replacement retained the XML page-layout selection');
+    if ($effects !== [$mode === 'native-selection' ? 'layout-wireframe-selected' : 'layout-wireframe-origin-unconfirmed']) throw new RuntimeException('Getter replacement retained the XML page-layout selection');
     echo "Verified native page-layout ownership boundary for $mode.\n";
     exit;
 }
@@ -178,15 +207,25 @@ if ($mode === 'theme-getter') {
     if ($merge->getTheme()->getFullPath() === $expectedTheme) throw new RuntimeException('Native theme getter replacement was bypassed');
 }
 if ($mode === 'theme-getter' && \MageLens\Compatibility\Model\LayoutThemeGetter::$collectorCalls !== 0) throw new RuntimeException('Collector invoked the application theme getter');
+if ($mode === 'theme-context') {
+    echo "Verified native layout and template output with the application theme context getters.\n";
+    if (in_array('--native-only', $argv, true)) exit;
+    if (\MageLens\Compatibility\Model\LayoutThemeContext::$collectorCalls !== 0) {
+        throw new RuntimeException('Collector invoked the application area or theme path getter');
+    }
+}
 if ($replacement !== null && $mode !== 'theme-getter' && $replacement::$calls === 0) throw new RuntimeException('Native replacement without parent was bypassed');
 try {
     [, , $limits] = $collector->finish();
     if ($mode === 'package-no-parent' && !in_array('mutable-layout-package', $limits, true)) {
         throw new RuntimeException('Missing programmatic package provider limitation');
     }
-    if (str_starts_with($mode, 'missing-')) throw new LogicException('Missing merge hook was accepted');
+    if (str_starts_with($mode, 'missing-') || $mode === 'theme-context-limit') throw new LogicException('Missing merge hook was accepted');
 } catch (RuntimeException $error) {
     $expected = ['missing-string' => 'Missing native layout serialization hook evidence',
+        'missing-theme-area' => 'Missing native layout theme context hook evidence',
+        'missing-theme-path' => 'Missing native layout theme context hook evidence',
+        'theme-context-limit' => 'Layout theme context observations exceeded 256 themes',
         'missing-document' => 'Missing native layout document hook evidence',
         'missing-package' => 'Missing native layout package getter hook evidence',
         'missing-event-manager' => 'Missing native layout package event hook evidence',
@@ -215,8 +254,11 @@ foreach ($items as $item) {
         }
     }
     $effects = array_values(array_unique(array_column($eventsForSource, 'type')));
-    if (in_array($mode, ['native', 'theme-getter', 'unused-parser', 'package-event-disabled'], true)) {
-        if (!$effects || in_array('layout-xml-ownership-revoked', $effects, true)) throw new RuntimeException('Native merge lost original ownership');
+    if (in_array($mode, ['native', 'theme-getter', 'theme-context', 'unused-parser', 'package-event-disabled'], true)) {
+        if (!$effects || in_array('layout-xml-ownership-revoked', $effects, true)) {
+            throw new RuntimeException('Native merge lost original ownership for ' . $item['node'] . ' (' . implode(', ', $effects)
+                . '); limitations: ' . implode(', ', $limits));
+        }
     } elseif (in_array($mode, ['parser-plugin', 'late-parser-plugin'], true) && $item['layout']['kind'] === 'position-name') {
         sort($effects);
         if ($effects !== ['layout-position-name-applied', 'layout-xml-ownership-revoked']) throw new RuntimeException('Earlier native name ownership was lost');

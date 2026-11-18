@@ -76,6 +76,7 @@ if (in_array($mode, ['empty-class', 'native-production'], true) && $manager->get
 }
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $manager->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
+$manager->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
 $cacheState = $manager->get(\Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html', 'full_page'] as $type) $cacheState->setEnabled($type, false);
 $plugin = match ($mode) {
@@ -106,9 +107,14 @@ if ($mode === 'object-manager') {
 if ($mode === 'manager-restore') {
     $pool = (new ReflectionProperty(\Magento\Framework\View\Layout::class, 'generatorPool'))->getValue($page->getLayout());
     $factory = (new ReflectionProperty(BlockGenerator::class, 'blockFactory'))->getValue($pool->getGenerator('block'));
-    $config = $manager->create(\MageLens\Compatibility\Model\LayoutFactoryConfig::class);
-    $config->initialize($factory, $manager);
-    (new ReflectionProperty(BlockFactory::class, 'objectManagerConfig'))->setValue($factory, $config);
+    if ((new ReflectionClass(BlockFactory::class))->hasProperty('objectManagerConfig')) {
+        $config = $manager->create(\MageLens\Compatibility\Model\LayoutFactoryConfig::class);
+        $config->initialize($factory, $manager);
+        (new ReflectionProperty(BlockFactory::class, 'objectManagerConfig'))->setValue($factory, $config);
+    } else {
+        (new ReflectionProperty(BlockFactory::class, 'objectManager'))->setValue($factory,
+            new \MageLens\Compatibility\Model\LayoutRestoringObjectManager($manager, $factory));
+    }
 }
 $block = $page->getLayout()->getBlock('magelens.layout.package.native');
 if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>') || $block->getData('late') !== 'xml-value') {
@@ -120,6 +126,9 @@ if ($mode === 'factory' && \MageLens\Compatibility\Model\LayoutBlockFactory::$ca
 if ($plugin !== null && $plugin::$calls === 0) throw new RuntimeException('Native equal class replacement was bypassed');
 if (in_array($mode, ['object-manager', 'manager-restore'], true) && \MageLens\Compatibility\Model\LayoutObjectManager::$calls === 0) {
     throw new RuntimeException('Native custom object-manager dependency was bypassed');
+}
+if ($mode === 'manager-restore' && (new ReflectionProperty(BlockFactory::class, 'objectManager'))->getValue($factory) !== $manager) {
+    throw new RuntimeException('Native factory dependency was not restored before the completed result');
 }
 try {
     $collector->finish();

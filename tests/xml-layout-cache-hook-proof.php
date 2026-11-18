@@ -42,6 +42,7 @@ if ($mode === 'depth') {
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
+$objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
 $cache = $objects->get(\Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html', 'full_page'] as $type) $cache->setEnabled($type, false);
 if ($mode === 'ui') {
