@@ -69,7 +69,7 @@ const layoutEvents = {
     'container-htmlClass': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'container-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'block-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-replaced'],
-    'block-class': ['layout-block-class-applied', 'layout-block-attribute-overridden'],
+    'block-class': ['layout-block-class-applied', 'layout-block-attribute-overridden', 'layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted'],
     'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
     'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden'],
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
@@ -78,7 +78,7 @@ const layoutEvents = {
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
     'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
     argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
-        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed'],
+        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed', 'layout-argument-application-unconfirmed'],
     'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
     'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
@@ -94,6 +94,9 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation or plugin. Their later application lacks verified original ownership.',
+    'layout-block-class-defaulted': 'The native generator selected its configured default class after treating the XML attribute as empty.',
+    'layout-block-class-origin-unconfirmed': 'Block creation used an unverified factory, object-manager dependency or intercepted creation method. Original-source class ownership is unavailable.',
     'layout-argument-origin-unconfirmed': 'The argument interpreter chain includes an unverified implementation or intercepted method. Original-source value ownership is unavailable for this argument tree.',
     'layout-origin-limit': 'Runtime layout document tracking reached its 256-document bound before this declaration could receive original-source evidence.',
     'layout-ui-denied': 'The native visibility decision removed this UI placement before component generation.',

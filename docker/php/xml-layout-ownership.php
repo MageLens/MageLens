@@ -39,6 +39,7 @@ final class LayoutXmlOwnership
 
     public function finish(): void
     {
+        if ($this->wrappers || $this->wrapperOverflow) $this->errors['Unbalanced XML handoff hook evidence'] = true;
         if ($this->errors) throw new \RuntimeException(implode(', ', array_keys($this->errors)));
     }
 
@@ -46,10 +47,11 @@ final class LayoutXmlOwnership
     {
         return [
             [ReaderInterface::class, 'interpret', $this->read(...), $this->endWrapper(...)],
-            [Condition::class, 'parseConditions', $this->read(...), null],
-            [Parser::class, 'parse', $this->read(...), null],
-            [Flat::class, 'convert', $this->read(...), null],
-            [Helper::class, 'scheduleStructure', $this->read(...), null],
+            ...array_map(fn($target) => [$target[0], $target[1],
+                function ($object, array $params, string $class, string $method) use ($target): void {
+                    if ($class === $target[0]) $this->read($object, $params, $class, $method);
+                }, null], [[Condition::class, 'parseConditions'], [Parser::class, 'parse'],
+                    [Flat::class, 'convert'], [Helper::class, 'scheduleStructure']]),
             [\Magento\Framework\Interception\PluginListInterface::class, 'getNext', null, $this->pluginSelection(...)],
         ];
     }
@@ -86,9 +88,35 @@ final class LayoutXmlOwnership
             $parents[] = 'Hyva\\Theme\\Framework\\View\\Model\\Layout\\Merge';
         }
         if ($native === Block::class) $parents[] = BackendBlock::class;
+        if ($native === \Magento\Framework\ObjectManager\ObjectManager::class) {
+            $parents[] = \Magento\Framework\App\ObjectManager::class;
+        }
         if (!in_array(get_class($object), $parents, true) && !self::generated($object, $parents)) return false;
         $owner = (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName();
         return $owner === $native || ($owner === get_class($object) && self::interceptor($object, $parents));
+    }
+
+    public function watchProducer(object $object, string $native, string $method, \Closure $pre, \Closure $post): void
+    {
+        if (!self::interceptor($object, [$native])
+            || (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName() !== get_class($object)) return;
+        $class = get_class($object);
+        $key = $class . '::' . $method;
+        if (isset($this->watched[$key])) return;
+        if (count($this->watched) >= 1024) {
+            $this->errors['Generated layout producer hook registrations exceeded 1024 methods'] = true;
+            return;
+        }
+        $this->watched[$key] = true;
+        if (!\OpenTelemetry\Instrumentation\hook($class, $method,
+            static function ($object, array $params, string $scope, string $method) use ($class, $pre): void {
+                if ($scope === $class) $pre($object, $params, $scope, $method);
+            },
+            static function ($object, array $params, $result, ?\Throwable $error, string $scope, string $method) use ($class, $post): void {
+                if ($scope === $class) $post($object, $params, $result, $error, $scope, $method);
+            })) {
+            $this->errors['Cannot register generated layout producer hook'] = true;
+        }
     }
 
     private static function property(object $object, string $class, string $name)
@@ -107,7 +135,13 @@ final class LayoutXmlOwnership
         $key = $class . '::' . $method;
         if (isset($this->watched[$key])) return;
         $this->watched[$key] = true;
-        if (!\OpenTelemetry\Instrumentation\hook($class, $method, $this->read(...), $this->endWrapper(...))) {
+        if (!\OpenTelemetry\Instrumentation\hook($class, $method,
+            function ($object, array $params, string $scope, string $method) use ($class): void {
+                if ($scope === $class) $this->read($object, $params, $scope, $method);
+            },
+            function ($object, array $params, $result, ?\Throwable $error, string $scope, string $method) use ($class): void {
+                if ($scope === $class) $this->endWrapper($object, $params, $result, $error, $scope, $method);
+            })) {
             $this->errors['Cannot register generated XML receiver hook'] = true;
         }
     }
@@ -155,13 +189,19 @@ final class LayoutXmlOwnership
         return true;
     }
 
-    private static function caller(object $object, string $method): array
+    public static function caller(object $object, string $method, bool $unwrap = true): array
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
-        $caller = $trace[3] ?? [];
-        if (self::interceptor($object, self::RECEIVERS) && ($caller['class'] ?? null) === get_class($object)
-            && ($caller['function'] ?? null) === $method) return $trace[4] ?? [];
-        return $caller;
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 24);
+        foreach ($trace as $index => $frame) {
+            if (($frame['function'] ?? null) !== $method || !isset($frame['class']) || !is_a($object, $frame['class'])) continue;
+            $caller = $trace[$index + 1] ?? [];
+            if ($unwrap && str_ends_with(get_class($object), '\\Interceptor')
+                && ($caller['class'] ?? null) === get_class($object) && ($caller['function'] ?? null) === $method) {
+                return $trace[$index + 2] ?? [];
+            }
+            return $caller;
+        }
+        return [];
     }
 
     private function read($object, array $params, string $class, string $method): void

@@ -95,8 +95,9 @@ if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
 fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
+cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -215,6 +216,30 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-merge-hook-proof.php "$merge_case"
     done
+    class_cases=(native native-production fallback factory object-manager manager-restore factory-fallback factory-plugin generator-plugin around no-parent missing-factory missing-creation missing-wrapper missing-creation-pre missing-creation-post missing-manager missing-manager-pre missing-manager-post manager-depth registration-limit)
+    if [[ "$platform" == mageos ]]; then class_cases+=(compiled-fallback compiled-generator-plugin compiled-factory-plugin compiled-around); fi
+    for class_case in "${class_cases[@]}"; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-class-hook-proof.php "$class_case"
+    done
+    (
+        invalid_class=src/app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_classdefault_index.xml
+        [[ ! -e "$invalid_class" ]] || fail 'Disposable invalid class fixture path already exists.'
+        cleanup_invalid_class() {
+            local result=$?
+            trap - EXIT
+            if [[ -e "$invalid_class" ]]; then rm -- "$invalid_class"; fi
+            ./bin/runner node bin/prepare.cjs --runtime-only --theme-roots .runtime/active-themes.json || result=1
+            exit "$result"
+        }
+        trap cleanup_invalid_class EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        cp tests/fixtures/compatibility/invalid-layout/class-empty.xml "$invalid_class"
+        ./bin/runner node bin/prepare.cjs --runtime-only --theme-roots .runtime/active-themes.json
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-class-hook-proof.php empty-class
+    )
     for argument_case in native reader generator missing-interpreter missing-reader missing-generator missing-action batch-depth interpreter-depth action-depth argument-limit; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-argument-hook-proof.php "$argument_case"

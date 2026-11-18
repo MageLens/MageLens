@@ -378,6 +378,20 @@ test('layout structural and page-value reports require the correct native effect
             events: [{...event, type: 'layout-file-overridden'}]}], sources).files[1].declarations[0];
         assert.equal(displaced.state, 'unmeasured', kind);
         assert.equal(displaced.hits, 0, kind);
+        if (kind === 'block-class') {
+            for (const type of ['layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted']) {
+                const item = merge(manifest, [{...record, layoutHook: true, events: [{...event, type}]}], sources).files[1].declarations[0];
+                assert.equal(item.state, 'unmeasured', type);
+                assert.equal(item.hits, 0, type);
+            }
+        }
+        if (kind === 'argument') {
+            const item = merge(manifest, [{...record, layoutHook: true,
+                events: [{...event, type: 'layout-argument-application-unconfirmed'}]}], sources).files[1].declarations[0];
+            assert.equal(item.state, 'unmeasured');
+            assert.equal(item.hits, 0);
+            assert.match(item.reason, /later application lacks verified original ownership/);
+        }
         const unconfirmed = {...record, layoutHook: true, events: [{...event, type: 'layout-argument-origin-unconfirmed'}]};
         if (['argument', 'action-argument'].includes(kind)) {
             const item = merge(manifest, [unconfirmed], sources).files[1].declarations[0];

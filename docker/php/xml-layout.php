@@ -8,10 +8,12 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 use Magento\Framework\DataObject;
+use Magento\Framework\ObjectManager\ObjectManager;
 use Magento\Framework\Simplexml\Config as XmlConfig;
 use Magento\Framework\Data\Structure as DataStructure;
 use Magento\Framework\Filesystem\File\Read;
 use Magento\Framework\View\Element\AbstractBlock;
+use Magento\Framework\View\Element\BlockFactory;
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\View\File;
 use Magento\Framework\View\File\FileList;
@@ -63,6 +65,8 @@ final class LayoutCoverage
     private array $moving = [];
     private array $generating = [];
     private array $constructing = [];
+    private array $blockObjectCreations = [];
+    private int $blockObjectOverflow = 0;
     private \WeakMap $blocks;
     private array $fetching = [];
     private bool $healthy = false;
@@ -103,6 +107,7 @@ final class LayoutCoverage
         $this->ownership->finish();
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
+        if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
         if ($this->actionEvaluations) $this->errors['Unbalanced native layout action hook evidence'] = true;
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
@@ -158,6 +163,16 @@ final class LayoutCoverage
             [XmlConfig::class, 'extend', $this->layoutXmlWrite(...), null],
             [XmlConfig::class, 'applyExtends', $this->layoutXmlWrite(...), null],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
+            [BlockGenerator::class, '__construct', $this->watchBlockCreation(...), null],
+            [BlockGenerator::class, 'createBlock',
+                function ($generator, array $params, string $class): void {
+                    if ($class === BlockGenerator::class) $this->beginBlockCreation($generator, $params, $class);
+                },
+                function ($generator, array $params, $block, ?\Throwable $error, string $class): void {
+                    if ($class === BlockGenerator::class) $this->completeBlockCreation($generator, $params, $block, $error);
+                }],
+            [BlockFactory::class, 'createBlock', null, $this->createdByFactory(...)],
+            [\Magento\Framework\ObjectManagerInterface::class, 'create', $this->beginBlockObject(...), $this->completeBlockObject(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
             [BlockGenerator::class, 'evaluateArguments', $this->beginGeneratorArguments(...), $this->evaluatedArguments(...)],
             [Updater::class, 'evaluate', $this->beginArgumentUpdate(...), $this->completeArgumentUpdate(...)],
@@ -582,27 +597,18 @@ final class LayoutCoverage
 
     private static function nativeCaller(object $subject, string $method): array
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
-        $caller = $trace[3] ?? [];
-        // A generated interceptor calls the parent directly when no plugin
-        // runs. Actual plugin dispatch inserts additional frames.
-        $wrapper = get_class($subject);
-        if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
-            && ($caller['function'] ?? null) === $method) {
-            return $trace[4] ?? [];
-        }
-        return $caller;
+        return LayoutXmlOwnership::caller($subject, $method);
     }
 
-    private function startProducer($merge, string $class, string $method, bool $consumer): bool
+    private function startProducer($merge, string $class, string $method, bool $consumer, string $native = Merge::class): bool
     {
-        if (!$merge instanceof Merge) {
+        if (!$merge instanceof $native) {
             $this->limitations['layout-processor-unconfirmed'] = true;
             return false;
         }
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4)[3] ?? [];
+        $caller = LayoutXmlOwnership::caller($merge, $method, false);
         $delegated = ($caller['class'] ?? null) === get_class($merge) && ($caller['function'] ?? null) === $method;
-        $this->ownership->beginProducer($merge, Merge::class, $class, $method, $consumer, $delegated);
+        $this->ownership->beginProducer($merge, $native, $class, $method, $consumer, $delegated);
         return true;
     }
 
@@ -624,6 +630,10 @@ final class LayoutCoverage
 
     private function unverifiedProducer($merge, string $method): void
     {
+        if ($merge instanceof BlockGenerator && $method === 'createBlock') {
+            if ($this->ownership->producerDepth($merge, $method) === 1) $this->unconfirmedBlockCreation($merge);
+            return;
+        }
         if (!$merge instanceof Merge) return;
         if ($method !== 'getFileLayoutUpdatesXml') {
             $this->limitations['layout-serialization-unconfirmed'] = true;
@@ -998,10 +1008,10 @@ final class LayoutCoverage
         $this->argumentReads[$xml] = $origins;
     }
 
-    private function unconfirmedArgument(array $origin, array $context): void
+    private function unconfirmedArgument(array $origin, array $context, string $effect = 'layout-argument-origin-unconfirmed'): void
     {
-        foreach (self::argumentRootIds($origin) as $id) $this->event($id, 'layout-argument-origin-unconfirmed', $context);
-        foreach ($origin['children'] ?? [] as $child) $this->unconfirmedArgument($child, $context);
+        foreach (self::argumentRootIds($origin) as $id) $this->event($id, $effect, $context);
+        foreach ($origin['children'] ?? [] as $child) $this->unconfirmedArgument($child, $context, $effect);
     }
 
     private function argumentOrigins($node): array
@@ -1393,11 +1403,139 @@ final class LayoutCoverage
         $this->positions->restore($schedule, $positions);
     }
 
+    private function watchBlockCreation($generator): void
+    {
+        $this->ownership->watchProducer($generator, BlockGenerator::class, 'createBlock',
+            $this->beginBlockCreation(...), $this->completeBlockCreation(...));
+    }
+
+    private function beginBlockCreation($generator, array $params, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        $caller = self::nativeCaller($generator, 'createBlock');
+        $consumer = ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'generateBlock';
+        if ($index !== null && $this->ownership->producerDepth($generator, 'createBlock') === 0 && $consumer) {
+            $this->generating[$index]['creating'] = true;
+            $this->generating[$index]['creationObserved'] = true;
+        }
+        $this->startProducer($generator, $class, 'createBlock', $consumer, BlockGenerator::class);
+        if ($index !== null && $consumer && $class === BlockGenerator::class
+            && $this->ownership->producerTrusted($generator, 'createBlock')) $this->generating[$index]['creationTrusted'] = true;
+        if ($consumer && $class === BlockGenerator::class && !$this->ownership->producerTrusted($generator, 'createBlock')) {
+            $this->unconfirmedBlockCreation($generator);
+        }
+    }
+
+    private function completeBlockCreation($generator, array $params, $block, ?\Throwable $error): void
+    {
+        $proof = $this->ownership->endProducer($generator, 'createBlock', $error);
+        if (!$proof['final']) return;
+        if (!$proof['trusted']) $this->unconfirmedBlockCreation($generator);
+        $index = array_key_last($this->generating);
+        if ($index !== null && $this->generating[$index]['subject'] === $generator) $this->generating[$index]['creating'] = false;
+    }
+
+    private function unconfirmedBlockCreation($generator): void
+    {
+        $index = array_key_last($this->generating);
+        if ($index === null || $this->generating[$index]['subject'] !== $generator || !$this->generating[$index]['creating']) return;
+        $frame = $this->generating[$index];
+        if (!$frame['creationUnconfirmed'] && isset($frame['source']['context'])) {
+            foreach ($frame['source']['arguments'] ?? [] as $origin) {
+                $this->unconfirmedArgument($origin, $frame['source']['context'], 'layout-argument-application-unconfirmed');
+            }
+        }
+        $this->generating[$index]['creationUnconfirmed'] = true;
+        $this->generating[$index]['class'] = null;
+        $this->generating[$index]['arguments'] = [];
+        $this->generating[$index]['applied'] = [];
+    }
+
+    private static function nativeBlockFactory(BlockFactory $factory): bool
+    {
+        if (!LayoutXmlOwnership::nativeMethod($factory, BlockFactory::class, 'createBlock')
+            || (new \ReflectionMethod($factory, 'createBlock'))->getDeclaringClass()->getName() !== BlockFactory::class) return false;
+        $manager = (new \ReflectionProperty(BlockFactory::class, 'objectManager'))->getValue($factory);
+        return self::nativeObjectManager($manager);
+    }
+
+    private static function nativeObjectManager(object $manager): bool
+    {
+        if (!LayoutXmlOwnership::nativeMethod($manager, ObjectManager::class, 'create')) return false;
+        $nativeManager = ObjectManager::class;
+        $objectFactory = (new \ReflectionProperty($nativeManager, '_factory'))->getValue($manager);
+        $config = (new \ReflectionProperty($nativeManager, '_config'))->getValue($manager);
+        $factories = [\Magento\Framework\ObjectManager\Factory\Dynamic\Developer::class,
+            \Magento\Framework\ObjectManager\Factory\Dynamic\Production::class, \Magento\Framework\ObjectManager\Factory\Compiled::class];
+        $configs = [\Magento\Framework\Interception\ObjectManager\Config\Developer::class,
+            \Magento\Framework\ObjectManager\Config\Compiled::class, \Magento\Framework\ObjectManager\Config\Config::class];
+        return in_array(get_class($objectFactory), $factories, true) && in_array(get_class($config), $configs, true);
+    }
+
+    private function beginBlockObject($manager, array $params, string $class): void
+    {
+        if (!$this->constructing && !$this->blockObjectCreations && !$this->blockObjectOverflow) return;
+        if ($this->blockObjectOverflow || count($this->blockObjectCreations) >= 256) {
+            $this->blockObjectOverflow++;
+            $this->errors['Layout block object creation nesting exceeded 256 calls'] = true;
+            return;
+        }
+        $index = $this->constructing[array_key_last($this->constructing)] ?? null;
+        $entry = null;
+        if ($index !== null && $index === array_key_last($this->generating)) {
+            $frame = $this->generating[$index];
+            $factory = $frame['factory'];
+            $caller = self::nativeCaller($manager, 'create');
+            $factoryCaller = self::nativeCaller($factory, 'createBlock');
+            if (($caller['object'] ?? null) === $factory && ($caller['class'] ?? null) === BlockFactory::class
+                && ($caller['function'] ?? null) === 'createBlock') $this->generating[$index]['managerObserved'] = true;
+            if ($class === ObjectManager::class && ($caller['object'] ?? null) === $factory && ($caller['class'] ?? null) === BlockFactory::class
+                && ($caller['function'] ?? null) === 'createBlock'
+                && ($factoryCaller['class'] ?? null) === BlockGenerator::class && ($factoryCaller['function'] ?? null) === 'getBlockInstance'
+                && LayoutXmlOwnership::nativeMethod($factory, BlockFactory::class, 'createBlock')
+                && self::nativeObjectManager($manager) && ($params[0] ?? null) === ltrim($frame['source']['attributes']['class']['value'], '\\')) {
+                $entry = $index;
+            }
+        }
+        $this->blockObjectCreations[] = $entry;
+    }
+
+    private function completeBlockObject($manager, array $params, $block, ?\Throwable $error): void
+    {
+        if ($this->blockObjectOverflow) {
+            $this->blockObjectOverflow--;
+            return;
+        }
+        if (!$this->blockObjectCreations) return;
+        $index = array_pop($this->blockObjectCreations);
+        if (!$error && $index !== null && $index === array_key_last($this->generating) && $block instanceof AbstractBlock) {
+            $this->generating[$index]['managerBlock'] = $block;
+        }
+    }
+
+    private function createdByFactory($factory, array $params, $block, ?\Throwable $error, string $class): void
+    {
+        $index = $this->constructing[array_key_last($this->constructing)] ?? null;
+        if ($class !== BlockFactory::class || $index === null || $index !== array_key_last($this->generating)) return;
+        $this->generating[$index]['factoryObserved'] = true;
+        if (!$error && $block instanceof AbstractBlock && !$this->generating[$index]['managerObserved']) {
+            $this->errors['Missing native block object manager hook evidence'] = true;
+        }
+        $caller = self::nativeCaller($factory, 'createBlock');
+        if (!$error && $block instanceof AbstractBlock && $this->generating[$index]['managerBlock'] === $block
+            && ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'getBlockInstance') {
+            $this->generating[$index]['factoryBlock'] = $block;
+        }
+    }
+
     private function beginBlock($generator, array $params, string $class): void
     {
         if ($class !== BlockGenerator::class) return;
+        $this->watchBlockCreation($generator);
         $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
-            'generator' => get_class($generator), 'applied' => [], 'arguments' => [], 'evaluationObserved' => false,
+            'generator' => get_class($generator), 'subject' => $generator, 'creating' => false,
+            'creationObserved' => false, 'creationTrusted' => false, 'creationUnconfirmed' => false,
+            'factoryObserved' => false, 'factoryBlock' => null, 'factory' => null, 'managerBlock' => null, 'managerObserved' => false, 'applied' => [], 'arguments' => [], 'evaluationObserved' => false,
             'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
     }
 
@@ -1522,6 +1660,11 @@ final class LayoutCoverage
         $caller = self::nativeCaller($generator, 'getBlockInstance');
         $eligible = $origin && $origin['value'] !== '' && $origin['value'] === $params[0]
             && ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'createBlock';
+        if ($eligible) {
+            $factory = (new \ReflectionProperty(BlockGenerator::class, 'blockFactory'))->getValue($generator);
+            $this->generating[$index]['factory'] = $factory;
+            $this->generating[$index]['factoryExpected'] = self::nativeBlockFactory($factory);
+        }
         $this->constructing[] = $eligible ? $index : null;
     }
 
@@ -1530,7 +1673,14 @@ final class LayoutCoverage
         if ($class !== BlockGenerator::class) return;
         $index = array_pop($this->constructing);
         if (!$error && $index !== null && $index === array_key_last($this->generating) && $block instanceof AbstractBlock) {
-            $this->generating[$index]['class'] = $block;
+            if ((!empty($this->generating[$index]['factoryExpected']) || $this->generating[$index]['managerBlock'] !== null)
+                && !$this->generating[$index]['factoryObserved']) {
+                $this->errors['Missing native block factory hook evidence'] = true;
+            }
+            if ($this->generating[$index]['creationTrusted'] && !$this->generating[$index]['creationUnconfirmed']
+                && $this->generating[$index]['factoryBlock'] === $block) {
+                $this->generating[$index]['class'] = $block;
+            }
         }
     }
 
@@ -1679,7 +1829,15 @@ final class LayoutCoverage
             return;
         }
         if (!$block instanceof AbstractBlock) return;
+        if (!$frame['creationObserved'] && LayoutXmlOwnership::nativeMethod($generator, BlockGenerator::class, 'createBlock')) {
+            $this->errors['Missing native block creation hook evidence'] = true;
+        }
         $source = $frame['source'];
+        if (!$frame['creationTrusted'] && !$frame['creationUnconfirmed']) {
+            foreach ($source['arguments'] ?? [] as $origin) {
+                $this->unconfirmedArgument($origin, $source['context'], 'layout-argument-application-unconfirmed');
+            }
+        }
         if (!empty($source['arguments']) && !$frame['evaluationObserved']) {
             $this->errors['Missing native layout generator argument batch hook evidence'] = true;
         }
@@ -1698,6 +1856,10 @@ final class LayoutCoverage
             if ($frame[$attribute] === $block) {
                 $this->event($source['attributes'][$attribute]['id'], 'layout-block-' . $attribute . '-applied', $context);
             }
+        }
+        if (isset($source['attributes']['class']) && $frame['class'] !== $block) {
+            $this->event($source['attributes']['class']['id'], empty($source['attributes']['class']['value'])
+                ? 'layout-block-class-defaulted' : 'layout-block-class-origin-unconfirmed', $context);
         }
         if ($frame['group']) $this->event($source['attributes']['group']['id'], 'layout-block-group-applied', $context);
         foreach ($frame['applied'] as $id => $target) {
