@@ -107,4 +107,4 @@ ${templateWarning}
 `);
 }
 
-module.exports = {writeIndex, templateLimitations};
+module.exports = {writeIndex, templateLimitations, escapeHtml};
