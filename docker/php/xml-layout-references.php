@@ -22,6 +22,8 @@ final class LayoutReferenceCoverage
     private const EFFECTS = [
         'layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced',
         'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed', 'layout-template-failed',
+        'layout-template-resolver-storage-unconfirmed', 'layout-template-context-storage-unconfirmed',
+        'layout-template-engine-pool-storage-unconfirmed',
         'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
         'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed',
         'layout-action-executed', 'layout-action-ambiguous',

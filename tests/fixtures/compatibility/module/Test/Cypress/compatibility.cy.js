@@ -260,6 +260,11 @@ describe('Magento storefront coverage compatibility', () => {
             'data-get', 'data-magic', 'data-set', 'data-redeclared', 'after-failure']) {
             cy.get(`[data-layout-property="${effect}"]`).should('have.text', 'verified');
         }
+        cy.visit('/coverageprobe/dependencies/');
+        for (const effect of ['native', 'resolver_hook', 'context_hook', 'engine_hook', 'resolver_magic',
+            'context_magic', 'engine_magic', 'resolver_redeclared', 'lock_magic', 'lock_shadow']) {
+            cy.get(`[data-layout-dependency="${effect}"]`).should('have.text', 'verified');
+        }
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');

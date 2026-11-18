@@ -2417,7 +2417,10 @@ final class LayoutCoverage
         }
         static $property;
         $property ??= new \ReflectionProperty(AbstractBlock::class, 'lockQuery');
-        $loader = $property->getValue($block);
+        // This native private slot is distinct from any same-named subclass
+        // property. An unset slot must not invoke application magic access.
+        $loader = !(new \ReflectionClass($block))->isUninitializedLazyObject($block) && $property->isInitialized($block)
+            ? $property->getRawValue($block) : null;
         $this->loadingHtml[] = ['block' => $block, 'cacheData' => false, 'readObserved' => false,
             'readExpected' => false, 'readClosure' => null, 'loaderObserved' => false, 'loaderExpected' => is_object($loader)
                 && method_exists($loader, 'lockedLoadData')
@@ -2485,19 +2488,25 @@ final class LayoutCoverage
         $caller = self::nativeCaller($block, 'fetchView');
         $origin = $class === Template::class && ($caller['class'] ?? null) === Template::class
             && ($caller['function'] ?? null) === '_toHtml' ? ($this->blocks[$block]['template'] ?? null) : null;
-        if ($origin !== null && !$this->templateOwnership->consume($block, $params[0])) {
-            $this->event($origin, 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
+        $limitation = null;
+        if ($origin !== null && !$this->templateOwnership->consume($block, $params[0], $limitation)) {
+            $this->event($origin, $limitation ?? 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
             $origin = null;
         }
-        static $property;
-        $property ??= new \ReflectionProperty(Template::class, 'templateContext');
-        static $poolProperty;
-        $poolProperty ??= new \ReflectionProperty(Template::class, 'templateEnginePool');
-        $pool = $poolProperty->getValue($block);
+        $property = LayoutXmlOwnership::unhookedProperty($block, 'templateContext');
+        $poolProperty = LayoutXmlOwnership::unhookedProperty($block, 'templateEnginePool');
+        $context = $property?->getRawValue($block);
+        $pool = $poolProperty?->getRawValue($block);
+        if ($origin !== null && (!is_object($context) || !is_object($pool))) {
+            if (!is_object($context)) $this->event($origin, 'layout-template-context-storage-unconfirmed', $this->blocks[$block]['context']);
+            if (!is_object($pool)) $this->event($origin, 'layout-template-engine-pool-storage-unconfirmed', $this->blocks[$block]['context']);
+            $origin = null;
+        }
         $this->fetching[] = ['origin' => $origin, 'executed' => false, 'file' => $params[0],
-            'block' => $origin === null ? null : $property->getValue($block), 'owner' => $block,
+            'block' => $origin === null ? null : $context, 'owner' => $block,
             'engine' => null, 'engineObserved' => false, 'engineExpected' => false, 'observedEngine' => null,
-            'poolObserved' => false, 'poolExpected' => (new \ReflectionMethod($pool, 'get'))->getDeclaringClass()->getName()
+            'poolObserved' => false, 'poolExpected' => is_object($pool) && method_exists($pool, 'get')
+                && (new \ReflectionMethod($pool, 'get'))->getDeclaringClass()->getName()
                 === \Magento\Framework\View\TemplateEnginePool::class];
     }
 

@@ -216,6 +216,15 @@ foreach ([[], ['id' => 'new-scalar']] as $newOrigin) {
 echo "Programmatic argument overlays preserve displaced and surviving XML origins.\n";
 
 require_once __DIR__ . '/../docker/php/xml-layout-references.php';
+require_once __DIR__ . '/../docker/php/xml-layout-ownership.php';
+$lazyCalls = 0;
+$lazyType = new ReflectionClass(new class { public $value = 'same'; });
+$lazyObject = $lazyType->newLazyGhost(static function ($object) use (&$lazyCalls): void {
+    $lazyCalls++;
+    $object->value = 'same';
+});
+checkXml(\MageLens\XmlCoverage\LayoutXmlOwnership::unhookedProperty($lazyObject, 'value') === null && $lazyCalls === 0,
+    'Source ownership inspection must not initialize a lazy application object');
 foreach (['references' => 8193, 'effect origins' => 32769] as $limit => $count) {
     $targets = [];
     for ($index = 0; $index < $count; $index++) {

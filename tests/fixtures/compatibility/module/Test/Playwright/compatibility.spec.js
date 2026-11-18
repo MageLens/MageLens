@@ -228,6 +228,11 @@ test('starts the next test with fresh state', async ({page}) => {
         'data-get', 'data-magic', 'data-set', 'data-redeclared', 'after-failure']) {
         await expect(page.locator(`[data-layout-property="${effect}"]`)).toHaveText('verified');
     }
+    await page.goto('/coverageprobe/dependencies/');
+    for (const effect of ['native', 'resolver_hook', 'context_hook', 'engine_hook', 'resolver_magic',
+        'context_magic', 'engine_magic', 'resolver_redeclared', 'lock_magic', 'lock_shadow']) {
+        await expect(page.locator(`[data-layout-dependency="${effect}"]`)).toHaveText('verified');
+    }
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

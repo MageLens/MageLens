@@ -31,7 +31,7 @@ for (const name of ['native', 'template_get', 'template_set', 'template_magic', 
         assert.deepEqual([...new Set(argument.evidence.map(event => event.type))].sort(), expected, name + '/' + argument.layout.element);
         if (['data_get', 'data_magic'].includes(name)) {
             assert.equal(argument.state, 'covered', 'Keep independently proven evaluation/application');
-            assert.match(argument.reason, name === 'data_get' ? /hooked\/magic data storage/ : /later reads lack verified XML lineage/);
+            assert.match(argument.reason, name === 'data_get' ? /hooked, magic or uninitialized lazy data storage/ : /later reads lack verified XML lineage/);
             assert.ok(report.warnings.some(warning => warning.declaration === argument.id && warning.reason === argument.reason));
         }
     }

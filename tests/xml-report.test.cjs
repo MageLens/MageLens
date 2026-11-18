@@ -305,6 +305,13 @@ test('creation and template selection remain facts without granting rendering cr
     const replaced = collect([...facts, event('template', 'layout-template-replaced')]);
     assert.equal(replaced.files[1].declarations[1].state, 'unmeasured');
     assert.equal(replaced.files[1].declarations[1].hits, 0);
+    for (const dependency of ['resolver', 'context', 'engine-pool']) {
+        const limited = collect([...facts, event('template', `layout-template-${dependency}-storage-unconfirmed`)]);
+        const declaration = limited.files[1].declarations[1];
+        assert.equal(declaration.state, 'unmeasured');
+        assert.equal(declaration.hits, 0);
+        assert.match(declaration.reason, /backing/);
+    }
     const failed = collect([...facts, event('block', 'layout-block-render-failed')]);
     assert.equal(failed.files[1].declarations[0].state, 'unmeasured');
     assert.equal(failed.files[1].declarations[0].hits, 0);
@@ -503,7 +510,7 @@ test('layout structural and page-value reports require the correct native effect
             const unknownRead = merge(manifest, [{...record, layoutHook: true, events: [read]}], sources).files[1].declarations[0];
             assert.equal(unknownRead.state, 'unmeasured');
             assert.equal(unknownRead.hits, 0);
-            assert.match(unknownRead.reason, /data property became hooked, unset or magic/);
+            assert.match(unknownRead.reason, /data property became hooked, unset, magic or subject to unverified lazy initialization/);
             const applied = merge(manifest, [{...record, layoutHook: true,
                 events: [{...event, type: 'layout-argument-applied'}, read]}], sources).files[1].declarations[0];
             assert.equal(applied.state, 'covered');

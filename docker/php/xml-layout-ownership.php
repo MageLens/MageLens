@@ -125,6 +125,9 @@ final class LayoutXmlOwnership
     // properties. Plain redeclarations keep the same native storage semantics.
     public static function unhookedProperty(object $object, string $name): ?\ReflectionProperty
     {
+        // isInitialized() itself initializes lazy objects on the pinned PHP
+        // engine. Inspect object metadata before inspecting its property.
+        if ((new \ReflectionClass($object))->isUninitializedLazyObject($object)) return null;
         $property = new \ReflectionProperty($object, $name);
         return !$property->getHooks() && $property->isInitialized($object) ? $property : null;
     }

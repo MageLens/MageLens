@@ -51,11 +51,11 @@ final class LayoutTemplateOwnership
         }
     }
 
-    private static function resolver(Template $block): object
+    private static function resolver(Template $block): ?object
     {
-        static $property;
-        $property ??= new \ReflectionProperty(Template::class, 'resolver');
-        return $property->getValue($block);
+        $property = LayoutXmlOwnership::unhookedProperty($block, 'resolver');
+        $resolver = $property?->getRawValue($block);
+        return is_object($resolver) ? $resolver : null;
     }
 
     private function begin($object, array $params, string $class, string $method): void
@@ -72,12 +72,12 @@ final class LayoutTemplateOwnership
                 && ($caller['object'] ?? null) === $this->resolving[$index]['block']);
         if ($method === 'getTemplateFile' && $this->ownership->producerDepth($object, $method) === 0) {
             $resolver = self::resolver($object);
-            $this->ownership->watchProducer($resolver, Resolver::class, 'getTemplateFileName', $this->begin(...), $this->complete(...));
+            if ($resolver !== null) $this->ownership->watchProducer($resolver, Resolver::class, 'getTemplateFileName', $this->begin(...), $this->complete(...));
             if ($this->overflow || count($this->resolving) >= 256) {
                 $this->overflow++;
                 $this->errors['Layout template resolution nesting exceeded 256 calls'] = true;
             } else {
-                $this->beforePlugin->begin($resolver);
+                if ($resolver !== null) $this->beforePlugin->begin($resolver);
                 $this->resolving[] = ['block' => $object, 'resolver' => $resolver, 'getterObserved' => false,
                     'resolverObserved' => false, 'getterTrusted' => false, 'resolverTrusted' => false,
                     'usesSelection' => empty($params[0]), 'rendering' => $consumer, 'attributable' => $attributable];
@@ -105,17 +105,19 @@ final class LayoutTemplateOwnership
                 return;
             }
             array_pop($this->resolving);
-            $knownResolver = $this->beforePlugin->complete($frame['resolver'], $error, $proof['trusted'] && $frame['getterTrusted']);
+            $knownResolver = $frame['resolver'] !== null
+                && $this->beforePlugin->complete($frame['resolver'], $error, $proof['trusted'] && $frame['getterTrusted']);
             if (!$error && $proof['trusted']) {
                 if ($frame['usesSelection'] && LayoutXmlOwnership::nativeMethod($object, Template::class, 'getTemplate')
                     && !$frame['getterObserved']) $this->errors['Missing native template getter hook evidence'] = true;
-                if ($frame['getterTrusted'] && (LayoutXmlOwnership::nativeMethod($frame['resolver'], Resolver::class, 'getTemplateFileName')
+                if ($frame['getterTrusted'] && $frame['resolver'] !== null && (LayoutXmlOwnership::nativeMethod($frame['resolver'], Resolver::class, 'getTemplateFileName')
                         || $this->beforePlugin->compiled($frame['resolver']))
                     && !$frame['resolverObserved']) $this->errors['Missing native template resolver hook evidence'] = true;
             }
             if (!$error && $frame['rendering']) {
                 $this->resolved[$object] = ['file' => $result, 'trusted' => $proof['trusted']
-                    && $frame['usesSelection'] && $frame['getterTrusted'] && ($frame['resolverTrusted'] || $knownResolver)];
+                    && $frame['usesSelection'] && $frame['getterTrusted'] && ($frame['resolverTrusted'] || $knownResolver),
+                    'limitation' => $frame['resolver'] === null ? 'layout-template-resolver-storage-unconfirmed' : null];
             }
             return;
         }
@@ -133,10 +135,11 @@ final class LayoutTemplateOwnership
         }
     }
 
-    public function consume(Template $block, $file): bool
+    public function consume(Template $block, $file, ?string &$limitation = null): bool
     {
         $proof = $this->resolved[$block] ?? null;
         unset($this->resolved[$block]);
+        $limitation = $proof['limitation'] ?? null;
         if ($proof === null && LayoutXmlOwnership::nativeMethod($block, Template::class, 'getTemplateFile')) {
             $this->errors['Missing native template file getter hook evidence'] = true;
         }

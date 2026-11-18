@@ -29,6 +29,9 @@ License: see LICENSE in the repository root.
     <type name="MageLens\Compatibility\Controller\Propertyownership\Index">
         <arguments><argument name="layouts" xsi:type="object">MageLensCompatibilityIsolatedLayoutFactory</argument></arguments>
     </type>
+    <type name="MageLens\Compatibility\Controller\Dependencies\Index">
+        <arguments><argument name="layouts" xsi:type="object">MageLensCompatibilityIsolatedLayoutFactory</argument></arguments>
+    </type>
     <type name="MageLens\Compatibility\Controller\References\Index">
         <arguments><argument name="layouts" xsi:type="object">MageLensCompatibilityIsolatedLayoutFactory</argument></arguments>
     </type>
