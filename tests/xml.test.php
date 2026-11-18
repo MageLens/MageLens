@@ -106,6 +106,22 @@ $layoutDirectory = __DIR__ . '/fixtures/compatibility/module/view/frontend/layou
 $originFile = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_layout_base.xml';
 $layoutSource = file_get_contents($layoutDirectory . basename($originFile));
 $layoutItems = LayoutManifest::declarations($originFile, $layoutSource);
+$hint = array_values(array_filter($layoutItems, static fn($item) => $item['layout']['attribute'] === 'xsi:noNamespaceSchemaLocation'))[0];
+checkXml(!$hint['supported'] && $hint['layout']['kind'] === 'schema-hint'
+    && str_contains($hint['reason'], 'Native file packaging omits this namespaced schema hint'),
+    'Source schema hints retain their native packaging limitation');
+$aliasedHint = LayoutManifest::declarations('app/code/Fixture/Module/view/frontend/layout/hint.xml',
+    '<layout xmlns:grammar="http://www.w3.org/2001/XMLSchema-instance" grammar:noNamespaceSchemaLocation="fixture.xsd"/>');
+checkXml($aliasedHint[1]['layout']['kind'] === 'schema-hint' && !$aliasedHint[1]['supported']
+    && $aliasedHint[1]['layout']['attribute'] === 'grammar:noNamespaceSchemaLocation',
+    'Schema-hint identity preserves the original namespace prefix while semantics use the namespace URI');
+foreach ([['layout', 'page', 'page'], ['layout', 'layout', 'generic'], ['page_layout', 'layout', 'wireframe']] as [$directory, $root, $type]) {
+    foreach (['', ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="unused.xsd"'] as $hintAttribute) {
+        $declarations = LayoutManifest::declarations("app/code/Fixture/Module/view/frontend/$directory/hint.xml", "<$root$hintAttribute/>");
+        checkXml($declarations[0]['layout']['fileType'] === $type,
+            'Native file role and root determine the layout inventory independently of omitted source hints');
+    }
+}
 $replaced = array_values(array_filter($layoutItems, static fn($item) => $item['layout']['element'] === 'magelens.layout.replaced' && $item['supported']));
 checkXml(array_column(array_column($replaced, 'layout'), 'kind') === ['block', 'block-class', 'position-name', 'template'],
     'Block, class, name and template origins are independent');

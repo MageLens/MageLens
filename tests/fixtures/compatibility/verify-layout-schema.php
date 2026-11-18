@@ -36,6 +36,22 @@ foreach ($files as $file) {
     $errors = $validate($source, $schema);
     if ($errors) throw new RuntimeException(basename($file) . "\n" . implode("\n", $errors));
 }
+$mergeType = \Magento\Framework\View\Model\Layout\Merge::class;
+$merge = (new ReflectionClass($mergeType))->newInstanceWithoutConstructor();
+$renderAttributes = new ReflectionMethod($mergeType, '_renderXmlAttributes');
+foreach (['xsi', 'grammar'] as $prefix) {
+    $hinted = '<layout xmlns:' . $prefix . '="http://www.w3.org/2001/XMLSchema-instance" '
+        . $prefix . ':noNamespaceSchemaLocation="urn:magelens:unused-schema-hint"/>';
+    if ($validate($hinted, 'urn:magento:framework:View/Layout/etc/layout_generic.xsd')) {
+        throw new RuntimeException('The configured native schema unexpectedly used the source hint');
+    }
+    $xml = simplexml_load_string($hinted, \Magento\Framework\View\Layout\Element::class);
+    if ((string) $xml->attributes('http://www.w3.org/2001/XMLSchema-instance')->noNamespaceSchemaLocation === ''
+        || $renderAttributes->invoke($merge, $xml) !== '') {
+        throw new RuntimeException('Native packaging retained the namespaced schema hint');
+    }
+}
+echo "Verified configured native validation and omitted source schema hints with two namespace prefixes.\n";
 $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';

@@ -19,14 +19,13 @@ final class LayoutManifest
     {
         $document = Xml::document($source);
         $root = $document->documentElement;
-        $schema = $root->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'noNamespaceSchemaLocation');
         $fileType = match (basename($path)) {
             'layouts.xml' => 'registry',
             'page_types.xml' => 'page-types',
-            default => match ($schema) {
-                'urn:magento:framework:View/Layout/etc/page_configuration.xsd' => 'page',
-                'urn:magento:framework:View/Layout/etc/layout_generic.xsd' => 'generic',
-                'urn:magento:framework:View/Layout/etc/page_layout.xsd' => 'wireframe',
+            default => match (true) {
+                $root->tagName === 'page' && str_contains($path, '/layout/') => 'page',
+                $root->tagName === 'layout' && str_contains($path, '/page_layout/') => 'wireframe',
+                $root->tagName === 'layout' && str_contains($path, '/layout/') => 'generic',
                 default => 'custom',
             },
         };
@@ -89,6 +88,9 @@ final class LayoutManifest
             $instructions = [[null, $kind]];
             foreach ($node->attributes as $attribute) {
                 $kind = match (true) {
+                    in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                        && $attribute->namespaceURI === 'http://www.w3.org/2001/XMLSchema-instance'
+                        && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
                     $valueKind === 'visibility' && $attribute->nodeName === 'name' => 'visibility-name',
                     $valueKind === 'visibility' && $attribute->nodeName === 'className' => 'visibility-class',
@@ -162,11 +164,13 @@ final class LayoutManifest
                         ...($kind === 'wireframe-selection' ? ['selection' => $node->getAttribute('layout')] : []),
                         ...($kind === 'move' ? ['destination' => $node->getAttribute('destination')] : [])],
                     'supported' => $supported,
-                    'reason' => $kind === 'file-selection'
+                    'reason' => $kind === 'schema-hint'
+                        ? 'Native file packaging omits this namespaced schema hint. Layout validation uses the engine\'s configured schema'
+                        : ($kind === 'file-selection'
                         ? 'This root records native file selection at the merged-XML stage. Coverage requires an attributable instruction effect'
                         : ($supported ? null : ($ignoredWrapper
                         ? 'The installed wireframe root reader pool ignores head and body branches, including their descendants'
-                        : self::limitation($fileType, $node->tagName, $attribute))),
+                        : self::limitation($fileType, $node->tagName, $attribute)))),
                 ];
             }
         }
