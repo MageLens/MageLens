@@ -7,7 +7,7 @@ License: see LICENSE in the repository root.
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
     <group id="magelens_probe">
         <job name="magelens_probe" instance="MageLens\Compatibility\Cli\Jobs" method="run">
-            <schedule>0 0 31 2 *</schedule>
+            <schedule>* * * * *</schedule>
         </job>
     </group>
 </config>

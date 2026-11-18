@@ -43,11 +43,12 @@ class Probe extends Command
                 $output->writeln($value, OutputInterface::OUTPUT_RAW);
                 break;
             case 'schedule':
+                $now = time();
                 $schedule = $this->schedules->create()
                     ->setJobCode('magelens_probe')
                     ->setStatus(Schedule::STATUS_PENDING)
-                    ->setCreatedAt(gmdate('Y-m-d H:i:s'))
-                    ->setScheduledAt(gmdate('Y-m-d H:i:s'));
+                    ->setCreatedAt(gmdate('Y-m-d H:i:s', $now))
+                    ->setScheduledAt(gmdate('Y-m-d H:i:00', $now - 60));
                 $this->resource->save($schedule);
                 $output->writeln((string) $schedule->getId());
                 break;
@@ -55,7 +56,10 @@ class Probe extends Command
                 $output->writeln($this->schedule($value)->getStatus());
                 break;
             case 'unschedule':
-                $this->resource->delete($this->schedule($value));
+                $this->resource->getConnection()->delete($this->resource->getMainTable(), [
+                    'schedule_id = ?' => $value,
+                    'job_code = ?' => 'magelens_probe',
+                ]);
                 break;
             case 'publish':
                 $this->publisher->publish('magelens.probe', $value);
