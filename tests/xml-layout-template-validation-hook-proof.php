@@ -74,7 +74,20 @@ $fragment = $objects->get(Magento\Framework\View\Result\LayoutFactory::class)->c
 $fragment->addHandle($handle);
 $block = $fragment->getLayout()->getBlock($name);
 $custom = ['override' => RejectedTemplateValidator::class, 'parent-override' => ParentTemplateValidator::class][$mode] ?? null;
-if ($custom !== null) (new ReflectionProperty(Template::class, 'validator'))->setValue($block, $objects->create($custom));
+if ($custom !== null) {
+    $configuration = $objects->get(Magento\Framework\ObjectManager\ConfigInterface::class);
+    if ($configuration instanceof Magento\Framework\ObjectManager\Config\Compiled) {
+        // Test-defined subclasses are absent from compiled metadata. Reuse the
+        // installed native constructor references without changing inheritance.
+        $native = $configuration->getInstanceType($configuration->getPreference(Validator::class));
+        $arguments = $configuration->getArguments($native);
+        if (!is_array($arguments) || !$arguments) throw new RuntimeException('Native compiled validator constructor is unavailable');
+        $names = array_fill_keys(array_map(static fn($parameter) => $parameter->getName(),
+            (new ReflectionMethod($custom, '__construct'))->getParameters()), true);
+        $configuration->extend(['arguments' => [$custom => array_intersect_key($arguments, $names)]]);
+    }
+    (new ReflectionProperty(Template::class, 'validator'))->setValue($block, $objects->create($custom));
+}
 if ($mode === 'unset-dependencies') Closure::bind(static function ($block): void {
     unset($block->templateContext, $block->templateEnginePool);
 }, null, Template::class)($block);
