@@ -10,19 +10,22 @@ for (const name of ['native', 'reader', 'generator']) {
     assert.ok(file, name);
     for (const item of file.declarations.filter(item => item.supported)) {
         const kind = item.layout.kind;
-        const argument = kind === 'argument';
-        const actionArgument = kind === 'action-argument';
+        const argument = ['argument', 'argument-name'].includes(kind);
+        const actionArgument = ['action-argument', 'action-argument-name'].includes(kind);
+        const nameOperand = kind.endsWith('-name');
         const affected = argument && (name === 'reader' ? item.layout.element !== 'value'
             : name === 'generator' && item.layout.element !== 'late')
             || actionArgument && name === 'generator' && item.layout.element === 'value';
         if (affected) {
             assert.equal(item.state, 'unmeasured', `${name}/${item.node}`);
             assert.equal(item.hits, 0, `${name}/${item.node}`);
-            assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-argument-origin-unconfirmed']);
+            assert.deepEqual([...new Set(item.evidence.map(event => event.type))], [nameOperand
+                ? `layout-${actionArgument ? 'action-argument' : 'argument'}-name-origin-unconfirmed`
+                : 'layout-argument-origin-unconfirmed']);
         } else {
             assert.equal(item.state, 'covered', `${name}/${item.node}`);
-            if (argument) assert.ok(item.evidence.some(event => event.type === 'layout-argument-applied'), `${name}/${item.node}`);
-            if (actionArgument) assert.ok(item.evidence.some(event => event.type === 'layout-action-argument-applied'), `${name}/${item.node}`);
+            if (argument) assert.ok(item.evidence.some(event => event.type === `layout-argument${nameOperand ? '-name' : ''}-applied`), `${name}/${item.node}`);
+            if (actionArgument) assert.ok(item.evidence.some(event => event.type === `layout-action-argument${nameOperand ? '-name' : ''}-applied`), `${name}/${item.node}`);
         }
     }
 }

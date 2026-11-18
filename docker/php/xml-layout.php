@@ -112,6 +112,7 @@ final class LayoutCoverage
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
         $this->references = new LayoutReferenceCoverage($sources, $this->origin(...));
         Recorder::layoutReferences($this->references);
+        Recorder::layoutArgumentNames(new LayoutArgumentNames($sources));
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
         $this->blockRendering = new LayoutBlockRendering($this->ownership);
         $this->handleMetadata = new LayoutHandleMetadata($this->ownership, $this->packageOrigin(...));
@@ -135,7 +136,11 @@ final class LayoutCoverage
 
     public static function register(array $sources): array
     {
-        if (!$sources) { Recorder::layoutReferences(null); return [null, []]; }
+        if (!$sources) {
+            Recorder::layoutReferences(null);
+            Recorder::layoutArgumentNames(null);
+            return [null, []];
+        }
         $collector = new self($sources);
         return [$collector, $collector->hooks()];
     }

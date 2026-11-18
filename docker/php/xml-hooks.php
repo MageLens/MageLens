@@ -27,6 +27,7 @@ require_once __DIR__ . '/xml-layout-page-values.php';
 require_once __DIR__ . '/xml-layout-structure.php';
 require_once __DIR__ . '/xml-layout-positions.php';
 require_once __DIR__ . '/xml-layout-references.php';
+require_once __DIR__ . '/xml-layout-argument-names.php';
 require_once __DIR__ . '/xml-layout-registry.php';
 require_once __DIR__ . '/xml-layout-assets.php';
 use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences};

@@ -77,6 +77,8 @@ const layoutEvents = {
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     'action-method': ['layout-action-executed', 'layout-action-ambiguous'],
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
+    'argument-name': ['layout-argument-name-applied', 'layout-argument-name-overridden', 'layout-argument-name-mixed-origin', 'layout-argument-name-origin-unconfirmed'],
+    'action-argument-name': ['layout-action-argument-name-applied', 'layout-action-argument-name-ambiguous', 'layout-action-argument-name-origin-unconfirmed'],
     'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
     argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
         'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed', 'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed'],
@@ -114,6 +116,11 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-argument-name-overridden': 'A later declaration replaced the value associated with this original parser key before its native block-data assignment.',
+    'layout-argument-name-mixed-origin': 'The value at this parser key combines original declarations. The assignment cannot choose one complete original name operand.',
+    'layout-argument-name-origin-unconfirmed': 'The native value or assignment handoff does not establish this original name operand for the applied key.',
+    'layout-action-argument-name-ambiguous': 'Multiple original actions can supply this parsed argument key and position. The native call does not identify one original operand.',
+    'layout-action-argument-name-origin-unconfirmed': 'The action argument interpreter handoff does not establish this original parser key for the call.',
     'layout-template-resolver-storage-unconfirmed': 'The template resolver backing property has hooks, unset storage, pending lazy initialization or no verified object. Reading it for attribution could execute application code; original template execution remains unconfirmed.',
     'layout-template-context-storage-unconfirmed': 'The template context backing property has hooks, unset storage, pending lazy initialization or no verified object. The native engine context cannot be matched without invoking application code.',
     'layout-template-engine-pool-storage-unconfirmed': 'The template engine pool backing property has hooks, unset storage, pending lazy initialization or no verified object. Its selection handoff cannot be inspected without invoking application code.',
@@ -286,6 +293,12 @@ function merge(manifest, records, sources) {
         const events = [];
         const argumentApplications = new Set(record.events.filter(event => event.type === 'layout-argument-applied')
             .map(event => JSON.stringify([event.id, event.area, event.theme])));
+        const layoutEffectHits = new Map();
+        const layoutEffectKey = (id, type, area, theme) => JSON.stringify([id, type, area, theme]);
+        for (const event of record.events) if (event.type?.startsWith('layout-')) {
+            const key = layoutEffectKey(event.id, event.type, event.area, event.theme);
+            layoutEffectHits.set(key, (layoutEffectHits.get(key) || 0) + event.hits);
+        }
         for (const limitation of record.layoutLimitations || []) {
             assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
             requestLimitations.add(limitation);
@@ -350,6 +363,20 @@ function merge(manifest, records, sources) {
                 if (event.type === 'layout-argument-read') {
                     assert.ok(argumentApplications.has(JSON.stringify([event.id, event.area, event.theme])),
                         'Argument read without native application evidence');
+                }
+                const target = manifest.layoutSources?.[source]?.targets[item.layout.ordinal];
+                for (const [valueKind, nameKind, valueType, nameType] of [
+                    ['argument', 'argument-name', 'layout-argument-applied', 'layout-argument-name-applied'],
+                    ['action-argument', 'action-argument-name', 'layout-action-argument-applied', 'layout-action-argument-name-applied'],
+                ]) {
+                    const valueHits = layoutEffectHits.get(layoutEffectKey(target?.ids[valueKind], valueType, event.area, event.theme));
+                    const nameHits = layoutEffectHits.get(layoutEffectKey(target?.ids[nameKind], nameType, event.area, event.theme));
+                    if (item.layout.kind === nameKind && event.type === nameType) {
+                        assert.ok(valueHits > 0 && valueHits === nameHits, 'Argument name application without matching native value evidence');
+                    }
+                    if (item.layout.kind === valueKind && event.type === valueType && target?.ids[nameKind]) {
+                        assert.ok(nameHits > 0 && valueHits === nameHits, 'Native value application without matching argument name evidence');
+                    }
                 }
                 Object.assign(evidence, {area: event.area, theme: event.theme});
             } else if (item.family === 'plugins') {

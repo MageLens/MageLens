@@ -405,6 +405,36 @@ test('layout action ambiguity remains visible and contributes zero hits', () => 
     assert.equal(executed.files[1].declarations[0].state, 'covered');
 });
 
+test('argument name operands require matching native value application in the same request and context', () => {
+    for (const [bodyKind, nameKind, bodyType, nameType] of [
+        ['argument', 'argument-name', 'layout-argument-applied', 'layout-argument-name-applied'],
+        ['action-argument', 'action-argument-name', 'layout-action-argument-applied', 'layout-action-argument-name-applied'],
+    ]) {
+        const {manifest, record, sources} = fixture();
+        const file = 'app/code/Acme/Blog/view/frontend/layout/names.xml';
+        const source = Buffer.from('<layout><block name="subject"/></layout>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        manifest.files.push({path: file, sourceHash, family: 'layout', declarations: [bodyKind, nameKind].map((kind, index) => ({
+            id: index ? 'name' : 'body', family: 'layout', path: '/layout/block/argument' + (index ? '/@name' : ''),
+            startLine: 1, endLine: 1, supported: true, declaredScope: {type: 'frontend', code: ''},
+            layout: {kind, element: 'value', ordinal: 1, handle: 'names', fileType: 'generic', instruction: 'argument'}
+        }))});
+        manifest.layoutSources = {[file]: {hash: sourceHash, targets: {1: {ids: {[bodyKind]: 'body', [nameKind]: 'name'}}}}};
+        sources[file] = source;
+        const event = (id, type) => ({id, type, area: 'frontend', theme: 'frontend/Acme/theme', hits: 1});
+        const body = event('body', bodyType), name = event('name', nameType);
+        const collect = events => merge(manifest, [{...record, layoutHook: true, events}], sources);
+        assert.deepEqual(collect([]).files[1].declarations.map(item => item.state), ['uncovered', 'uncovered']);
+        assert.throws(() => collect([name]), /Argument name application without matching native value evidence/);
+        assert.throws(() => collect([body]), /Native value application without matching argument name evidence/);
+        assert.throws(() => collect([body, {...name, theme: 'frontend/Acme/other'}]), /matching argument name evidence/);
+        assert.throws(() => collect([body, {...name, hits: 2}]), /matching argument name evidence/);
+        assert.deepEqual(collect([body, name]).files[1].declarations.map(item => [item.state, item.hits]), [['covered', 1], ['covered', 1]]);
+        assert.deepEqual(collect([{...body, hits: 2}, {...name, hits: 2}]).files[1].declarations.map(item => item.hits), [2, 2]);
+        assert.throws(() => collect([{...name, type: 'layout-argument-read'}, body]), /Unexpected layout effect/);
+    }
+});
+
 test('layout structural and page-value reports require the correct native effect and retain zero-hit inventory', () => {
     const effects = {
         'action-method': 'layout-action-executed',

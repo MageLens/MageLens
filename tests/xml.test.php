@@ -173,12 +173,19 @@ checkXml(count($layoutUnsupported) > 0 && count(array_filter($layoutUnsupported,
 $arraySource = file_get_contents($layoutDirectory . 'coverageprobe_layout_arguments.xml');
 $arrayItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_layout_arguments.xml', $arraySource);
 $leaves = array_values(array_filter($arrayItems, static fn($item) =>
-    $item['layout']['instruction'] === 'item' && $item['supported']));
+    $item['layout']['instruction'] === 'item' && $item['layout']['kind'] === 'argument' && $item['supported']));
 checkXml(count($leaves) === 9 && count(array_unique(array_column($leaves, 'id'))) === 9,
     'Array parents and leaves retain separate original declarations');
 foreach ($leaves as $leaf) {
     checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),
         'Array leaf evidence uses the layout argument application boundary');
+}
+$nameFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-name'));
+checkXml(count($nameFields) > count($leaves) && count(array_filter($nameFields, static fn($item) => !$item['supported'])) === 0,
+    'Argument and item names preserve independent supported source identities');
+foreach ($leaves as $leaf) {
+    $name = array_values(array_filter($nameFields, static fn($item) => $item['path'] === $leaf['path'] . '/@name'));
+    checkXml(count($name) === 1 && $name[0]['id'] !== $leaf['id'], 'Every attributable value leaf has a distinct original name operand');
 }
 $registrySource = file_get_contents(__DIR__ . '/fixtures/compatibility/module/view/frontend/layouts.xml');
 $registryItems = LayoutManifest::declarations('app/code/MageLens/Compatibility/view/frontend/layouts.xml', $registrySource);
@@ -241,3 +248,19 @@ foreach (['references' => 8193, 'effect origins' => 32769] as $limit => $count) 
     }
 }
 echo "Reference inventory bounds reject incomplete attribution.\n";
+
+require_once __DIR__ . '/../docker/php/xml-layout-argument-names.php';
+$targets = [];
+for ($index = 0; $index < 32769; $index++) $targets[] = ['ids' => ['argument' => 'value-' . $index, 'argument-name' => 'name-' . $index]];
+try {
+    new \MageLens\XmlCoverage\LayoutArgumentNames([['targets' => $targets]]);
+    throw new LogicException('Oversized argument name inventory was accepted');
+} catch (RuntimeException $error) {
+    checkXml(str_contains($error->getMessage(), '32768 operands'), 'Argument name attribution remains bounded');
+}
+$names = new \MageLens\XmlCoverage\LayoutArgumentNames([['targets' => [$targets[0]]]]);
+checkXml($names->related('value-0', 'layout-argument-applied') === ['name-0', 'layout-argument-name-applied']
+    && $names->related('value-0', 'layout-argument-read') === null
+    && $names->related('value-0', 'layout-argument-evaluated') === null,
+    'A native key assignment never infers fresh name evaluation or later key consumption');
+echo "Argument name assignments retain a bounded independent evidence boundary.\n";

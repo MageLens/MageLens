@@ -20,6 +20,7 @@ final class Recorder
     private static ?LayoutCoverage $layout = null;
     private static int $layoutEventCount = 0;
     private static ?LayoutReferenceCoverage $references = null;
+    private static ?LayoutArgumentNames $argumentNames = null;
 
     public static function start(string $run): void
     {
@@ -69,21 +70,35 @@ final class Recorder
 
     public static function layout(string $id, string $type, array $context): void
     {
-        foreach ([$id, ...(self::$references?->related($id, $type, $context) ?? [])] as $source) {
+        self::layoutEvent($id, $type, $context);
+        $name = self::$argumentNames?->related($id, $type);
+        if ($name !== null) self::layoutEvent($name[0], $name[1], $context);
+        foreach (self::$references?->related($id, $type, $context) ?? [] as $source) {
             $key = "$source\0$type\0{$context['area']}\0{$context['theme']}";
             // Reference ancestors summarize each effect once per request. The
             // originating declaration retains its complete native frequency.
-            if ($source !== $id && isset(self::$events[$key])) continue;
-            if (!isset(self::$events[$key])) {
-                if (self::$layoutEventCount >= 32768) {
-                    self::$errors['layout-event-limit'] = 'Layout evidence exceeded 32768 distinct events in one request';
-                    return;
-                }
-                self::$layoutEventCount++;
-            }
-            self::$events[$key] ??= ['id' => $source, 'type' => $type, ...$context, 'hits' => 0];
-            self::$events[$key]['hits']++;
+            if (isset(self::$events[$key])) continue;
+            self::layoutEvent($source, $type, $context);
         }
+    }
+
+    private static function layoutEvent(string $id, string $type, array $context): void
+    {
+        $key = "$id\0$type\0{$context['area']}\0{$context['theme']}";
+        if (!isset(self::$events[$key])) {
+            if (self::$layoutEventCount >= 32768) {
+                self::$errors['layout-event-limit'] = 'Layout evidence exceeded 32768 distinct events in one request';
+                return;
+            }
+            self::$layoutEventCount++;
+        }
+        self::$events[$key] ??= ['id' => $id, 'type' => $type, ...$context, 'hits' => 0];
+        self::$events[$key]['hits']++;
+    }
+
+    public static function layoutArgumentNames(?LayoutArgumentNames $names): void
+    {
+        self::$argumentNames = $names;
     }
 
     public static function layoutReferences(?LayoutReferenceCoverage $references): void
