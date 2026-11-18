@@ -232,6 +232,18 @@ $lazyObject = $lazyType->newLazyGhost(static function ($object) use (&$lazyCalls
 });
 checkXml(\MageLens\XmlCoverage\LayoutXmlOwnership::unhookedProperty($lazyObject, 'value') === null && $lazyCalls === 0,
     'Source ownership inspection must not initialize a lazy application object');
+$lazyStorageCalls = 0;
+$lazyStorageType = new ReflectionClass(new class { public array $elements = []; });
+$lazyStorage = $lazyStorageType->newLazyGhost(static function ($object) use (&$lazyStorageCalls): void {
+    $lazyStorageCalls++;
+    $object->elements = ['native'];
+});
+$moveStorage = new ReflectionMethod(\MageLens\XmlCoverage\LayoutCoverage::class, 'moveStorage');
+checkXml($moveStorage->invoke(null, $lazyStorage, $lazyStorageType->getName(), 'elements') === null && $lazyStorageCalls === 0,
+    'Move provenance must not initialize lazy backing storage while checking readiness');
+$plainStorage = $lazyStorageType->newInstance();
+checkXml($moveStorage->invoke(null, $plainStorage, $lazyStorageType->getName(), 'elements') === [],
+    'Ordinary native backing arrays retain move provenance inspection');
 foreach (['references' => 8193, 'effect origins' => 32769] as $limit => $count) {
     $targets = [];
     for ($index = 0; $index < $count; $index++) {

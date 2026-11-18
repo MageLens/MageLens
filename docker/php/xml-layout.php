@@ -1464,8 +1464,8 @@ final class LayoutCoverage
     // property hooks. A redeclared or hooked property has no verified lineage.
     private static function moveStorage(object $object, string $native, string $field): ?array
     {
-        $property = new \ReflectionProperty($object, $field);
-        if ($property->getDeclaringClass()->getName() !== $native || $property->getHooks() || !$property->isInitialized($object)) return null;
+        $property = LayoutXmlOwnership::unhookedProperty($object, $field);
+        if ($property === null || $property->getDeclaringClass()->getName() !== $native) return null;
         $value = $property->getRawValue($object);
         return is_array($value) ? $value : null;
     }
