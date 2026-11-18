@@ -49,10 +49,14 @@ try {
 pcov\start();
 // Retain the shared lock until process shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
-register_shutdown_function(static function () use ($record, $token, $state, $collectionLock, $commandId, $tool): void {
+$initialPid = getmypid();
+register_shutdown_function(static function () use ($initialPid, $record, $token, $state, $collectionLock, $commandId, $tool): void {
+    if ($commandId !== null && getmypid() !== $initialPid) {
+        $record .= '.' . getmypid();
+    }
     pcov\stop();
     try {
-        $xmlRecord = \MageLens\XmlCoverage\Recorder::finish();
+        $xmlRecord = \MageLens\XmlCoverage\Recorder::finish($commandId !== null);
         $result = pcov\export($record . '.pcov', $state['manifest'], $state['identity']['id'], pcov\inclusive, array_keys($state['scope']));
         if ($result === false) {
             throw new RuntimeException('Native PCOV export failed');

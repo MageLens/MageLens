@@ -10,7 +10,7 @@ source "$(dirname "$0")/common"
 relay=$(mktemp -d "${TMPDIR:-/tmp}/magelens-cli.XXXXXX")
 trap 'rm -rf "$relay"' EXIT
 mkfifo "$relay/requests" "$relay/responses"
-dc exec -T runner timeout --signal=TERM --kill-after=10s 900s node bin/run-cli.cjs \
+dc exec -T runner node bin/run-cli.cjs \
     < "$relay/responses" > "$relay/requests" &
 runner_pid=$!
 exec 4>"$relay/responses" 3<"$relay/requests"

@@ -23,7 +23,7 @@ set -euo pipefail
 fail() { printf '%s\\n' "$*" >&2; exit 1; }
 dc() {
     case "$*" in
-        *' bin/run-cli.cjs') node bin/run-cli.cjs ;;
+        'exec -T runner node bin/run-cli.cjs') node bin/run-cli.cjs ;;
         *' cli-command.php'|*'/cli-command.php') node bin/fixture.cjs ;;
         *) return 1 ;;
     esac
@@ -63,13 +63,18 @@ test('database command', async () => {
     assert.equal(result.code, 2);
 });
 `);
+    fixture.write('coverage.config.json', JSON.stringify({vendorRoots: ['vendor/acme/module-orders']}));
+    fixture.write('src/vendor/acme/module-orders/Test/Cli/orders.test.cjs', `
+const {test, magento} = require(process.cwd() + '/cli/support.cjs');
+test('vendor command', () => magento(['list']));
+`);
     const result = fixture.run();
     assert.equal(result.status, 0, result.stderr || result.error?.message);
     assert.match(result.stderr, /Test diagnostics go to stderr/);
     assert.equal(result.stdout, '');
     const results = fixture.results();
-    assert.equal(results.totalPassed, 2);
-    assert.equal(results.commands, 2);
+    assert.equal(results.totalPassed, 3);
+    assert.equal(results.commands, 3);
 });
 
 test('CLI relay keeps projects without CLI specs working and rejects a spec that registers no tests', t => {

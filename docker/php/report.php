@@ -46,10 +46,14 @@ foreach ($records as $path) {
     }
     unset($metadata['xml']);
     if (isset($metadata['commandId'])) {
-        if ($metadata['commandId'] !== basename($path, '.pcov')) {
+        $id = $metadata['commandId'];
+        $name = basename($path, '.pcov');
+        if (!preg_match('/^[a-f0-9]{32}$/D', $id)
+            || !preg_match('/^' . $id . '(?:\.[1-9][0-9]*)?$/D', $name)
+            || !is_file(dirname($path) . '/' . $id . '.pcov')) {
             throw new RuntimeException('CLI record identifier mismatch');
         }
-        $commands[] = $metadata;
+        if ($name === $id) $commands[] = $metadata;
     } else {
         $requests[] = $metadata;
     }

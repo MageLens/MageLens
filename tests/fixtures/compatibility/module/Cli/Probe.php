@@ -42,6 +42,15 @@ class Probe extends Command
             case 'echo':
                 $output->writeln($value, OutputInterface::OUTPUT_RAW);
                 break;
+            case 'fork':
+                $pid = pcntl_fork();
+                if ($pid === -1) throw new \RuntimeException('Fork failed');
+                if ($pid === 0) {
+                    $output->writeln(trim($value));
+                    exit(0);
+                }
+                pcntl_waitpid($pid, $status);
+                return pcntl_wifexited($status) ? pcntl_wexitstatus($status) : self::FAILURE;
             case 'schedule':
                 $now = time();
                 $schedule = $this->schedules->create()

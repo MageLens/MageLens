@@ -12,6 +12,18 @@ function check(bool $condition, string $message): void
 {
     if (!$condition) throw new RuntimeException($message);
 }
+$held = coverageCollectionLock(LOCK_SH);
+$exec = proc_open([PHP_BINARY, '-r', 'echo "ready\n"; flush(); fgets(STDIN);'], [
+    0 => ['pipe', 'r'], 1 => ['pipe', 'w'],
+], $execPipes);
+check(trim(fgets($execPipes[1])) === 'ready', 'Background process did not exec');
+fclose($held);
+$probe = fopen('/pcov-state/collection.lock', 'c+');
+check(flock($probe, LOCK_EX | LOCK_NB), 'Background process inherited the collection lock');
+fclose($probe);
+fclose($execPipes[0]);
+fclose($execPipes[1]);
+check(proc_close($exec) === 0, 'Background process failed');
 $run = str_repeat('a', 32);
 file_put_contents('/coverage/run.json', json_encode(['id' => $run]));
 file_put_contents('/coverage/collector.json', '{}');

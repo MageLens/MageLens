@@ -58,7 +58,7 @@ If a process is forcibly terminated, check for active installation or coverage p
 
 ## CLI tests
 
-Add CLI test files named `*.test.cjs` under `cli/e2e/` or a module's `Test/Cli/` directory. The same files run with either Cypress or Playwright when you use `./bin/run-coverage`.
+Add CLI test files named `*.test.cjs` under `cli/e2e/` or a module's `Test/Cli/` directory, including Composer modules listed in `vendorRoots`. The same files run with either Cypress or Playwright when you use `./bin/run-coverage`.
 
 Import `test`, `magento` and `magerun` from `cli/support.cjs`. Both command helpers take an array of arguments and return `{code, stdout, stderr}`. Commands run in the Magento PHP container using the installed application's configuration. n98-magerun2 uses the database settings from `app/etc/env.php` and downloads a checksum-verified PHAR on first use.
 
@@ -72,7 +72,7 @@ test('reads Magento status and queries its database', async () => {
 });
 ```
 
-Use `{timeout: 30000}` to change the default 60-second command timeout, or `{expectedExitCode: 2}` to assert a specific error exit. Keep fixture writes scoped to an isolated installation and remove them during cleanup. Set `use_separate_process` to `0` for a cron test group to collect the job’s PHP execution in the same command. CLI test results are written to `coverage/cli-results.json`.
+Use `{timeout: 30000}` to change the default 60-second timeout for each command, or `{expectedExitCode: 2}` to assert a specific error exit. Keep fixture writes scoped to an isolated installation and remove them during cleanup. Set `use_separate_process` to `0` for a cron test group to collect the job’s PHP execution in the same command. CLI test results are written to `coverage/cli-results.json`.
 
 ## Watch a test run
 

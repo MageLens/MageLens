@@ -10,7 +10,9 @@ const {discover, files} = require('./project.cjs');
 const {setTransport, tests} = require('../cli/support.cjs');
 
 function cliSpecs() {
-    return ['cli/e2e', ...discover().modules.map(module => `src/${module.root}/Test/Cli`)]
+    const {modules, roots} = discover();
+    const specRoots = [...modules.map(module => module.root), ...roots.filter(root => root.startsWith('vendor/'))];
+    return ['cli/e2e', ...specRoots.map(root => `src/${root}/Test/Cli`)]
         .filter(directory => fs.existsSync(directory))
         .flatMap(directory => files(directory).filter(file => file.endsWith('.test.cjs')));
 }
