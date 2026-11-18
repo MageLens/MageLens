@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {isDeepStrictEqual} = require('node:util');
-const {layoutEvents} = require('../../bin/report-xml.cjs');
+const {layoutEvents, countsAsLayoutCoverage} = require('../../bin/report-xml.cjs');
 const digest = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n')).digest('hex');
 const sort = values => values.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en'));
 const read = (directory, file) => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
@@ -236,6 +236,9 @@ function validateSnapshot(value, run, summary) {
                     assert.ok(['frontend', 'adminhtml'].includes(area));
                     assert.match(theme, /^[a-f0-9]{64}$/);
                 }
+                const observedEffect = item.evidence.some(([effect]) => countsAsLayoutCoverage(effect));
+                assert.equal(item.state === 'covered', item.supported && observedEffect,
+                    'Layout coverage requires an eligible native effect; creation and selection facts cannot substitute for rendering');
                 if (item.state !== 'unmeasured') layoutTotals.total++;
                 if (item.state === 'covered') layoutTotals.covered++;
             }

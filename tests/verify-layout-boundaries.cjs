@@ -13,7 +13,8 @@ for (const [name, types] of [
     assert.ok(file, name);
     const block = file.declarations.find(item => item.layout.kind === 'block');
     assert.equal(block?.layout.element, 'magelens.layout.boundary.same');
-    assert.equal(block.state, 'covered');
+    assert.equal(block.state, name === 'success' ? 'covered' : 'unmeasured');
+    assert.equal(block.evidence.some(event => event.type === 'layout-block-render-failed'), name === 'failed');
     assert.equal(block.evidence.some(event => event.type === 'layout-block-rendered'), name === 'success');
     const template = file.declarations.find(item => item.layout.kind === 'template');
     assert.deepEqual([...new Set(template?.evidence.map(event => event.type))].sort(), types, name);

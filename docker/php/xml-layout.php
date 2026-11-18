@@ -2443,12 +2443,15 @@ final class LayoutCoverage
             $this->errors['Unbalanced block render hook evidence'] = true;
             return;
         }
-        if ($error || !isset($this->blocks[$block])) return;
+        if ($error) {
+            if ($frame['origin'] !== null) $this->event($frame['origin']['id'], 'layout-block-render-failed', $frame['origin']['context']);
+            return;
+        }
+        if (!isset($this->blocks[$block])) return;
         $evidence = $this->blocks[$block];
         if (!empty($evidence['html']) && $frame['origin'] !== null) {
             $this->event($frame['origin']['id'], 'layout-block-rendered', $frame['origin']['context']);
         }
-        $this->event($evidence['executed'] ?? null, 'layout-template-executed', $evidence['context']);
     }
 
     private function beginTemplate($block, array $params, string $class): void
@@ -2552,10 +2555,11 @@ final class LayoutCoverage
         if ($error && $frame['origin']) {
             $this->event($frame['origin'], 'layout-template-failed', $this->blocks[$block]['context']);
         }
-        if (!$error && $frame['origin'] && $frame['executed']) {
+        if ($frame['origin'] && $frame['executed']) {
             $state = $this->blocks[$block];
             $state['executed'] = $frame['origin'];
             $this->blocks[$block] = $state;
+            $this->event($frame['origin'], 'layout-template-executed', $state['context']);
         } elseif (!$error && $frame['origin']) {
             $this->event($frame['origin'], 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
         }

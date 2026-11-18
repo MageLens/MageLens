@@ -334,7 +334,11 @@ test('layout equivalence preserves effects, source and context without exposing 
 
     for (const change of [
         report => { report.files[0].declarations[0].evidence[0].theme = 'frontend/Acme/different'; },
-        report => { report.files[0].declarations[0].evidence[0].type = 'layout-template-selected'; },
+        report => {
+            const item = report.files[0].declarations[0];
+            item.evidence = [{...item.evidence[0], type: 'layout-template-selected'}];
+            item.state = 'uncovered'; item.hits = 0; report.layout.covered = 0;
+        },
         report => { report.files[0].declarations[1].evidence = []; },
         report => { report.files[0].declarations[0].startLine++; },
         report => { report.layout.limitations.pop(); }
@@ -351,7 +355,7 @@ test('layout equivalence preserves effects, source and context without exposing 
 test('native Admin context names are platform metadata while every source and effect remains exact', t => {
     const {directory, read, write} = fixture(t);
     const xml = read('xml/coverage.json');
-    const effect = {type: 'layout-block-created', area: 'adminhtml', theme: 'adminhtml/Magento/backend'};
+    const effect = {type: 'layout-block-rendered', area: 'adminhtml', theme: 'adminhtml/Magento/backend'};
     xml.files[0].declarations = [{id: 'a'.repeat(64), family: 'layout', path: '/page/body/block',
         declaredScope: {type: 'adminhtml', code: ''}, startLine: 1, endLine: 1, supported: true,
         state: 'covered', hits: 1, evidence: [effect], layout: {kind: 'block', fileType: 'page', ordinal: 1,
@@ -370,12 +374,36 @@ test('native Admin context names are platform metadata while every source and ef
     const declaration = value => Object.values(value.xml.files)[0].declarations[0];
     for (const alter of [
         value => { declaration(value).evidence[0][2] = 'f'.repeat(64); },
-        value => { declaration(value).evidence[0][0] = 'layout-block-rendered'; },
+        value => { declaration(value).evidence[0][0] = 'layout-block-created'; },
         value => { Object.values(value.xml.files)[0].source = 'f'.repeat(64); },
         value => { declaration(value).state = 'uncovered'; declaration(value).evidence = []; value.xml.layout.covered = 0; },
     ]) {
         const changed = structuredClone(matrix);
         alter(changed[1].snapshot);
         assert.equal(compareThemes(changed, cases).passed, false);
+    }
+});
+
+test('complete XML validation rejects rendering coverage inferred from construction or selection facts', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    for (const [kind, boundary, observation] of [
+        ['block', 'layout-block-rendered', 'layout-block-created'],
+        ['template', 'layout-template-executed', 'layout-template-selected'],
+    ]) {
+        xml.files[0].declarations = [{id: 'a'.repeat(64), family: 'layout', path: '/layout/block',
+            declaredScope: {type: 'frontend', code: ''}, startLine: 1, endLine: 1, supported: true,
+            state: 'covered', hits: 1, evidence: [{type: boundary, area: 'frontend', theme: 'frontend/Acme/theme'}],
+            layout: {kind, fileType: 'generic', ordinal: 1, element: 'fixture', handle: 'fixture',
+                instruction: 'block', attribute: kind === 'template' ? 'template' : null}}];
+        xml.layout = {total: 1, covered: 1, limitations: []};
+        write('xml/coverage.json', xml);
+        const value = snapshot(directory);
+        const declaration = Object.values(value.xml.files).flatMap(file => file.declarations).find(item => item.layout?.[0] === kind);
+        declaration.evidence[0][0] = observation;
+        assert.throws(() => validateSnapshot(value, 'fresh', read('summary.json')), /creation and selection facts cannot substitute for rendering/);
+        declaration.state = 'uncovered';
+        value.xml.layout.covered = 0;
+        validateSnapshot(value, 'fresh', read('summary.json'));
     }
 });

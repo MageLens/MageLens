@@ -12,6 +12,8 @@ for (const name of ['cold', 'warm']) {
     assert.deepEqual([...new Set(template.evidence.map(event => event.type))].sort(), name === 'cold'
         ? ['layout-template-executed', 'layout-template-selected']
         : ['layout-template-cache-unconfirmed', 'layout-template-selected'], name);
+    assert.equal(template.state, name === 'cold' ? 'covered' : 'unmeasured', name);
+    assert.equal(template.hits > 0, name === 'cold', name);
     const value = file.declarations.find(item => item.layout.kind === 'argument' && item.layout.element === 'value');
     assert.ok(value.evidence.some(event => event.type === 'layout-argument-applied'), name);
     assert.equal(value.evidence.some(event => event.type === 'layout-argument-read'), name === 'cold', name);

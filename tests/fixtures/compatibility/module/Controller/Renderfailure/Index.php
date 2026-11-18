@@ -23,7 +23,7 @@ class Index implements HttpGetActionInterface
     public function execute(): Raw
     {
         $output = '';
-        foreach (['empty', 'missing', 'throw'] as $case) {
+        foreach (['empty', 'missing', 'throw', 'after'] as $case) {
             $fragment = $this->layouts->create();
             $fragment->addHandle('coverageprobe_renderfailure_' . $case);
             $block = $fragment->getLayout()->getBlock('magelens.layout.renderfailure.' . $case);
@@ -37,7 +37,9 @@ class Index implements HttpGetActionInterface
                     || !str_contains($error->getMessage(), 'layout-renderfailure-missing.phtml')) throw $error;
                 $outcome = 'verified';
             } catch (\RuntimeException $error) {
-                if ($case !== 'throw' || $error->getMessage() !== 'Intentional layout rendering failure') throw $error;
+                $expected = $case === 'after' ? 'Intentional failure after successful template execution'
+                    : 'Intentional layout rendering failure';
+                if (!in_array($case, ['throw', 'after'], true) || $error->getMessage() !== $expected) throw $error;
                 $outcome = 'verified';
             }
             $output .= '<span data-layout-renderfailure="' . $case . '">' . $outcome . '</span>';

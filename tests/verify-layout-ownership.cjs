@@ -43,10 +43,10 @@ for (const suffix of ['replaced', 'equal']) {
     verify(probe, 'coverageprobe_layout_overlay', name, 'template', 'covered', executed);
 }
 verify(probe, 'coverageprobe_layout_base', 'magelens.layout.late', 'block', 'covered', created);
-verify(probe, 'coverageprobe_layout_base', 'magelens.layout.late', 'template', 'covered',
+verify(probe, 'coverageprobe_layout_base', 'magelens.layout.late', 'template', 'unmeasured',
     ['layout-template-selected', 'layout-template-replaced']);
-verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'block', 'covered', ['layout-block-created']);
-verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'template', 'covered', ['layout-template-selected']);
+verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'block', 'uncovered', ['layout-block-created']);
+verify(probe, 'coverageprobe_layout_base', 'magelens.layout.unrendered', 'template', 'uncovered', ['layout-template-selected']);
 
 if (theme === 'hyva') for (const [module, handle, element] of [
     ['Magento_Catalog', 'catalog_list_item', 'product_list_item'],

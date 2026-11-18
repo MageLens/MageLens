@@ -12,12 +12,12 @@ for (const name of ['native', 'getter', 'file', 'resolver', 'engine']) {
     const effects = [...new Set(template.evidence.map(event => event.type))].sort();
     assert.deepEqual(effects, name === 'native' ? ['layout-template-executed', 'layout-template-selected']
         : ['layout-template-origin-unconfirmed', 'layout-template-selected'], name);
-    assert.equal(template.state, 'covered', `${name} retains independent native selection`);
+    assert.equal(template.state, name === 'native' ? 'covered' : 'unmeasured', `${name} requires native execution credit`);
     if (name !== 'native') {
         const events = report.requests.flatMap(request => request.events).filter(event => event.id === template.id);
         assert.equal(events.filter(event => event.type === 'layout-template-executed').length, 0, name);
-        const selections = events.filter(event => event.type === 'layout-template-selected');
-        assert.equal(template.hits, selections.reduce((total, event) => total + event.hits, 0), name);
+        assert.ok(events.some(event => event.type === 'layout-template-selected'), name + ': retain the selection fact');
+        assert.equal(template.hits, 0, name);
     }
     const block = file.declarations.find(item => item.layout.kind === 'block');
     assert.ok(block.evidence.some(event => event.type === 'layout-block-rendered'), name);

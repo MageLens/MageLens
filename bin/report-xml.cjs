@@ -73,7 +73,7 @@ const layoutEvents = {
     'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
     'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden'],
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
-    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed', 'layout-block-render-origin-unconfirmed', 'layout-block-registration-origin-unconfirmed'],
+    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-render-failed', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed', 'layout-block-render-origin-unconfirmed', 'layout-block-registration-origin-unconfirmed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
     'action-method': ['layout-action-executed', 'layout-action-ambiguous'],
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
@@ -151,10 +151,12 @@ const layoutDecisions = {
     'layout-asset-overridden': 'A later declaration replaced this scheduled resource before native asset output.',
     'layout-asset-replaced': 'A runtime assignment replaced this scheduled XML resource before native asset output.',
     'layout-asset-removed-before-output': 'The native removal pass removed this scheduled resource before asset generation.',
+    'layout-block-render-failed': 'The native block rendering boundary threw before returning HTML. Construction remains a separate observed fact.',
     'layout-block-generation-failed': 'Native block generation failed before completing construction and data application.',
     'layout-block-attribute-overridden': 'A later declaration supplied the block attribute used by the native generator.',
     'layout-cacheability-target-missing': 'The native cacheability check found that the noncacheable declaration had no surviving structural element.',
-    'layout-template-failed': 'Native template rendering failed before completing the template boundary.',
+    'layout-template-failed': 'The native template fetch boundary failed. Any independently completed engine execution remains a separate fact.',
+    'layout-template-replaced': 'A later PHP template assignment replaced this XML selection before template execution.',
     'layout-container-attribute-overridden': 'A later container declaration supplied the attribute used during generation.',
     'layout-container-attribute-replaced': 'A runtime structure assignment replaced this XML attribute before its native rendering boundary.',
     'layout-page-attribute-overridden': 'A later page configuration assignment replaced this element attribute.',
@@ -184,6 +186,8 @@ const layoutDecisions = {
     'layout-include-cycle': 'Magento was processing the included handle and skipped recursive re-entry',
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
+const layoutObservations = new Set(['layout-block-created', 'layout-template-selected']);
+const countsAsLayoutCoverage = type => !Object.hasOwn(layoutDecisions, type) && !layoutObservations.has(type);
 const layoutLimitations = {
     'layout-programmatic-update': 'A native programmatic XML update appended input without original file provenance.',
     'full-page-cache-origin': 'A native full-page cache lookup returned a response. Its original XML/template lineage and fresh layout execution are unverified.',
@@ -350,7 +354,7 @@ function merge(manifest, records, sources) {
                 assert.equal(typeof event.requestedScope.code, 'string');
                 evidence.requestedScope = event.requestedScope;
             }
-            if (!Object.hasOwn(layoutDecisions, event.type)) item.hits += event.hits;
+            if (item.family !== 'layout' || countsAsLayoutCoverage(event.type)) item.hits += event.hits;
             const sameEvidence = previous => item.family === 'layout'
                 ? previous.type === evidence.type && previous.area === evidence.area && previous.theme === evidence.theme
                 : JSON.stringify(previous) === JSON.stringify(evidence);
@@ -524,7 +528,7 @@ function writeReport(result, sources, directory = 'coverage/xml') {
             if (item.family === 'layout') {
                 const {element, handle, fileType, selection, destination} = item.layout;
                 const outcomes = item.evidence.map(event =>
-                    `<small>${escape(event.type.replace(/^layout-/, '').replaceAll('-', ' '))} · ${escape(event.theme)}</small>`).join('');
+                    `<small>${escape(event.type.replace(/^layout-/, '').replaceAll('-', ' '))}${layoutObservations.has(event.type) ? ' · observed fact' : ''} · ${escape(event.theme)}</small>`).join('');
                 return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(selection || element)}${destination ? ' → ' + escape(destination) : ''} · ${escape(handle)} · ${escape(fileType)} · ${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}<small>${escape(item.reason || '')}</small></td></tr>`;
             }
             const outcomes = item.areas
@@ -551,7 +555,7 @@ function writeReport(result, sources, directory = 'coverage/xml') {
     }
     for (const [name, entries] of directories) {
         const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file && entry.file.family !== 'layout' ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
-        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
+        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. Block creation and template selection are retained as facts; their declarations require native block rendering or template execution for coverage. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
         fs.mkdirSync(path.join(directory, name), {recursive: true});
         fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files))));
     }
@@ -586,5 +590,5 @@ function report() {
     writeReport(result, sources);
     return result;
 }
-module.exports = {merge, writeReport, report, layoutEvents};
+module.exports = {merge, writeReport, report, layoutEvents, countsAsLayoutCoverage};
 if (require.main === module) report();

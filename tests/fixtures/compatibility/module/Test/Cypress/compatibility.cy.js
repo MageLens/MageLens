@@ -242,9 +242,10 @@ describe('Magento storefront coverage compatibility', () => {
             }
         }
         cy.visit('/coverageprobe/renderfailure/');
-        for (const effect of ['empty', 'missing', 'throw']) {
+        for (const effect of ['empty', 'missing', 'throw', 'after']) {
             cy.get(`[data-layout-renderfailure="${effect}"]`).should('have.text', 'verified');
         }
+        cy.get('[data-layout-renderfailure-output="after"]').should('not.exist');
         cy.visit('/coverageprobe/classclear/');
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');

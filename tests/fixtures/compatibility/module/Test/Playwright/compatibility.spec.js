@@ -210,9 +210,10 @@ test('starts the next test with fresh state', async ({page}) => {
         }
     }
     await page.goto('/coverageprobe/renderfailure/');
-    for (const effect of ['empty', 'missing', 'throw']) {
+    for (const effect of ['empty', 'missing', 'throw', 'after']) {
         await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
     }
+    await expect(page.locator('[data-layout-renderfailure-output="after"]')).toHaveCount(0);
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

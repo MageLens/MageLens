@@ -262,7 +262,7 @@ test('layout reports validate effects and keep superseded and zero-hit declarati
     const context = {area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
     const block = {id: 'created', type: 'layout-block-created', ...context};
     const overridden = {id: 'template', type: 'layout-template-overridden', ...context};
-    const current = {...healthy, events: [block, overridden]};
+    const current = {...healthy, events: [block, {...block, type: 'layout-block-rendered'}, overridden]};
     const actual = merge(manifest, [current], sources);
     assert.deepEqual(actual.layout, {total: 1, covered: 1, hook: true, limitations: []});
     assert.deepEqual(actual.files[1].declarations.map(item => item.state), ['covered', 'unmeasured']);
@@ -276,6 +276,41 @@ test('layout reports validate effects and keep superseded and zero-hit declarati
     assert.throws(() => merge(manifest, [current], {...sources, [file]: Buffer.from('edited')}), /XML source changed/);
     delete manifest.layoutSources[file].targets[2].ids.block;
     assert.throws(() => merge(manifest, [current], sources), /does not match manifest provenance/);
+});
+
+test('creation and template selection remain facts without granting rendering credit', t => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/view/frontend/layout/unrendered.xml';
+    const source = Buffer.from('<layout><block name="unrendered" template="unvisited.phtml"/></layout>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const declaration = kind => ({id: kind, family: 'layout', path: '/layout/block', node: '/layout/block',
+        startLine: 1, endLine: 1, supported: true, declaredScope: {type: 'frontend', code: ''},
+        layout: {kind, element: 'unrendered', ordinal: 1, handle: 'unrendered', fileType: 'generic', instruction: 'block'}});
+    manifest.files.push({path: file, sourceHash, family: 'layout', declarations: ['block', 'template'].map(declaration)});
+    manifest.layoutSources = {[file]: {hash: sourceHash, targets: {1: {ids: {block: 'block', template: 'template'}}}}};
+    sources[file] = source;
+    const event = (id, type) => ({id, type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+    const facts = [event('block', 'layout-block-created'), event('template', 'layout-template-selected')];
+    const collect = events => merge(manifest, [{...record, layoutHook: true, events}], sources);
+    const unrendered = collect(facts);
+    assert.deepEqual(unrendered.files[1].declarations.map(item => [item.state, item.hits]), [['uncovered', 0], ['uncovered', 0]]);
+    assert.deepEqual(unrendered.files[1].declarations.map(item => item.evidence[0].type), ['layout-block-created', 'layout-template-selected']);
+    assert.equal(unrendered.layout.covered, 0);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-layout-facts-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    writeReport(unrendered, sources, directory);
+    const html = fs.readFileSync(path.join(directory, file + '.html'), 'utf8');
+    assert.match(html, /uncovered<small>block created · observed fact/);
+    assert.match(html, /uncovered<small>template selected · observed fact/);
+    const replaced = collect([...facts, event('template', 'layout-template-replaced')]);
+    assert.equal(replaced.files[1].declarations[1].state, 'unmeasured');
+    assert.equal(replaced.files[1].declarations[1].hits, 0);
+    const failed = collect([...facts, event('block', 'layout-block-render-failed')]);
+    assert.equal(failed.files[1].declarations[0].state, 'unmeasured');
+    assert.equal(failed.files[1].declarations[0].hits, 0);
+    const rendered = collect([...facts, event('block', 'layout-block-rendered'), event('template', 'layout-template-executed')]);
+    assert.deepEqual(rendered.files[1].declarations.map(item => [item.state, item.hits]), [['covered', 1], ['covered', 1]]);
+    assert.equal(rendered.layout.covered, 2);
 });
 
 test('XML reporting rejects a symlink to an otherwise identical layout source', t => {
@@ -451,8 +486,8 @@ test('template selection and an unconfirmed execution input retain independent e
     assert.match(unconfirmed.reason, /unverified template getter, filename resolver or PHP template engine/);
     const selected = merge(manifest, [{...record, layoutHook: true,
         events: [{...event, type: 'layout-template-selected'}, event]}], sources).files[1].declarations[0];
-    assert.equal(selected.state, 'covered');
-    assert.equal(selected.hits, 1);
+    assert.equal(selected.state, 'unmeasured');
+    assert.equal(selected.hits, 0);
     assert.ok(selected.evidence.some(event => event.type === 'layout-template-origin-unconfirmed'));
     const cached = merge(manifest, [{...record, layoutHook: true,
         events: [{...event, type: 'layout-template-cache-unconfirmed'}]}], sources).files[1].declarations[0];
@@ -480,7 +515,8 @@ test('shared objects and unverified registrations cannot turn construction into 
         assert.equal(empty.state, 'unmeasured');
         const created = merge(manifest, [{...record, layoutHook: true,
             events: [{...uncertain, type: 'layout-block-created', hits: 1}, uncertain]}], sources).files[1].declarations[0];
-        assert.equal(created.hits, 1);
+        assert.equal(created.hits, 0);
+        assert.equal(created.state, 'unmeasured');
         assert.deepEqual(created.evidence.map(event => event.type), ['layout-block-created', type]);
         assert.equal(created.evidence.some(event => event.type === 'layout-block-rendered'), false);
     }

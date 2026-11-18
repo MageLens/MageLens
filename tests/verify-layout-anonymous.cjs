@@ -25,4 +25,6 @@ for (const item of file.declarations.filter(item => item.layout.attribute === 'o
 const detached = file.declarations.find(item => item.layout.kind === 'block'
     && item.layout.element === 'magelens.layout.unselected.output');
 assert.deepEqual([...new Set(detached?.evidence.map(event => event.type))], ['layout-block-created']);
+assert.equal(detached.state, 'uncovered');
+assert.equal(detached.hits, 0);
 console.log('Verified native anonymous block/container attribution, label application/read, and ignored output attributes.');

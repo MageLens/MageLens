@@ -18,6 +18,9 @@ for (const name of ['first', 'second']) {
     assert.deepEqual(effects('/layout/block/@template'), name === 'first'
         ? ['layout-template-replaced', 'layout-template-selected']
         : ['layout-template-executed', 'layout-template-selected'], name);
+    const template = file.declarations.find(item => item.node === '/layout/block/@template');
+    assert.equal(template.state, name === 'first' ? 'unmeasured' : 'covered', name);
+    assert.equal(template.hits > 0, name === 'second', name);
     assert.ok(!effects('/layout/block/@class').includes('layout-block-class-applied'),
         'A custom factory cannot establish native class construction');
 }
