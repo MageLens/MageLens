@@ -151,8 +151,6 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
-    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
-    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     bash tests/runner-container.sh "$(./bin/application-compose images -q runner)"
     # Verify HTTPS routing through nginx, including the read-only viewer redirect.
     ./bin/application-compose exec -T phpfpm bash -c '
@@ -163,6 +161,8 @@ fi
         [[ "$html" == *noVNC* ]]
     '
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     if [[ "$platform" == mageos ]]; then
         ./bin/application-compose exec -T phpfpm test ! -f /var/www/.composer/auth.json
     fi
