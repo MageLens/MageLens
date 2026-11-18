@@ -301,19 +301,19 @@ final class LayoutCoverage
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $source = $package['entries'][$entry->getNodePath()] ?? [];
             if (!empty($package['revoked'])) {
-                $theme = $merge->getTheme();
+                $theme = self::mergeTheme($merge);
                 $this->revokeSources([$source], ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()], true);
                 $source = [];
             }
             $replaced = empty($package['revoked']) ? ($package['replacements'][$entry->getNodePath()] ?? []) : [];
             if (isset($source[0]['ids']['file-override'])) {
-                $theme = $merge->getTheme();
+                $theme = self::mergeTheme($merge);
                 $this->event($source[0]['ids']['file-override'], $replaced
                     ? 'layout-file-override-selected' : 'layout-file-override-unconfirmed',
                     ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
             }
             if ($replaced) {
-                $theme = $merge->getTheme();
+                $theme = self::mergeTheme($merge);
                 $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
                 foreach ($replaced as $path) {
                     $relative = str_starts_with($path, BP . '/') ? substr($path, strlen(BP) + 1) : '';
@@ -374,7 +374,7 @@ final class LayoutCoverage
         $handle = array_pop($this->handles);
         if ($error || !$handle || $handle['id'] === null) return;
         $effect = $handle['effect'] ?? ($handle['found'] ? 'traversed' : 'missing');
-        $theme = $merge->getTheme();
+        $theme = self::mergeTheme($merge);
         $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
         $this->event($handle['id'], 'layout-include-' . $effect, $context);
         $this->event($handle['handleId'], 'layout-include-' . $effect, $context);
@@ -392,7 +392,7 @@ final class LayoutCoverage
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $targets = empty($package['revoked']) ? ($package['entries'][$entry->getNodePath()] ?? []) : [];
             $state['pending'] = ['hash' => hash('sha256', $params[0]->innerXml()), 'targets' => $targets];
-            $theme = $merge->getTheme();
+            $theme = self::mergeTheme($merge);
             $this->event($targets[0]['ids']['file-selection'] ?? null, 'layout-file-selected',
                 ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]);
             if (isset($targets[0]['selection']) && $entry->getAttribute('layout') === $targets[0]['selection']) {
@@ -434,7 +434,7 @@ final class LayoutCoverage
         $this->healthy = true;
         $this->limitations[$error ? 'layout-validation-failed' : 'layout-validation-warning'] = true;
         if (!$error) return;
-        $theme = $merge->getTheme();
+        $theme = self::mergeTheme($merge);
         $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
         $updates = self::updates($merge);
         foreach ($this->merges[$merge]['updates'] ?? [] as $index => $source) {
@@ -524,7 +524,7 @@ final class LayoutCoverage
         static $property;
         $property ??= new \ReflectionProperty(WireframeReader::class, 'pageLayoutMerge');
         if ($property->getValue($this->wireframes[$index]['reader']) !== $merge) return;
-        $theme = $merge->getTheme();
+        $theme = self::mergeTheme($merge);
         $this->wireframes[$index]['context'] = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
         if ($id !== null) $this->wireframes[$index]['roots'][$id] = true;
     }
@@ -564,6 +564,13 @@ final class LayoutCoverage
             $state['updates'][$index] = $pending;
         }
         $this->merges[$merge] = $state;
+    }
+
+    private static function mergeTheme(Merge $merge)
+    {
+        static $property;
+        $property ??= new \ReflectionProperty(Merge::class, 'theme');
+        return $property->getValue($merge);
     }
 
     private static function updates($merge): array
@@ -691,7 +698,7 @@ final class LayoutCoverage
         $this->merges[$merge] = $state;
         if ($error) return;
         $sources = $state['updates'] ?? [];
-        $theme = $merge->getTheme();
+        $theme = self::mergeTheme($merge);
         $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
         if (!empty($state['retired']) && self::updates($merge)) {
             $this->revokeSources(array_column($state['retired'], 'targets'), $context);

@@ -16,7 +16,7 @@ use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, Recorder};
 
 $mode = $argv[1] ?? 'native';
 $modes = [
-    'native', 'exposed', 'reset', 'document-limit', 'string-plugin', 'xml-plugin',
+    'native', 'theme-getter', 'exposed', 'reset', 'document-limit', 'string-plugin', 'xml-plugin',
     'parser-plugin', 'late-parser-plugin', 'unused-parser', 'string-no-parent',
     'xml-no-parent', 'package-no-parent', 'opaque-update', 'missing-string',
     'missing-document', 'missing-package', 'compiled-selection', 'selection-no-parent',
@@ -65,6 +65,7 @@ if (in_array($mode, ['string-plugin', 'xml-plugin'], true)) {
             : \MageLens\Compatibility\Model\LayoutMergePlugin::class);
 }
 $replacement = match ($mode) {
+    'theme-getter' => \MageLens\Compatibility\Model\LayoutThemeGetter::class,
     'string-no-parent' => \MageLens\Compatibility\Model\LayoutStringReplacement::class,
     'xml-no-parent' => \MageLens\Compatibility\Model\LayoutDocumentReplacement::class,
     'package-no-parent' => \MageLens\Compatibility\Model\LayoutPackageReplacement::class,
@@ -170,7 +171,14 @@ if ($mode === 'opaque-update' && (\MageLens\Compatibility\Model\LayoutUpdateStri
     throw new RuntimeException('Collector repeated application XML update conversion');
 }
 if ($mode === 'package-event-disabled' && class_exists(\MageLens\Compatibility\Model\LayoutPackageObserver::class, false)) throw new RuntimeException('Disabled native observer was instantiated');
-if ($replacement !== null && $replacement::$calls === 0) throw new RuntimeException('Native replacement without parent was bypassed');
+if ($mode === 'theme-getter') {
+    $merge = $layout->getUpdate();
+    $theme = (new ReflectionProperty(\Magento\Framework\View\Model\Layout\Merge::class, 'theme'))->getValue($merge);
+    $expectedTheme = $theme->getFullPath();
+    if ($merge->getTheme()->getFullPath() === $expectedTheme) throw new RuntimeException('Native theme getter replacement was bypassed');
+}
+if ($mode === 'theme-getter' && \MageLens\Compatibility\Model\LayoutThemeGetter::$collectorCalls !== 0) throw new RuntimeException('Collector invoked the application theme getter');
+if ($replacement !== null && $mode !== 'theme-getter' && $replacement::$calls === 0) throw new RuntimeException('Native replacement without parent was bypassed');
 try {
     [, , $limits] = $collector->finish();
     if ($mode === 'package-no-parent' && !in_array('mutable-layout-package', $limits, true)) {
@@ -201,8 +209,13 @@ if (!$items) throw new RuntimeException('Missing merge proof declarations');
 foreach ($items as $item) {
     if ($mode === 'late-parser-plugin' && !in_array($item['layout']['kind'], ['argument', 'position-name'], true)) continue;
     $eventsForSource = array_filter($events, static fn($event) => $event['id'] === $item['id']);
+    if ($mode === 'theme-getter') {
+        foreach ($eventsForSource as $event) {
+            if ($event['theme'] !== $expectedTheme) throw new RuntimeException('Collector recorded the exposed theme instead of the native selected theme');
+        }
+    }
     $effects = array_values(array_unique(array_column($eventsForSource, 'type')));
-    if (in_array($mode, ['native', 'unused-parser', 'package-event-disabled'], true)) {
+    if (in_array($mode, ['native', 'theme-getter', 'unused-parser', 'package-event-disabled'], true)) {
         if (!$effects || in_array('layout-xml-ownership-revoked', $effects, true)) throw new RuntimeException('Native merge lost original ownership');
     } elseif (in_array($mode, ['parser-plugin', 'late-parser-plugin'], true) && $item['layout']['kind'] === 'position-name') {
         sort($effects);

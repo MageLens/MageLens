@@ -206,7 +206,7 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-reader-hook-proof.php "$reader_case"
     done
-    merge_cases=(native unused-parser exposed reset document-limit string-plugin xml-plugin parser-plugin late-parser-plugin string-no-parent xml-no-parent package-no-parent opaque-update native-selection selection-no-parent missing-string missing-document missing-package)
+    merge_cases=(native theme-getter unused-parser exposed reset document-limit string-plugin xml-plugin parser-plugin late-parser-plugin string-no-parent xml-no-parent package-no-parent opaque-update native-selection selection-no-parent missing-string missing-document missing-package)
     if [[ "$platform" == mageos ]]; then merge_cases+=(compiled-selection); fi
     if [[ "$theme" == hyva ]]; then
         merge_cases+=(package-event package-event-disabled missing-event-manager missing-event-config missing-event-invoker missing-event-observer event-depth observer-depth)
