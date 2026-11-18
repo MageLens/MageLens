@@ -363,6 +363,9 @@ test('layout action ambiguity remains visible and contributes zero hits', () => 
 test('layout structural and page-value reports require the correct native effect and retain zero-hit inventory', () => {
     const effects = {
         'action-method': 'layout-action-executed',
+        block: 'layout-block-rendered',
+        'block-class': 'layout-block-class-applied',
+        'block-ttl': 'layout-block-ttl-applied',
         move: 'layout-move-detached',
         'move-element': 'layout-move-applied',
         'move-destination': 'layout-move-applied',
@@ -438,6 +441,13 @@ test('layout structural and page-value reports require the correct native effect
                 assert.equal(item.hits, 0, type);
             }
         }
+        if (kind === 'block-ttl') {
+            const item = merge(manifest, [{...record, layoutHook: true,
+                events: [{...event, type: 'layout-block-ttl-origin-unconfirmed'}]}], sources).files[1].declarations[0];
+            assert.equal(item.state, 'unmeasured');
+            assert.equal(item.hits, 0);
+            assert.match(item.reason, /data storage/);
+        }
         if (kind === 'block') {
             const item = merge(manifest, [{...record, layoutHook: true,
                 events: [{...event, type: 'layout-block-cache-unconfirmed'}]}], sources).files[1].declarations[0];
@@ -451,6 +461,17 @@ test('layout structural and page-value reports require the correct native effect
             assert.equal(item.state, 'unmeasured');
             assert.equal(item.hits, 0);
             assert.match(item.reason, /later application lacks verified original ownership/);
+            const read = {...event, type: 'layout-argument-storage-unconfirmed'};
+            const unknownRead = merge(manifest, [{...record, layoutHook: true, events: [read]}], sources).files[1].declarations[0];
+            assert.equal(unknownRead.state, 'unmeasured');
+            assert.equal(unknownRead.hits, 0);
+            assert.match(unknownRead.reason, /data property became hooked, unset or magic/);
+            const applied = merge(manifest, [{...record, layoutHook: true,
+                events: [{...event, type: 'layout-argument-applied'}, read]}], sources).files[1].declarations[0];
+            assert.equal(applied.state, 'covered');
+            assert.equal(applied.hits, 1);
+            assert.equal(applied.evidence.some(effect => effect.type === 'layout-argument-read'), false);
+            assert.match(applied.reason, /later reads lack verified XML lineage/);
         }
         const unconfirmed = {...record, layoutHook: true, events: [{...event, type: 'layout-argument-origin-unconfirmed'}]};
         if (['argument', 'action-argument'].includes(kind)) {

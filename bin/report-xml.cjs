@@ -71,7 +71,7 @@ const layoutEvents = {
     'block-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-replaced'],
     'block-class': ['layout-block-class-applied', 'layout-block-attribute-overridden', 'layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted'],
     'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
-    'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden'],
+    'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden', 'layout-block-ttl-origin-unconfirmed'],
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
     block: ['layout-block-created', 'layout-block-rendered', 'layout-block-render-failed', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed', 'layout-block-render-origin-unconfirmed', 'layout-block-registration-origin-unconfirmed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
@@ -79,7 +79,7 @@ const layoutEvents = {
     'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
     'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
     argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
-        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed', 'layout-argument-application-unconfirmed'],
+        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed', 'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed'],
     'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
     'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
@@ -113,8 +113,9 @@ const layoutDecisions = {
     'layout-block-render-origin-unconfirmed': 'A shared block object has multiple original layout declarations. A direct PHP render lacks a unique layout element origin.',
     'layout-block-cache-unconfirmed': 'The native block HTML cache path supplied data while fresh template execution was bypassed. The original source of the cached bytes is unverified.',
     'layout-template-cache-unconfirmed': 'Cached block HTML bypassed this selected template. Cached bytes do not establish fresh original XML template execution.',
-    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, so native XML selection cannot establish original template execution ownership.',
-    'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation or plugin. Their later application lacks verified original ownership.',
+    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, so native XML selection cannot establish original template execution ownership. Hooked or magic property storage can replace the selection even when values match.',
+    'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation, plugin or hooked/magic data storage. Their later application lacks verified original ownership.',
+    'layout-argument-storage-unconfirmed': 'The block data property became hooked, unset or magic. Original application evidence is retained; later reads lack verified XML lineage.',
     'layout-block-class-defaulted': 'The native generator selected its configured default class after treating the XML attribute as empty.',
     'layout-block-class-origin-unconfirmed': 'Block creation used an unverified factory, object-manager dependency or intercepted creation method. Original-source class ownership is unavailable.',
     'layout-argument-origin-unconfirmed': 'The argument interpreter chain includes an unverified implementation or intercepted method. Original-source value ownership is unavailable for this argument tree.',
@@ -154,6 +155,7 @@ const layoutDecisions = {
     'layout-block-render-failed': 'The native block rendering boundary threw before returning HTML. Construction remains a separate observed fact.',
     'layout-block-generation-failed': 'Native block generation failed before completing construction and data application.',
     'layout-block-attribute-overridden': 'A later declaration supplied the block attribute used by the native generator.',
+    'layout-block-ttl-origin-unconfirmed': 'The native TTL setter reached hooked or magic data storage. Its assignment lacks verified original XML ownership.',
     'layout-cacheability-target-missing': 'The native cacheability check found that the noncacheable declaration had no surviving structural element.',
     'layout-template-failed': 'The native template fetch boundary failed. Any independently completed engine execution remains a separate fact.',
     'layout-template-replaced': 'A later PHP template assignment replaced this XML selection before template execution.',
@@ -374,9 +376,9 @@ function merge(manifest, records, sources) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
             if (item.family === 'layout') {
                 const decisions = [...new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean))].sort();
+                if (item.supported && decisions.length) item.reason = decisions.join('. ');
                 if (item.supported && !item.hits && decisions.length) {
                     item.state = 'unmeasured';
-                    item.reason = decisions.join('. ');
                 } else if (item.state === 'uncovered' && !layoutSourceTrace
                     && [...requestLimitations].some(key => key !== 'full-page-cache-origin')) {
                     item.state = 'unmeasured';
@@ -384,7 +386,7 @@ function merge(manifest, records, sources) {
                 }
                 if (item.state !== 'unmeasured') layoutTotals.total++;
                 if (item.state === 'covered') layoutTotals.covered++;
-                if (item.state === 'unmeasured') warnings.push({path: file.path, declaration: item.id, reason: item.reason});
+                if (item.state === 'unmeasured' || decisions.length) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
             } else if (item.areas) {
                 const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals, ...diTotals}[item.family];
                 for (const [area, outcome] of Object.entries(item.areas)) {

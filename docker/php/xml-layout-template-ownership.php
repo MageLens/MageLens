@@ -124,7 +124,8 @@ final class LayoutTemplateOwnership
             || ($caller['object'] ?? null) !== $frame['block']) return;
         if ($method === 'getTemplate' && $object === $frame['block']) {
             $this->resolving[$index]['getterObserved'] = true;
-            $this->resolving[$index]['getterTrusted'] = !$error && $proof['trusted'];
+            $this->resolving[$index]['getterTrusted'] = !$error && $proof['trusted']
+                && LayoutXmlOwnership::unhookedProperty($object, '_template') !== null;
         }
         if ($method === 'getTemplateFileName' && $object === $frame['resolver']) {
             $this->resolving[$index]['resolverObserved'] = true;

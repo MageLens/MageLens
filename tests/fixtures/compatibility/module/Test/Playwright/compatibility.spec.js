@@ -214,6 +214,11 @@ test('starts the next test with fresh state', async ({page}) => {
         await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
     }
     await expect(page.locator('[data-layout-renderfailure-output="after"]')).toHaveCount(0);
+    await page.goto('/coverageprobe/propertyownership/');
+    for (const effect of ['native', 'template-get', 'template-set', 'template-magic', 'template-redeclared',
+        'data-get', 'data-magic', 'data-set', 'data-redeclared', 'after-failure']) {
+        await expect(page.locator(`[data-layout-property="${effect}"]`)).toHaveText('verified');
+    }
     await page.goto('/coverageprobe/classclear/');
     await expect(page).toHaveTitle('Class reset fixture');
     await expect(page.locator('[data-layout-structure="class-clear"]')).toHaveText('class-clear');

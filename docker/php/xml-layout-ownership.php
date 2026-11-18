@@ -120,6 +120,15 @@ final class LayoutXmlOwnership
         }
     }
 
+    // Inherited native methods can still invoke a subclass's property hook or
+    // magic access after unset(). Inspect metadata without reading application
+    // properties. Plain redeclarations keep the same native storage semantics.
+    public static function unhookedProperty(object $object, string $name): ?\ReflectionProperty
+    {
+        $property = new \ReflectionProperty($object, $name);
+        return !$property->getHooks() && $property->isInitialized($object) ? $property : null;
+    }
+
     private static function renderingParents(object $object, string $native, string $method, array $parents): array
     {
         if (!in_array($native, [\Magento\Framework\View\Element\Template::class,

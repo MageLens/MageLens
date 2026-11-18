@@ -2074,7 +2074,9 @@ final class LayoutCoverage
         if ($origin && (int) $origin['value'] === ($params[1] ?? null)
             && ($trace[2]['class'] ?? null) === DataObject::class && ($trace[2]['function'] ?? null) === '__call'
             && ($trace[3]['class'] ?? null) === BlockGenerator::class && ($trace[3]['function'] ?? null) === 'generateBlock') {
-            $this->generating[$index]['ttl'] = $block;
+            if (LayoutXmlOwnership::unhookedProperty($block, '_data') === null) {
+                $this->event($origin['id'], 'layout-block-ttl-origin-unconfirmed', $this->generating[$index]['source']['context']);
+            } else $this->generating[$index]['ttl'] = $block;
         }
     }
 
@@ -2107,6 +2109,12 @@ final class LayoutCoverage
         }
         $values = is_array($key) ? $key : [$key => $params[1] ?? null];
         $matched = $this->matchingArguments($origins, $values);
+        if (LayoutXmlOwnership::unhookedProperty($block, '_data') === null) {
+            foreach ($matched as $origin) {
+                $this->unconfirmedArgument($origin, $frame['source']['context'], 'layout-argument-application-unconfirmed');
+            }
+            return;
+        }
         foreach ($this->appliedArgumentIds($matched) as $id) {
             $this->generating[$index]['applied'][$id] = $block;
         }
@@ -2155,9 +2163,13 @@ final class LayoutCoverage
         if ($function === 'getData' && ($key === null || $key === '')) return;
         $binding = $this->argumentBindings[$block];
         $origins = $binding['origins'];
-        static $data;
-        $data ??= new \ReflectionProperty(DataObject::class, '_data');
-        $values = $data->getValue($block);
+        $data = LayoutXmlOwnership::unhookedProperty($block, '_data');
+        if ($data === null) {
+            foreach ($origins as $origin) $this->unconfirmedArgument($origin, $binding['context'], 'layout-argument-storage-unconfirmed');
+            unset($this->argumentBindings[$block]);
+            return;
+        }
+        $values = $data->getRawValue($block);
         $path = $function === 'getDataByPath'
             || ($function === 'getData' && !isset($values[$key]) && str_contains((string) $key, '/'));
         if ($path && $value === null) return;

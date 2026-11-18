@@ -1,0 +1,13 @@
+<?php
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+$values = [$block->getData('value'), $block->getDataByKey('value'), $block->offsetGet('value'),
+    $block->getDataByPath('nested/child'), $block->getData('nested', 'child')];
+if ($values !== ['xml-value', 'xml-value', 'xml-value', 'xml-leaf', 'xml-leaf']) {
+    throw new \RuntimeException('Unexpected native property fixture values');
+}
+?>
+<span data-layout-property-value>verified</span>
