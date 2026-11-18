@@ -130,6 +130,17 @@ describe('Magento storefront coverage compatibility', () => {
         cy.visit('/coverageprobe/generic/');
         cy.get('[data-layout-generic]').should('have.text', 'verified');
         cy.get('#layout-generic-right [data-layout-structure]').should('have.text', 'generic.moved');
+        for (const variant of ['after', 'before', 'equal', 'precedence', 'missing', 'destination', 'removed', 'programmatic', 'same', 'unchanged', 'sibling-missing', 'alias-fallback', 'overridden']) {
+            cy.visit(`/coverageprobe/moves/?case=${variant}`);
+            const expected = variant === 'before' ? ['movable', 'anchor', 'tail']
+                : ['equal', 'precedence', 'sibling-missing', 'alias-fallback'].includes(variant) ? ['anchor', 'tail', 'movable']
+                : ['missing', 'destination', 'removed', 'same', 'unchanged'].includes(variant) ? ['anchor', 'tail'] : ['anchor', 'movable', 'tail'];
+            cy.get('#moveoperands-right [data-layout-moveoperand]').should(elements => {
+                expect([...elements].map(element => element.textContent)).to.deep.equal(expected);
+            });
+            cy.get('#moveoperands-left [data-layout-moveoperand]').should('have.length', ['missing', 'same', 'unchanged'].includes(variant) ? 1 : 0);
+            cy.get('#moveoperands-removed').should('not.exist');
+        }
         cy.visit('/coverageprobe/anonymous/');
         cy.get('#layout-anonymous [data-layout-anonymous]').should('have.text', 'verified');
         cy.get('[data-layout-order]').then(elements => {

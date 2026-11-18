@@ -122,6 +122,15 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/generic/');
     await expect(page.locator('[data-layout-generic]')).toHaveText('verified');
     await expect(page.locator('#layout-generic-right [data-layout-structure]')).toHaveText('generic.moved');
+    for (const variant of ['after', 'before', 'equal', 'precedence', 'missing', 'destination', 'removed', 'programmatic', 'same', 'unchanged', 'sibling-missing', 'alias-fallback', 'overridden']) {
+        await page.goto(`/coverageprobe/moves/?case=${variant}`);
+        const expected = variant === 'before' ? ['movable', 'anchor', 'tail']
+            : ['equal', 'precedence', 'sibling-missing', 'alias-fallback'].includes(variant) ? ['anchor', 'tail', 'movable']
+            : ['missing', 'destination', 'removed', 'same', 'unchanged'].includes(variant) ? ['anchor', 'tail'] : ['anchor', 'movable', 'tail'];
+        await expect(page.locator('#moveoperands-right [data-layout-moveoperand]')).toHaveText(expected);
+        await expect(page.locator('#moveoperands-left [data-layout-moveoperand]')).toHaveCount(['missing', 'same', 'unchanged'].includes(variant) ? 1 : 0);
+        await expect(page.locator('#moveoperands-removed')).toHaveCount(0);
+    }
     await page.goto('/coverageprobe/anonymous/');
     await expect(page.locator('#layout-anonymous [data-layout-anonymous]')).toHaveText('verified');
     await expect(page.locator('[data-layout-order]')).toHaveText(['order.first', 'order.last', 'order.middle']);

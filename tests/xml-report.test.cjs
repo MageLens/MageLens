@@ -328,6 +328,12 @@ test('layout action ambiguity remains visible and contributes zero hits', () => 
 test('layout structural and page-value reports require the correct native effect and retain zero-hit inventory', () => {
     const effects = {
         'action-method': 'layout-action-executed',
+        move: 'layout-move-detached',
+        'move-element': 'layout-move-applied',
+        'move-destination': 'layout-move-applied',
+        'move-as': 'layout-move-alias-applied',
+        'move-before': 'layout-move-order-applied',
+        'move-after': 'layout-move-order-applied',
         container: 'layout-container-created',
         'container-htmlTag': 'layout-container-wrapper-rendered',
         'container-htmlId': 'layout-container-wrapper-rendered',
@@ -379,6 +385,17 @@ test('layout structural and page-value reports require the correct native effect
             events: [{...event, type: 'layout-file-overridden'}]}], sources).files[1].declarations[0];
         assert.equal(displaced.state, 'unmeasured', kind);
         assert.equal(displaced.hits, 0, kind);
+        if (kind === 'move' || kind.startsWith('move-')) {
+            for (const type of ['layout-move-replaced', 'layout-move-overridden', 'layout-move-origin-unconfirmed']) {
+                const item = merge(manifest, [{...record, layoutHook: true, events: [{...event, type}]}], sources).files[1].declarations[0];
+                assert.equal(item.state, 'unmeasured', type);
+                assert.equal(item.hits, 0, type);
+                assert.equal(item.evidence[0].type, type);
+            }
+            const incorrect = kind === 'move-as' ? 'layout-move-order-applied' : 'layout-move-alias-applied';
+            assert.throws(() => merge(manifest, [{...record, layoutHook: true,
+                events: [{...event, type: incorrect}]}], sources), /Unexpected layout effect/, kind);
+        }
         if (kind === 'block-class') {
             for (const type of ['layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted']) {
                 const item = merge(manifest, [{...record, layoutHook: true, events: [{...event, type}]}], sources).files[1].declarations[0];

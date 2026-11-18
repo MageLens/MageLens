@@ -56,6 +56,10 @@ $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
+    ['zero move alias', $genericSchema, '<layout><move element="source" destination="target" as="0"/></layout>'],
+    ['empty move alias', $genericSchema, '<layout><move element="source" destination="target" as=""/></layout>'],
+    ['empty move sibling', $genericSchema, '<layout><move element="source" destination="target" after=""/></layout>'],
+    ['numeric move sibling', $genericSchema, '<layout><move element="source" destination="target" before="1"/></layout>'],
     ['empty block class', $pageSchema, '<page><body><block class="" name="fixture"/></body></page>'],
     ['container display attribute', $genericSchema, '<layout><container name="fixture" display="false"/></layout>'],
     ['merged root UI placement', 'urn:magento:framework:View/Layout/etc/layout_merged.xsd', '<layout><handle id="fixture"><uiComponent name="fixture"/></handle></layout>'],

@@ -92,6 +92,7 @@ final class LayoutManifest
                         && $attribute->namespaceURI === 'http://www.w3.org/2001/XMLSchema-instance'
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
+                    $valueKind === 'move' && in_array($attribute->nodeName, ['element', 'destination', 'as', 'before', 'after'], true) => 'move-' . $attribute->nodeName,
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'label' => 'handle-label',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'design_abstraction' => 'handle-type',
                     $valueKind === 'visibility' && $attribute->nodeName === 'name' => 'visibility-name',
@@ -145,6 +146,7 @@ final class LayoutManifest
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',
                     'position-name', 'position-as', 'position-before', 'position-after',
+                    'move-element', 'move-destination', 'move-as', 'move-before', 'move-after',
                     'handle-label', 'handle-type',
                     'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override',
                     'visibility', 'visibility-name', 'visibility-class', 'visibility-argument', 'ui-group'], true);

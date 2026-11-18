@@ -29,6 +29,12 @@ License: see LICENSE in the repository root.
     <type name="MageLens\Compatibility\Controller\Grammar\Index">
         <arguments><argument name="layouts" xsi:type="object">MageLensCompatibilityIsolatedLayoutFactory</argument></arguments>
     </type>
+    <type name="MageLens\Compatibility\Controller\Moves\Index">
+        <arguments><argument name="layouts" xsi:type="object">MageLensCompatibilityIsolatedLayoutFactory</argument></arguments>
+    </type>
+    <type name="Magento\Framework\View\Layout\GeneratorPool">
+        <plugin name="magelens_layout_move_mutation" type="MageLens\Compatibility\Model\LayoutMoveMutation"/>
+    </type>
     <type name="Magento\PageCache\Model\App\FrontController\BuiltinPlugin">
         <plugin name="magelens_layout_cache_fixture" type="MageLens\Compatibility\Model\LayoutPageCache"/>
     </type>

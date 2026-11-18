@@ -84,11 +84,18 @@ const layoutEvents = {
     'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
     removal: ['layout-removal-applied', 'layout-removal-canceled', 'layout-removal-restored'],
-    move: ['layout-move-applied', 'layout-move-removed', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved'],
+    move: ['layout-move-applied', 'layout-move-removed', 'layout-move-detached', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved', 'layout-move-replaced', 'layout-move-overridden', 'layout-move-origin-unconfirmed'],
     'wireframe-selection': ['layout-wireframe-selected', 'layout-wireframe-origin-unconfirmed'],
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed', 'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed'],
 };
+for (const name of ['element', 'destination', 'as', 'before', 'after']) {
+    const effects = name === 'as' ? ['alias-applied', 'alias-unchanged', 'destination-missing']
+        : ['before', 'after'].includes(name) ? ['order-applied', 'order-unchanged', 'ignored', 'destination-missing']
+        : ['applied', 'unchanged', ...(name === 'element' ? ['detached'] : ['destination-missing'])];
+    layoutEvents['move-' + name] = [...effects, 'target-missing', 'unresolved', 'replaced', 'overridden', 'origin-unconfirmed']
+        .map(effect => 'layout-move-' + effect);
+}
 for (const kind of ['label', 'type']) {
     layoutEvents['handle-' + kind] = ['layout-handle-' + kind + '-evaluated', 'layout-handle-metadata-returned',
         'layout-handle-metadata-overridden', 'layout-handle-metadata-origin-unconfirmed'];
@@ -161,6 +168,13 @@ const layoutDecisions = {
     'layout-title-replaced': 'A runtime title assignment replaced this declaration before attribution at the renderer.',
     'layout-asset-removal-target-missing': 'The scheduled removal had no asset in the native page configuration.',
     'layout-removal-canceled': 'Magento canceled this scheduled removal before generating the structure.',
+    'layout-move-origin-unconfirmed': 'The native move schedule or structure uses customized storage or accessors without a verified original-source handoff.',
+    'layout-move-replaced': 'A later programmatic schedule write replaced this move, including an equal-valued tuple.',
+    'layout-move-overridden': 'A later XML move replaced this scheduled move before execution.',
+    'layout-move-destination-missing': 'The requested destination was absent. The native move could detach its existing source but could not apply this destination, alias or order.',
+    'layout-move-alias-unchanged': 'The native move retained the existing child alias.',
+    'layout-move-order-unchanged': 'The native destination reorder left its child order unchanged.',
+    'layout-move-ignored': 'The native move reader selected after and ignored this before attribute.',
     'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
     'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',
     'layout-move-unresolved': 'The scheduled move did not establish the requested parent.',

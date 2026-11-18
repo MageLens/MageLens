@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.layout.moveoperand.left" htmlTag="div" htmlId="moveoperands-left">
+        <block name="magelens.layout.moveoperand.movable" as="initial-alias" template="MageLens_Compatibility::layout-moveoperands.phtml">
+            <arguments><argument name="marker" xsi:type="string">movable</argument></arguments>
+        </block>
+    </container>
+    <container name="magelens.layout.moveoperand.right" htmlTag="div" htmlId="moveoperands-right">
+        <block name="magelens.layout.moveoperand.anchor" as="anchor-alias" template="MageLens_Compatibility::layout-moveoperands.phtml">
+            <arguments><argument name="marker" xsi:type="string">anchor</argument></arguments>
+        </block>
+        <block name="magelens.layout.moveoperand.tail" as="tail-alias" template="MageLens_Compatibility::layout-moveoperands.phtml">
+            <arguments><argument name="marker" xsi:type="string">tail</argument></arguments>
+        </block>
+    </container>
+    <container name="magelens.layout.moveoperand.removed" htmlTag="div" htmlId="moveoperands-removed"/>
+</layout>

@@ -122,6 +122,12 @@ foreach ([['layout', 'page', 'page'], ['layout', 'layout', 'generic'], ['page_la
             'Native file role and root determine the layout inventory independently of omitted source hints');
     }
 }
+$moveItems = LayoutManifest::declarations('app/code/Fixture/Module/view/frontend/layout/move.xml',
+    '<layout><move element="source" destination="target" as="alias" before="first" after="last"/></layout>');
+$moveItems = array_values(array_filter($moveItems, static fn($item) => $item['layout']['instruction'] === 'move'));
+checkXml(array_column(array_column($moveItems, 'layout'), 'kind') === ['move', 'move-element', 'move-destination', 'move-as', 'move-before', 'move-after']
+    && count(array_filter($moveItems, static fn($item) => $item['supported'])) === 6,
+    'Each native move operand has its own stable supported source identity');
 $replaced = array_values(array_filter($layoutItems, static fn($item) => $item['layout']['element'] === 'magelens.layout.replaced' && $item['supported']));
 checkXml(array_column(array_column($replaced, 'layout'), 'kind') === ['block', 'block-class', 'position-name', 'template'],
     'Block, class, name and template origins are independent');

@@ -78,6 +78,11 @@ final class LayoutCoverage
     private array $removalChanges = [];
     private array $removing = [];
     private array $moving = [];
+    private array $moveReads = [];
+    private int $moveReadOverflow = 0;
+    private int $movingOverflow = 0;
+    private array $moveReaders = [];
+    private int $moveReaderOverflow = 0;
     private array $generating = [];
     private array $constructing = [];
     private array $blockObjectCreations = [];
@@ -137,6 +142,10 @@ final class LayoutCoverage
         $this->ownership->finish();
         $this->templateOwnership->finish();
         $this->selectionOwnership->finish();
+        if ($this->moveReads || $this->moveReadOverflow || $this->moving || $this->movingOverflow
+            || $this->moveReaders || $this->moveReaderOverflow) {
+            $this->errors['Unbalanced native move hook evidence'] = true;
+        }
         $blockLimits = $this->blockRendering->finish();
         $metadataLimits = $this->handleMetadata->finish();
         if ($this->blockRenders || $this->blockRenderOverflow) $this->errors['Unbalanced block render hook evidence'] = true;
@@ -193,8 +202,12 @@ final class LayoutCoverage
             [BlockReader::class, 'getActions', null, $this->readActions(...)],
             [BlockReader::class, 'getArguments', null, $this->readArguments(...)],
             [BlockReader::class, 'evaluateArguments', $this->beginReaderArguments(...), $this->completeReaderArguments(...)],
-            [MoveReader::class, 'scheduleMove', null, $this->scheduleMove(...)],
+            [MoveReader::class, 'scheduleMove', $this->beginMoveRead(...), $this->scheduleMove(...)],
+            [MoveReader::class, 'interpret', $this->expectMoveRead(...), $this->checkMoveRead(...)],
+            [ScheduledStructure::class, 'setElementToMove', null, $this->moveWritten(...)],
+            [ScheduledStructure::class, 'getListToMove', null, $this->moveList(...)],
             [GeneratorPool::class, 'moveElementInStructure', $this->beginMove(...), $this->completeMove(...)],
+            [Layout\Data\Structure::class, 'reorderChildElement', $this->beginMoveOrder(...), $this->completeMoveOrder(...)],
             [ScheduledStructure::class, 'setElementToRemoveList', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
             [ScheduledStructure::class, 'unsetElementFromListToRemove', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
             [GeneratorPool::class, 'removeElement', $this->beginRemoval(...), $this->completeRemoval(...)],
@@ -1332,51 +1345,248 @@ final class LayoutCoverage
         return [$package['entries'][$node->getNodePath()][0]['ids'] ?? [], $this->themeContext($merge)];
     }
 
+    private function beginMoveRead($reader, array $params, string $class): void
+    {
+        if ($class !== MoveReader::class) return;
+        $index = array_key_last($this->moveReaders);
+        if ($index !== null && $this->moveReaders[$index]['xml'] === $params[1]) $this->moveReaders[$index]['observed']++;
+        if ($this->moveReadOverflow || count($this->moveReads) >= 256) {
+            $this->moveReadOverflow++;
+            $this->errors['Native move reader tracking exceeded 256 frames'] = true;
+            return;
+        }
+        [$schedule, $xml] = $params;
+        [$ids, $context] = $this->origin($xml);
+        if ($ids && !$this->moveReaderOverflow && ($index === null || $this->moveReaders[$index]['xml'] !== $xml)) {
+            $this->errors['Missing native move reader entry hook evidence'] = true;
+        }
+        $ids = array_intersect_key($ids, array_flip(['move', 'move-element', 'move-destination', 'move-as', 'move-before', 'move-after']));
+        $this->moveReads[] = ['schedule' => $schedule, 'name' => (string) $xml['element'],
+            'ids' => $ids, 'context' => $context, 'written' => false, 'revoked' => false,
+            'ignored' => isset($xml['after'], $xml['before'])];
+    }
+
+    private function expectMoveRead($reader, array $params, string $class): void
+    {
+        if ($class !== MoveReader::class) return;
+        if ($this->moveReaderOverflow || count($this->moveReaders) >= 256) {
+            $this->moveReaderOverflow++;
+            $this->errors['Native move interpretation tracking exceeded 256 frames'] = true;
+            return;
+        }
+        $this->moveReaders[] = ['xml' => $params[1], 'observed' => 0];
+    }
+
+    private function checkMoveRead($reader, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== MoveReader::class) return;
+        if ($this->moveReaderOverflow) { $this->moveReaderOverflow--; return; }
+        $frame = array_pop($this->moveReaders);
+        [$ids] = $this->origin($params[1]);
+        if (!$error && isset($ids['move']) && $frame === null) {
+            $this->errors['Missing native move reader entry hook evidence'] = true;
+        } elseif (!$error && isset($ids['move']) && $frame['observed'] !== 1
+            && LayoutXmlOwnership::nativeMethod($reader, MoveReader::class, 'scheduleMove')) {
+            $this->errors['Missing native move reader hook evidence'] = true;
+        }
+    }
+
+    private static function moveCaller(string $method): array
+    {
+        $seen = false;
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
+            if (($frame['function'] ?? null) === $method) {
+                $seen = true;
+                continue;
+            }
+            if ($seen) return $frame;
+        }
+        return [];
+    }
+
+    private function moveDecision(array $move, string $effect): void
+    {
+        foreach ($move['ids'] as $id) $this->event($id, 'layout-move-' . $effect, $move['context']);
+    }
+
+    private function moveWritten($schedule, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== ScheduledStructure::class) return;
+        [$name, $data] = $params;
+        $index = array_key_last($this->moveReads);
+        $caller = self::moveCaller('setElementToMove');
+        $native = $index !== null && $this->moveReads[$index]['schedule'] === $schedule
+            && $this->moveReads[$index]['name'] === $name
+            && ($caller['class'] ?? null) === MoveReader::class && ($caller['function'] ?? null) === 'scheduleMove';
+        $moves = $this->moves[$schedule] ?? [];
+        if (isset($moves[$name])) $this->moveDecision($moves[$name], $native ? 'overridden' : 'replaced');
+        unset($moves[$name]);
+        $this->moves[$schedule] = $moves;
+        if ($index === null || $this->moveReads[$index]['schedule'] !== $schedule || $this->moveReads[$index]['name'] !== $name) return;
+        if ($native) {
+            $this->moveReads[$index]['written'] = true;
+            $this->moveReads[$index]['data'] = $data;
+        } else {
+            $this->moveReads[$index]['revoked'] = true;
+        }
+    }
+
+    // Read native backing arrays without invoking overridable getters or PHP
+    // property hooks. A redeclared or hooked property has no verified lineage.
+    private static function moveStorage(object $object, string $native, string $field): ?array
+    {
+        $property = new \ReflectionProperty($object, $field);
+        if ($property->getDeclaringClass()->getName() !== $native || $property->getHooks() || !$property->isInitialized($object)) return null;
+        $value = $property->getRawValue($object);
+        return is_array($value) ? $value : null;
+    }
+
+    private static function moveTuple($schedule, string $name): ?array
+    {
+        if ((new \ReflectionMethod($schedule, 'getElementToMove'))->getDeclaringClass()->getName() !== ScheduledStructure::class) return null;
+        return self::moveStorage($schedule, ScheduledStructure::class, 'scheduledMoves')[$name] ?? null;
+    }
+
     private function scheduleMove($reader, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($error || $class !== MoveReader::class) return;
-        [$schedule, $xml] = $params;
-        $name = $xml->getAttribute('element');
-        [$origin, $context] = $this->origin($xml);
-        $moves = $this->moves[$schedule] ?? [];
-        unset($moves[$name]);
-        if (isset($origin['move'])) {
-            $moves[$name] = ['id' => $origin['move'], 'context' => $context,
-                'data' => $schedule->getElementToMove($name), 'effect' => null];
+        if ($class !== MoveReader::class) return;
+        if ($this->moveReadOverflow) { $this->moveReadOverflow--; return; }
+        $frame = array_pop($this->moveReads);
+        if ($frame === null) {
+            $this->errors['Missing native move reader hook evidence'] = true;
+            return;
         }
+        if ($error || !$frame['ids']) return;
+        if (!$frame['written']) {
+            if (LayoutXmlOwnership::nativeMethod($frame['schedule'], ScheduledStructure::class, 'setElementToMove')) {
+                $this->errors['Missing native move scheduling hook evidence'] = true;
+            } else {
+                $this->moveDecision($frame, 'origin-unconfirmed');
+            }
+            return;
+        }
+        if ($frame['revoked'] || self::moveTuple($frame['schedule'], $frame['name']) !== $frame['data']) {
+            $this->moveDecision($frame, 'origin-unconfirmed');
+            return;
+        }
+        $moves = $this->moves[$frame['schedule']] ?? [];
+        if (count($moves) >= 8192) {
+            $this->errors['Native move tracking exceeded 8192 elements'] = true;
+            return;
+        }
+        $moves[$frame['name']] = ['ids' => $frame['ids'], 'context' => $frame['context'],
+            'data' => $frame['data'], 'effect' => null, 'operands' => [], 'ignored' => $frame['ignored'], 'listed' => null];
+        $this->moves[$frame['schedule']] = $moves;
+    }
+
+    private function moveList($schedule, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== ScheduledStructure::class || !is_array($result)) return;
+        $caller = self::moveCaller('getListToMove');
+        if (($caller['class'] ?? null) !== GeneratorPool::class || ($caller['function'] ?? null) !== 'buildStructure') return;
+        $moves = $this->moves[$schedule] ?? [];
+        foreach ($moves as $name => &$move) $move['listed'] = in_array($name, $result, true);
+        unset($move);
         $this->moves[$schedule] = $moves;
     }
 
-    private static function placement($structure, string $element): array
+    private static function placement($structure, string $element): ?array
     {
-        $parent = $structure->getParentId($element);
-        return [$parent, $parent ? $structure->getChildAlias($parent, $element) : null,
-            $parent ? array_keys($structure->getChildren($parent)) : []];
+        if (get_class($structure) !== Layout\Data\Structure::class) {
+            $type = new \ReflectionClass($structure);
+            if ($type->getName() !== Layout\Data\Structure::class . '\\Interceptor'
+                || $type->getParentClass()?->getName() !== Layout\Data\Structure::class
+                || !str_starts_with($type->getFileName() ?: '', BP . '/generated/code/')) return null;
+            foreach ($type->getMethods() as $method) {
+                if ($method->getDeclaringClass()->getName() === $type->getName() && !$method->isConstructor()) return null;
+            }
+        }
+        $elements = self::moveStorage($structure, DataStructure::class, '_elements');
+        if ($elements === null) return null;
+        $parent = $elements[$element][DataStructure::PARENT] ?? false;
+        return [$parent, $parent ? ($elements[$parent][DataStructure::CHILDREN][$element] ?? false) : null,
+            $parent ? array_keys($elements[$parent][DataStructure::CHILDREN] ?? []) : []];
     }
 
     private function beginMove($pool, array $params, string $class): void
     {
         if ($class !== GeneratorPool::class) return;
+        if ($this->movingOverflow || count($this->moving) >= 256) {
+            $this->movingOverflow++;
+            $this->errors['Native move execution tracking exceeded 256 frames'] = true;
+            return;
+        }
         [$schedule, $structure, $name] = $params;
         $tracked = $this->moves[$schedule][$name] ?? null;
-        $this->moving[] = $tracked && $tracked['data'] === $schedule->getElementToMove($name)
-            ? self::placement($structure, $name) : null;
+        $this->moving[] = ['structure' => $structure, 'name' => $name, 'ordered' => false, 'orderCompleted' => false,
+            'before' => $tracked && $tracked['data'] === self::moveTuple($schedule, $name) ? self::placement($structure, $name) : null];
+    }
+
+    private function beginMoveOrder($structure, array $params, string $class): void
+    {
+        if ($class !== Layout\Data\Structure::class || $this->movingOverflow || !$this->moving) return;
+        $index = array_key_last($this->moving);
+        $frame = $this->moving[$index];
+        $caller = self::moveCaller('reorderChildElement');
+        if ($frame['structure'] !== $structure || $frame['name'] !== $params[1]
+            || ($caller['class'] ?? null) !== GeneratorPool::class || ($caller['function'] ?? null) !== 'moveElementInStructure') return;
+        $this->moving[$index]['ordered'] = true;
+        $this->moving[$index]['orderBefore'] = self::placement($structure, $params[1]);
+    }
+
+    private function completeMoveOrder($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Layout\Data\Structure::class || $this->movingOverflow || !$this->moving) return;
+        $index = array_key_last($this->moving);
+        $frame = $this->moving[$index];
+        if ($frame['structure'] !== $structure || $frame['name'] !== $params[1] || !isset($frame['orderBefore'])) return;
+        $this->moving[$index]['orderCompleted'] = true;
+        if ($error) return;
+        $after = self::placement($structure, $params[1]);
+        $this->moving[$index]['orderChanged'] = $after !== null && $frame['orderBefore'] !== null
+            && $after[2] !== $frame['orderBefore'][2];
     }
 
     private function completeMove($pool, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($class !== GeneratorPool::class) return;
-        $before = array_pop($this->moving);
-        if ($error || $before === null) return;
+        if ($this->movingOverflow) { $this->movingOverflow--; return; }
+        $frame = array_pop($this->moving);
+        if ($frame === null) {
+            $this->errors['Missing native move execution hook evidence'] = true;
+            return;
+        }
         [$schedule, $structure, $name] = $params;
-        $moves = $this->moves[$schedule];
+        $moves = $this->moves[$schedule] ?? [];
+        if (!isset($moves[$name])) return;
+        $before = $frame['before'];
         $after = self::placement($structure, $name);
-        $destination = $moves[$name]['data'][0];
-        $moves[$name]['effect'] = match (true) {
-            $after[0] !== $destination => 'unresolved',
-            $before === $after => 'unchanged',
-            default => 'applied',
-        };
+        if ($error || $before === null || $after === null) {
+            $moves[$name]['effect'] = 'origin-unconfirmed';
+        } else {
+            $destination = $moves[$name]['data'][0];
+            $effect = match (true) {
+                $before[0] && !$after[0] => 'detached',
+                $after[0] !== $destination => 'unresolved',
+                $before === $after => 'unchanged',
+                default => 'applied',
+            };
+            $moves[$name]['effect'] = $effect;
+            if ($after[0] === $destination && (!$frame['ordered'] || !$frame['orderCompleted'])) {
+                $this->errors['Missing native move ordering hook evidence'] = true;
+            }
+            $moves[$name]['operands'] = [
+                'move-element' => $effect,
+                'move-destination' => $effect === 'detached' ? 'destination-missing'
+                    : ($before[0] === $after[0] && $after[0] === $destination ? 'unchanged' : $effect),
+                'move-as' => $effect === 'detached' ? 'destination-missing'
+                    : ($after[0] !== $destination ? 'unresolved' : ($before[1] === $after[1] ? 'alias-unchanged' : 'alias-applied')),
+                'move-before' => $moves[$name]['ignored'] ? 'ignored' : ($effect === 'detached' ? 'destination-missing'
+                    : ($after[0] !== $destination ? 'unresolved' : (!empty($frame['orderChanged']) ? 'order-applied' : 'order-unchanged'))),
+                'move-after' => $effect === 'detached' ? 'destination-missing'
+                    : ($after[0] !== $destination ? 'unresolved' : (!empty($frame['orderChanged']) ? 'order-applied' : 'order-unchanged')),
+            ];
+        }
         $this->moves[$schedule] = $moves;
     }
 
@@ -1385,11 +1595,26 @@ final class LayoutCoverage
         if ($error || $class !== GeneratorPool::class) return;
         [$schedule, $structure] = $params;
         foreach ($this->moves[$schedule] ?? [] as $name => $move) {
-            if ($move['data'] !== $schedule->getElementToMove($name)) continue;
+            if ($move['listed'] === null && LayoutXmlOwnership::nativeMethod($schedule, ScheduledStructure::class, 'getListToMove')) {
+                $this->errors['Missing native move list hook evidence'] = true;
+            }
+            if ($move['listed'] === true && $move['effect'] === null) {
+                $this->errors['Missing native move execution hook evidence'] = true;
+            }
+            if ($move['data'] !== self::moveTuple($schedule, $name)) {
+                $this->moveDecision($move, 'origin-unconfirmed');
+                continue;
+            }
+            $elements = self::moveStorage($structure, DataStructure::class, '_elements');
+            $scheduled = self::moveStorage($schedule, ScheduledStructure::class, 'scheduledElements');
             $effect = $move['effect'];
-            if ($effect === null) $effect = $structure->hasElement($name) ? 'unresolved' : 'target-missing';
-            if ($effect === 'applied' && !$schedule->hasElement($name)) $effect = 'removed';
-            $this->event($move['id'], 'layout-move-' . $effect, $move['context']);
+            if ($elements === null || $scheduled === null) $effect = 'origin-unconfirmed';
+            if ($effect === null) $effect = isset($elements[$name]) ? 'unresolved' : 'target-missing';
+            if ($effect === 'applied' && !isset($scheduled[$name])) $effect = 'removed';
+            foreach ($move['ids'] as $kind => $id) {
+                $this->event($id, 'layout-move-' . ($kind === 'move' || $effect === 'origin-unconfirmed'
+                    ? $effect : ($move['operands'][$kind] ?? $effect)), $move['context']);
+            }
         }
         foreach ($this->removals[$schedule] ?? [] as $name => $entry) {
             foreach ($entry['canceled'] ?? [] as $id => $context) $this->event($id, 'layout-removal-canceled', $context);
