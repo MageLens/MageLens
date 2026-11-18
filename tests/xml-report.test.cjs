@@ -378,6 +378,15 @@ test('layout structural and page-value reports require the correct native effect
             events: [{...event, type: 'layout-file-overridden'}]}], sources).files[1].declarations[0];
         assert.equal(displaced.state, 'unmeasured', kind);
         assert.equal(displaced.hits, 0, kind);
+        const unconfirmed = {...record, layoutHook: true, events: [{...event, type: 'layout-argument-origin-unconfirmed'}]};
+        if (['argument', 'action-argument'].includes(kind)) {
+            const item = merge(manifest, [unconfirmed], sources).files[1].declarations[0];
+            assert.equal(item.state, 'unmeasured', kind);
+            assert.equal(item.hits, 0, kind);
+            assert.match(item.reason, /unverified implementation or intercepted method/, kind);
+        } else {
+            assert.throws(() => merge(manifest, [unconfirmed], sources), /Unexpected layout effect/, kind);
+        }
         assert.throws(() => merge(manifest, [{...record, layoutHook: true,
             events: [{...event, type: 'layout-template-executed'}]}], sources), kind);
         assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [event]}], sources), /Stale XML request/);

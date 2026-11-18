@@ -75,10 +75,10 @@ const layoutEvents = {
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
     block: ['layout-block-created', 'layout-block-rendered', 'layout-block-reading-failed', 'layout-block-generation-failed'],
     action: ['layout-action-executed', 'layout-action-ambiguous'],
-    'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous'],
+    'action-argument': ['layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
     'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
     argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
-        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed'],
+        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed'],
     'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
     'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
@@ -94,6 +94,7 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-argument-origin-unconfirmed': 'The argument interpreter chain includes an unverified implementation or intercepted method. Original-source value ownership is unavailable for this argument tree.',
     'layout-origin-limit': 'Runtime layout document tracking reached its 256-document bound before this declaration could receive original-source evidence.',
     'layout-ui-denied': 'The native visibility decision removed this UI placement before component generation.',
     'layout-condition-unconfirmed': 'The custom condition source lacks a unique native composite, rule-key or bounded argument binding.',

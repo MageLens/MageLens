@@ -1,0 +1,36 @@
+// Copyright (c)  MageLens
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+for (const name of ['native', 'reader', 'generator']) {
+    const file = report.files.find(file => file.path.endsWith(`/layout/coverageprobe_argumentownership_${name}.xml`));
+    assert.ok(file, name);
+    for (const item of file.declarations.filter(item => item.supported)) {
+        const kind = item.layout.kind;
+        const argument = kind === 'argument';
+        const actionArgument = kind === 'action-argument';
+        const affected = argument && (name === 'reader' ? item.layout.element !== 'value'
+            : name === 'generator' && item.layout.element !== 'late')
+            || actionArgument && name === 'generator' && item.layout.element === 'value';
+        if (affected) {
+            assert.equal(item.state, 'unmeasured', `${name}/${item.node}`);
+            assert.equal(item.hits, 0, `${name}/${item.node}`);
+            assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-argument-origin-unconfirmed']);
+        } else {
+            assert.equal(item.state, 'covered', `${name}/${item.node}`);
+            if (argument) assert.ok(item.evidence.some(event => event.type === 'layout-argument-applied'), `${name}/${item.node}`);
+            if (actionArgument) assert.ok(item.evidence.some(event => event.type === 'layout-action-argument-applied'), `${name}/${item.node}`);
+        }
+    }
+}
+const unvisited = report.files.find(file => file.path.endsWith('/layout/coverageprobe_interpreter_index.xml'));
+assert.ok(unvisited, 'Unvisited native interpreter fixture');
+for (const item of unvisited.declarations) {
+    assert.equal(item.hits, 0, item.node);
+    assert.deepEqual(item.evidence, [], item.node);
+    if (item.supported) assert.equal(item.state, 'uncovered', item.node);
+}
+console.log('Verified native reader/generator argument ownership, equal replacements, nested tree limits and independent action-call and parameter origins.');

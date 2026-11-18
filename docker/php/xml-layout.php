@@ -43,6 +43,9 @@ final class LayoutCoverage
     private LayoutRegistryCoverage $registry;
     private LayoutXmlOwnership $ownership;
     private LayoutPackageEvents $packageEvents;
+    private LayoutArgumentOwnership $argumentOwnership;
+    private array $actionEvaluations = [];
+    private int $actionEvaluationOverflow = 0;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -76,6 +79,7 @@ final class LayoutCoverage
         $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
+        $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
             fn($xml) => $this->observeXmlReceiver($xml, false, false));
         $this->structures = new \WeakMap();
@@ -98,6 +102,8 @@ final class LayoutCoverage
     {
         $this->ownership->finish();
         $this->packageEvents->finish();
+        $this->argumentOwnership->finish();
+        if ($this->actionEvaluations) $this->errors['Unbalanced native layout action hook evidence'] = true;
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
@@ -109,6 +115,7 @@ final class LayoutCoverage
         return [
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
+            ...$this->argumentOwnership->hooks(),
             [Merge::class, '_loadFileLayoutUpdatesXml', $this->beginPackage(...), $this->completePackage(...)],
             [Layout\ProcessorInterface::class, 'getFileLayoutUpdatesXml', $this->beginPackageAccess(...), $this->packageAccess(...)],
             [FileList::class, 'replace', $this->beginFileReplacement(...), $this->completeFileReplacement(...)],
@@ -135,6 +142,7 @@ final class LayoutCoverage
             [BlockReader::class, 'scheduleReference', $this->beginArgumentSchedule(...), $this->scheduleReference(...)],
             [BlockReader::class, 'getActions', null, $this->readActions(...)],
             [BlockReader::class, 'getArguments', null, $this->readArguments(...)],
+            [BlockReader::class, 'evaluateArguments', $this->beginReaderArguments(...), $this->completeReaderArguments(...)],
             [MoveReader::class, 'scheduleMove', null, $this->scheduleMove(...)],
             [GeneratorPool::class, 'moveElementInStructure', $this->beginMove(...), $this->completeMove(...)],
             [ScheduledStructure::class, 'setElementToRemoveList', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
@@ -151,13 +159,13 @@ final class LayoutCoverage
             [XmlConfig::class, 'applyExtends', $this->layoutXmlWrite(...), null],
             [Layout::class, 'createIsolatedReaderContext', $this->snapshotContext(...), $this->mirrorContext(...)],
             [BlockGenerator::class, 'generateBlock', $this->beginBlock(...), $this->completeBlock(...)],
-            [BlockGenerator::class, 'evaluateArguments', null, $this->evaluatedArguments(...)],
+            [BlockGenerator::class, 'evaluateArguments', $this->beginGeneratorArguments(...), $this->evaluatedArguments(...)],
             [Updater::class, 'evaluate', $this->beginArgumentUpdate(...), $this->completeArgumentUpdate(...)],
             [Updater::class, 'applyUpdater', null, $this->appliedArgumentUpdater(...)],
             [BlockGenerator::class, 'getBlockInstance', $this->beginClass(...), $this->constructedClass(...)],
             [DataStructure::class, 'addToParentGroup', null, $this->registeredGroup(...)],
             [DataObject::class, 'setData', null, $this->assignedTtl(...)],
-            [BlockGenerator::class, 'generateAction', null, $this->completeAction(...)],
+            [BlockGenerator::class, 'generateAction', $this->beginAction(...), $this->completeAction(...)],
             [DataObject::class, 'setData', null, $this->applyArguments(...)],
             [DataObject::class, 'unsetData', null, $this->removeArgumentData(...)],
             [DataObject::class, 'offsetSet', null, $this->removeArgumentData(...)],
@@ -939,6 +947,7 @@ final class LayoutCoverage
         if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
         if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
         if ((new \ReflectionMethod($reader, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
+        $this->argumentOwnership->supply($arguments, $reader);
         $xml = $params[0];
         $origins = [];
         foreach ($xml->arguments[0]->argument ?? [] as $node) {
@@ -960,6 +969,32 @@ final class LayoutCoverage
             }
         }
         if (array_keys($origins) === array_keys($arguments)) $this->argumentReads[$xml] = $origins;
+    }
+
+    private function beginReaderArguments($reader, array $params, string $class): void
+    {
+        if ($class === BlockReader::class) $this->argumentOwnership->beginBatch($reader, true);
+    }
+
+    private function completeReaderArguments($reader, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== BlockReader::class) return;
+        $names = $this->argumentOwnership->endBatch($error);
+        if ($error || !$names) return;
+        $xml = $params[0];
+        $origins = $this->argumentReads[$xml] ?? [];
+        [, $context] = $this->origin($xml);
+        foreach ($names as $name) {
+            if ($context !== null) $this->unconfirmedArgument($origins[$name] ?? [], $context);
+            $origins[$name] = [];
+        }
+        $this->argumentReads[$xml] = $origins;
+    }
+
+    private function unconfirmedArgument(array $origin, array $context): void
+    {
+        foreach (self::argumentRootIds($origin) as $id) $this->event($id, 'layout-argument-origin-unconfirmed', $context);
+        foreach ($origin['children'] ?? [] as $child) $this->unconfirmedArgument($child, $context);
     }
 
     private function argumentOrigins($node): array
@@ -1355,7 +1390,7 @@ final class LayoutCoverage
     {
         if ($class !== BlockGenerator::class) return;
         $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
-            'generator' => get_class($generator), 'applied' => [], 'arguments' => [],
+            'generator' => get_class($generator), 'applied' => [], 'arguments' => [], 'evaluationObserved' => false,
             'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
     }
 
@@ -1404,14 +1439,33 @@ final class LayoutCoverage
         if ($class === Updater::class) array_pop($this->updatingArguments);
     }
 
+    private function beginGeneratorArguments($generator, array $params, string $class): void
+    {
+        if ($class === BlockGenerator::class) $this->argumentOwnership->beginBatch($generator, false, $params[0]);
+    }
+
     private function evaluatedArguments($generator, array $params, $values, ?\Throwable $error, string $class): void
     {
+        if ($class !== BlockGenerator::class) return;
+        $names = $this->argumentOwnership->endBatch($error);
+        $caller = self::nativeCaller($generator, 'evaluateArguments');
+        if (($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'generateAction') {
+            $action = array_key_last($this->actionEvaluations);
+            if ($this->actionEvaluationOverflow) return;
+            if ($action === null) $this->errors['Missing native layout action hook evidence'] = true;
+            else $this->actionEvaluations[$action] = ['observed' => true, 'unconfirmed' => $names];
+            return;
+        }
         $index = array_key_last($this->generating);
         if ($error || $class !== BlockGenerator::class || $index === null) return;
-        $caller = self::nativeCaller($generator, 'evaluateArguments');
         if (($caller['class'] ?? null) !== BlockGenerator::class || ($caller['function'] ?? null) !== 'generateBlock'
             || (new \ReflectionMethod($generator, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
+        $this->generating[$index]['evaluationObserved'] = true;
         $frame = $this->generating[$index];
+        foreach ($names as $name) {
+            if (isset($frame['source']['context'])) $this->unconfirmedArgument($frame['source']['arguments'][$name] ?? [], $frame['source']['context']);
+            unset($frame['source']['arguments'][$name]);
+        }
         $origins = $this->resolveArgumentValues($frame['source']['arguments'] ?? [], $params[0], $values);
         $this->generating[$index]['arguments'] = $origins;
         if (!empty($frame['source']['context'])) $this->argumentEvaluationEvents($origins, $frame['source']['context']);
@@ -1619,6 +1673,9 @@ final class LayoutCoverage
         }
         if (!$block instanceof AbstractBlock) return;
         $source = $frame['source'];
+        if (!empty($source['arguments']) && !$frame['evaluationObserved']) {
+            $this->errors['Missing native layout generator argument batch hook evidence'] = true;
+        }
         $context = $source['context'];
         $blockId = $source['block'] ?? null;
         $templateId = $frame['selected'] === $block ? ($source['template'] ?? null) : null;
@@ -1657,9 +1714,26 @@ final class LayoutCoverage
         return $calls;
     }
 
+    private function beginAction($generator, array $params, string $class): void
+    {
+        if ($class !== BlockGenerator::class) return;
+        if ($this->actionEvaluationOverflow || count($this->actionEvaluations) >= 256) {
+            $this->actionEvaluationOverflow++;
+            $this->errors['Layout action evaluation nesting exceeded 256 calls'] = true;
+            return;
+        }
+        $this->actionEvaluations[] = ['observed' => false, 'unconfirmed' => []];
+    }
+
     private function completeAction($generator, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($error || $class !== BlockGenerator::class) return;
+        if ($class !== BlockGenerator::class) return;
+        if ($this->actionEvaluationOverflow) {
+            $this->actionEvaluationOverflow--;
+            return;
+        }
+        $evaluation = array_pop($this->actionEvaluations);
+        if ($error) return;
         [$block, $method, $arguments] = $params;
         if (empty($this->blocks[$block]['actions'])) return;
         $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
@@ -1667,11 +1741,15 @@ final class LayoutCoverage
         if ((new \ReflectionMethod($generator, 'generateAction'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
         $state = $this->blocks[$block];
         $origins = $state['actions'][self::digest([$method, $arguments])] ?? [];
+        if ($origins && empty($evaluation['observed'])) $this->errors['Missing native action argument evaluation hook evidence'] = true;
         $effect = count($origins) === 1 ? 'layout-action-executed' : 'layout-action-ambiguous';
         foreach ($origins as $origin) {
             $this->event($origin['id'], $effect, $state['context']);
-            foreach ($origin['arguments'] as $id) {
-                $this->event($id, count($origins) === 1 ? 'layout-action-argument-applied' : 'layout-action-argument-ambiguous', $state['context']);
+            foreach ($origin['arguments'] as $position => $id) {
+                $name = array_keys($arguments)[$position] ?? null;
+                $argumentEffect = in_array($name, $evaluation['unconfirmed'] ?? [], true) ? 'layout-argument-origin-unconfirmed'
+                    : (count($origins) === 1 ? 'layout-action-argument-applied' : 'layout-action-argument-ambiguous');
+                $this->event($id, $argumentEffect, $state['context']);
             }
         }
     }
