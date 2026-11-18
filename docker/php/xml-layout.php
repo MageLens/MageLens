@@ -263,6 +263,7 @@ final class LayoutCoverage
             [\Magento\Framework\Cache\LockGuardedCacheLoader::class, 'lockedLoadData', $this->beginBlockCacheLoader(...), null],
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
             [Template::class, 'fetchView', $this->beginTemplate(...), $this->completeTemplate(...)],
+            [Template\File\Validator::class, 'isValid', $this->beginTemplateValidation(...), $this->completeTemplateValidation(...)],
             [Php::class, '__construct', $this->watchTemplateEngine(...), null],
             [\Magento\Framework\View\TemplateEnginePool::class, 'get', null, $this->selectedTemplateEngine(...)],
             [Php::class, 'render',
@@ -2498,21 +2499,57 @@ final class LayoutCoverage
             $this->event($origin, $limitation ?? 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
             $origin = null;
         }
+        $sourceOrigin = $origin;
+        $dependencyLimits = [];
         $property = LayoutXmlOwnership::unhookedProperty($block, 'templateContext');
         $poolProperty = LayoutXmlOwnership::unhookedProperty($block, 'templateEnginePool');
         $context = $property?->getRawValue($block);
         $pool = $poolProperty?->getRawValue($block);
         if ($origin !== null && (!is_object($context) || !is_object($pool))) {
-            if (!is_object($context)) $this->event($origin, 'layout-template-context-storage-unconfirmed', $this->blocks[$block]['context']);
-            if (!is_object($pool)) $this->event($origin, 'layout-template-engine-pool-storage-unconfirmed', $this->blocks[$block]['context']);
+            if (!is_object($context)) $dependencyLimits[] = 'layout-template-context-storage-unconfirmed';
+            if (!is_object($pool)) $dependencyLimits[] = 'layout-template-engine-pool-storage-unconfirmed';
             $origin = null;
         }
-        $this->fetching[] = ['origin' => $origin, 'executed' => false, 'file' => $params[0],
+        $this->fetching[] = ['origin' => $origin, 'sourceOrigin' => $sourceOrigin, 'dependencyLimits' => $dependencyLimits,
+            'validation' => null, 'executed' => false, 'file' => $params[0],
             'block' => $origin === null ? null : $context, 'owner' => $block,
             'engine' => null, 'engineObserved' => false, 'engineExpected' => false, 'observedEngine' => null,
             'poolObserved' => false, 'poolExpected' => is_object($pool) && method_exists($pool, 'get')
                 && (new \ReflectionMethod($pool, 'get'))->getDeclaringClass()->getName()
                 === \Magento\Framework\View\TemplateEnginePool::class];
+    }
+
+    private function templateValidationFrame($validator, array $params, string $class, bool $checkInput = true): ?int
+    {
+        $index = array_key_last($this->fetching);
+        if ($index === null || $this->fetchingOverflow || $class !== Template\File\Validator::class) return null;
+        $caller = self::nativeCaller($validator, 'isValid');
+        $frame = $this->fetching[$index];
+        return ($caller['class'] ?? null) === Template::class && ($caller['function'] ?? null) === 'fetchView'
+            && ($caller['object'] ?? null) === $frame['owner']
+            && (!$checkInput || ($params[0] ?? null) === $frame['file']) ? $index : null;
+    }
+
+    private function beginTemplateValidation($validator, array $params, string $class): void
+    {
+        $index = $this->templateValidationFrame($validator, $params, $class);
+        if ($index === null) return;
+        if ($this->fetching[$index]['validation'] !== null) $this->errors['Repeated native template validation hook evidence'] = true;
+        $this->fetching[$index]['validation'] = ['validator' => $validator, 'complete' => false, 'rejected' => false];
+    }
+
+    private function completeTemplateValidation($validator, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        // Native validation normalizes its local filename, including false to an empty string.
+        $index = $this->templateValidationFrame($validator, $params, $class, false);
+        if ($index === null) return;
+        $proof = $this->fetching[$index]['validation'];
+        if ($proof === null || $proof['validator'] !== $validator || $proof['complete']) {
+            $this->errors['Unbalanced native template validation hook evidence'] = true;
+            return;
+        }
+        $this->fetching[$index]['validation']['complete'] = true;
+        $this->fetching[$index]['validation']['rejected'] = !$error && $result === false;
     }
 
     private function watchTemplateEngine($engine): void
@@ -2576,6 +2613,13 @@ final class LayoutCoverage
     {
         if ($this->fetchingOverflow) { $this->fetchingOverflow--; return; }
         $frame = array_pop($this->fetching);
+        $validation = $frame['validation'];
+        if ($validation !== null && !$validation['complete']) $this->errors['Unbalanced native template validation hook evidence'] = true;
+        $rejected = $validation !== null && $validation['complete'] && $validation['rejected'];
+        if ($frame['sourceOrigin'] !== null) {
+            if ($rejected) $this->event($frame['sourceOrigin'], 'layout-template-validation-rejected', $this->blocks[$block]['context']);
+            else foreach ($frame['dependencyLimits'] as $type) $this->event($frame['sourceOrigin'], $type, $this->blocks[$block]['context']);
+        }
         if ($frame['engine'] !== null) {
             $knownEngine = $this->engineBeforePlugin->complete($frame['engine'], $error,
                 $frame['origin'] !== null && $frame['observedEngine'] === $frame['engine']);
@@ -2587,15 +2631,15 @@ final class LayoutCoverage
         if (!$error && $frame['origin'] !== null && $frame['poolExpected'] && $frame['engineObserved'] && !$frame['poolObserved']) {
             $this->errors['Missing native template engine pool hook evidence'] = true;
         }
-        if ($error && $frame['origin']) {
-            $this->event($frame['origin'], 'layout-template-failed', $this->blocks[$block]['context']);
+        if ($error && $frame['sourceOrigin']) {
+            $this->event($frame['sourceOrigin'], 'layout-template-failed', $this->blocks[$block]['context']);
         }
         if ($frame['origin'] && $frame['executed']) {
             $state = $this->blocks[$block];
             $state['executed'] = $frame['origin'];
             $this->blocks[$block] = $state;
             $this->event($frame['origin'], 'layout-template-executed', $state['context']);
-        } elseif (!$error && $frame['origin']) {
+        } elseif (!$error && !$rejected && $frame['origin']) {
             $this->event($frame['origin'], 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
         }
     }

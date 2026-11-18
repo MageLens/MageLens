@@ -585,6 +585,12 @@ test('template selection and an unconfirmed execution input retain independent e
     assert.equal(selected.state, 'unmeasured');
     assert.equal(selected.hits, 0);
     assert.ok(selected.evidence.some(event => event.type === 'layout-template-origin-unconfirmed'));
+    const rejected = merge(manifest, [{...record, layoutHook: true,
+        events: [{...event, type: 'layout-template-selected'}, {...event, type: 'layout-template-validation-rejected'}]}], sources).files[1].declarations[0];
+    assert.equal(rejected.state, 'unmeasured');
+    assert.equal(rejected.hits, 0);
+    assert.match(rejected.reason, /native template file validator rejected/);
+    assert.equal(rejected.evidence.length, 2);
     const cached = merge(manifest, [{...record, layoutHook: true,
         events: [{...event, type: 'layout-template-cache-unconfirmed'}]}], sources).files[1].declarations[0];
     assert.equal(cached.state, 'unmeasured');

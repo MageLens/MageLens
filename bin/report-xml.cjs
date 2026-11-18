@@ -90,7 +90,7 @@ const layoutEvents = {
     'wireframe-selection': ['layout-wireframe-selected', 'layout-wireframe-origin-unconfirmed'],
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
     template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed', 'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed',
-        'layout-template-resolver-storage-unconfirmed', 'layout-template-context-storage-unconfirmed', 'layout-template-engine-pool-storage-unconfirmed'],
+        'layout-template-resolver-storage-unconfirmed', 'layout-template-context-storage-unconfirmed', 'layout-template-engine-pool-storage-unconfirmed', 'layout-template-validation-rejected'],
 };
 for (const name of ['element', 'destination', 'as', 'before', 'after']) {
     const effects = name === 'as' ? ['alias-applied', 'alias-unchanged', 'destination-missing']
@@ -136,7 +136,7 @@ const layoutDecisions = {
     'layout-block-render-origin-unconfirmed': 'A shared block object has multiple original layout declarations. A direct PHP render lacks a unique layout element origin.',
     'layout-block-cache-unconfirmed': 'The native block HTML cache path supplied data while fresh template execution was bypassed. The original source of the cached bytes is unverified.',
     'layout-template-cache-unconfirmed': 'Cached block HTML bypassed this selected template. Cached bytes do not establish fresh original XML template execution.',
-    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, so native XML selection cannot establish original template execution ownership. Hooked or magic property storage can replace the selection even when values match.',
+    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, or template validation supplied no attributable native decision. Native XML selection cannot establish original template execution ownership. Hooked or magic property storage can replace the selection even when values match.',
     'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation, plugin or hooked, magic or uninitialized lazy data storage. Their later application lacks verified original ownership.',
     'layout-argument-storage-unconfirmed': 'The block data property became hooked, unset, magic or subject to unverified lazy initialization. Original application evidence is retained; later reads lack verified XML lineage.',
     'layout-block-class-defaulted': 'The native generator selected its configured default class after treating the XML attribute as empty.',
@@ -180,6 +180,7 @@ const layoutDecisions = {
     'layout-block-attribute-overridden': 'A later declaration supplied the block attribute used by the native generator.',
     'layout-block-ttl-origin-unconfirmed': 'The native TTL setter reached hooked, magic or uninitialized lazy data storage. Its assignment lacks verified original XML ownership.',
     'layout-cacheability-target-missing': 'The native cacheability check found that the noncacheable declaration had no surviving structural element.',
+    'layout-template-validation-rejected': 'The native template file validator rejected the effective file at the original template fetch boundary. No PHP template execution occurred on this path.',
     'layout-template-failed': 'The native template fetch boundary failed. Any independently completed engine execution remains a separate fact.',
     'layout-template-replaced': 'A later PHP template assignment replaced this XML selection before template execution.',
     'layout-container-attribute-overridden': 'A later container declaration supplied the attribute used during generation.',

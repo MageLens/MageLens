@@ -13,8 +13,9 @@ for (const name of ['empty', 'missing', 'throw', 'after']) {
     const template = file.declarations.find(item => item.layout.kind === 'template');
     const types = [...new Set(template.evidence.map(event => event.type))].sort();
     assert.deepEqual(types, ['empty', 'after'].includes(name) ? ['layout-template-executed', 'layout-template-selected']
-        : name === 'throw' || mode === 'developer' ? ['layout-template-failed', 'layout-template-selected']
-        : ['layout-template-origin-unconfirmed', 'layout-template-selected'], name);
+        : name === 'throw' ? ['layout-template-failed', 'layout-template-selected']
+        : [...(mode === 'developer' ? ['layout-template-failed'] : []), 'layout-template-selected', 'layout-template-validation-rejected'], name);
+    if (name === 'missing') assert.match(template.reason, /native template file validator rejected/);
     assert.equal(template.state, ['empty', 'after'].includes(name) ? 'covered' : 'unmeasured', name);
     assert.equal(template.hits > 0, ['empty', 'after'].includes(name), name);
     const block = file.declarations.find(item => item.layout.kind === 'block');
