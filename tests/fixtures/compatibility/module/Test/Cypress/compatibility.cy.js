@@ -170,7 +170,7 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...elements].map(element => element.textContent)).to.deep.equal(['xml-value', 'xml-value', 'xml-value']);
         });
         cy.visit('/coverageprobe/templateownership/');
-        cy.get('[data-layout-mutation]').should('have.length', 4).each(element => {
+        cy.get('[data-layout-mutation]').should('have.length', 5).each(element => {
             cy.wrap(element).should('have.text', 'xml-value');
         });
         cy.visit('/coverageprobe/classclear/');

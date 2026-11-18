@@ -91,7 +91,7 @@ final class LayoutXmlOwnership
         if ($native === \Magento\Framework\ObjectManager\ObjectManager::class) {
             $parents[] = \Magento\Framework\App\ObjectManager::class;
         }
-        $parents = self::templateParents($object, $native, $method, $parents);
+        $parents = self::renderingParents($object, $native, $method, $parents);
         if (!in_array(get_class($object), $parents, true) && !self::generated($object, $parents)) return false;
         $owner = (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName();
         return $owner === $native || ($owner === get_class($object) && self::interceptor($object, $parents));
@@ -99,7 +99,7 @@ final class LayoutXmlOwnership
 
     public function watchProducer(object $object, string $native, string $method, \Closure $pre, \Closure $post): void
     {
-        if (!self::interceptor($object, self::templateParents($object, $native, $method, [$native]))
+        if (!self::interceptor($object, self::renderingParents($object, $native, $method, [$native]))
             || (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName() !== get_class($object)) return;
         $class = get_class($object);
         $key = $class . '::' . $method;
@@ -120,10 +120,11 @@ final class LayoutXmlOwnership
         }
     }
 
-    private static function templateParents(object $object, string $native, string $method, array $parents): array
+    private static function renderingParents(object $object, string $native, string $method, array $parents): array
     {
         if (!in_array($native, [\Magento\Framework\View\Element\Template::class,
-            \Magento\Framework\View\Element\Template\File\Resolver::class], true) || !$object instanceof $native) return $parents;
+            \Magento\Framework\View\Element\Template\File\Resolver::class,
+            \Magento\Framework\View\TemplateEngine\Php::class], true) || !$object instanceof $native) return $parents;
         $parent = get_parent_class($object);
         if ($parent && is_a($parent, $native, true)
             && (new \ReflectionMethod($parent, $method))->getDeclaringClass()->getName() === $native) $parents[] = $parent;

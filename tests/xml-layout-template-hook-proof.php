@@ -20,8 +20,12 @@ if (!in_array($mode, ['native', 'getter', 'file', 'resolver', 'fallback', 'compi
     'file-plugin', 'resolver-plugin', 'around', 'compiled-getter-plugin', 'compiled-file-plugin', 'compiled-resolver-plugin',
     'compiled-around', 'missing-getter', 'missing-file', 'missing-resolver', 'missing-getter-pre', 'missing-getter-post',
     'resolution-depth', 'resolver-fallback', 'compiled-resolver-fallback', 'custom-theme-plugin', 'missing-theme-plugin',
-    'missing-plugin-lookup'], true)) throw new RuntimeException('Unknown template proof mode');
-$case = in_array($mode, ['getter', 'file', 'resolver'], true) ? $mode : 'native';
+    'missing-plugin-lookup', 'engine', 'engine-inherited', 'engine-fallback', 'compiled-engine-fallback',
+    'engine-plugin', 'compiled-engine-plugin', 'engine-around', 'compiled-engine-around', 'missing-engine',
+    'missing-engine-pre', 'missing-engine-post', 'missing-engine-wrapper', 'missing-engine-plugin',
+    'missing-engine-lookup', 'missing-engine-pool', 'rendering-depth', 'before-plugin-depth',
+    'engine-inherited-fallback'], true)) throw new RuntimeException('Unknown template proof mode');
+$case = in_array($mode, ['getter', 'file', 'resolver', 'engine'], true) ? $mode : 'native';
 $path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_templateownership_' . $case . '.xml';
 $source = file_get_contents(BP . '/' . $path);
 $declarations = LayoutManifest::declarations($path, $source);
@@ -34,6 +38,14 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
     if ($missing === [$class, $method]) continue;
     if ($mode === 'missing-theme-plugin' && $class === \Magento\ProductAlert\Model\UpdateThemeParams::class) continue;
     if ($mode === 'missing-plugin-lookup' && $class === \Magento\Framework\Interception\PluginListInterface::class && $method === 'getPlugin') continue;
+    if ($mode === 'missing-engine-lookup' && $class === \Magento\Framework\Interception\PluginListInterface::class && $method === 'getPlugin') continue;
+    if ($mode === 'missing-engine-plugin' && $class === 'Hyva\\Theme\\Plugin\\TemplateEngine\\PhpPlugin') continue;
+    if ($mode === 'missing-engine-pool' && $class === \Magento\Framework\View\TemplateEnginePool::class) continue;
+    if ($class === \Magento\Framework\View\TemplateEngine\Php::class && $method === 'render') {
+        if ($mode === 'missing-engine') continue;
+        if ($mode === 'missing-engine-pre') $pre = null;
+        if ($mode === 'missing-engine-post') $post = null;
+    }
     if ($class === Template::class && $method === 'getTemplate') {
         if ($mode === 'missing-getter-pre') $pre = null;
         if ($mode === 'missing-getter-post') $post = null;
@@ -48,14 +60,34 @@ $plugin = match ($mode) {
     'file-plugin', 'compiled-file-plugin' => \MageLens\Compatibility\Model\LayoutTemplateFilePlugin::class,
     'resolver-plugin', 'compiled-resolver-plugin' => \MageLens\Compatibility\Model\LayoutTemplateResolverPlugin::class,
     'around', 'compiled-around' => \MageLens\Compatibility\Model\LayoutTemplateAround::class,
+    'engine-plugin', 'compiled-engine-plugin' => \MageLens\Compatibility\Model\LayoutEngineBefore::class,
+    'engine-around', 'compiled-engine-around' => \MageLens\Compatibility\Model\LayoutEngineAround::class,
     default => null,
 };
 if ($mode === 'custom-theme-plugin') {
     $objects->configure(['preferences' => [\Magento\ProductAlert\Model\UpdateThemeParams::class => \MageLens\Compatibility\Model\LayoutTemplateBefore::class]]);
 }
-if ($plugin !== null || in_array($mode, ['fallback', 'compiled-fallback', 'resolver-fallback', 'compiled-resolver-fallback', 'missing-plugin-lookup'], true)) {
-    layoutNativeInterceptor($objects, str_contains($mode, 'resolver-') || $mode === 'missing-plugin-lookup' ? Template\File\Resolver::class : Template::class,
+$engineWrapper = str_contains($mode, 'engine-') && in_array($mode, ['engine-fallback', 'compiled-engine-fallback', 'engine-plugin',
+    'compiled-engine-plugin', 'engine-around', 'compiled-engine-around', 'missing-engine-wrapper', 'missing-engine-lookup', 'engine-inherited-fallback'], true);
+if ($plugin !== null || $engineWrapper || in_array($mode, ['fallback', 'compiled-fallback', 'resolver-fallback', 'compiled-resolver-fallback', 'missing-plugin-lookup'], true)) {
+    $native = $engineWrapper ? \Magento\Framework\View\TemplateEngine\Php::class
+        : (str_contains($mode, 'resolver-') || $mode === 'missing-plugin-lookup' ? Template\File\Resolver::class : Template::class);
+    if ($mode === 'engine-inherited-fallback') $native = \MageLens\Compatibility\Model\LayoutEngineInherited::class;
+    layoutNativeInterceptor($objects, $native,
         $plugin, str_starts_with($mode, 'compiled-'));
+}
+if ($mode === 'missing-engine-wrapper') {
+    $ownership = (new ReflectionProperty(LayoutCoverage::class, 'ownership'))->getValue($collector);
+    (new ReflectionProperty(\MageLens\XmlCoverage\LayoutXmlOwnership::class, 'watched'))->setValue($ownership,
+        [\Magento\Framework\View\TemplateEngine\Php::class . '\\Interceptor::render' => true]);
+}
+if ($mode === 'rendering-depth') {
+    (new ReflectionProperty(LayoutCoverage::class, 'fetching'))->setValue($collector, array_fill(0, 256, []));
+}
+if ($mode === 'before-plugin-depth') {
+    $before = (new ReflectionProperty(LayoutCoverage::class, 'engineBeforePlugin'))->getValue($collector);
+    (new ReflectionProperty(\MageLens\XmlCoverage\LayoutBeforePluginOwnership::class, 'calls'))->setValue($before,
+        array_fill(0, 256, ['object' => new stdClass()]));
 }
 if ($mode === 'resolution-depth') {
     $templates = (new ReflectionProperty(LayoutCoverage::class, 'templateOwnership'))->getValue($collector);
@@ -72,6 +104,14 @@ if ($case === 'resolver') {
     (new ReflectionProperty(Template::class, 'resolver'))->setValue($block,
         $objects->create(\MageLens\Compatibility\Model\LayoutTemplateResolver::class));
 }
+if ($case === 'engine' || in_array($mode, ['engine-inherited', 'engine-inherited-fallback'], true)) {
+    $property = new ReflectionProperty(Template::class, 'templateEnginePool');
+    $pool = clone $property->getValue($block);
+    (new ReflectionProperty(\Magento\Framework\View\TemplateEnginePool::class, 'engines'))->setValue($pool,
+        ['phtml' => $objects->create($case !== 'engine' ? \MageLens\Compatibility\Model\LayoutEngineInherited::class
+            : \MageLens\Compatibility\Model\LayoutTemplateEngine::class)]);
+    $property->setValue($block, $pool);
+}
 if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')) {
     throw new RuntimeException('Native template fixture output changed');
 }
@@ -83,13 +123,22 @@ echo "Verified native template fixture output for $mode.\n";
 if (($argv[2] ?? '') === '--native-only') exit;
 try {
     $collector->finish();
-    if (str_starts_with($mode, 'missing-') || $mode === 'resolution-depth') throw new LogicException('Missing template observation was accepted');
+    if (str_starts_with($mode, 'missing-') || in_array($mode, ['resolution-depth', 'rendering-depth', 'before-plugin-depth'], true)) throw new LogicException('Missing template observation was accepted');
 } catch (RuntimeException $error) {
     $expected = ['missing-getter' => 'Missing native template getter hook evidence',
         'missing-file' => 'Missing native template file getter hook evidence',
         'missing-resolver' => 'Missing native template resolver hook evidence',
         'missing-theme-plugin' => 'Missing native template theme parameter hook evidence',
         'missing-plugin-lookup' => 'Missing native template resolver plugin lookup hook evidence',
+        'missing-engine' => 'Missing native template engine hook evidence',
+        'missing-engine-pre' => 'Unbalanced layout producer hook evidence',
+        'missing-engine-post' => 'Unbalanced XML handoff hook evidence',
+        'missing-engine-wrapper' => 'Missing generated template engine hook evidence',
+        'missing-engine-plugin' => 'Missing native template engine before-plugin hook evidence',
+        'missing-engine-lookup' => 'Missing native template engine plugin lookup hook evidence',
+        'missing-engine-pool' => 'Missing native template engine pool hook evidence',
+        'rendering-depth' => 'Layout template rendering nesting exceeded 256 calls',
+        'before-plugin-depth' => 'Layout before-plugin nesting exceeded 256 calls',
         'missing-getter-pre' => 'Unbalanced layout producer hook evidence',
         'missing-getter-post' => 'Unbalanced XML handoff hook evidence',
         'resolution-depth' => 'Layout template resolution nesting exceeded 256 calls'][$mode] ?? null;
@@ -102,7 +151,8 @@ $template = array_values(array_filter($declarations, static fn($item) => $item['
 $effects = array_values(array_unique(array_column(array_filter($events,
     static fn($event) => $event['id'] === $template['id']), 'type')));
 sort($effects);
-$expected = in_array($mode, ['native', 'fallback', 'compiled-fallback', 'resolver-fallback', 'compiled-resolver-fallback'], true) ? ['layout-template-executed', 'layout-template-selected']
+$expected = in_array($mode, ['native', 'fallback', 'compiled-fallback', 'resolver-fallback', 'compiled-resolver-fallback',
+    'engine-inherited', 'engine-inherited-fallback', 'engine-fallback', 'compiled-engine-fallback'], true) ? ['layout-template-executed', 'layout-template-selected']
     : ['layout-template-origin-unconfirmed', 'layout-template-selected'];
 if ($effects !== $expected) throw new RuntimeException('Equal runtime template replacement retained original execution ownership');
 echo "Verified original template execution ownership for $mode.\n";

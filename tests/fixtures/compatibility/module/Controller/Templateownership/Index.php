@@ -28,13 +28,20 @@ class Index implements HttpGetActionInterface
     public function execute(): Raw
     {
         $output = '';
-        foreach (['native', 'getter', 'file', 'resolver'] as $case) {
+        foreach (['native', 'getter', 'file', 'resolver', 'engine'] as $case) {
             $page = $this->pages->create(true, ['isIsolated' => true]);
             $page->addHandle('coverageprobe_templateownership_' . $case);
             $block = $page->getLayout()->getBlock('magelens.layout.template.' . $case);
             if ($case === 'resolver') {
                 (new \ReflectionProperty(Template::class, 'resolver'))->setValue($block,
                     $this->objects->create(\MageLens\Compatibility\Model\LayoutTemplateResolver::class));
+            }
+            if ($case === 'engine') {
+                $poolProperty = new \ReflectionProperty(Template::class, 'templateEnginePool');
+                $pool = clone $poolProperty->getValue($block);
+                (new \ReflectionProperty(\Magento\Framework\View\TemplateEnginePool::class, 'engines'))->setValue($pool,
+                    ['phtml' => $this->objects->create(\MageLens\Compatibility\Model\LayoutTemplateEngine::class)]);
+                $poolProperty->setValue($block, $pool);
             }
             $html = $block->toHtml();
             if (!str_contains($html, 'data-layout-mutation>xml-value</span>')) {

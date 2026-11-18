@@ -94,7 +94,7 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
 }
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
-    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter or filename resolver, so native XML selection cannot establish original template execution ownership.',
+    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, so native XML selection cannot establish original template execution ownership.',
     'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation or plugin. Their later application lacks verified original ownership.',
     'layout-block-class-defaulted': 'The native generator selected its configured default class after treating the XML attribute as empty.',
     'layout-block-class-origin-unconfirmed': 'Block creation used an unverified factory, object-manager dependency or intercepted creation method. Original-source class ownership is unavailable.',

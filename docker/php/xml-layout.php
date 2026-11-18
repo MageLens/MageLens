@@ -47,6 +47,7 @@ final class LayoutCoverage
     private LayoutPackageEvents $packageEvents;
     private LayoutArgumentOwnership $argumentOwnership;
     private LayoutTemplateOwnership $templateOwnership;
+    private LayoutBeforePluginOwnership $engineBeforePlugin;
     private array $actionEvaluations = [];
     private int $actionEvaluationOverflow = 0;
     private \WeakMap $merges;
@@ -70,6 +71,7 @@ final class LayoutCoverage
     private int $blockObjectOverflow = 0;
     private \WeakMap $blocks;
     private array $fetching = [];
+    private int $fetchingOverflow = 0;
     private bool $healthy = false;
     private bool $sourceTrace = false;
     private array $limitations = [];
@@ -85,6 +87,11 @@ final class LayoutCoverage
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
+        $this->engineBeforePlugin = new LayoutBeforePluginOwnership([
+            'native' => Php::class, 'method' => 'render', 'name' => 'php_template_engine_plugin',
+            'plugin' => 'Hyva\\Theme\\Plugin\\TemplateEngine\\PhpPlugin', 'callback' => 'beforeRender',
+            'label' => 'template engine', 'pluginLabel' => 'template engine before-plugin',
+        ]);
         $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
             fn($xml) => $this->observeXmlReceiver($xml, false, false));
@@ -108,6 +115,8 @@ final class LayoutCoverage
     {
         $this->ownership->finish();
         $this->templateOwnership->finish();
+        $this->engineBeforePlugin->finish();
+        if ($this->fetching || $this->fetchingOverflow) $this->errors['Unbalanced template rendering hook evidence'] = true;
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
         if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
@@ -196,12 +205,21 @@ final class LayoutCoverage
             [AbstractBlock::class, '_loadCache', null, $this->loadBlockHtml(...)],
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
             [Template::class, 'fetchView', $this->beginTemplate(...), $this->completeTemplate(...)],
-            [Php::class, 'render', null, $this->renderTemplate(...)],
+            [Php::class, '__construct', $this->watchTemplateEngine(...), null],
+            [\Magento\Framework\View\TemplateEnginePool::class, 'get', null, $this->selectedTemplateEngine(...)],
+            [Php::class, 'render',
+                function ($engine, array $params, string $class): void {
+                    if ($class === Php::class) $this->beginTemplateEngine($engine, $params, $class);
+                },
+                function ($engine, array $params, $result, ?\Throwable $error, string $class): void {
+                    if ($class === Php::class) $this->renderTemplate($engine, $params, $result, $error, $class);
+                }],
             ...$this->page->hooks(),
             ...$this->structureCoverage->hooks(),
             ...$this->positions->hooks(),
             ...$this->registry->hooks(),
             ...$this->templateOwnership->hooks(),
+            ...$this->engineBeforePlugin->hooks(),
         ];
     }
 
@@ -1975,6 +1993,11 @@ final class LayoutCoverage
 
     private function beginTemplate($block, array $params, string $class): void
     {
+        if ($this->fetchingOverflow || count($this->fetching) >= 256) {
+            $this->fetchingOverflow++;
+            $this->errors['Layout template rendering nesting exceeded 256 calls'] = true;
+            return;
+        }
         $caller = self::nativeCaller($block, 'fetchView');
         $origin = $class === Template::class && ($caller['class'] ?? null) === Template::class
             && ($caller['function'] ?? null) === '_toHtml' ? ($this->blocks[$block]['template'] ?? null) : null;
@@ -1984,23 +2007,88 @@ final class LayoutCoverage
         }
         static $property;
         $property ??= new \ReflectionProperty(Template::class, 'templateContext');
+        static $poolProperty;
+        $poolProperty ??= new \ReflectionProperty(Template::class, 'templateEnginePool');
+        $pool = $poolProperty->getValue($block);
         $this->fetching[] = ['origin' => $origin, 'executed' => false, 'file' => $params[0],
-            'block' => $origin === null ? null : $property->getValue($block)];
+            'block' => $origin === null ? null : $property->getValue($block), 'owner' => $block,
+            'engine' => null, 'engineObserved' => false, 'engineExpected' => false, 'observedEngine' => null,
+            'poolObserved' => false, 'poolExpected' => (new \ReflectionMethod($pool, 'get'))->getDeclaringClass()->getName()
+                === \Magento\Framework\View\TemplateEnginePool::class];
+    }
+
+    private function watchTemplateEngine($engine): void
+    {
+        $this->ownership->watchProducer($engine, Php::class, 'render', $this->beginTemplateEngine(...), $this->renderTemplate(...));
+    }
+
+    private function selectedTemplateEngine($pool, array $params, $engine, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->fetching);
+        if ($error || $index === null || $this->fetchingOverflow || $class !== \Magento\Framework\View\TemplateEnginePool::class) return;
+        $caller = self::nativeCaller($pool, 'get');
+        if (($caller['class'] ?? null) !== Template::class || ($caller['function'] ?? null) !== 'fetchView'
+            || ($caller['object'] ?? null) !== $this->fetching[$index]['owner']) return;
+        $this->fetching[$index]['poolObserved'] = true;
+        if (!$engine instanceof Php) return;
+        if ($this->fetching[$index]['engine'] !== null) {
+            $this->errors['Repeated native template engine selection hook evidence'] = true;
+            return;
+        }
+        $this->watchTemplateEngine($engine);
+        $this->engineBeforePlugin->begin($engine, [$this->fetching[$index]['block'], $this->fetching[$index]['file']]);
+        $this->fetching[$index]['engine'] = $engine;
+        $this->fetching[$index]['engineExpected'] = LayoutXmlOwnership::nativeMethod($engine, Php::class, 'render')
+            || $this->engineBeforePlugin->compiled($engine);
+    }
+
+    private function beginTemplateEngine($engine, array $params, string $class): void
+    {
+        $index = array_key_last($this->fetching);
+        $caller = self::nativeCaller($engine, 'render');
+        $consumer = $index !== null && !$this->fetchingOverflow && ($caller['class'] ?? null) === Template::class
+            && ($caller['function'] ?? null) === 'fetchView' && ($caller['object'] ?? null) === $this->fetching[$index]['owner'];
+        if ($index !== null && !$this->fetchingOverflow && $this->fetching[$index]['origin'] !== null && $class === Php::class
+            && $engine instanceof \Magento\Framework\Interception\InterceptorInterface
+            && LayoutXmlOwnership::nativeMethod($engine, Php::class, 'render')
+            && (new \ReflectionMethod($engine, 'render'))->getDeclaringClass()->getName() !== Php::class
+            && $this->ownership->producerDepth($engine, 'render') === 0) {
+            $this->errors['Missing generated template engine hook evidence'] = true;
+        }
+        $this->startProducer($engine, $class, 'render', $consumer, Php::class);
+        if ($index !== null && !$this->fetchingOverflow) {
+            $this->fetching[$index]['engineObserved'] = true;
+            $this->fetching[$index]['observedEngine'] = $engine;
+        }
     }
 
     private function renderTemplate($engine, array $params, $result, ?\Throwable $error, string $class): void
     {
+        $proof = $this->ownership->endProducer($engine, 'render', $error);
+        if (!$proof['final']) return;
         $index = array_key_last($this->fetching);
-        if ($error || $index === null || $class !== Php::class) return;
+        if ($error || $index === null || $this->fetchingOverflow) return;
         $frame = $this->fetching[$index];
-        // The PHP engine can be intercepted by a plugin. Require its native
-        // success on the exact context and file provided to fetchView.
-        if ($frame['block'] === $params[0] && $frame['file'] === $params[1]) $this->fetching[$index]['executed'] = true;
+        if ($proof['trusted'] && $frame['block'] === $params[0] && $frame['file'] === $params[1]) {
+            $this->fetching[$index]['executed'] = true;
+        }
     }
 
     private function completeTemplate($block, array $params, $result, ?\Throwable $error, string $class): void
     {
+        if ($this->fetchingOverflow) { $this->fetchingOverflow--; return; }
         $frame = array_pop($this->fetching);
+        if ($frame['engine'] !== null) {
+            $knownEngine = $this->engineBeforePlugin->complete($frame['engine'], $error,
+                $frame['origin'] !== null && $frame['observedEngine'] === $frame['engine']);
+            if (!$error && $knownEngine && $frame['engineObserved']) $frame['executed'] = true;
+        }
+        if (!$error && $frame['origin'] !== null && $frame['engineExpected'] && !$frame['engineObserved']) {
+            $this->errors['Missing native template engine hook evidence'] = true;
+        }
+        if (!$error && $frame['origin'] !== null && $frame['poolExpected'] && $frame['engineObserved'] && !$frame['poolObserved']) {
+            $this->errors['Missing native template engine pool hook evidence'] = true;
+        }
         if ($error && $frame['origin']) {
             $this->event($frame['origin'], 'layout-template-failed', $this->blocks[$block]['context']);
         }
@@ -2008,6 +2096,8 @@ final class LayoutCoverage
             $state = $this->blocks[$block];
             $state['executed'] = $frame['origin'];
             $this->blocks[$block] = $state;
+        } elseif (!$error && $frame['origin']) {
+            $this->event($frame['origin'], 'layout-template-origin-unconfirmed', $this->blocks[$block]['context']);
         }
     }
 

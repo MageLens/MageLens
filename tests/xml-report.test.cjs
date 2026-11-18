@@ -423,7 +423,7 @@ test('template selection and an unconfirmed execution input retain independent e
     const unconfirmed = merge(manifest, [{...record, layoutHook: true, events: [event]}], sources).files[1].declarations[0];
     assert.equal(unconfirmed.state, 'unmeasured');
     assert.equal(unconfirmed.hits, 0);
-    assert.match(unconfirmed.reason, /unverified template getter or filename resolver/);
+    assert.match(unconfirmed.reason, /unverified template getter, filename resolver or PHP template engine/);
     const selected = merge(manifest, [{...record, layoutHook: true,
         events: [{...event, type: 'layout-template-selected'}, event]}], sources).files[1].declarations[0];
     assert.equal(selected.state, 'covered');
