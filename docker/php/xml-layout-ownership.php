@@ -28,26 +28,36 @@ final class LayoutXmlOwnership
     private const READERS = [ReaderPool::class, Block::class, BackendBlock::class, Container::class,
         Move::class, UiComponent::class, Body::class, Head::class, Html::class];
     private const RECEIVERS = [...self::READERS, Condition::class, Parser::class, Flat::class, Helper::class];
+    private array $watched = [];
+    private array $errors = [];
+    private array $wrappers = [];
+    private int $wrapperOverflow = 0;
 
-    public function __construct(private readonly \Closure $observe)
+    public function __construct(private readonly \Closure $observe, private readonly \Closure $unverifiedProducer)
     {
+    }
+
+    public function finish(): void
+    {
+        if ($this->errors) throw new \RuntimeException(implode(', ', array_keys($this->errors)));
     }
 
     public function hooks(): array
     {
         return [
-            [ReaderInterface::class, 'interpret', $this->read(...), null],
+            [ReaderInterface::class, 'interpret', $this->read(...), $this->endWrapper(...)],
             [Condition::class, 'parseConditions', $this->read(...), null],
             [Parser::class, 'parse', $this->read(...), null],
             [Flat::class, 'convert', $this->read(...), null],
             [Helper::class, 'scheduleStructure', $this->read(...), null],
+            [\Magento\Framework\Interception\PluginListInterface::class, 'getNext', null, $this->pluginSelection(...)],
         ];
     }
 
     private static function generated(object $object, array $parents): bool
     {
         $class = get_class($object);
-        if (!str_ends_with($class, '\\Interceptor') || !in_array(get_parent_class($object), $parents, true)) return false;
+        if ($class !== get_parent_class($object) . '\\Interceptor' || !in_array(get_parent_class($object), $parents, true)) return false;
         $file = (new \ReflectionClass($object))->getFileName();
         return is_string($file) && str_starts_with($file, BP . '/generated/code/');
     }
@@ -69,6 +79,18 @@ final class LayoutXmlOwnership
         return true;
     }
 
+    public static function nativeMethod(object $object, string $native, string $method): bool
+    {
+        $parents = [$native];
+        if ($native === \Magento\Framework\View\Model\Layout\Merge::class) {
+            $parents[] = 'Hyva\\Theme\\Framework\\View\\Model\\Layout\\Merge';
+        }
+        if ($native === Block::class) $parents[] = BackendBlock::class;
+        if (!in_array(get_class($object), $parents, true) && !self::generated($object, $parents)) return false;
+        $owner = (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName();
+        return $owner === $native || ($owner === get_class($object) && self::interceptor($object, $parents));
+    }
+
     private static function property(object $object, string $class, string $name)
     {
         static $properties = [];
@@ -77,34 +99,58 @@ final class LayoutXmlOwnership
         return $properties[$key]->getValue($object);
     }
 
-    private static function nativeParser(object $parser): bool
+    private function watch(object $object, string $native, string $method): void
     {
+        if (!self::interceptor($object, [$native])
+            || (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName() !== get_class($object)) return;
+        $class = get_class($object);
+        $key = $class . '::' . $method;
+        if (isset($this->watched[$key])) return;
+        $this->watched[$key] = true;
+        if (!\OpenTelemetry\Instrumentation\hook($class, $method, $this->read(...), $this->endWrapper(...))) {
+            $this->errors['Cannot register generated XML receiver hook'] = true;
+        }
+    }
+
+    private function nativeParser(object $parser): bool
+    {
+        $this->watch($parser, Parser::class, 'parse');
         return self::nativeObject($parser, [Parser::class])
+            && self::nativeMethod($parser, Parser::class, 'parse')
             && (new \ReflectionMethod($parser, 'getConverter'))->getDeclaringClass()->getName() === Parser::class;
     }
 
-    private static function nativeCondition(object $reader): bool
+    private function nativeCondition(object $reader): bool
     {
+        $this->watch($reader, Condition::class, 'parseConditions');
         return self::nativeObject($reader, [Condition::class])
-            && self::nativeParser(self::property($reader, Condition::class, 'argumentParser'));
+            && self::nativeMethod($reader, Condition::class, 'parseConditions')
+            && $this->nativeParser(self::property($reader, Condition::class, 'argumentParser'));
     }
 
-    private static function dependencies(object $object): bool
+    private function nativeHelper(object $helper): bool
+    {
+        $this->watch($helper, Helper::class, 'scheduleStructure');
+        return self::nativeObject($helper, [Helper::class]) && self::nativeMethod($helper, Helper::class, 'scheduleStructure');
+    }
+
+    private function dependencies(object $object): bool
     {
         if ($object instanceof Block) {
-            return self::nativeParser(self::property($object, Block::class, 'argumentParser'))
-                && self::nativeCondition(self::property($object, Block::class, 'conditionReader'))
-                && self::nativeObject(self::property($object, Block::class, 'helper'), [Helper::class]);
+            return $this->nativeParser(self::property($object, Block::class, 'argumentParser'))
+                && $this->nativeCondition(self::property($object, Block::class, 'conditionReader'))
+                && $this->nativeHelper(self::property($object, Block::class, 'helper'));
         }
         if ($object instanceof UiComponent) {
-            return self::nativeCondition(self::property($object, UiComponent::class, 'conditionReader'))
-                && self::nativeObject(self::property($object, UiComponent::class, 'layoutHelper'), [Helper::class]);
+            return $this->nativeCondition(self::property($object, UiComponent::class, 'conditionReader'))
+                && $this->nativeHelper(self::property($object, UiComponent::class, 'layoutHelper'));
         }
-        if ($object instanceof Container) return self::nativeObject(self::property($object, Container::class, 'helper'), [Helper::class]);
-        if ($object instanceof Condition) return self::nativeCondition($object);
+        if ($object instanceof Container) return $this->nativeHelper(self::property($object, Container::class, 'helper'));
+        if ($object instanceof Condition) return $this->nativeCondition($object);
         if ($object instanceof Parser) {
             $converter = self::property($object, Parser::class, 'converter');
-            return self::nativeParser($object) && ($converter === null || self::nativeObject($converter, [Flat::class]));
+            if ($converter !== null) $this->watch($converter, Flat::class, 'convert');
+            return $this->nativeParser($object) && ($converter === null || self::nativeMethod($converter, Flat::class, 'convert'));
         }
         return true;
     }
@@ -122,15 +168,133 @@ final class LayoutXmlOwnership
     {
         $xml = $params[in_array($method, ['interpret', 'scheduleStructure'], true) ? 1 : 0] ?? null;
         if (!$xml instanceof \SimpleXMLElement && !$xml instanceof \DOMNode) return;
-        // Generated no-plugin wrappers immediately delegate to the instrumented
-        // parent. Active plugin dispatch has a different caller at that boundary.
-        if ($class === get_class($object) && self::interceptor($object, self::RECEIVERS)) return;
+        if ($class === get_class($object) && self::interceptor($object, self::RECEIVERS)) {
+            $this->pushFrame(['object' => $object, 'method' => $method, 'xml' => $xml, 'producer' => false,
+                'wrapper' => true, 'query' => null, 'parent' => false, 'trusted' => false]);
+            return;
+        }
         $caller = self::caller($object, $method);
         $valid = in_array($class, self::RECEIVERS, true) && self::nativeObject($object, self::RECEIVERS)
+            && self::nativeMethod($object, $class, $method)
             && in_array($caller['class'] ?? '', [...self::RECEIVERS, Layout::class, WireframeReader::class], true)
-            && self::dependencies($object);
+            && $this->dependencies($object);
         if ($xml instanceof \SimpleXMLElement && get_class($xml) !== Layout\Element::class) $valid = false;
         if ($xml instanceof \DOMNode && !in_array(get_class($xml), [\DOMDocument::class, \DOMElement::class], true)) $valid = false;
+        if (self::interceptor($object, self::RECEIVERS)
+            && (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName() === get_class($object)) {
+            $index = $this->wrapperFrame($object, $method);
+            if ($index === null || $this->wrapperOverflow) {
+                if ($valid) $this->errors['Missing generated XML receiver hook evidence'] = true;
+                $valid = false;
+            } else {
+                $this->wrappers[$index]['parent'] = true;
+                $original = $this->wrappers[$index]['xml'];
+                $node = $xml instanceof \DOMNode ? $xml : dom_import_simplexml($xml);
+                $source = $original instanceof \DOMNode ? $original : dom_import_simplexml($original);
+                $valid = $valid && $this->wrappers[$index]['query'] !== false && $node->isSameNode($source);
+                $this->wrappers[$index]['trusted'] = $valid;
+            }
+        }
         ($this->observe)($xml, $valid, $method === 'interpret');
+    }
+
+    private function wrapperFrame(object $object, string $method): ?int
+    {
+        for ($index = count($this->wrappers) - 1; $index >= 0; $index--) {
+            if ($this->wrappers[$index]['object'] === $object && $this->wrappers[$index]['method'] === $method) return $index;
+        }
+        return null;
+    }
+
+    private function pushFrame(array $frame): void
+    {
+        if ($this->wrapperOverflow || count($this->wrappers) >= 256) {
+            $this->wrapperOverflow++;
+            $this->errors['XML handoff nesting exceeded 256 calls'] = true;
+            if ($frame['xml'] !== null) ($this->observe)($frame['xml'], false, false);
+            else ($this->unverifiedProducer)($frame['object'], $frame['method']);
+            return;
+        }
+        $this->wrappers[] = $frame;
+    }
+
+    public function beginProducer(object $object, string $native, string $class, string $method, bool $consumer, bool $delegated): void
+    {
+        $wrapper = $class === get_class($object) && self::interceptor($object, [get_parent_class($object)]);
+        $trusted = !$wrapper && $class === $native && self::nativeMethod($object, $native, $method) && $consumer;
+        if (!$wrapper && self::interceptor($object, [get_parent_class($object)])
+            && (new \ReflectionMethod($object, $method))->getDeclaringClass()->getName() === get_class($object)) {
+            $index = $this->wrapperFrame($object, $method);
+            if ($index !== null && $this->wrappers[$index]['producer'] && $this->wrappers[$index]['wrapper']) {
+                $this->wrappers[$index]['parent'] = true;
+                $trusted = $trusted && $delegated && $this->wrappers[$index]['query'] !== false;
+                $this->wrappers[$index]['trusted'] = $trusted;
+            } else {
+                if ($trusted && $delegated) $this->errors['Missing generated layout producer hook evidence'] = true;
+                $trusted = false;
+            }
+        }
+        $this->pushFrame(['object' => $object, 'method' => $method, 'xml' => null, 'producer' => true,
+            'wrapper' => $wrapper, 'query' => null, 'parent' => false, 'trusted' => $trusted]);
+    }
+
+    public function producerDepth(object $object, string $method): int
+    {
+        return count(array_filter($this->wrappers, static fn($frame) => $frame['producer']
+            && $frame['object'] === $object && $frame['method'] === $method));
+    }
+
+    public function producerTrusted(object $object, string $method): bool
+    {
+        $index = $this->wrapperFrame($object, $method);
+        return $index !== null && $this->wrappers[$index]['producer'] && $this->wrappers[$index]['trusted'];
+    }
+
+    public function endProducer(object $object, string $method, ?\Throwable $error): array
+    {
+        if ($this->wrapperOverflow) {
+            $this->wrapperOverflow--;
+            return ['trusted' => false, 'final' => true];
+        }
+        $frame = array_pop($this->wrappers);
+        if (!$frame || !$frame['producer'] || $frame['object'] !== $object || $frame['method'] !== $method) {
+            $this->errors['Unbalanced layout producer hook evidence'] = true;
+            return ['trusted' => false, 'final' => true];
+        }
+        if (!$error && $frame['wrapper'] && $frame['query'] === true && !$frame['parent']) {
+            $this->errors['Missing native layout producer hook evidence'] = true;
+        }
+        return ['trusted' => $frame['trusted'], 'final' => $this->wrapperFrame($object, $method) === null];
+    }
+
+    private function pluginSelection($list, array $params, $result, ?\Throwable $error): void
+    {
+        $index = array_key_last($this->wrappers);
+        if ($index === null || $this->wrapperOverflow) return;
+        $frame = $this->wrappers[$index];
+        if (!$frame['wrapper']) return;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (($caller['class'] ?? null) !== get_class($frame['object']) || ($caller['function'] ?? null) !== $frame['method']
+            || ($params[0] ?? null) !== get_parent_class($frame['object']) || ($params[1] ?? null) !== $frame['method']) return;
+        $this->wrappers[$index]['query'] = !$error && !$result;
+        if ($error || $result) {
+            if ($frame['xml'] !== null) ($this->observe)($frame['xml'], false, false);
+            else ($this->unverifiedProducer)($frame['object'], $frame['method']);
+        }
+    }
+
+    private function endWrapper($object, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        if ($class !== get_class($object) || !self::interceptor($object, self::RECEIVERS)) return;
+        if ($this->wrapperOverflow) { $this->wrapperOverflow--; return; }
+        $frame = array_pop($this->wrappers);
+        if (!$frame || $frame['object'] !== $object || $frame['method'] !== $method) {
+            $this->errors['Unbalanced generated XML receiver hook evidence'] = true;
+            return;
+        }
+        if (!$frame['trusted']) ($this->observe)($frame['xml'], false, false);
+        if (!$error && $frame['query'] === true && !$frame['parent']) {
+            $this->errors['Missing native XML receiver hook evidence'] = true;
+        }
     }
 }

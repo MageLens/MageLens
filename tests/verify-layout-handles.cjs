@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const platform = process.argv[3];
+assert.ok(['magento', 'mageos'].includes(platform), 'Specify the pinned platform as the third argument');
 const directory = 'app/code/MageLens/Compatibility/view/frontend/layout';
 
 function include(file, handle, effect, state) {
@@ -33,6 +35,8 @@ function selected(file, kind, state, effect) {
     assert.equal(matches[0].state, state);
     assert.deepEqual([...new Set(matches[0].evidence.map(item => item.type))], [effect]);
 }
-selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection', 'covered', 'layout-wireframe-selected');
+selected(`${directory}/coverageprobe_handle_index.xml`, 'wireframe-selection',
+    platform === 'mageos' ? 'unmeasured' : 'covered',
+    platform === 'mageos' ? 'layout-wireframe-origin-unconfirmed' : 'layout-wireframe-selected');
 selected('app/code/MageLens/Compatibility/view/frontend/page_layout/magelens_fixture.xml', 'wireframe', 'covered', 'layout-wireframe-selected');
-console.log('Verified the original page layout selector and the selected wireframe.');
+console.log('Verified the page layout selector evidence boundary and the selected wireframe.');

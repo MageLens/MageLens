@@ -42,6 +42,7 @@ final class LayoutCoverage
     private LayoutPositionCoverage $positions;
     private LayoutRegistryCoverage $registry;
     private LayoutXmlOwnership $ownership;
+    private LayoutPackageEvents $packageEvents;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -74,7 +75,9 @@ final class LayoutCoverage
         $this->structureCoverage = new LayoutStructureCoverage($this->origin(...), self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
-        $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...));
+        $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
+        $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
+            fn($xml) => $this->observeXmlReceiver($xml, false, false));
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
@@ -93,6 +96,8 @@ final class LayoutCoverage
 
     public function finish(): array
     {
+        $this->ownership->finish();
+        $this->packageEvents->finish();
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
@@ -103,7 +108,9 @@ final class LayoutCoverage
     {
         return [
             ...$this->ownership->hooks(),
+            ...$this->packageEvents->hooks(),
             [Merge::class, '_loadFileLayoutUpdatesXml', $this->beginPackage(...), $this->completePackage(...)],
+            [Layout\ProcessorInterface::class, 'getFileLayoutUpdatesXml', $this->beginPackageAccess(...), $this->packageAccess(...)],
             [FileList::class, 'replace', $this->beginFileReplacement(...), $this->completeFileReplacement(...)],
             [Read::class, 'readAll', null, $this->readFile(...)],
             [Merge::class, '_loadXmlString', null, $this->parseFile(...)],
@@ -111,7 +118,9 @@ final class LayoutCoverage
             [Merge::class, '_merge', $this->beginHandle(...), $this->completeHandle(...)],
             [Merge::class, '_fetchDbLayoutUpdates', null, $this->completeDatabaseUpdate(...)],
             [Merge::class, 'addUpdate', $this->beginUpdate(...), $this->appendUpdate(...)],
-            [Merge::class, 'asSimplexml', null, $this->mergeDocument(...)],
+            [Layout\ProcessorInterface::class, 'asSimplexml', $this->beginSerialization(...), $this->mergeDocument(...)],
+            [Layout\ProcessorInterface::class, 'asString', $this->beginString(...), $this->serializedUpdates(...)],
+            [Merge::class, '__destruct', $this->retireUpdates(...), null],
             [Merge::class, '_validateMergedLayout', $this->beginValidation(...), $this->completeValidation(...)],
             [\Magento\Framework\View\Model\Layout\Update\Validator::class, 'isValid', null, $this->validationResult(...)],
             [Merge::class, 'load', $this->resetPageSelection(...), null],
@@ -132,7 +141,7 @@ final class LayoutCoverage
             [ScheduledStructure::class, 'unsetElementFromListToRemove', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
             [GeneratorPool::class, 'removeElement', $this->beginRemoval(...), $this->completeRemoval(...)],
             [GeneratorPool::class, 'buildStructure', null, $this->finishStructure(...)],
-            [Layout::class, 'generateXml', $this->beginXml(...), null],
+            [Layout::class, 'generateXml', $this->beginXml(...), $this->completeXml(...)],
             [Layout::class, 'generateElements', null, $this->generateElements(...)],
             [XmlConfig::class, 'getNode', null, $this->layoutXmlAccess(...)],
             [XmlConfig::class, 'getXpath', null, $this->layoutXmlAccess(...)],
@@ -256,7 +265,15 @@ final class LayoutCoverage
             if ($file['replacements']) $replacements[dom_import_simplexml($entry)->getNodePath()] = $file['replacements'];
         }
         $state = $this->merges[$merge] ?? [];
-        $state['package'] = ['root' => dom_import_simplexml($xml), 'entries' => $entries, 'replacements' => $replacements];
+        if ($this->ownership->producerDepth($merge, 'getFileLayoutUpdatesXml') === 0) {
+            foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
+                if (($frame['class'] ?? null) === Merge::class && ($frame['function'] ?? null) === 'getFileLayoutUpdatesXml') {
+                    $this->errors['Missing native layout package getter hook evidence'] = true;
+                }
+            }
+        }
+        $state['package'] = ['root' => dom_import_simplexml($xml), 'entries' => $entries, 'replacements' => $replacements,
+            'eventObserved' => false, 'revoked' => !$this->ownership->producerTrusted($merge, 'getFileLayoutUpdatesXml')];
         $this->merges[$merge] = $state;
     }
 
@@ -275,7 +292,12 @@ final class LayoutCoverage
         $updates = [];
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
             $source = $package['entries'][$entry->getNodePath()] ?? [];
-            $replaced = $package['replacements'][$entry->getNodePath()] ?? [];
+            if (!empty($package['revoked'])) {
+                $theme = $merge->getTheme();
+                $this->revokeSources([$source], ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()], true);
+                $source = [];
+            }
+            $replaced = empty($package['revoked']) ? ($package['replacements'][$entry->getNodePath()] ?? []) : [];
             if (isset($source[0]['ids']['file-override'])) {
                 $theme = $merge->getTheme();
                 $this->event($source[0]['ids']['file-override'], $replaced
@@ -360,7 +382,7 @@ final class LayoutCoverage
         $entry = dom_import_simplexml($params[0]);
         $package = $state['package'] ?? null;
         if ($package && $entry->ownerDocument->documentElement->isSameNode($package['root'])) {
-            $targets = $package['entries'][$entry->getNodePath()] ?? [];
+            $targets = empty($package['revoked']) ? ($package['entries'][$entry->getNodePath()] ?? []) : [];
             $state['pending'] = ['hash' => hash('sha256', $params[0]->innerXml()), 'targets' => $targets];
             $theme = $merge->getTheme();
             $this->event($targets[0]['ids']['file-selection'] ?? null, 'layout-file-selected',
@@ -445,7 +467,13 @@ final class LayoutCoverage
     {
         if ($class === PageBuilder::class) {
             $method = new \ReflectionMethod($builder, 'getPageLayout');
-            $this->pageBuilders[] = ['builder' => $builder, 'selection' => null, 'native' => $method->getDeclaringClass()->getName() === PageBuilder::class];
+            static $layoutProperty;
+            $layoutProperty ??= new \ReflectionProperty(Layout\Builder::class, 'layout');
+            $merge = self::layoutUpdate($layoutProperty->getValue($builder));
+            $selection = $merge instanceof Merge ? ($this->merges[$merge]['pageLayout'] ?? null) : null;
+            if ($selection !== null) $selection['confirmed'] = false;
+            $this->pageBuilders[] = ['builder' => $builder, 'selection' => $selection,
+                'native' => $method->getDeclaringClass()->getName() === PageBuilder::class];
         }
     }
 
@@ -464,8 +492,9 @@ final class LayoutCoverage
         for ($depth = 2; isset($trace[$depth]) && $trace[$depth]['function'] === 'getPageLayout'; $depth++) {
             if (($trace[$depth]['class'] ?? null) !== PageBuilder::class) continue;
             $wrapper = get_class($merge);
-            $selection['confirmed'] = $depth === 2 || ($depth === 3 && str_ends_with($wrapper, '\\Interceptor')
-                && ($trace[2]['class'] ?? null) === $wrapper);
+            $selection['confirmed'] = LayoutXmlOwnership::nativeMethod($merge, Merge::class, 'getPageLayout')
+                && ($depth === 2 || ($depth === 3 && str_ends_with($wrapper, '\\Interceptor')
+                    && ($trace[2]['class'] ?? null) === $wrapper));
             $this->pageBuilders[$frame]['selection'] = $selection;
             return;
         }
@@ -550,18 +579,146 @@ final class LayoutCoverage
         return $caller;
     }
 
+    private function startProducer($merge, string $class, string $method, bool $consumer): bool
+    {
+        if (!$merge instanceof Merge) {
+            $this->limitations['layout-processor-unconfirmed'] = true;
+            return false;
+        }
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4)[3] ?? [];
+        $delegated = ($caller['class'] ?? null) === get_class($merge) && ($caller['function'] ?? null) === $method;
+        $this->ownership->beginProducer($merge, Merge::class, $class, $method, $consumer, $delegated);
+        return true;
+    }
+
+    private function beginPackageAccess($merge, array $params, string $class): void
+    {
+        $caller = self::nativeCaller($merge, 'getFileLayoutUpdatesXml');
+        $this->startProducer($merge, $class, 'getFileLayoutUpdatesXml', ($caller['class'] ?? null) === Merge::class);
+    }
+
+    private function packageAccess($merge, array $params, $xml, ?\Throwable $error, string $class): void
+    {
+        if (!$merge instanceof Merge) return;
+        $proof = $this->ownership->endProducer($merge, 'getFileLayoutUpdatesXml', $error);
+        if (!$proof['trusted']) {
+            $this->unverifiedProducer($merge, 'getFileLayoutUpdatesXml');
+            if ($xml instanceof \SimpleXMLElement || $xml instanceof \DOMNode) $this->observeXmlReceiver($xml, false, false);
+        }
+    }
+
+    private function unverifiedProducer($merge, string $method): void
+    {
+        if (!$merge instanceof Merge) return;
+        if ($method !== 'getFileLayoutUpdatesXml') {
+            $this->limitations['layout-serialization-unconfirmed'] = true;
+            return;
+        }
+        $state = $this->merges[$merge] ?? [];
+        if (isset($state['package'])) $state['package']['revoked'] = true;
+        unset($state['pending']);
+        $this->merges[$merge] = $state;
+        $this->limitations['mutable-layout-package'] = true;
+    }
+
+    private function beginSerialization($merge, array $params, string $class): void
+    {
+        $caller = self::nativeCaller($merge, 'asSimplexml');
+        if (!$this->startProducer($merge, $class, 'asSimplexml',
+            in_array($caller['class'] ?? '', [Layout::class, WireframeReader::class, Merge::class], true))) return;
+        if ($this->ownership->producerDepth($merge, 'asSimplexml') !== 1) return;
+        $state = $this->merges[$merge] ?? [];
+        $state['serialization'] = null;
+        $state['documentObserved'] = false;
+        $this->merges[$merge] = $state;
+    }
+
+    private function beginString($merge, array $params, string $class): void
+    {
+        $this->startProducer($merge, $class, 'asString', true);
+    }
+
+    private function serializedUpdates($merge, array $params, $xml, ?\Throwable $error, string $class): void
+    {
+        if (!$merge instanceof Merge) return;
+        $proof = $this->ownership->endProducer($merge, 'asString', $error);
+        if (!$proof['final']) return;
+        if (!$proof['trusted']) $this->unverifiedProducer($merge, 'asString');
+        $caller = self::nativeCaller($merge, 'asString');
+        if (($caller['class'] ?? null) !== Merge::class || ($caller['function'] ?? null) !== 'asSimplexml') return;
+        $state = $this->merges[$merge] ?? [];
+        $state['serialization'] = !$error && $proof['trusted'] && is_string($xml)
+            ? hash('sha256', $xml) : false;
+        $this->merges[$merge] = $state;
+    }
+
+    private function retireUpdates($merge, array $params, string $class): void
+    {
+        if ($class !== Merge::class) return;
+        $state = $this->merges[$merge] ?? [];
+        $this->merges[$merge] = ['retired' => $state['updates'] ?? $state['retired'] ?? []];
+    }
+
+    private function revokeSources(array $packets, array $context, bool $selection = false, string $effect = 'layout-xml-ownership-revoked'): void
+    {
+        foreach ($packets as $targets) {
+            foreach ($targets as $target) {
+                foreach ($target['ids'] as $kind => $id) {
+                    if (!$selection && in_array($kind, ['file-selection', 'file-override', 'include', 'include-handle', 'wireframe-selection', 'wireframe'], true)) continue;
+                    $this->event($id, $effect, $context);
+                }
+            }
+        }
+    }
+
     // Native append order and deduplication determine which source occupies
     // each position. Preserve space for database and programmatic fragments.
     private function mergeDocument($merge, array $params, $xml, ?\Throwable $error, string $class): void
     {
-        if ($error || $class !== Merge::class || !$xml instanceof Layout\Element) return;
-        $sources = $this->merges[$merge]['updates'] ?? [];
+        if (!$merge instanceof Merge) return;
+        $proof = $this->ownership->endProducer($merge, 'asSimplexml', $error);
+        if (!$proof['final']) return;
+        $state = $this->merges[$merge] ?? [];
+        $state['documentObserved'] = true;
+        $this->merges[$merge] = $state;
+        if ($error) return;
+        $sources = $state['updates'] ?? [];
+        $theme = $merge->getTheme();
+        $context = ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()];
+        if (!empty($state['retired']) && self::updates($merge)) {
+            $this->revokeSources(array_column($state['retired'], 'targets'), $context);
+            $this->limitations['layout-updates-reset'] = true;
+        }
         if (!$sources) return;
+        $parts = self::updates($merge);
+        if (array_filter($parts, static fn($part) => !is_string($part))) {
+            $this->revokeSources(array_column($sources, 'targets'), $context);
+            $this->limitations['layout-nonstring-update'] = true;
+            if ($xml instanceof \SimpleXMLElement || $xml instanceof \DOMNode) $this->observeXmlReceiver($xml, false, false);
+            return;
+        }
+        $native = $proof['trusted'] && $xml instanceof Layout\Element
+            && LayoutXmlOwnership::nativeMethod($merge, Merge::class, '_loadXmlString');
+        if ($native && !isset($state['serialization'])) {
+            $this->errors['Missing native layout serialization hook evidence'] = true;
+            return;
+        }
+        if (!$native || ($state['serialization'] ?? false) !== hash('sha256', implode('', $parts))) {
+            $this->revokeSources(array_column($sources, 'targets'), $context);
+            $this->limitations['layout-serialization-unconfirmed'] = true;
+            if ($xml instanceof \SimpleXMLElement || $xml instanceof \DOMNode) $this->observeXmlReceiver($xml, false, false);
+            return;
+        }
+        if (count($this->documents) >= 256) {
+            $this->revokeSources(array_column($sources, 'targets'), $context, false, 'layout-origin-limit');
+            $this->limitations['layout-document-limit'] = true;
+            return;
+        }
         $root = dom_import_simplexml($xml);
         $allNodes = $root->getElementsByTagName('*');
         $targets = [];
         $offset = 0;
-        foreach (self::updates($merge) as $index => $part) {
+        foreach ($parts as $index => $part) {
             try {
                 $document = Xml::document('<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' . $part . '</layout>');
             } catch (\RuntimeException) {
@@ -587,9 +744,8 @@ final class LayoutCoverage
             $offset += $document->documentElement->getElementsByTagName('*')->length;
         }
         if ($offset !== $allNodes->length) return;
-        $theme = $merge->getTheme();
         $this->documents[] = ['root' => $root, 'targets' => $targets, 'readerObserved' => false,
-            'context' => ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]];
+            'context' => $context];
     }
 
     private function layoutXmlAccess($layout, array $params, $result, ?\Throwable $error, string $class, string $method): void
@@ -620,6 +776,21 @@ final class LayoutCoverage
         $this->observeXmlReceiver($element, false, false);
     }
 
+    private function packageEventKnown($element, bool $mark): ?bool
+    {
+        $node = $element instanceof \DOMNode ? $element : dom_import_simplexml($element);
+        foreach ($this->merges as $merge => $state) {
+            if (!isset($state['package']) || !$state['package']['root']->isSameNode($node)) continue;
+            if ($mark) {
+                $state['package']['eventObserved'] = true;
+                $this->merges[$merge] = $state;
+                return true;
+            }
+            return $state['package']['eventObserved'];
+        }
+        return null;
+    }
+
     private function observeXmlReceiver($element, bool $valid, bool $reader): void
     {
         $node = $element instanceof \DOMNode ? $element : dom_import_simplexml($element);
@@ -631,6 +802,11 @@ final class LayoutCoverage
             }
             unset($document);
             return;
+        }
+        foreach ($this->merges as $merge => $state) {
+            if (isset($state['package']) && $state['package']['root']->isSameNode($root)) {
+                $this->unverifiedProducer($merge, 'getFileLayoutUpdatesXml');
+            }
         }
         foreach ($this->documents as &$document) {
             if (!$document['root']->isSameNode($root)) continue;
@@ -1097,9 +1273,22 @@ final class LayoutCoverage
         return $property->getValue($layout);
     }
 
+    private static function layoutUpdate($layout)
+    {
+        static $property;
+        $property ??= new \ReflectionProperty(Layout::class, '_update');
+        return $property->getValue($layout);
+    }
+
     private function beginXml($layout, array $params, string $class): void
     {
         if ($class !== Layout::class) return;
+        $merge = self::layoutUpdate($layout);
+        if ($merge instanceof Merge) {
+            $state = $this->merges[$merge] ?? [];
+            $state['documentObserved'] = false;
+            $this->merges[$merge] = $state;
+        }
         $context = self::readerContext($layout);
         if ($context !== null) {
             $structure = $context->getScheduledStructure();
@@ -1107,6 +1296,16 @@ final class LayoutCoverage
             $this->page->reset($context->getPageConfigStructure());
             $this->structureCoverage->reset($structure);
             $this->positions->reset($structure);
+        }
+    }
+
+    private function completeXml($layout, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== Layout::class) return;
+        $merge = self::layoutUpdate($layout);
+        $state = $merge instanceof Merge ? ($this->merges[$merge] ?? []) : [];
+        if (!empty($state['updates']) && empty($state['documentObserved'])) {
+            $this->errors['Missing native layout document hook evidence'] = true;
         }
     }
 

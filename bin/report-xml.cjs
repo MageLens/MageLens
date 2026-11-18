@@ -92,8 +92,9 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
-for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed');
+for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-origin-limit': 'Runtime layout document tracking reached its 256-document bound before this declaration could receive original-source evidence.',
     'layout-ui-denied': 'The native visibility decision removed this UI placement before component generation.',
     'layout-condition-unconfirmed': 'The custom condition source lacks a unique native composite, rule-key or bounded argument binding.',
     'layout-condition-name-unused': 'The native rule used another condition key to retrieve its arguments.',
@@ -153,6 +154,12 @@ const layoutDecisions = {
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
 const layoutLimitations = {
+    'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',
+    'layout-processor-unconfirmed': 'A layout processor implementation falls outside the verified native merge path.',
+    'mutable-layout-package': 'External PHP or an unverified getter received mutable package layout XML. Future selected entries lack verified original ownership.',
+    'layout-serialization-unconfirmed': 'Layout serialization or XML conversion used an unverified implementation or plugin. Evidence is limited to independently confirmed native calls.',
+    'layout-updates-reset': 'A discarded native update list was used again after reset without current original-source lineage.',
+    'layout-document-limit': 'Runtime layout origin tracking is bounded to 256 retained XML documents per request.',
     'layout-condition-hook-limit': 'Runtime visibility hooks are bounded to 1024 declaring classes per request.',
     'layout-validation-failed': 'Native merged-layout validation stopped this layout instance before interpretation.',
     'layout-validation-warning': 'Native merged-layout validation logged a schema failure and continued in the current application mode.',

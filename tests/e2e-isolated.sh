@@ -96,7 +96,7 @@ fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/xml-compiled-di-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -206,6 +206,15 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-reader-hook-proof.php "$reader_case"
     done
+    merge_cases=(native unused-parser exposed reset document-limit string-plugin xml-plugin parser-plugin late-parser-plugin string-no-parent xml-no-parent package-no-parent opaque-update native-selection selection-no-parent missing-string missing-document missing-package)
+    if [[ "$platform" == mageos ]]; then merge_cases+=(compiled-selection); fi
+    if [[ "$theme" == hyva ]]; then
+        merge_cases+=(package-event package-event-disabled missing-event-manager missing-event-config missing-event-invoker missing-event-observer event-depth observer-depth)
+    fi
+    for merge_case in "${merge_cases[@]}"; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-merge-hook-proof.php "$merge_case"
+    done
     # Original-source fixture assertions need fresh native layout interpretation.
     # Registry proofs separately verify warm cache zero-hit provenance boundaries.
     ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
@@ -231,6 +240,7 @@ fi
     for layout_check in tests/verify-layout-*.cjs; do
         case "$layout_check" in
             tests/verify-layout-admin.cjs) ./bin/runner node "$layout_check" "$platform" ;;
+            tests/verify-layout-handles.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$platform" ;;
             tests/verify-layout-ui-structure.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
             tests/verify-layout-ownership.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$theme" ;;
             *) ./bin/runner node "$layout_check" ;;
