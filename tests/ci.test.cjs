@@ -15,15 +15,7 @@ const {writeCoverage} = require('./ci-coverage-fixture.cjs');
 const {provenance} = require('../docker/runner/cypress-source/provenance.cjs');
 const {snapshot} = require('./ci/report-equivalence.cjs');
 const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
-const titles = [
-    'creates a category and illustrated article, publishes, moderates comments, and deletes records',
-    'validates Admin input, preserves form values, and rejects forged writes',
-    'requires Admin authentication and the Blog ACL permission',
-    'searches, filters, paginates, reads articles, and retains favorites',
-    'rejects invalid filters and keeps draft, scheduled, and inactive-category posts private',
-    'collects real PHP, JavaScript and template execution', 'starts the next test with fresh state',
-    'uses inherited journal settings and shows the selected Admin fields'
-];
+const {browserTitles, cliTitles} = require('./verify-scenarios.cjs');
 const counts = {totalTests: 8, totalPassed: 8, totalFailed: 0, totalSkipped: 0, totalPending: 0};
 function fixture(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-unit-'));
@@ -36,7 +28,9 @@ function fixture(t) {
         cypressVersion: pins.CYPRESS_VERSION, totalTests: 11, totalPassed: 11, totalFailed: 0, totalSkipped: 0, totalPending: 0,
         build: provenance('x64')});
     const browser = {name: 'chrome-for-testing', version: pins.CHROME_VERSION};
-    write(`${entry.runner}-results.json`, {run: 'fresh', browser, ...counts, tests: titles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
+    write(`${entry.runner}-results.json`, {run: 'fresh', browser, ...counts, tests: browserTitles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
+    write('cli-results.json', {run: 'fresh', ...counts, totalTests: cliTitles.length, totalPassed: cliTitles.length,
+        tests: cliTitles.map(title => ({title, status: 'passed', error: 'SECRET'}))});
     write('project-fixtures.json', {Application_Blog: {themePaths: ['Magento/luma'], password: 'SECRET'}});
     writeCoverage(directory);
     const evidence = {...entry, sha: 'candidate', workflowRun: '123', attempt: '1', host: 'Linux', image: 'ubuntu', imageVersion: 'today', architecture: 'x64', passed: true,
@@ -87,6 +81,7 @@ test('final gate fails when reports are missing even if all job results claim su
     assert.equal(report.completedCases, 0);
     assert.equal(report.expectedCases, 8);
     assert.equal(report.expectedAcceptanceTests, 64);
+    assert.equal(report.expectedCliTests, 24);
     assert.match(result.stdout, /Matrix comparison incomplete/);
 });
 test('complete qualification uses the Windows report for the eighth mode and still requires that host', t => {
@@ -107,6 +102,7 @@ test('complete qualification uses the Windows report for the eighth mode and sti
             write(file, {...read(file), run: entry.id});
         }
         write('run.json', {...read('run.json'), id: entry.id, runner: entry.runner});
+        write('cli-results.json', {...read('cli-results.json'), run: entry.id});
         write('installation.json', {...read('installation.json'), ...entry, version: pins[entry.platform === 'mageos' ? 'MAGEOS_VERSION' : 'MAGENTO_VERSION']});
         write('project-fixtures.json', {Application_Blog: {themePaths: [entry.theme === 'hyva' ? 'Hyva/default-csp' : 'Magento/luma']}});
         const browser = {name: entry.runner === 'cypress' ? 'chrome-for-testing' : 'chrome', version: pins.CHROME_VERSION};
@@ -183,8 +179,6 @@ test('final gate consumes only artifacts from the current workflow attempt', t =
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-attempt-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(root, 'dependencies.yaml'));
-    fs.mkdirSync(path.join(root, 'tests'));
-    fs.copyFileSync(path.join(__dirname, 'verify-scenarios.cjs'), path.join(root, 'tests/verify-scenarios.cjs'));
     const install = attempt => {
         const artifact = path.join(root, 'ci-artifacts', `case-${entry.id}-attempt-${attempt}`);
         fs.cpSync(directory, path.join(artifact, 'coverage'), {recursive: true});
@@ -235,7 +229,7 @@ test('failed harness uploads sanitized failing test counts without completed rep
     fs.writeFileSync(path.join(directory, 'magelens-resource'), `${project} /tmp/magelens-e2e.fixture\n`);
     fs.writeFileSync(path.join(coverage, 'cypress-results.json'), JSON.stringify({
         run: 'failed-run', ...counts, totalPassed: 6, totalFailed: 1, message: 'SECRET',
-        tests: [{title: titles[0], status: 'failed', error: 'SECRET', screenshot: '/private/SECRET'}]
+        tests: [{title: browserTitles[0], status: 'failed', error: 'SECRET', screenshot: '/private/SECRET'}]
     }));
     fs.writeFileSync(path.join(coverage, 'cypress-runner-results.json'), JSON.stringify({
         ...counts, totalTests: 11, totalPassed: 10, totalFailed: 1, error: 'SECRET',

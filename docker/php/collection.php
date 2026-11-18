@@ -49,7 +49,7 @@ function coverageCollectionFailureSummary(array $files): string
 
 function coverageCollectionLock(int $mode)
 {
-    $lock = fopen('/pcov-state/collection.lock', 'c+');
+    $lock = fopen('/pcov-state/collection.lock', 'c+e');
     if ($lock === false) throw new RuntimeException('Cannot open the coverage collection lock');
     $deadline = microtime(true) + 60;
     do {

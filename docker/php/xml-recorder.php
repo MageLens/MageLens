@@ -184,15 +184,27 @@ final class Recorder
         } catch (\Throwable $error) { self::$errors[] = 'Cannot attribute Admin field rendering'; }
         finally { self::$busy = false; }
     }
-    public static function finish(): array
+    public static function finish(bool $cliCommand = false): array
     {
         if (!self::$manifest) throw new \RuntimeException('XML collector did not initialize');
         if (self::$errors) throw new \RuntimeException(implode('; ', array_unique(self::$errors)));
+        $checkDi = true;
+        if ($cliCommand) {
+            $checkDi = class_exists(\Magento\Framework\App\ObjectManager::class, false);
+            if ($checkDi) {
+                try {
+                    \Magento\Framework\App\ObjectManager::getInstance();
+                } catch (\RuntimeException $error) {
+                    if ($error->getMessage() !== 'ObjectManager isn\'t initialized') throw $error;
+                    $checkDi = false;
+                }
+            }
+        }
         $data = ['run' => self::$manifest['run'], 'manifest' => self::$manifest['id'], 'readHook' => self::$readHook,
-            'renderHook' => self::$renderHook, 'observerHook' => Observers::finish(), 'events' => array_values(self::$events)];
-        [$data['pluginHook'], $data['ambiguousPlugins']] = class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
-        $data['preferenceHook'] = class_exists(Preferences::class, false) && Preferences::finish();
-        $data['diUsageHooks'] = class_exists(DiUsage::class, false) ? DiUsage::finish() : [];
+            'renderHook' => self::$renderHook, 'observerHook' => $checkDi && Observers::finish(), 'events' => array_values(self::$events)];
+        [$data['pluginHook'], $data['ambiguousPlugins']] = $checkDi && class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
+        $data['preferenceHook'] = $checkDi && class_exists(Preferences::class, false) && Preferences::finish();
+        $data['diUsageHooks'] = $checkDi && class_exists(DiUsage::class, false) ? DiUsage::finish() : [];
         return $data;
     }
 }

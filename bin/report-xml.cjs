@@ -57,6 +57,7 @@ function merge(manifest, records, sources) {
         diTotals[family] = {total: 0, covered: 0, hook};
     }
     const requests = [];
+    const commands = new Map();
     const warnings = [];
     for (const record of records) {
         assert.equal(record.run, manifest.run, 'Stale XML request');
@@ -138,7 +139,17 @@ function merge(manifest, records, sources) {
             if (!item.evidence.some(previous => JSON.stringify(previous) === JSON.stringify(evidence))) item.evidence.push(evidence);
             events.push(event);
         }
-        if (events.length || scenario) requests.push({id: record.request, case: scenario, events});
+        if (events.length || scenario) {
+            const command = record.tool && commands.get(record.request);
+            if (command) {
+                assert.equal(command.tool, record.tool);
+                command.events.push(...events);
+            } else {
+                const request = {id: record.request, case: scenario, ...(record.tool ? {tool: record.tool} : {}), events};
+                requests.push(request);
+                if (record.tool) commands.set(record.request, request);
+            }
+        }
     }
     const pluginTotals = {total: 0, covered: 0};
     const observerTotals = {total: 0, covered: 0};
@@ -322,12 +333,16 @@ function report() {
     const run = read('coverage/run.json'), manifest = read('coverage/xml-manifest.json');
     assert.equal(run.id, manifest.run);
     const raw = `coverage/raw/php/${run.id}`;
-    assert.ok(!fs.readdirSync(raw).some(file => file.endsWith('.error')), 'Failed HTTP collection');
-    const metadata = fs.readdirSync(raw).filter(file => /^[a-f0-9]+\.json$/.test(file));
+    assert.ok(!fs.readdirSync(raw).some(file => file.endsWith('.error')), 'Failed PHP collection');
+    const metadata = fs.readdirSync(raw).filter(file => /^[a-f0-9]+(?:\.[1-9]\d*)?\.json$/.test(file));
     const records = metadata.map(file => {
         const request = read(`${raw}/${file}`);
-        assert.ok(request.xml, 'Missing XML request evidence');
-        return {...request.xml, uri: request.uri, request: file.slice(0, -5)};
+        assert.ok(request.xml, 'Missing XML runtime evidence');
+        if (request.commandId) {
+            assert.equal(request.commandId, file.split('.')[0], 'Mismatched CLI XML record');
+            assert.ok(['magento', 'magerun'].includes(request.tool), 'Invalid CLI XML tool');
+        }
+        return {...request.xml, uri: request.uri, tool: request.commandId ? request.tool : undefined, request: request.commandId ?? file.slice(0, -5)};
     });
     const sources = Object.fromEntries(manifest.files.map(file => [file.path, fs.readFileSync(`src/${file.path}`)]));
     const result = merge(manifest, records, sources);

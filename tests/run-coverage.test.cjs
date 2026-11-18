@@ -18,6 +18,10 @@ function workflow(t, args = [], failure = '', interrupted = false, runner = 'cyp
     }
     fs.writeFileSync(path.join(directory, '.runtime/installed'), installedVersion + '\n');
     if (interrupted) fs.writeFileSync(path.join(directory, '.runtime/hooks-active'), '');
+    fs.writeFileSync(path.join(directory, 'bin/cli-relay'), `#!/usr/bin/env bash
+echo cli-relay >> calls
+[[ "$TEST_FAILURE" != cli ]]
+`, {mode: 0o755});
     fs.writeFileSync(path.join(directory, 'bin/common'), `
 set -euo pipefail
 ROOT=$PWD
@@ -85,7 +89,7 @@ test(`${runner}: publishes complete reports after cleanup`, t => {
     assert.ok(result.calls.lastIndexOf('project-hooks.php cleanup') < result.calls.indexOf('report-url.php'));
 });
 
-for (const failure of ['mount', 'warmup', 'tests', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
+for (const failure of ['mount', 'warmup', 'tests', 'cli', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
     test(`${runner}: ${failure} failure leaves no public report or success URL`, t => {
         const result = workflow(t, [], failure, false, runner, '6', directory => {
             fs.mkdirSync(path.join(directory, 'src/pub/media'), {recursive: true});
@@ -99,6 +103,7 @@ for (const failure of ['mount', 'warmup', 'tests', 'php-report', 'xml-provenance
             assert.ok(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), 'Failed cleanup must retain the recovery marker');
             assert.doesNotMatch(result.calls, /report-url.php/, 'Failed cleanup must prevent publication');
         }
+        if (failure === 'cli') assert.doesNotMatch(result.calls, /report.php|finalize.cjs/);
         if (failure === 'url') assert.doesNotMatch(result.calls, /app test -r/, 'Invalid URL must stop publication');
     });
 }
@@ -136,7 +141,7 @@ test(`${runner}: default run preserves running services, configuration and cache
     assert.match(result.calls, /finalize.cjs/);
     const ordered = ['prepare.cjs', 'project-hooks.php before', 'project-hooks.php prepare', 'xml-manifest.php\n',
         `timeout --signal=TERM --kill-after=10s 600s node bin/${browserScript} --warmup`,
-        '/php/manifest.php', 'collection.php start', `runner node bin/${browserScript}\n`, 'report.php',
+        '/php/manifest.php', 'collection.php start', `runner node bin/${browserScript}\n`, 'cli-relay', 'report.php',
         'xml-manifest.php check', 'report-xml.cjs', 'finalize.cjs', 'project-hooks.php cleanup', 'report-url.php'];
     for (const command of ordered) assert.ok(result.calls.includes(command), `Missing command: ${command}`);
     for (let index = 1; index < ordered.length; index++) {

@@ -12,6 +12,14 @@ const root = path.resolve(__dirname, '..');
 const packages = ['redis-6.3.0', 'ssh2-1.5.0', 'swoole-6.2.1', 'imagick-3.8.1'];
 const composerInstall = 'RUN curl -sS https://getcomposer.org/installer | php -- --version=2.9.8 --install-dir=/usr/local/bin --filename=composer';
 
+const upstreamProbe = [
+    'RUN version=$(php -r "echo PHP_MAJOR_VERSION.PHP_MINOR_VERSION;")',
+    '    && architecture=$(uname -m)',
+    '    && curl -A "Docker" -o /tmp/blackfire-probe.tar.gz -D - -L -s https://blackfire.io/api/v1/releases/probe/php/linux/$architecture/$version',
+    '    && tar zxpf /tmp/blackfire-probe.tar.gz -C /tmp/blackfire',
+    '    && rm -rf /tmp/blackfire /tmp/blackfire-probe.tar.gz',
+].join(' \\\n');
+
 function workspace(t, buildExit = 0) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-php-image-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
@@ -23,7 +31,7 @@ function workspace(t, buildExit = 0) {
     const series = pins.match(/^PHP_IMAGE: "php:(\d+\.\d+)\./m)[1];
     const recipe = path.join(directory, '.runtime/docker-magento/images/php', series, 'Dockerfile');
     fs.mkdirSync(path.dirname(recipe), {recursive: true});
-    fs.writeFileSync(recipe, `FROM php:${series}-fpm-bookworm AS base\n\nRUN pecl channel-update pecl.php.net && pecl install \\\n${packages.map(name => `    ${name} \\`).join('\n')}\n  && pecl clear-cache\n\n${composerInstall}\n\nFROM base AS xdebug\n`);
+    fs.writeFileSync(recipe, `FROM php:${series}-fpm-bookworm AS base\n\nRUN pecl channel-update pecl.php.net && pecl install \\\n${packages.map(name => `    ${name} \\`).join('\n')}\n  && pecl clear-cache\n\n${upstreamProbe}\n\n${composerInstall}\n\nFROM base AS xdebug\n`);
     const commands = path.join(directory, 'commands');
     fs.mkdirSync(commands);
     fs.mkdirSync(path.join(directory, 'extensions'));
@@ -50,8 +58,17 @@ if (command === 'pecl' && args[0] === 'install') {
     const calls = () => fs.readFileSync(env.MOCK_LOG, 'utf8').trim().split('\n').map(JSON.parse);
     const generated = fs.readFileSync(path.join(directory, '.runtime/php-base.Dockerfile'), 'utf8');
     const script = generated.split('\n\n').find(block => block.startsWith('RUN pecl ')).replace(/^RUN /, '');
-    return {directory, env, build, calls, script};
+    return {directory, env, build, calls, script, generated};
 }
+
+test('PHP base replaces the Blackfire release endpoint with verified native Debian packages', t => {
+    const {build, generated} = workspace(t);
+    assert.equal(build.status, 0, build.stderr);
+    assert.doesNotMatch(generated, /blackfire\.io\/api\/v1/);
+    for (const arch of ['amd64', 'arm64']) assert.match(generated, new RegExp(arch + '\\) sha=[a-f0-9]{64}'));
+    assert.match(generated, /sha256sum -c -/);
+    assert.match(generated, /php -d extension=blackfire.so --ri blackfire/);
+});
 
 test('PHP base installs every pinned extension before caching its layer', t => {
     const {directory, env, build, calls, script} = workspace(t);

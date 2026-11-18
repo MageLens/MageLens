@@ -155,7 +155,7 @@ function prepareXmlManifests($om, array $run): array
         $item['effective'] = $file['family'] === 'system' ? $item['supported'] : isset($effectiveIds[$item['id']]);
     }
     unset($file, $item);
-    $areas = Xml::enabledHttpAreas($om->get(\Magento\Framework\App\AreaList::class)->getCodes());
+    $areas = Xml::enabledAreas($om->get(\Magento\Framework\App\AreaList::class)->getCodes());
     [$observers, $eventProviders] = ObserverManifest::prepare($om, $files, $areas);
     $providers += $eventProviders;
     $scopes = ['default' => ['' => '']];

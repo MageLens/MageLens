@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFileSync} = require('node:child_process');
+const {browserTitles, cliTitles, verifyScenarios} = require('../verify-scenarios.cjs');
 const {cases} = require('./cases.cjs');
 const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
 const {provenance} = require('../../docker/runner/cypress-source/provenance.cjs');
@@ -23,7 +24,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.equal(evidence.feasibility?.passed, true, 'Host feasibility not proven');
     assert.equal(evidence.feasibility.sha, context.sha);
     for (const step of ['probe', 'resources', 'isolation', 'e2e', 'cleanup']) assert.equal(evidence.steps[step]?.outcome, 'success', step);
-    assert.deepEqual(evidence.counts, {totalTests: 8, totalPassed: 8, totalFailed: 0, totalSkipped: 0, totalPending: 0});
+    assert.deepEqual(evidence.counts, {totalTests: browserTitles.length, totalPassed: browserTitles.length, totalFailed: 0, totalSkipped: 0, totalPending: 0});
     const run = read(path.join(directory, 'run.json'));
     const results = read(path.join(directory, `${entry.runner}-results.json`));
     const summary = read(path.join(directory, 'summary.json'));
@@ -54,7 +55,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.ok(read(path.join(directory, 'templates/coverage-summary.json')).templates.length, 'Missing template coverage');
     validateSnapshot(read(path.join(directory, 'equivalence.json')), run.id, summary);
     assert.deepEqual(read(path.join(directory, 'xml/coverage-summary.json')), read(path.join(directory, 'equivalence.json')).xml, 'Incomplete XML report projection');
-    execFileSync(process.execPath, ['tests/verify-scenarios.cjs', directory], {stdio: 'inherit'});
+    verifyScenarios(directory);
     return run.id;
 }
 function gate() {
@@ -94,9 +95,9 @@ function gate() {
     errors.push(...themes.errors);
     const report = {sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
         dependencyPreviews: previews,
-        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * 8, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
+        expectedCases: cases.length, completedCases: runIds.size, expectedAcceptanceTests: cases.length * browserTitles.length, expectedCliTests: cases.length * cliTitles.length, themeReportsEqual: themes.passed, passed: errors.length === 0, errors};
     fs.writeFileSync('ci-gate/qualification.json', JSON.stringify(report, null, 2) + '\n');
-    const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/${cases.length} complete cases; ${report.expectedAcceptanceTests} acceptance tests required.\n${errors.join('\n')}`;
+    const summary = `${report.passed ? 'PASS' : 'INCOMPLETE'}: ${runIds.size}/${cases.length} complete cases; ${report.expectedAcceptanceTests} browser and ${report.expectedCliTests} CLI acceptance tests required.\n${errors.join('\n')}`;
     console.log(summary);
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Required CI gate\n\n${summary}\n`);
     process.exitCode = report.passed ? 0 : 1;

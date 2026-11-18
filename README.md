@@ -165,6 +165,7 @@ This is the single place to choose the main dependency versions:
 | [PCOV fork](https://github.com/VitaliyBoyko/pcov) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |
+| n98-magerun2 for CLI tests | `MAGERUN_VERSION` / `MAGERUN_SHA256` |
 | Hyvä CSP theme | `HYVA_VERSION` |
 | Cypress JavaScript coverage adapter | `CYPRESS_CODE_COVERAGE_VERSION` |
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |

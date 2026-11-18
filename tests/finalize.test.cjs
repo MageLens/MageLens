@@ -22,11 +22,12 @@ function reports(t, covered, runner = 'cypress') {
     fs.writeFileSync(`${root}/coverage/.active-run`, 'fixture');
     json('coverage/xml/coverage.json', {run: 'fixture', covered, total: 1, percent, complete: true, sourcesUnchanged: true, collectorErrors: []});
     json('coverage/run.json', {id: 'fixture', runner, sources: {}});
-    json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}]});
+    json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}], commands: []});
     json('coverage/js/coverage-summary.json', {total: {statements: {covered, total: 1, pct: percent}}});
     json('coverage/templates/coverage-summary.json', {schemaVersion: 2, lines: {covered, total: 1, percent}, templates: [], summary: {covered, eligible: 1, percent}});
     json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0});
-    return {root, run: (args = []) => spawnSync(process.execPath, [path.join(__dirname, '../bin/finalize.cjs'), ...args], {cwd: root, encoding: 'utf8'})};
+    json('coverage/cli-results.json', {run: 'fixture', totalTests: 0, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0});
+    return {root, json, run: (args = []) => spawnSync(process.execPath, [path.join(__dirname, '../bin/finalize.cjs'), ...args], {cwd: root, encoding: 'utf8'})};
 }
 
 for (const covered of [0, 1]) test(`publishes valid ${covered * 100}% coverage without demo routes or files`, t => {
@@ -123,3 +124,14 @@ for (const runner of ['cypress', 'playwright']) {
         });
     }
 }
+test('CLI results require current coverage for every command and a fully passing suite', t => {
+    const fixture = reports(t, 1);
+    const file = 'coverage/cli-results.json';
+    const results = {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0};
+    for (const change of [{run: 'stale'}, {totalPending: 1}, {totalSkipped: 1}, {totalFailed: 1}, {commands: 1}]) {
+        fixture.json(file, {...results, ...change});
+        assert.notEqual(fixture.run().status, 0);
+        assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`) ||
+            !fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8').includes('CLI passed'));
+    }
+});

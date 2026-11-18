@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -55,12 +55,12 @@ process.exit(${options.downloadStatus ?? 0});
     return {
         destination,
         downloads: () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [],
-        run(args = [], mode = 'file') {
+        run({args = [], mode = 'file', input} = {}) {
             const invocation = mode === 'command'
                 ? ['-c', fs.readFileSync(bootstrap, 'utf8'), '--', ...args]
                 : [bootstrap, ...args];
             const result = spawnSync('bash', invocation, {
-                cwd: destination, encoding: 'utf8', input: 'interactive answer\n', timeout: 10000,
+                cwd: destination, encoding: 'utf8', input, timeout: 10000,
                 env: {...process.env, PATH: `${commands}:${process.env.PATH}`, TMPDIR: temporary,
                     MAGELENS_VERSION: options.version ?? ''}
             });
@@ -77,7 +77,7 @@ for (const mode of ['file', 'command']) {
         test(`${mode} bootstrap installs ${version || 'latest'} and preserves arguments and stdin`, t => {
             const fixture = workspace(t, {version});
             const args = ['--mageos', '--hyva', '--playwright', '--container-only', '--project-name', 'client-shop', 'shop.test', 'one argument'];
-            const result = fixture.run(args, mode);
+            const result = fixture.run({args, mode, input: 'interactive answer\n'});
             assert.equal(result.status, 0, result.stderr);
             assert.deepEqual(fixture.downloads(), version ? [archiveUrl(version)] : [latestUrl, archiveUrl('v1.8.2')]);
             assert.equal(fs.readFileSync(path.join(fixture.destination, 'arguments'), 'utf8'), args.join('\n') + '\n');
@@ -127,7 +127,7 @@ for (const existing of ['user-file', '.env', 'dangling-link']) {
 
 test('bootstrap preserves the installer exit status and extracted files for recovery', t => {
     const fixture = workspace(t, {installStatus: 37});
-    const result = fixture.run();
+    const result = fixture.run({input: 'interactive answer\n'});
     assert.equal(result.status, 37, result.stderr);
     assert.ok(fs.existsSync(path.join(fixture.destination, 'install.sh')));
     assert.ok(fs.existsSync(path.join(fixture.destination, 'answer')));

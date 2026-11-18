@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Copyright (c)  MageLens
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+source "$(dirname "$0")/common"
+
+# Keep these pipes on the host. The runner only sees standard input and output,
+# so it needs neither Docker access nor a command endpoint on the network.
+relay=$(mktemp -d "${TMPDIR:-/tmp}/magelens-cli.XXXXXX")
+trap 'rm -rf "$relay"' EXIT
+mkfifo "$relay/requests" "$relay/responses"
+dc exec -T runner node bin/run-cli.cjs \
+    < "$relay/responses" > "$relay/requests" &
+runner_pid=$!
+exec 4>"$relay/responses" 3<"$relay/requests"
+while IFS= read -r request <&3; do
+    [[ -n "$request" ]] || break
+    if ! response=$(dc exec -T -e MAGERUN_VERSION -e MAGERUN_SHA256 phpfpm php -d display_errors=stderr /application/docker/php/cli-command.php <<< "$request" 3<&- 4>&-) ||
+        ! printf '%s\n' "$response" >&4; then
+        exec 4>&-
+        wait "$runner_pid" || true
+        fail 'Magento CLI command relay failed.'
+    fi
+done
+exec 4>&- 3<&-
+wait "$runner_pid"
