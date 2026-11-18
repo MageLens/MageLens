@@ -2056,8 +2056,8 @@ final class LayoutCoverage
 
     private function beginRender($block, array $params, string $class): void
     {
+        if ($block instanceof Template) $this->templateOwnership->watch($block, isset($this->blocks[$block]));
         if (isset($this->blocks[$block])) {
-            if ($block instanceof Template) $this->templateOwnership->watch($block);
             $state = $this->blocks[$block];
             unset($state['executed'], $state['html']);
             $this->blocks[$block] = $state;

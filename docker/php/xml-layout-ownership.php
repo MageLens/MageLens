@@ -305,7 +305,9 @@ final class LayoutXmlOwnership
                 $trusted = $trusted && $delegated && $this->wrappers[$index]['query'] !== false;
                 $this->wrappers[$index]['trusted'] = $trusted;
             } else {
-                if ($trusted && $delegated) $this->errors['Missing generated layout producer hook evidence'] = true;
+                if ($trusted && $delegated) {
+                    $this->errors['Missing generated layout producer hook evidence for ' . get_class($object) . '::' . $method] = true;
+                }
                 $trusted = false;
             }
         }

@@ -16,7 +16,7 @@ use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, Recorder};
 use Magento\Framework\View\Element\Template;
 
 $mode = $argv[1] ?? 'native';
-if (!in_array($mode, ['native', 'getter', 'file', 'resolver', 'fallback', 'compiled-fallback', 'getter-plugin',
+if (!in_array($mode, ['native', 'unmapped', 'unmapped-first', 'getter', 'file', 'resolver', 'fallback', 'compiled-fallback', 'getter-plugin',
     'file-plugin', 'resolver-plugin', 'around', 'compiled-getter-plugin', 'compiled-file-plugin', 'compiled-resolver-plugin',
     'compiled-around', 'missing-getter', 'missing-file', 'missing-resolver', 'missing-getter-pre', 'missing-getter-post',
     'resolution-depth', 'resolver-fallback', 'compiled-resolver-fallback', 'custom-theme-plugin', 'missing-theme-plugin',
@@ -62,6 +62,25 @@ $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectMana
 $objects->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
 $objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_CONFIG);
 $objects->get(\Magento\Framework\App\AreaList::class)->getArea('frontend')->load(\Magento\Framework\App\Area::PART_DESIGN);
+if (in_array($mode, ['unmapped', 'unmapped-first'], true)) {
+    $class = $mode === 'unmapped' ? \MageLens\Compatibility\Block\LayoutUnmappedTemplate::class : Template::class;
+    layoutNativeInterceptor($objects, $class, null);
+    $layout = $objects->create(\Magento\Framework\View\Layout::class);
+    $block = $layout->createBlock($class, 'magelens.layout.unmapped', ['data' => ['value' => 'xml-value', 'late' => 'xml-value']]);
+    $block->setTemplate('MageLens_Compatibility::layout-mutation.phtml');
+    if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')) {
+        throw new RuntimeException('Native programmatic block changed its template output');
+    }
+    echo "Verified native programmatic template rendering without an XML declaration.\n";
+    if (in_array('--native-only', $argv, true)) exit;
+    $events = (new ReflectionProperty(Recorder::class, 'events'))->getValue();
+    if ($events) throw new RuntimeException('Programmatic template rendering credited unvisited XML');
+    if ($mode === 'unmapped') {
+        $collector->finish();
+        echo "Verified untracked template rendering preserves XML hook health and zero original hits.\n";
+        exit;
+    }
+}
 $plugin = match ($mode) {
     'getter-plugin', 'compiled-getter-plugin' => \MageLens\Compatibility\Model\LayoutTemplateGetterPlugin::class,
     'file-plugin', 'compiled-file-plugin' => \MageLens\Compatibility\Model\LayoutTemplateFilePlugin::class,
@@ -158,7 +177,7 @@ $template = array_values(array_filter($declarations, static fn($item) => $item['
 $effects = array_values(array_unique(array_column(array_filter($events,
     static fn($event) => $event['id'] === $template['id']), 'type')));
 sort($effects);
-$expected = in_array($mode, ['native', 'fallback', 'compiled-fallback', 'resolver-fallback', 'compiled-resolver-fallback',
+$expected = in_array($mode, ['native', 'unmapped-first', 'fallback', 'compiled-fallback', 'resolver-fallback', 'compiled-resolver-fallback',
     'engine-inherited', 'engine-inherited-fallback', 'engine-fallback', 'compiled-engine-fallback'], true) ? ['layout-template-executed', 'layout-template-selected']
     : ['layout-template-origin-unconfirmed', 'layout-template-selected'];
 if ($effects !== $expected) throw new RuntimeException('Equal runtime template replacement retained original execution ownership');

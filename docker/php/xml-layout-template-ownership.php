@@ -16,12 +16,14 @@ final class LayoutTemplateOwnership
     private array $resolving = [];
     private int $overflow = 0;
     private \WeakMap $resolved;
+    private \WeakMap $watched;
     private array $errors = [];
     private LayoutBeforePluginOwnership $beforePlugin;
 
     public function __construct(private readonly LayoutXmlOwnership $ownership)
     {
         $this->resolved = new \WeakMap();
+        $this->watched = new \WeakMap();
         $this->beforePlugin = new LayoutBeforePluginOwnership([
             'native' => Resolver::class, 'method' => 'getTemplateFileName', 'name' => 'updateThemeParams',
             'plugin' => UpdateThemeParams::class, 'callback' => 'beforeGetTemplateFileName',
@@ -41,8 +43,9 @@ final class LayoutTemplateOwnership
             ...$this->beforePlugin->hooks()];
     }
 
-    public function watch(Template $block): void
+    public function watch(Template $block, bool $attributable): void
     {
+        if ($attributable) $this->watched[$block] = true;
         foreach (['getTemplate', 'getTemplateFile'] as $method) {
             $this->ownership->watchProducer($block, Template::class, $method, $this->begin(...), $this->complete(...));
         }
@@ -60,11 +63,13 @@ final class LayoutTemplateOwnership
         $native = $object instanceof Template ? Template::class : Resolver::class;
         $caller = LayoutXmlOwnership::caller($object, $method);
         $index = array_key_last($this->resolving);
-        $consumer = $method === 'getTemplateFile'
+        $attributable = $object instanceof Template ? isset($this->watched[$object])
+            : ($index !== null && $this->resolving[$index]['attributable']);
+        $consumer = $attributable && ($method === 'getTemplateFile'
             ? ($caller['class'] ?? null) === Template::class && ($caller['function'] ?? null) === '_toHtml'
             : $index !== null && ($caller['class'] ?? null) === Template::class
                 && ($caller['function'] ?? null) === 'getTemplateFile'
-                && ($caller['object'] ?? null) === $this->resolving[$index]['block'];
+                && ($caller['object'] ?? null) === $this->resolving[$index]['block']);
         if ($method === 'getTemplateFile' && $this->ownership->producerDepth($object, $method) === 0) {
             $resolver = self::resolver($object);
             $this->ownership->watchProducer($resolver, Resolver::class, 'getTemplateFileName', $this->begin(...), $this->complete(...));
@@ -75,7 +80,7 @@ final class LayoutTemplateOwnership
                 $this->beforePlugin->begin($resolver);
                 $this->resolving[] = ['block' => $object, 'resolver' => $resolver, 'getterObserved' => false,
                     'resolverObserved' => false, 'getterTrusted' => false, 'resolverTrusted' => false,
-                    'usesSelection' => empty($params[0]), 'rendering' => $consumer];
+                    'usesSelection' => empty($params[0]), 'rendering' => $consumer, 'attributable' => $attributable];
             }
         }
         $direct = LayoutXmlOwnership::caller($object, $method, false);
