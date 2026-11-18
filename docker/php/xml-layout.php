@@ -99,6 +99,7 @@ final class LayoutCoverage
     private array $limitations = [];
     private array $errors = [];
     private array $validating = [];
+    private LayoutReferenceCoverage $references;
 
     private function __construct(private readonly array $sources)
     {
@@ -109,6 +110,8 @@ final class LayoutCoverage
         $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
+        $this->references = new LayoutReferenceCoverage($sources, $this->origin(...));
+        Recorder::layoutReferences($this->references);
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
         $this->blockRendering = new LayoutBlockRendering($this->ownership);
         $this->handleMetadata = new LayoutHandleMetadata($this->ownership, $this->packageOrigin(...));
@@ -132,13 +135,14 @@ final class LayoutCoverage
 
     public static function register(array $sources): array
     {
-        if (!$sources) return [null, []];
+        if (!$sources) { Recorder::layoutReferences(null); return [null, []]; }
         $collector = new self($sources);
         return [$collector, $collector->hooks()];
     }
 
     public function finish(): array
     {
+        $this->references->finish();
         $this->ownership->finish();
         $this->templateOwnership->finish();
         $this->selectionOwnership->finish();
@@ -266,6 +270,7 @@ final class LayoutCoverage
             ...$this->page->hooks(),
             ...$this->structureCoverage->hooks(),
             ...$this->positions->hooks(),
+            ...$this->references->hooks(),
             ...$this->registry->hooks(),
             ...$this->templateOwnership->hooks(),
             ...$this->engineBeforePlugin->hooks(),
@@ -1715,6 +1720,7 @@ final class LayoutCoverage
             $this->page->reset($context->getPageConfigStructure());
             $this->structureCoverage->reset($structure);
             $this->positions->reset($structure);
+            $this->references->reset($structure);
         }
     }
 
@@ -1739,7 +1745,8 @@ final class LayoutCoverage
         foreach ($this->documents as $document) {
             if ($document['targets'] && $node->isSameNode($document['root']) && (isset($this->structures[$context->getScheduledStructure()])
                 || $this->page->snapshot($context->getPageConfigStructure())
-                || $this->structureCoverage->snapshot($context->getScheduledStructure()))) {
+                || $this->structureCoverage->snapshot($context->getScheduledStructure())
+                || $this->references->snapshot($context->getScheduledStructure()))) {
                 $this->sourceTrace = true;
                 return;
             }
@@ -1753,13 +1760,14 @@ final class LayoutCoverage
         $context = self::readerContext($layout);
         $source = $context->getScheduledStructure();
         $this->contexts[] = [$this->structures[$source] ?? [], $this->moves[$source] ?? [], $this->removals[$source] ?? [],
-            $this->page->snapshot($context->getPageConfigStructure()), $this->structureCoverage->snapshot($source), $this->positions->snapshot($source)];
+            $this->page->snapshot($context->getPageConfigStructure()), $this->structureCoverage->snapshot($source), $this->positions->snapshot($source),
+            $this->references->snapshot($source)];
     }
 
     private function mirrorContext($layout, array $params, $context, ?\Throwable $error, string $class): void
     {
         if ($class !== Layout::class) return;
-        [$blocks, $moves, $removals, $page, $containers, $positions] = array_pop($this->contexts);
+        [$blocks, $moves, $removals, $page, $containers, $positions, $references] = array_pop($this->contexts);
         if ($error) return;
         $schedule = $context->getScheduledStructure();
         if ($blocks) $this->structures[$schedule] = $blocks;
@@ -1768,6 +1776,7 @@ final class LayoutCoverage
         $this->page->restore($context->getPageConfigStructure(), $page);
         $this->structureCoverage->restore($schedule, $containers);
         $this->positions->restore($schedule, $positions);
+        $this->references->restore($schedule, $references);
     }
 
     private function watchBlockCreation($generator): void

@@ -104,8 +104,20 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
     layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
+const referenceEvents = [...new Set(['template', 'argument', 'action', 'container-htmlTag', 'container-label',
+    'block-class', 'block-group', 'block-ttl', 'block-display', 'removal'].flatMap(kind => layoutEvents[kind]))]
+    .filter(type => !['layout-argument-evaluated', 'layout-argument-mixed-origin', 'layout-argument-overridden',
+        'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed'].includes(type));
+for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...referenceEvents,
+    'layout-reference-target-observed', 'layout-reference-unchanged', 'layout-reference-target-missing',
+    'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-reference-unchanged': 'This empty reference matched a native structural target and supplied no operation.',
+    'layout-reference-target-missing': 'The named reference target was absent at the observed native structural-build boundary.',
+    'layout-reference-target-removed': 'The named reference target was removed at the observed native structural-build boundary.',
+    'layout-reference-origin-unconfirmed': 'The reference reader, XML name accessor or structural storage lacks a verified native handoff. Independent descendant facts remain separate.',
+    'layout-reference-child-replaced': 'A later native schedule or parenting write replaced this original child-parent assignment, including equal-valued writes.',
     'layout-block-registration-origin-unconfirmed': 'The block registration passed through an unverified setter or scope-dependent generated implementation. The resulting layout element has no verified original registration origin.',
     'layout-handle-metadata-returned': 'The native API returned a handle metadata snapshot. Later PHP array offsets and classification calls do not preserve per-field origin identity.',
     'layout-handle-metadata-overridden': 'A later package entry with the same handle replaced this metadata in the native result map.',
@@ -188,7 +200,7 @@ const layoutDecisions = {
     'layout-include-cycle': 'Magento was processing the included handle and skipped recursive re-entry',
     'layout-include-missing': 'Magento found no package or database layout update for the handle',
 };
-const layoutObservations = new Set(['layout-block-created', 'layout-template-selected']);
+const layoutObservations = new Set(['layout-block-created', 'layout-template-selected', 'layout-reference-target-observed']);
 const countsAsLayoutCoverage = type => !Object.hasOwn(layoutDecisions, type) && !layoutObservations.has(type);
 const layoutLimitations = {
     'layout-programmatic-update': 'A native programmatic XML update appended input without original file provenance.',

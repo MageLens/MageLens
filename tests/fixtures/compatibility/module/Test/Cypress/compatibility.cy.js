@@ -249,6 +249,12 @@ describe('Magento storefront coverage compatibility', () => {
             cy.get(`[data-layout-renderfailure="${effect}"]`).should('have.text', 'verified');
         }
         cy.get('[data-layout-renderfailure-output="after"]').should('not.exist');
+        cy.visit('/coverageprobe/references/');
+        cy.get('[data-layout-reference-proof]').should('have.text', 'verified');
+        cy.get('#layout-reference-inner').should('have.class', 'reference-effective');
+        cy.get('[data-layout-reference-output="effective"]').should('have.text', 'reference-marker/action-marker');
+        cy.get('[data-layout-reference-child]').should('have.text', 'attached-child');
+        cy.get('[data-layout-reference-output="base"], #layout-reference-removed, #layout-reference-empty').should('not.exist');
         cy.visit('/coverageprobe/propertyownership/');
         for (const effect of ['native', 'template-get', 'template-set', 'template-magic', 'template-redeclared',
             'data-get', 'data-magic', 'data-set', 'data-redeclared', 'after-failure']) {

@@ -57,6 +57,8 @@ final class LayoutManifest
                 in_array($fileType, ['page', 'generic'], true) && $index === 0 => 'file-selection',
                 $blockNode && $node->tagName === 'block' => 'block',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                    && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) && $element !== '' => 'reference',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true)
                     && $node->tagName === 'container' => 'container',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'uiComponent'
                     && $element !== '' => 'ui-placement',
@@ -92,6 +94,7 @@ final class LayoutManifest
                         && $attribute->namespaceURI === 'http://www.w3.org/2001/XMLSchema-instance'
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
+                    $valueKind === 'reference' && $attribute->nodeName === 'name' => 'reference-name',
                     $valueKind === 'move' && in_array($attribute->nodeName, ['element', 'destination', 'as', 'before', 'after'], true) => 'move-' . $attribute->nodeName,
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'label' => 'handle-label',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'design_abstraction' => 'handle-type',
@@ -140,7 +143,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'template', 'action', 'action-method', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-argument', 'argument', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -283,6 +286,34 @@ final class LayoutManifest
                 $targets[$details['ordinal']]['instruction'] = $details['instruction'];
                 $targets[$details['ordinal']]['ids'][$details['kind']] = $item['id'];
                 if (isset($details['selection'])) $targets[$details['ordinal']]['selection'] = $details['selection'];
+            }
+            $references = [];
+            foreach ($file['declarations'] as $item) {
+                if (!$item['supported'] || $item['layout']['kind'] !== 'reference') continue;
+                $ordinal = $item['layout']['ordinal'];
+                $definition = ['id' => $item['id'], 'nameId' => $targets[$ordinal]['ids']['reference-name'],
+                    'element' => $item['layout']['element'], 'empty' => true,
+                    'removeId' => $targets[$ordinal]['ids']['removal'] ?? null];
+                foreach ($file['declarations'] as $other) {
+                    if ($other['id'] !== $definition['id'] && $other['id'] !== $definition['nameId']
+                        && str_starts_with($other['path'], $item['path'] . '/')) $definition['empty'] = false;
+                }
+                $targets[$ordinal]['reference'] = $definition;
+                $references[$item['path']] = $definition;
+            }
+            // A nested block/container/UI placement starts its own target scope.
+            // Its effects cannot prove that an enclosing reference matched.
+            uksort($references, static fn($left, $right) => strlen($right) <=> strlen($left));
+            foreach ($file['declarations'] as $item) {
+                if (!$item['supported'] || in_array($item['layout']['kind'], ['reference', 'reference-name'], true)) continue;
+                foreach ($references as $path => $definition) {
+                    if (!str_starts_with($item['path'], $path . '/')) continue;
+                    $suffix = substr($item['path'], strlen($path));
+                    if (!preg_match('~/(?:block|container|uiComponent|referenceBlock|referenceContainer)(?:\[|/|$)~', $suffix)) {
+                        $targets[$item['layout']['ordinal']]['referenceOwner'] = $definition['id'];
+                    }
+                    break;
+                }
             }
             if ($targets) $result[$file['path']] = ['hash' => $file['sourceHash'], 'targets' => $targets];
         }

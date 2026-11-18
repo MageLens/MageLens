@@ -335,6 +335,44 @@ test('XML reporting rejects a symlink to an otherwise identical layout source', 
     assert.match(result.stderr, /Symlinked XML source/);
 });
 
+test('reference target observations retain zero hits and require independent native effects', () => {
+    for (const kind of ['reference', 'reference-name']) {
+        const {manifest, record, sources} = fixture();
+        const file = 'app/code/Acme/Blog/view/frontend/layout/references.xml';
+        const source = Buffer.from('<layout><referenceBlock name="subject"/></layout>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        manifest.files.push({path: file, sourceHash, family: 'layout', declarations: [{
+            id: 'reference', family: 'layout', path: '/layout/referenceBlock', startLine: 1, endLine: 1,
+            supported: true, declaredScope: {type: 'frontend', code: ''},
+            layout: {kind, element: 'subject', ordinal: 1, handle: 'references', fileType: 'generic', instruction: 'referenceBlock'}
+        }]});
+        manifest.layoutSources = {[file]: {hash: sourceHash, targets: {1: {ids: {[kind]: 'reference'}}}}};
+        sources[file] = source;
+        const event = type => ({id: 'reference', type, area: 'frontend', theme: 'frontend/Acme/theme', hits: 1});
+        const collect = types => merge(manifest, [{...record, layoutHook: true, events: types.map(event)}], sources)
+            .files[1].declarations[0];
+        for (const types of [[], ['layout-reference-target-observed'], ['layout-template-selected']]) {
+            const declaration = collect(types);
+            assert.equal(declaration.state, 'uncovered');
+            assert.equal(declaration.hits, 0);
+        }
+        for (const type of ['layout-reference-unchanged', 'layout-reference-target-missing',
+            'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-replaced']) {
+            const declaration = collect([type]);
+            assert.equal(declaration.state, 'unmeasured');
+            assert.equal(declaration.hits, 0);
+            assert.ok(declaration.reason);
+        }
+        for (const type of ['layout-reference-child-attached', 'layout-template-executed', 'layout-action-executed',
+            'layout-container-wrapper-rendered', 'layout-display-denied', 'layout-removal-applied']) {
+            assert.equal(collect(['layout-reference-target-observed', type]).state, 'covered');
+        }
+        assert.throws(() => collect(['layout-block-rendered']), /Unexpected layout effect/);
+        assert.throws(() => collect(['layout-argument-read']), /Argument read without native application evidence/);
+        assert.equal(collect(['layout-argument-applied', 'layout-argument-read']).state, 'covered');
+    }
+});
+
 test('layout action ambiguity remains visible and contributes zero hits', () => {
     const {manifest, record, sources} = fixture();
     const file = 'app/code/Acme/Blog/view/frontend/layout/blog_index_index.xml';

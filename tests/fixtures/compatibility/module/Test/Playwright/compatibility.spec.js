@@ -217,6 +217,12 @@ test('starts the next test with fresh state', async ({page}) => {
         await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
     }
     await expect(page.locator('[data-layout-renderfailure-output="after"]')).toHaveCount(0);
+    await page.goto('/coverageprobe/references/');
+    await expect(page.locator('[data-layout-reference-proof]')).toHaveText('verified');
+    await expect(page.locator('#layout-reference-inner')).toHaveClass('reference-effective');
+    await expect(page.locator('[data-layout-reference-output="effective"]')).toHaveText('reference-marker/action-marker');
+    await expect(page.locator('[data-layout-reference-child]')).toHaveText('attached-child');
+    await expect(page.locator('[data-layout-reference-output="base"], #layout-reference-removed, #layout-reference-empty')).toHaveCount(0);
     await page.goto('/coverageprobe/propertyownership/');
     for (const effect of ['native', 'template-get', 'template-set', 'template-magic', 'template-redeclared',
         'data-get', 'data-magic', 'data-set', 'data-redeclared', 'after-failure']) {

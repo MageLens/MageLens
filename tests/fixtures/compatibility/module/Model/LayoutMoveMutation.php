@@ -15,9 +15,19 @@ class LayoutMoveMutation
 {
     public bool $enabled = false;
     public int $calls = 0;
+    public bool $replaceReferenceChild = false;
+    public int $referenceCalls = 0;
 
     public function beforeProcess(GeneratorPool $pool, ReaderContext $reader, Context $context): void
     {
+        if ($this->replaceReferenceChild) {
+            $schedule = $reader->getScheduledStructure();
+            $name = 'magelens.reference.attached';
+            $row = $schedule->getStructureElement($name);
+            if ($row === null) throw new \RuntimeException('Expected an original reference child before equal rescheduling');
+            $schedule->setStructureElement($name, $row);
+            $this->referenceCalls++;
+        }
         if (!$this->enabled) return;
         $schedule = $reader->getScheduledStructure();
         $name = 'magelens.layout.moveoperand.movable';

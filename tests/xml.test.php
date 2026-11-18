@@ -136,6 +136,29 @@ $moveItems = array_values(array_filter($moveItems, static fn($item) => $item['la
 checkXml(array_column(array_column($moveItems, 'layout'), 'kind') === ['move', 'move-element', 'move-destination', 'move-as', 'move-before', 'move-after']
     && count(array_filter($moveItems, static fn($item) => $item['supported'])) === 6,
     'Each native move operand has its own stable supported source identity');
+$referencePath = 'app/code/Fixture/Module/view/frontend/layout/references.xml';
+$referenceSource = '<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><referenceContainer name="parent" htmlClass="outer"><block name="child" template="child.phtml">'
+    . '<arguments><argument name="childValue" xsi:type="string">child</argument></arguments></block>'
+    . '<referenceBlock name="inner" template="inner.phtml"/></referenceContainer><referenceBlock name="empty"/></layout>';
+$referenceItems = LayoutManifest::declarations($referencePath, $referenceSource);
+$referenceTargets = LayoutManifest::targets([['path' => $referencePath, 'family' => 'layout',
+    'sourceHash' => hash('sha256', $referenceSource), 'declarations' => $referenceItems]])[$referencePath]['targets'];
+$references = array_values(array_filter($referenceTargets, static fn($target) => isset($target['reference'])));
+checkXml(count($references) === 3 && !$references[0]['reference']['empty'] && !$references[1]['reference']['empty']
+    && $references[2]['reference']['empty'], 'References preserve independent node/name identities and empty-operation inventory');
+foreach ($referenceItems as $item) {
+    if (!$item['supported']) continue;
+    $target = $referenceTargets[$item['layout']['ordinal']];
+    if ($item['layout']['kind'] === 'container-htmlClass') {
+        checkXml(($target['referenceOwner'] ?? null) === $references[0]['reference']['id'],
+            'Direct reference attributes retain the enclosing original reference origin');
+    } elseif (str_contains($item['path'], '/block[')) {
+        checkXml(!isset($target['referenceOwner']), 'Child declaration effects do not credit an enclosing reference target');
+    } elseif ($item['layout']['kind'] === 'template' && $item['layout']['element'] === 'inner') {
+        checkXml(($target['referenceOwner'] ?? null) === $references[1]['reference']['id'],
+            'Nested references begin independent effect ownership scopes');
+    }
+}
 $replaced = array_values(array_filter($layoutItems, static fn($item) => $item['layout']['element'] === 'magelens.layout.replaced' && $item['supported']));
 checkXml(array_column(array_column($replaced, 'layout'), 'kind') === ['block', 'block-class', 'position-name', 'template'],
     'Block, class, name and template origins are independent');
@@ -191,3 +214,21 @@ foreach ([[], ['id' => 'new-scalar']] as $newOrigin) {
         && !isset($replacedArray['value']['children']), 'Scalar replacement accounts for every displaced original array declaration');
 }
 echo "Programmatic argument overlays preserve displaced and surviving XML origins.\n";
+
+require_once __DIR__ . '/../docker/php/xml-layout-references.php';
+foreach (['references' => 8193, 'effect origins' => 32769] as $limit => $count) {
+    $targets = [];
+    for ($index = 0; $index < $count; $index++) {
+        $targets[] = $limit === 'references'
+            ? ['reference' => ['id' => (string) $index]]
+            : ['referenceOwner' => 'parent', 'ids' => ['argument' => (string) $index]];
+    }
+    try {
+        new \MageLens\XmlCoverage\LayoutReferenceCoverage([['targets' => $targets]], static fn() => []);
+        throw new LogicException('Oversized reference inventory was accepted');
+    } catch (RuntimeException $error) {
+        checkXml(str_contains($error->getMessage(), 'Layout reference inventory exceeded'),
+            'Reference declaration and effect-origin bounds reject oversized inventories');
+    }
+}
+echo "Reference inventory bounds reject incomplete attribution.\n";
