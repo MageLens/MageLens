@@ -314,7 +314,10 @@ test('layout equivalence preserves effects, source and context without exposing 
     const action = {...declaration, id: 'c'.repeat(64), path: '/page/body/block/action', state: 'unmeasured', hits: 0,
         layout: {...declaration.layout, kind: 'action', ordinal: 3, instruction: 'action', attribute: null},
         evidence: [{...effect, type: 'layout-action-ambiguous'}]};
-    xml.files[0].declarations = [declaration, action];
+    const hint = {...declaration, id: 'd'.repeat(64), path: '/page/@xsi:noNamespaceSchemaLocation',
+        state: 'unmeasured', supported: false, hits: 0, evidence: [],
+        layout: {...declaration.layout, kind: 'schema-hint', ordinal: 0, instruction: 'page', attribute: 'xsi:noNamespaceSchemaLocation'}};
+    xml.files[0].declarations = [declaration, action, hint];
     xml.layout = {total: 1, covered: 1, limitations: ['SECRET cache reason']};
     write('xml/coverage.json', xml);
     const original = snapshot(directory);
@@ -323,6 +326,11 @@ test('layout equivalence preserves effects, source and context without exposing 
     declaration.hits = 90;
     write('xml/coverage.json', xml);
     assert.deepEqual(snapshot(directory), original);
+    const invalidHint = structuredClone(original);
+    const hints = Object.values(invalidHint.xml.files).flatMap(file => file.declarations).filter(item => item.layout?.[0] === 'schema-hint');
+    assert.equal(hints.length, 1);
+    hints[0].state = 'covered';
+    assert.throws(() => validateSnapshot(invalidHint, 'fresh', read('summary.json')), /Schema hints cannot receive runtime coverage/);
 
     for (const change of [
         report => { report.files[0].declarations[0].evidence[0].theme = 'frontend/Acme/different'; },

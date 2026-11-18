@@ -222,7 +222,11 @@ function validateSnapshot(value, run, summary) {
         for (const item of array(file.declarations)) {
             if (item.layout) {
                 const [kind, fileType, ordinal, ...identity] = array(item.layout);
-                assert.ok(Object.hasOwn(layoutEvents, kind) || ['instruction', 'attribute'].includes(kind));
+                assert.ok(Object.hasOwn(layoutEvents, kind) || ['instruction', 'attribute', 'schema-hint'].includes(kind));
+                if (kind === 'schema-hint') {
+                    assert.equal(item.state, 'unmeasured', 'Schema hints cannot receive runtime coverage');
+                    assert.deepEqual(item.evidence, [], 'Schema hints cannot receive runtime evidence');
+                }
                 assert.ok(['page', 'generic', 'wireframe', 'custom', 'registry', 'page-types'].includes(fileType));
                 count(ordinal);
                 assert.equal(identity.length, 6);
