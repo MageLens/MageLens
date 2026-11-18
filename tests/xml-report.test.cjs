@@ -385,6 +385,13 @@ test('layout structural and page-value reports require the correct native effect
                 assert.equal(item.hits, 0, type);
             }
         }
+        if (kind === 'block') {
+            const item = merge(manifest, [{...record, layoutHook: true,
+                events: [{...event, type: 'layout-block-cache-unconfirmed'}]}], sources).files[1].declarations[0];
+            assert.equal(item.state, 'unmeasured');
+            assert.equal(item.hits, 0);
+            assert.match(item.reason, /original source of the cached bytes is unverified/);
+        }
         if (kind === 'argument') {
             const item = merge(manifest, [{...record, layoutHook: true,
                 events: [{...event, type: 'layout-argument-application-unconfirmed'}]}], sources).files[1].declarations[0];
@@ -429,6 +436,11 @@ test('template selection and an unconfirmed execution input retain independent e
     assert.equal(selected.state, 'covered');
     assert.equal(selected.hits, 1);
     assert.ok(selected.evidence.some(event => event.type === 'layout-template-origin-unconfirmed'));
+    const cached = merge(manifest, [{...record, layoutHook: true,
+        events: [{...event, type: 'layout-template-cache-unconfirmed'}]}], sources).files[1].declarations[0];
+    assert.equal(cached.state, 'unmeasured');
+    assert.equal(cached.hits, 0);
+    assert.match(cached.reason, /Cached block HTML bypassed this selected template/);
 });
 
 test('native file selection remains a zero-hit observation and cannot substitute for effect hook health', () => {

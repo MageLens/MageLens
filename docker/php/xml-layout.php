@@ -70,6 +70,8 @@ final class LayoutCoverage
     private array $blockObjectCreations = [];
     private int $blockObjectOverflow = 0;
     private \WeakMap $blocks;
+    private array $loadingHtml = [];
+    private int $loadingHtmlOverflow = 0;
     private array $fetching = [];
     private int $fetchingOverflow = 0;
     private bool $healthy = false;
@@ -117,6 +119,7 @@ final class LayoutCoverage
         $this->templateOwnership->finish();
         $this->engineBeforePlugin->finish();
         if ($this->fetching || $this->fetchingOverflow) $this->errors['Unbalanced template rendering hook evidence'] = true;
+        if ($this->loadingHtml || $this->loadingHtmlOverflow) $this->errors['Unbalanced block HTML cache hook evidence'] = true;
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
         if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
@@ -202,7 +205,9 @@ final class LayoutCoverage
             [DataObject::class, 'getDataByPath', null, $this->consumeArgument(...)],
             [DataObject::class, 'offsetGet', null, $this->consumeArgument(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
-            [AbstractBlock::class, '_loadCache', null, $this->loadBlockHtml(...)],
+            [AbstractBlock::class, '_loadCache', $this->beginBlockHtml(...), $this->loadBlockHtml(...)],
+            [\Magento\Framework\App\CacheInterface::class, 'load', null, $this->loadedBlockCache(...)],
+            [\Magento\Framework\Cache\LockGuardedCacheLoader::class, 'lockedLoadData', $this->beginBlockCacheLoader(...), null],
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
             [Template::class, 'fetchView', $this->beginTemplate(...), $this->completeTemplate(...)],
             [Php::class, '__construct', $this->watchTemplateEngine(...), null],
@@ -1974,13 +1979,80 @@ final class LayoutCoverage
 
     private function loadBlockHtml($block, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($error || !isset($this->blocks[$block])) return;
+        if ($class !== AbstractBlock::class) return;
+        if ($this->loadingHtmlOverflow) { $this->loadingHtmlOverflow--; return; }
+        $frame = array_pop($this->loadingHtml);
+        if (!$frame || $frame['block'] !== $block) {
+            $this->errors['Unbalanced block HTML cache hook evidence'] = true;
+            return;
+        }
+        if ($error) return;
+        if ($frame['readExpected'] && !$frame['readObserved']) $this->errors['Missing native block HTML cache read hook evidence'] = true;
+        if ($frame['readObserved'] && $frame['loaderExpected'] && !$frame['loaderObserved']) {
+            $this->errors['Missing native block HTML cache loader hook evidence'] = true;
+        }
+        if ($frame['cacheData']) $this->limitations['block-html-cache-origin'] = true;
+        if (!isset($this->blocks[$block])) return;
+        $state = $this->blocks[$block];
+        if ($frame['cacheData'] && empty($state['executed'])) {
+            $this->event($state['block'], 'layout-block-cache-unconfirmed', $state['context']);
+            $this->event($state['template'], 'layout-template-cache-unconfirmed', $state['context']);
+        }
         $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) === AbstractBlock::class && ($caller['function'] ?? null) === 'toHtml') {
             $state = $this->blocks[$block];
             $state['html'] = true;
             $this->blocks[$block] = $state;
         }
+    }
+
+    private function beginBlockHtml($block, array $params, string $class): void
+    {
+        if ($class !== AbstractBlock::class) return;
+        if ($this->loadingHtmlOverflow || count($this->loadingHtml) >= 256) {
+            $this->loadingHtmlOverflow++;
+            $this->errors['Layout block HTML cache nesting exceeded 256 calls'] = true;
+            return;
+        }
+        static $property;
+        $property ??= new \ReflectionProperty(AbstractBlock::class, 'lockQuery');
+        $loader = $property->getValue($block);
+        $this->loadingHtml[] = ['block' => $block, 'cacheData' => false, 'readObserved' => false,
+            'readExpected' => false, 'readClosure' => null, 'loaderObserved' => false, 'loaderExpected' => is_object($loader)
+                && method_exists($loader, 'lockedLoadData')
+                && (new \ReflectionMethod($loader, 'lockedLoadData'))->getDeclaringClass()->getName()
+                    === \Magento\Framework\Cache\LockGuardedCacheLoader::class];
+    }
+
+    private function beginBlockCacheLoader($loader, array $params, string $class): void
+    {
+        $index = array_key_last($this->loadingHtml);
+        if ($index === null || $this->loadingHtmlOverflow || $class !== \Magento\Framework\Cache\LockGuardedCacheLoader::class) return;
+        $caller = self::nativeCaller($loader, 'lockedLoadData');
+        if (($caller['class'] ?? null) !== AbstractBlock::class || ($caller['function'] ?? null) !== '_loadCache'
+            || ($caller['object'] ?? null) !== $this->loadingHtml[$index]['block']) return;
+        $this->loadingHtml[$index]['loaderObserved'] = true;
+        $callback = $params[1] ?? null;
+        if (!$callback instanceof \Closure) return;
+        $function = new \ReflectionFunction($callback);
+        $this->loadingHtml[$index]['readExpected'] = $function->getClosureThis() === $this->loadingHtml[$index]['block']
+            && $function->getClosureScopeClass()?->getName() === AbstractBlock::class
+            && $function->getFileName() === (new \ReflectionMethod(AbstractBlock::class, '_loadCache'))->getFileName()
+            && LayoutXmlOwnership::bodyMatches($function, '{ return $this->_cache->load($this->getCacheKey()); }');
+        if ($this->loadingHtml[$index]['readExpected']) $this->loadingHtml[$index]['readClosure'] = $function->getName();
+    }
+
+    private function loadedBlockCache($cache, array $params, $result, ?\Throwable $error): void
+    {
+        $index = array_key_last($this->loadingHtml);
+        if ($error || $index === null || $this->loadingHtmlOverflow) return;
+        $caller = LayoutXmlOwnership::caller($cache, 'load', false);
+        if (($caller['class'] ?? null) !== AbstractBlock::class
+            || !str_starts_with($caller['function'] ?? '', '{closure:' . AbstractBlock::class . '::_loadCache')
+            || ($caller['object'] ?? null) !== $this->loadingHtml[$index]['block']) return;
+        if ($this->loadingHtml[$index]['readClosure'] !== null && $caller['function'] !== $this->loadingHtml[$index]['readClosure']) return;
+        $this->loadingHtml[$index]['readObserved'] = true;
+        if (is_string($result)) $this->loadingHtml[$index]['cacheData'] = true;
     }
 
     private function completeRender($block, array $params, $result, ?\Throwable $error, string $class): void

@@ -217,6 +217,28 @@ final class LayoutXmlOwnership
         return [];
     }
 
+    public static function bodyMatches(\ReflectionFunctionAbstract $function, string $expected): bool
+    {
+        $file = $function->getFileName();
+        if (!is_string($file) || !is_readable($file) || realpath($file) !== $file || filesize($file) > 262144) return false;
+        $source = implode('', array_slice(file($file), $function->getStartLine() - 1,
+            $function->getEndLine() - $function->getStartLine() + 1));
+        $start = strpos($source, '{');
+        $end = strrpos($source, '}');
+        if ($start === false || $end === false || $end < $start) return false;
+        $source = substr($source, $start, $end - $start + 1);
+        $tokens = static function (string $code): string {
+            $parts = [];
+            foreach (token_get_all('<?php ' . $code) as $token) {
+                if (is_array($token)) {
+                    if (!in_array($token[0], [T_OPEN_TAG, T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) $parts[] = $token[1];
+                } else $parts[] = $token;
+            }
+            return implode('', $parts);
+        };
+        return $tokens($source) === $tokens($expected);
+    }
+
     private function read($object, array $params, string $class, string $method): void
     {
         $xml = $params[in_array($method, ['interpret', 'scheduleStructure'], true) ? 1 : 0] ?? null;

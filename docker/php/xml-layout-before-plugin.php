@@ -96,17 +96,6 @@ final class LayoutBeforePluginOwnership
         $file = $method->getFileName();
         if (!is_string($file) || !is_readable($file) || !str_starts_with($file, BP . '/generated/code/') || realpath($file) !== $file
             || filesize($file) > 262144) return false;
-        $source = implode('', array_slice(file($file), $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
-        $source = substr($source, strpos($source, '{'));
-        $tokens = static function (string $code): string {
-            $parts = [];
-            foreach (token_get_all('<?php ' . $code) as $token) {
-                if (is_array($token)) {
-                    if (!in_array($token[0], [T_OPEN_TAG, T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) $parts[] = $token[1];
-                } else $parts[] = $token;
-            }
-            return implode('', $parts);
-        };
         $expected = <<<'PHP'
 {
     $arguments = \func_get_args();
@@ -117,7 +106,7 @@ final class LayoutBeforePluginOwnership
 PHP;
         $expected = str_replace(['PLUGIN', 'CALLBACK', 'METHOD'],
             [$this->descriptor['name'], $this->descriptor['callback'], $this->descriptor['method']], $expected);
-        return $tokens($source) === $tokens($expected);
+        return LayoutXmlOwnership::bodyMatches($method, $expected);
     }
 
     public function complete(object $object, ?\Throwable $error, bool $required = true): bool
