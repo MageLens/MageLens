@@ -9,7 +9,7 @@ const file = report.files.find(file => file.path === 'app/code/MageLens/Compatib
 assert.ok(file, 'Missing layout UI placement file');
 const placement = file.declarations.find(item => item.layout?.instruction === 'uiComponent' && item.layout.attribute === null);
 assert.equal(placement?.state, 'covered');
-assert.deepEqual([...new Set(placement.evidence.map(event => event.type))].sort(), ['layout-ui-created', 'layout-ui-rendered']);
+assert.deepEqual([...new Set(placement.evidence.map(event => event.type))].sort(), ['layout-ui-created', 'layout-ui-rendered', 'layout-xml-ownership-revoked']);
 for (const attribute of ['component']) {
     const item = file.declarations.find(item => item.layout?.instruction === 'uiComponent' && item.layout.attribute === attribute);
     assert.equal(item?.state, 'unmeasured');

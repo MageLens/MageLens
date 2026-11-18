@@ -9,6 +9,10 @@ const mode = process.argv[3] || 'developer';
 assert.ok(['developer', 'production'].includes(mode));
 const file = report.files.find(file => file.path.endsWith('/layout/coverageprobe_component_index.xml'));
 assert.ok(file);
+function effects(item, expected) {
+    assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(),
+        [...expected, 'layout-xml-ownership-revoked'].sort(), item.node);
+}
 function instruction(name, attribute = null) {
     const item = file.declarations.find(item => item.layout.instruction === 'uiComponent'
         && item.layout.element === name && item.layout.attribute === attribute);
@@ -18,7 +22,7 @@ function instruction(name, attribute = null) {
 for (const name of ['magelens_layout_ui', 'magelens_layout_ui_before']) {
     const group = instruction(name, 'group');
     assert.equal(group.state, 'covered', name);
-    assert.deepEqual([...new Set(group.evidence.map(event => event.type))], ['layout-ui-group-applied']);
+    effects(group, ['layout-ui-group-applied']);
     for (const attribute of ['name', 'as']) assert.equal(instruction(name, attribute).state, 'covered');
 }
 assert.equal(instruction('magelens_layout_ui', 'after').state, 'covered');
@@ -28,11 +32,11 @@ for (const name of ['magelens_layout_ui_denied', 'magelens_layout_ui_config_deni
     const item = instruction(name);
     assert.equal(item.state, 'unmeasured', name);
     assert.equal(item.hits, 0);
-    assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-ui-denied']);
+    effects(item, ['layout-ui-denied']);
 }
 const hidden = instruction('magelens_layout_ui_detached');
 assert.equal(hidden.state, 'covered');
-assert.deepEqual([...new Set(hidden.evidence.map(event => event.type))], ['layout-ui-created']);
+effects(hidden, ['layout-ui-created']);
 for (const attribute of ['output', 'ttl', 'cacheable']) {
     const item = instruction('magelens_layout_ui', attribute);
     assert.equal(item.state, 'unmeasured');
@@ -45,20 +49,18 @@ for (const item of conditions) {
     const crossKey = ['other_visibility', 'duck_visibility', 'magic_visibility'].includes(item.layout.element);
     const denied = item.node === instruction('magelens_layout_ui_denied').node + '/visibilityCondition';
     assert.equal(item.state, 'covered', item.node);
-    assert.deepEqual([...new Set(item.evidence.map(event => event.type))], [denied ? 'layout-condition-denied' : 'layout-condition-allowed']);
+    effects(item, [denied ? 'layout-condition-denied' : 'layout-condition-allowed']);
     for (const [attribute, type] of [['name', 'layout-condition-name-applied'], ['className', 'layout-condition-class-selected']]) {
         const field = file.declarations.find(field => field.node === item.node + '/@' + attribute);
         assert.equal(field?.state, crossKey && attribute === 'name' ? 'unmeasured' : 'covered', field?.node);
-        assert.deepEqual([...new Set(field.evidence.map(event => event.type))],
-            [crossKey && attribute === 'name' ? 'layout-condition-name-unused' : type]);
+        effects(field, [crossKey && attribute === 'name' ? 'layout-condition-name-unused' : type]);
     }
     const values = file.declarations.filter(field => field.node.startsWith(item.node + '/arguments/')
         && field.layout.attribute === null && ['argument', 'item'].includes(field.layout.instruction));
     assert.equal(values.length, 3);
     for (const value of values) {
         assert.equal(value.state, crossKey ? 'unmeasured' : 'covered', value.node);
-        assert.deepEqual([...new Set(value.evidence.map(event => event.type))],
-            [crossKey ? 'layout-condition-argument-unconsumed' : 'layout-condition-argument-applied']);
+        effects(value, [crossKey ? 'layout-condition-argument-unconsumed' : 'layout-condition-argument-applied']);
     }
 }
 const rootFile = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_uiroot.xml'));

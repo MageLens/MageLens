@@ -41,6 +41,7 @@ final class LayoutCoverage
     private LayoutStructureCoverage $structureCoverage;
     private LayoutPositionCoverage $positions;
     private LayoutRegistryCoverage $registry;
+    private LayoutXmlOwnership $ownership;
     private \WeakMap $merges;
     private array $documents = [];
     private array $appending = [];
@@ -73,6 +74,7 @@ final class LayoutCoverage
         $this->structureCoverage = new LayoutStructureCoverage($this->origin(...), self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->positions = new LayoutPositionCoverage($this->origin(...));
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
+        $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...));
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
@@ -100,6 +102,7 @@ final class LayoutCoverage
     private function hooks(): array
     {
         return [
+            ...$this->ownership->hooks(),
             [Merge::class, '_loadFileLayoutUpdatesXml', $this->beginPackage(...), $this->completePackage(...)],
             [FileList::class, 'replace', $this->beginFileReplacement(...), $this->completeFileReplacement(...)],
             [Read::class, 'readAll', null, $this->readFile(...)],
@@ -585,7 +588,7 @@ final class LayoutCoverage
         }
         if ($offset !== $allNodes->length) return;
         $theme = $merge->getTheme();
-        $this->documents[] = ['root' => $root, 'targets' => $targets,
+        $this->documents[] = ['root' => $root, 'targets' => $targets, 'readerObserved' => false,
             'context' => ['area' => $theme->getArea(), 'theme' => $theme->getFullPath()]];
     }
 
@@ -614,10 +617,24 @@ final class LayoutCoverage
         $xml ??= new \ReflectionProperty(XmlConfig::class, '_xml');
         $element = $xml->getValue($layout);
         if (!$element instanceof \SimpleXMLElement) return;
-        $root = dom_import_simplexml($element)->ownerDocument->documentElement;
-        $this->limitations['mutable-layout-xml'] = true;
+        $this->observeXmlReceiver($element, false, false);
+    }
+
+    private function observeXmlReceiver($element, bool $valid, bool $reader): void
+    {
+        $node = $element instanceof \DOMNode ? $element : dom_import_simplexml($element);
+        $root = $node instanceof \DOMDocument ? $node->documentElement : $node->ownerDocument->documentElement;
+        if ($valid) {
+            if (!$reader) return;
+            foreach ($this->documents as &$document) {
+                if ($document['root']->isSameNode($root)) $document['readerObserved'] = true;
+            }
+            unset($document);
+            return;
+        }
         foreach ($this->documents as &$document) {
             if (!$document['root']->isSameNode($root)) continue;
+            $this->limitations['mutable-layout-xml'] = true;
             foreach ($document['targets'] as $ids) {
                 foreach ($ids as $kind => $id) {
                     if (in_array($kind, ['file-selection', 'include', 'include-handle', 'wireframe-selection', 'wireframe'], true)) continue;
@@ -935,6 +952,10 @@ final class LayoutCoverage
         $node = dom_import_simplexml($xml);
         foreach ($this->documents as $document) {
             if ($node->ownerDocument->documentElement->isSameNode($document['root'])) {
+                if ($document['targets'] && !$document['readerObserved']) {
+                    $this->errors['Missing native layout reader ownership hook evidence'] = true;
+                    return [[], $document['context']];
+                }
                 return [$document['targets'][$node->getNodePath()] ?? [], $document['context']];
             }
         }
