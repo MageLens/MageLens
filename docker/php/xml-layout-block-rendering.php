@@ -30,7 +30,7 @@ final class LayoutBlockRendering
         $this->registrations = new \WeakMap();
     }
 
-    public function generated(AbstractBlock $block, string $name, ?string $id, array $context): void
+    public function generated(AbstractBlock $block, string|int $name, ?string $id, array $context): void
     {
         $state = $this->origins[$block] ?? ['all' => []];
         if ($id === null) {
@@ -89,7 +89,7 @@ final class LayoutBlockRendering
         $this->processing[] = ['generator' => $generator, 'pending' => []];
     }
 
-    public function expectRegistration($generator, string $name): void
+    public function expectRegistration($generator, string|int $name): void
     {
         $caller = LayoutXmlOwnership::caller($generator, 'generateBlock', false);
         if (($caller['class'] ?? null) !== Block::class || ($caller['function'] ?? null) !== 'process') return;

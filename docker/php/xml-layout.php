@@ -108,7 +108,7 @@ final class LayoutCoverage
         $this->themeContexts = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
         $this->structureCoverage = new LayoutStructureCoverage($this->origin(...), self::valueFingerprint(...), self::matchesFingerprint(...));
-        $this->positions = new LayoutPositionCoverage($this->origin(...));
+        $this->positions = new LayoutPositionCoverage($this->origin(...), $sources);
         $this->registry = new LayoutRegistryCoverage($sources, $this->registryContext(...), $this->event(...));
         $this->ownership = new LayoutXmlOwnership($this->observeXmlReceiver(...), $this->unverifiedProducer(...));
         $this->references = new LayoutReferenceCoverage($sources, $this->origin(...));
@@ -1501,7 +1501,7 @@ final class LayoutCoverage
         return is_array($value) ? $value : null;
     }
 
-    private static function moveTuple($schedule, string $name): ?array
+    private static function moveTuple($schedule, string|int $name): ?array
     {
         if ((new \ReflectionMethod($schedule, 'getElementToMove'))->getDeclaringClass()->getName() !== ScheduledStructure::class) return null;
         return self::moveStorage($schedule, ScheduledStructure::class, 'scheduledMoves')[$name] ?? null;
@@ -1550,7 +1550,7 @@ final class LayoutCoverage
         $this->moves[$schedule] = $moves;
     }
 
-    private static function placement($structure, string $element): ?array
+    private static function placement($structure, string|int $element): ?array
     {
         if (get_class($structure) !== Layout\Data\Structure::class) {
             $type = new \ReflectionClass($structure);
@@ -1684,7 +1684,7 @@ final class LayoutCoverage
         }
     }
 
-    private static function removalQueued($schedule, string $name): bool
+    private static function removalQueued($schedule, string|int $name): bool
     {
         static $property;
         $property ??= new \ReflectionProperty(ScheduledStructure::class, 'scheduledRemoves');
@@ -2332,7 +2332,7 @@ final class LayoutCoverage
             'actions' => $this->actionCalls($params[0], $params[2], $source['actions'] ?? [])];
     }
 
-    private function actionCalls($schedule, string $name, array $origins): array
+    private function actionCalls($schedule, string|int $name, array $origins): array
     {
         if (!$origins) return [];
         $actions = $schedule->getElement($name)[1]['actions'] ?? [];

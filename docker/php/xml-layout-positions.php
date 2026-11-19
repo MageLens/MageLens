@@ -19,11 +19,22 @@ final class LayoutPositionCoverage
     private \WeakMap $elements;
     private array $creating = [];
     private array $ordering = [];
+    private array $defaultedNames = [];
 
-    public function __construct(private readonly \Closure $origin)
+    public function __construct(private readonly \Closure $origin, array $sources = [])
     {
         $this->scheduled = new \WeakMap();
         $this->elements = new \WeakMap();
+        foreach ($sources as $source) {
+            foreach ($source['targets'] as $target) {
+                if (!in_array($target['element'] ?? null, ['', '0'], true) || !isset($target['ids']['position-name'])) continue;
+                $id = $target['ids']['position-name'];
+                if (!isset($this->defaultedNames[$id]) && count($this->defaultedNames) >= 32768) {
+                    throw new \RuntimeException('Layout defaulted name inventory exceeded 32768 operands');
+                }
+                $this->defaultedNames[$id] = true;
+            }
+        }
     }
 
     public function hooks(): array
@@ -139,7 +150,7 @@ final class LayoutPositionCoverage
         $this->elements[$frame['structure']] = $entries;
     }
 
-    private function revoke($structure, string $name, array $keys): void
+    private function revoke($structure, string|int $name, array $keys): void
     {
         $entries = $this->elements[$structure] ?? [];
         if (!isset($entries[$name])) return;
@@ -207,7 +218,8 @@ final class LayoutPositionCoverage
             $source = $entry['source'];
             [, $alias, $parent] = $source['row'];
             if (!$structure->hasElement($name)) continue;
-            if (!empty($entry['name'])) self::record($entry['name'], 'layout-position-name-applied', $source['context']);
+            if (!empty($entry['name'])) self::record($entry['name'], isset($this->defaultedNames[$entry['name']])
+                ? 'layout-position-name-defaulted' : 'layout-position-name-applied', $source['context']);
             foreach (array_keys($entry['replaced'] ?? []) as $id) self::record($id, 'layout-position-replaced', $source['context']);
             if (!empty($entry['alias']) && $structure->getParentId($name) === $parent
                 && $structure->getChildAlias($parent, $name) === $alias) {
@@ -219,7 +231,7 @@ final class LayoutPositionCoverage
         }
     }
 
-    private static function hasPosition($structure, string $name, array $row): bool
+    private static function hasPosition($structure, string|int $name, array $row): bool
     {
         [, , $parent, $sibling, $after] = $row;
         if ($structure->getParentId($name) !== $parent) return false;

@@ -249,6 +249,21 @@ describe('Magento storefront coverage compatibility', () => {
             cy.get(`[data-layout-renderfailure="${effect}"]`).should('have.text', 'verified');
         }
         cy.get('[data-layout-renderfailure-output="after"]').should('not.exist');
+        for (const nameCase of ['blocks', 'move', 'containers']) {
+            cy.visit('/coverageprobe/names/?case=' + nameCase);
+            cy.get('[data-layout-name-proof]').should('have.text', 'verified');
+            cy.get('[data-layout-name-stale-roots]').should('have.attr', 'data-layout-name-stale-roots', '0');
+            cy.get('[data-layout-name-case]').should('have.length', nameCase === 'containers' ? 1 : (nameCase === 'move' ? 5 : 4));
+            if (nameCase === 'containers') cy.get('#layout-zero-container [data-layout-name-case="container-child"]').should('have.text', 'base');
+            else {
+                cy.get('[data-layout-name-render-failed]').should('have.text', 'verified');
+                cy.get('#layout-numeric-root').should('not.exist');
+                cy.get('[data-layout-name-case="integer"]').should('have.text', 'override');
+                for (const name of ['leading', 'zero', 'anonymous']) cy.get(`[data-layout-name-case="${name}"]`).should('have.text', 'base');
+                if (nameCase === 'move') cy.get('[data-layout-name-case="moved"]').should('have.text', 'base');
+                else cy.get('[data-layout-name-case="moved"]').should('not.exist');
+            }
+        }
         cy.visit('/coverageprobe/actionguards/');
         cy.get('[data-layout-action-guard-proof]').should('have.text', 'verified');
         cy.get('[data-layout-action-case]').should('have.length', 6);

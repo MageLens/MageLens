@@ -147,7 +147,7 @@ final class LayoutActionGuards
         return hash('sha256', serialize([$path, $scope]));
     }
 
-    public function supplied(object $generator, object $schedule, string $name, array $origins, ?array $context): void
+    public function supplied(object $generator, object $schedule, string|int $name, array $origins, ?array $context): void
     {
         if ($context === null || ($this->overflow['processing'] ?? 0)) return;
         $guards = array_filter($origins, static fn($origin) => isset($origin['guard']['id']));

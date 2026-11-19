@@ -688,6 +688,7 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
 
 test('empty layout operands remain zero-hit decisions while zero class interpolation records output', () => {
     for (const [kind, type, covered] of [
+        ['position-name', 'layout-position-name-defaulted', false],
         ['template', 'layout-template-empty-ignored', false],
         ['block-group', 'layout-block-group-empty-ignored', false],
         ['block-ttl', 'layout-block-ttl-empty-ignored', false],

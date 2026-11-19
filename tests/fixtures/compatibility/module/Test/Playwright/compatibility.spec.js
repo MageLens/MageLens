@@ -217,6 +217,21 @@ test('starts the next test with fresh state', async ({page}) => {
         await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
     }
     await expect(page.locator('[data-layout-renderfailure-output="after"]')).toHaveCount(0);
+    for (const nameCase of ['blocks', 'move', 'containers']) {
+        await page.goto('/coverageprobe/names/?case=' + nameCase);
+        await expect(page.locator('[data-layout-name-proof]')).toHaveText('verified');
+        await expect(page.locator('[data-layout-name-stale-roots]')).toHaveAttribute('data-layout-name-stale-roots', '0');
+        await expect(page.locator('[data-layout-name-case]')).toHaveCount(nameCase === 'containers' ? 1 : (nameCase === 'move' ? 5 : 4));
+        if (nameCase === 'containers') await expect(page.locator('#layout-zero-container [data-layout-name-case="container-child"]')).toHaveText('base');
+        else {
+            await expect(page.locator('[data-layout-name-render-failed]')).toHaveText('verified');
+            await expect(page.locator('#layout-numeric-root')).toHaveCount(0);
+            await expect(page.locator('[data-layout-name-case="integer"]')).toHaveText('override');
+            for (const name of ['leading', 'zero', 'anonymous']) await expect(page.locator(`[data-layout-name-case="${name}"]`)).toHaveText('base');
+            if (nameCase === 'move') await expect(page.locator('[data-layout-name-case="moved"]')).toHaveText('base');
+            else await expect(page.locator('[data-layout-name-case="moved"]')).toHaveCount(0);
+        }
+    }
     await page.goto('/coverageprobe/actionguards/');
     await expect(page.locator('[data-layout-action-guard-proof]')).toHaveText('verified');
     await expect(page.locator('[data-layout-action-case]')).toHaveCount(6);

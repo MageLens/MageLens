@@ -39,7 +39,7 @@ const layoutEvents = {
     'registry-label': ['layout-registry-label-consumed', 'layout-registry-overridden', 'layout-registry-label-ignored', 'layout-registry-label-unconfirmed', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
     'file-selection': ['layout-file-selected'],
     'include-handle': ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
-    'position-name': ['layout-position-name-applied', 'layout-position-replaced'],
+    'position-name': ['layout-position-name-applied', 'layout-position-name-defaulted', 'layout-position-replaced'],
     'position-as': ['layout-position-alias-applied', 'layout-position-replaced'],
     'position-before': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],
     'position-after': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],
@@ -123,6 +123,7 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-position-name-defaulted': 'Native scheduling ignores the empty or zero name and generates an anonymous identifier. The original name operand did not assign that identifier; the declaration retains independent creation and rendering evidence.',
     'layout-template-empty-ignored': 'The native block generator treats the original empty string or zero template spelling as empty and skips its template assignment. Any PHP default template has a separate origin.',
     'layout-block-group-empty-ignored': 'The native block generator treats this empty string or zero group name as empty and skips group registration.',
     'layout-block-ttl-empty-ignored': 'The native block generator treats the zero TTL spelling as empty and skips its assignment. A constructor or other provider can retain its own TTL.',

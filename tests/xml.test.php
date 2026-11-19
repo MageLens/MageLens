@@ -292,3 +292,16 @@ $guard = array_values(array_filter($guardDeclarations, static fn($item) => $item
 checkXml($guard['supported'] && $guard['layout']['kind'] === 'action-ifconfig',
     'Action scope guards have an independent original operand identity');
 echo "Action guards retain independent original inventory identities.\n";
+
+require_once __DIR__ . '/../docker/php/xml-layout-positions.php';
+$positionTargets = [];
+for ($index = 0; $index <= 32768; $index++) {
+    $positionTargets[] = ['element' => '0', 'ids' => ['position-name' => 'defaulted-name-' . $index]];
+}
+try {
+    new \MageLens\XmlCoverage\LayoutPositionCoverage(static fn() => [], [['targets' => $positionTargets]]);
+    throw new RuntimeException('Oversized defaulted name inventory was accepted');
+} catch (RuntimeException $error) {
+    checkXml(str_contains($error->getMessage(), 'defaulted name inventory exceeded 32768'), 'Defaulted name inventory is bounded');
+}
+echo "Defaulted native element name inventory is bounded.\n";

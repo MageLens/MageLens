@@ -115,7 +115,7 @@ final class LayoutReferenceCoverage
         unset($this->reads[$schedule], $this->removed[$schedule], $this->children[$schedule]);
     }
 
-    private static function row(object $schedule, string $name): ?array
+    private static function row(object $schedule, string|int $name): ?array
     {
         foreach (['getStructureElement', 'hasStructureElement'] as $method) {
             if ((new \ReflectionMethod($schedule, $method))->getDeclaringClass()->getName() !== ScheduledStructure::class) return null;
