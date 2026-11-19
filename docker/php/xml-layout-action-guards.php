@@ -12,7 +12,7 @@ use Magento\Framework\App\ScopeResolverInterface;
 use Magento\Framework\View\Layout\Generator\Block;
 use Magento\Framework\View\Layout\ScheduledStructure;
 
-/** Attribute guard decisions to native scheduled actions, separately from calls. */
+/** Bind native process inputs and guard decisions independently of block identity. */
 final class LayoutActionGuards
 {
     private array $processing = [];
@@ -87,7 +87,8 @@ final class LayoutActionGuards
     {
         if ($class !== Block::class || !LayoutXmlOwnership::nativeMethod($generator, Block::class, 'process')) return;
         $this->push('processing', ['generator' => $generator, 'snapshot' => false, 'safe' => false,
-            'actions' => [], 'counts' => [], 'candidates' => [], 'known' => [], 'seen' => [], 'pending' => false]);
+            'actions' => [], 'calls' => [], 'bindings' => [], 'objects' => new \WeakMap(), 'lastAllowed' => null,
+            'counts' => [], 'candidates' => [], 'known' => [], 'seen' => [], 'pending' => false]);
     }
 
     private function endProcess($generator, array $params, $result, ?\Throwable $error, string $class): void
@@ -119,26 +120,29 @@ final class LayoutActionGuards
         $index = $frame['index'];
         $this->processing[$index]['snapshot'] = true;
         if ($error || $frame['schedule'] !== $schedule || !$frame['safe'] || !is_array($elements)) return;
-        $actions = []; $counts = []; $total = 0;
+        $actions = []; $calls = []; $counts = []; $total = 0;
         foreach ($elements as $name => $element) {
             if (!is_array($element)) return;
             if (($element[0] ?? null) !== Block::TYPE) continue;
             $entries = $element[1]['actions'] ?? [];
             if (!is_array($entries)) return;
             $signatures = [];
+            $callKeys = [];
             foreach ($entries as $action) {
                 if (++$total > 8192) { $this->errors['Layout action guard snapshot exceeded 8192 actions'] = true; return; }
                 if (!is_array($action) || (!empty($action[2]) && !is_string($action[2])) || !is_string($action[3] ?? null)) return;
                 $signatures[] = Xml::scalarTreeSignature($action);
+                $callKeys[] = Xml::scalarTreeSignature([$action[0] ?? null, $action[1] ?? null]);
                 if (!empty($action[2])) {
                     $key = self::key($action[2], $action[3]);
                     $counts[$key] = ($counts[$key] ?? 0) + 1;
                 }
             }
-            if ($entries) $actions[$name] = $signatures;
+            if ($entries) { $actions[$name] = $signatures; $calls[$name] = $callKeys; }
         }
         $this->processing[$index]['safe'] = true;
         $this->processing[$index]['actions'] = $actions;
+        $this->processing[$index]['calls'] = $calls;
         $this->processing[$index]['counts'] = $counts;
     }
 
@@ -147,28 +151,79 @@ final class LayoutActionGuards
         return hash('sha256', serialize([$path, $scope]));
     }
 
-    public function supplied(object $generator, object $schedule, string|int $name, array $origins, ?array $context): void
+    public function supplied(object $generator, object $schedule, string|int $name, array $origins, ?array $context, ?object $block = null): void
     {
-        if ($context === null || ($this->overflow['processing'] ?? 0)) return;
+        if ($this->overflow['processing'] ?? 0) return;
         $guards = array_filter($origins, static fn($origin) => isset($origin['guard']['id']));
-        if (!$guards) return;
         $index = $this->index($generator);
-        if ($index === null && LayoutXmlOwnership::nativeMethod($generator, Block::class, 'process')) {
+        if ($origins && $index === null && LayoutXmlOwnership::nativeMethod($generator, Block::class, 'process')) {
             $this->errors['Missing native action guard process hook evidence'] = true;
         }
-        if ($index !== null && !$this->processing[$index]['snapshot']
+        if ($origins && $index !== null && !$this->processing[$index]['snapshot']
             && (new \ReflectionMethod($schedule, 'getElements'))->getDeclaringClass()->getName() === ScheduledStructure::class) {
             $this->errors['Missing native action guard snapshot hook evidence'] = true;
         }
         $signatures = array_column($origins, 'guardSignature');
         $safe = $index !== null && $this->processing[$index]['safe'] && !in_array(null, $signatures, true)
             && ($this->processing[$index]['actions'][$name] ?? null) === $signatures;
+        if ($index !== null && $block !== null && ($origins || isset($this->processing[$index]['calls'][$name]))) {
+            if (count($this->processing[$index]['bindings']) >= 8192 && !isset($this->processing[$index]['bindings'][$name])) {
+                $this->errors['Action source bindings exceeded 8192 layout slots'] = true;
+                return;
+            }
+            $aliases = $this->processing[$index]['objects'][$block] ?? [];
+            if (count($aliases) >= 128 && !isset($aliases[$name])) {
+                $this->errors['Action object aliases exceeded 128 layout slots'] = true;
+                return;
+            }
+            $aliases[$name] = true;
+            $this->processing[$index]['objects'][$block] = $aliases;
+            $byCall = [];
+            foreach ($origins as $origin) {
+                if (!isset($origin['callSignature'])) continue;
+                $byCall[$origin['callSignature']][] = $origin;
+            }
+            $this->processing[$index]['bindings'][$name] = ['safe' => $safe && $context !== null,
+                'context' => $context, 'calls' => $byCall];
+        }
+        if ($context === null) return;
         foreach ($guards as $origin) {
             $guard = $origin['guard'];
             if (!$safe || $guard['key'] === null) { $this->record($guard['id'], 'origin-unconfirmed', $context); continue; }
             $this->processing[$index]['known'][$guard['id']] = $context;
             if (!$guard['empty']) $this->processing[$index]['candidates'][$guard['key']][$guard['id']] = $context;
         }
+    }
+
+    public function callOrigins(object $generator, $block, array $params): array
+    {
+        if (self::caller('generateAction') !== $generator || ($index = $this->index($generator)) === null) return [];
+        $allowed = $this->processing[$index]['lastAllowed'];
+        $this->processing[$index]['lastAllowed'] = null;
+        if (!is_object($block)) return [];
+        $key = Xml::scalarTreeSignature([$params[1] ?? null, $params[2] ?? null]);
+        if ($key === null) return [];
+        $slots = [];
+        foreach ($this->processing[$index]['objects'][$block] ?? [] as $name => $_) {
+            $binding = $this->processing[$index]['bindings'][$name];
+            if (isset($binding['calls'][$key]) || in_array($key, $this->processing[$index]['calls'][$name] ?? [], true)) $slots[$name] = $binding;
+        }
+        // A uniquely observed allowed guard identifies its native block slot.
+        // Duplicate calls within that slot retain their separate ambiguity.
+        if (count($slots) > 1 && $allowed !== null) {
+            $matches = [];
+            foreach ($slots as $name => $binding) foreach ($binding['calls'][$key] ?? [] as $origin) {
+                if ($binding['safe'] && ($origin['guard']['id'] ?? null) === $allowed) $matches[$name] = $binding;
+            }
+            if (count($matches) === 1) $slots = $matches;
+        }
+        $result = [];
+        foreach ($slots as $binding) {
+            $origins = $binding['calls'][$key] ?? [];
+            foreach ($origins as $origin) $result[] = ['origin' => $origin, 'context' => $binding['context'],
+                'safe' => $binding['safe'], 'unique' => count($slots) === 1 && count($origins) === 1];
+        }
+        return $result;
     }
 
     public function revoked(array $origins, ?array $context): void
@@ -223,12 +278,14 @@ final class LayoutActionGuards
         if ($frame === null) return;
         if ($frame['object'] !== $config) { $this->errors['Mismatched native action guard flag evidence'] = true; return; }
         $index = $frame['index']; $key = $frame['key'];
+        $this->processing[$index]['lastAllowed'] = null;
         $origins = $this->processing[$index]['candidates'][$key] ?? [];
         $effect = count($origins) === 1 && ($this->processing[$index]['counts'][$key] ?? 0) === 1
             ? ($error ? 'failed' : ($result ? 'allowed' : 'denied')) : 'ambiguous';
         foreach ($origins as $id => $context) {
             $this->processing[$index]['seen'][$id] = true;
             $this->record($id, $effect, $context);
+            if ($effect === 'allowed') $this->processing[$index]['lastAllowed'] = $id;
         }
     }
 

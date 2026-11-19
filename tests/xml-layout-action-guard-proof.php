@@ -255,3 +255,11 @@ foreach ([
     }
 }
 echo "Verified independent original action condition provenance.\n";
+if ($mode === 'custom-snapshot') {
+    foreach (['/layout/container/block[1]/action', '/layout/container/block[1]/action/@method'] as $node) {
+        $item = array_values(array_filter($declarations, static fn($item) => $item['node'] === $node))[0];
+        $types = array_values(array_unique(array_column(array_filter($events, static fn($event) => $event['id'] === $item['id']), 'type')));
+        if ($types !== ['layout-action-origin-unconfirmed']) throw new RuntimeException('A custom action snapshot received original XML call credit');
+    }
+    echo "Verified unconfirmed call and method origins for the opaque native process snapshot.\n";
+}

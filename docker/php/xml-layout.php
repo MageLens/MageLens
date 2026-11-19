@@ -1115,6 +1115,7 @@ final class LayoutCoverage
             }
             $action = $actions[count($origins)] ?? null;
             $origins[] = ['id' => $origin['action'] ?? null, 'methodId' => $origin['action-method'] ?? null, 'arguments' => $arguments,
+                'callSignature' => is_array($action) ? Xml::scalarTreeSignature([$action[0] ?? null, $action[1] ?? null]) : null,
                 'guardSignature' => is_array($action) ? Xml::scalarTreeSignature($action) : null,
                 'guard' => isset($origin['action-ifconfig'])
                     ? ['id' => $origin['action-ifconfig'], 'empty' => empty($action[2]),
@@ -2031,7 +2032,10 @@ final class LayoutCoverage
             $action = array_key_last($this->actionEvaluations);
             if ($this->actionEvaluationOverflow) return;
             if ($action === null) $this->errors['Missing native layout action hook evidence'] = true;
-            else $this->actionEvaluations[$action] = ['observed' => true, 'unconfirmed' => $names];
+            else {
+                $this->actionEvaluations[$action]['observed'] = true;
+                $this->actionEvaluations[$action]['unconfirmed'] = $names;
+            }
             return;
         }
         $index = array_key_last($this->generating);
@@ -2273,7 +2277,7 @@ final class LayoutCoverage
             $this->blockRendering->generated($block, $params[2], null, []);
         }
         if (!$error && $block instanceof AbstractBlock) {
-            $this->actionGuards->supplied($generator, $params[0], $params[2], $frame['source']['actions'] ?? [], $frame['source']['context'] ?? null);
+            $this->actionGuards->supplied($generator, $params[0], $params[2], $frame['source']['actions'] ?? [], $frame['source']['context'] ?? null, $block);
         }
         if (empty($frame['source']['context'])) return;
         if ($error) {
@@ -2329,23 +2333,7 @@ final class LayoutCoverage
         foreach ($frame['applied'] as $id => $target) {
             if ($block === $target) $this->event($id, 'layout-argument-applied', $context);
         }
-        $this->blocks[$block] = ['block' => $blockId, 'template' => $templateId, 'context' => $context,
-            'actions' => $this->actionCalls($params[0], $params[2], $source['actions'] ?? [])];
-    }
-
-    private function actionCalls($schedule, string|int $name, array $origins): array
-    {
-        if (!$origins) return [];
-        $actions = $schedule->getElement($name)[1]['actions'] ?? [];
-        if (count($actions) !== count($origins)) return [];
-        $calls = [];
-        foreach ($actions as $index => $action) {
-            if (self::digest($action) !== $origins[$index]['digest']) return [];
-            $calls[self::digest([$action[0], $action[1]])][] = [
-                'id' => $origins[$index]['id'], 'methodId' => $origins[$index]['methodId'] ?? null,
-                'arguments' => $origins[$index]['arguments'] ?? [], 'guard' => $origins[$index]['guard'] ?? null];
-        }
-        return $calls;
+        $this->blocks[$block] = ['block' => $blockId, 'template' => $templateId, 'context' => $context];
     }
 
     private function beginAction($generator, array $params, string $class): void
@@ -2356,7 +2344,8 @@ final class LayoutCoverage
             $this->errors['Layout action evaluation nesting exceeded 256 calls'] = true;
             return;
         }
-        $this->actionEvaluations[] = ['observed' => false, 'unconfirmed' => []];
+        $this->actionEvaluations[] = ['observed' => false, 'unconfirmed' => [],
+            'origins' => $this->actionGuards->callOrigins($generator, $params[0] ?? null, $params)];
     }
 
     private function completeAction($generator, array $params, $result, ?\Throwable $error, string $class): void
@@ -2369,23 +2358,24 @@ final class LayoutCoverage
         $evaluation = array_pop($this->actionEvaluations);
         if ($error) return;
         [$block, $method, $arguments] = $params;
-        if (empty($this->blocks[$block]['actions'])) return;
         $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== BlockGenerator::class || ($caller['function'] ?? null) !== 'process') return;
         if ((new \ReflectionMethod($generator, 'generateAction'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
-        $state = $this->blocks[$block];
-        $origins = $state['actions'][self::digest([$method, $arguments])] ?? [];
+        $origins = $evaluation['origins'] ?? [];
         if ($origins && empty($evaluation['observed'])) $this->errors['Missing native action argument evaluation hook evidence'] = true;
-        $effect = count($origins) === 1 ? 'layout-action-executed' : 'layout-action-ambiguous';
-        foreach ($origins as $origin) {
-            $this->actionGuards->ignored($generator, $origin, $state['context'], count($origins) === 1);
-            $this->event($origin['id'], $effect, $state['context']);
-            $this->event($origin['methodId'] ?? null, $effect, $state['context']);
+        foreach ($origins as $entry) {
+            $origin = $entry['origin']; $context = $entry['context'];
+            if ($context === null) continue;
+            $effect = !$entry['safe'] ? 'layout-action-origin-unconfirmed'
+                : ($entry['unique'] ? 'layout-action-executed' : 'layout-action-ambiguous');
+            $this->actionGuards->ignored($generator, $origin, $context, $entry['safe'] && $entry['unique']);
+            $this->event($origin['id'], $effect, $context);
+            $this->event($origin['methodId'] ?? null, $effect, $context);
             foreach ($origin['arguments'] as $position => $id) {
                 $name = array_keys($arguments)[$position] ?? null;
-                $argumentEffect = in_array($name, $evaluation['unconfirmed'] ?? [], true) ? 'layout-argument-origin-unconfirmed'
-                    : (count($origins) === 1 ? 'layout-action-argument-applied' : 'layout-action-argument-ambiguous');
-                $this->event($id, $argumentEffect, $state['context']);
+                $argumentEffect = !$entry['safe'] || in_array($name, $evaluation['unconfirmed'] ?? [], true) ? 'layout-argument-origin-unconfirmed'
+                    : ($entry['unique'] ? 'layout-action-argument-applied' : 'layout-action-argument-ambiguous');
+                $this->event($id, $argumentEffect, $context);
             }
         }
     }
