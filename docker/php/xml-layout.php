@@ -1118,6 +1118,7 @@ final class LayoutCoverage
         if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'updateScheduledData') return;
         if ((new \ReflectionMethod($reader, 'getActions'))->getDeclaringClass()->getName() !== BlockReader::class) return;
         $xml = $params[0];
+        unset($this->actionReads[$xml]);
         $origins = [];
         foreach ($xml->action as $node) {
             [$origin] = $this->origin($node);
@@ -1140,9 +1141,12 @@ final class LayoutCoverage
                             ? LayoutActionGuards::key($action[2], $action[3]) : null] : null];
         }
         if (count($origins) !== count($actions)) return;
+        foreach ($origins as $origin) if ($origin['guardSignature'] === null) {
+            $this->limitations['layout-opaque-action-data'] = true;
+            return;
+        }
         $this->actionReads[$xml] = array_map(
-            static fn($action, $origin) => ['digest' => self::digest($action), ...$origin],
-            $actions,
+            static fn($origin) => ['digest' => $origin['guardSignature'], ...$origin],
             $origins
         );
     }
@@ -1159,7 +1163,12 @@ final class LayoutCoverage
         $expected = array_merge(array_slice($previous, 0, $offset), $read);
         if (count($expected) !== count($actions)) return [];
         foreach ($actions as $index => $action) {
-            if (self::digest($action) !== $expected[$index]['digest']) return [];
+            $signature = Xml::scalarTreeSignature($action);
+            if ($signature === null) {
+                $this->limitations['layout-opaque-action-data'] = true;
+                return [];
+            }
+            if ($signature !== $expected[$index]['digest']) return [];
         }
         return $expected;
     }

@@ -683,6 +683,13 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     assert.deepEqual(descriptor.files[1].declarations[0].evidence, []);
     assert.match(descriptor.layout.limitations[0], /file descriptor/);
     assert.deepEqual(descriptor.requests[0].layoutLimitations, descriptor.layout.limitations);
+    const opaque = merge(manifest, [{...warm, layoutLimitations: ['layout-opaque-action-data']}], sources);
+    assert.equal(opaque.layout.covered, 0);
+    assert.equal(opaque.files[1].declarations.length, 1);
+    assert.equal(opaque.files[1].declarations[0].state, 'unmeasured');
+    assert.deepEqual(opaque.files[1].declarations[0].evidence, []);
+    assert.match(opaque.layout.limitations[0], /could execute application serialization/);
+    assert.deepEqual(opaque.requests[0].layoutLimitations, opaque.layout.limitations);
     assert.throws(() => merge(manifest, [{...warm, layoutHook: false}], sources), /No functioning XML layout hook/);
 });
 

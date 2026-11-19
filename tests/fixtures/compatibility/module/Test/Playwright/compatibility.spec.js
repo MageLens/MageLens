@@ -240,6 +240,8 @@ test('starts the next test with fresh state', async ({page}) => {
     for (const effect of ['shared', 'fresh', 'translate', 'options', 'helper', 'url']) {
         await expect(page.locator(`[data-layout-nested-argument="${effect}"]`)).toHaveText('verified');
     }
+    await page.goto('/coverageprobe/opaqueaction/');
+    await expect(page.locator('[data-layout-opaque-action]')).toHaveText('verified');
     await page.goto('/coverageprobe/argumentgroups/');
     await expect(page.locator('[data-layout-argument-group="block"]')).toHaveText('first-group');
     await expect(page.locator('[data-layout-argument-group="reference"]')).toHaveText('first-reference-group');

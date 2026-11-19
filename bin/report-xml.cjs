@@ -273,6 +273,7 @@ const layoutLimitations = {
     'block-html-cache-origin': 'A native block HTML cache lookup returned data. Its original XML/template lineage is unverified.',
     'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',
     'layout-processor-unconfirmed': 'A layout processor implementation falls outside the verified native merge path.',
+    'layout-opaque-action-data': 'Native scheduled action data contains opaque values or exceeds the reviewed scalar-tree depth. Inspecting it could execute application serialization; original action attribution is withheld on this path.',
     'layout-theme-context-unconfirmed': 'Native file resolution returned no bounded area or theme path for original-source layout evidence.',
     'layout-shared-block-origin': 'A shared block object was rendered directly without a uniquely attributable layout element. Native element rendering and template execution retain independent evidence.',
     'layout-block-registration-origin': 'A native block registration used an unverified setter handoff. Block construction and template execution retain independent evidence; layout element render attribution requires a verified registration.',
