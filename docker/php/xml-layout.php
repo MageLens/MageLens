@@ -103,7 +103,8 @@ final class LayoutCoverage
     private array $errors = [];
     private array $validating = [];
     private LayoutReferenceCoverage $references;
-    private LayoutTemplateFieldAccess $templateFields;
+    private LayoutFieldAccess $templateFields;
+    private LayoutFieldAccess $dataFields;
 
     private function __construct(private readonly array $sources)
     {
@@ -118,7 +119,8 @@ final class LayoutCoverage
         Recorder::layoutReferences($this->references);
         Recorder::layoutArgumentNames(new LayoutArgumentNames($sources));
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
-        $this->templateFields = new LayoutTemplateFieldAccess();
+        $this->templateFields = new LayoutFieldAccess();
+        $this->dataFields = new LayoutFieldAccess('_data', AbstractBlock::class, 'Block data');
         $this->blockRendering = new LayoutBlockRendering($this->ownership);
         $this->handleMetadata = new LayoutHandleMetadata($this->ownership, $this->packageOrigin(...));
         $this->selectionOwnership = new LayoutSelectionOwnership($this->ownership, $this->readSelection(...));
@@ -159,6 +161,7 @@ final class LayoutCoverage
         $this->ownership->finish();
         $this->templateOwnership->finish();
         $this->templateFields->finish();
+        $this->dataFields->finish();
         $this->selectionOwnership->finish();
         if ($this->moveReads || $this->moveReadOverflow || $this->moving || $this->movingOverflow
             || $this->moveReaders || $this->moveReaderOverflow) {
@@ -2342,6 +2345,11 @@ final class LayoutCoverage
             } elseif (is_string($values)) {
                 $value = $values;
             } else return;
+        }
+        if ($origin !== null && $this->dataFields->unconfirmed($block)) {
+            foreach ($this->appliedArgumentIds($binding['origins']) as $id) $this->event($id, 'layout-argument-field-access-unconfirmed', $binding['context']);
+            unset($this->argumentBindings[$block]);
+            return;
         }
         $matched = isset($origin['digest']) && (is_scalar($value) || $value === null)
             && self::digest([$value]) === $origin['digest'];

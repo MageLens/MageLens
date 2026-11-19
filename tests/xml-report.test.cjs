@@ -832,6 +832,32 @@ test('unobserved template field access cannot infer XML execution or erase earli
     }
 });
 
+test('unobserved block data field access preserves application and cannot grant value-read coverage', () => {
+    const {manifest, record, sources} = fixture();
+    const path = 'app/code/Acme/Blog/view/frontend/layout/data.xml';
+    const source = Buffer.from('<layout/>');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    sources[path] = source;
+    manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'data', family: 'layout',
+        path: '/layout/block/arguments/argument', startLine: 1, endLine: 1, supported: true,
+        declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'argument', ordinal: 2, element: 'value',
+            handle: 'data', fileType: 'generic', instruction: 'argument'}}]});
+    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {argument: 'data'}}}}};
+    const event = type => ({id: 'data', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+    const uncertain = event('layout-argument-field-access-unconfirmed');
+    const request = {...record, layoutHook: true, events: [uncertain]};
+    const limited = merge(manifest, [request], sources).files[1].declarations[0];
+    assert.equal(limited.hits, 0);
+    assert.equal(limited.state, 'unmeasured');
+    assert.match(limited.reason, /outside the observed native data accessors/);
+    const applied = merge(manifest, [{...request, events: [event('layout-argument-applied'), uncertain]}], sources).files[1].declarations[0];
+    assert.equal(applied.hits, 1);
+    assert.equal(applied.state, 'covered');
+    assert.equal(applied.evidence.some(item => item.type === 'layout-argument-read'), false);
+    assert.throws(() => merge(manifest, [{...request, layoutHook: false}], sources), /layout.*hook/i);
+    assert.throws(() => merge(manifest, [{...request, events: [{...uncertain, id: 'unknown'}]}], sources), /Unknown or unmeasured XML evidence/);
+});
+
 test('template-valued XML arguments retain selection and execution as independent facts', () => {
     for (const kind of ['argument', 'action-argument']) {
         const {manifest, record, sources} = fixture();

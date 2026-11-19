@@ -11,22 +11,25 @@ use Magento\Framework\DataObject;
 use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Framework\View\Element\Template;
 
-/** Equal string values cannot identify unobserved protected-property writes. */
-final class LayoutTemplateFieldAccess
+/** Equal values cannot identify unobserved protected-property writes. */
+final class LayoutFieldAccess
 {
     private array $classes = [];
     private array $files = [];
     private int $declared = 0;
     private bool $external = false;
 
-    public function unconfirmed(Template $block): bool
+    public function __construct(private readonly string $field = '_template',
+        private readonly string $base = Template::class, private readonly string $description = 'Template') {}
+
+    public function unconfirmed(AbstractBlock $block): bool
     {
         $declared = get_declared_classes();
         if (count($declared) !== $this->declared) {
             $this->declared = count($declared);
             foreach ($declared as $name) {
-                if (isset($this->classes[$name]) || !is_subclass_of($name, Template::class)) continue;
-                if (count($this->classes) >= 1024) throw new \RuntimeException('Template implementation inventory exceeded 1024 classes');
+                if (isset($this->classes[$name]) || !is_subclass_of($name, $this->base)) continue;
+                if (count($this->classes) >= 1024) throw new \RuntimeException($this->description . ' implementation inventory exceeded 1024 classes');
                 $this->classes[$name] = false;
                 $type = new \ReflectionClass($name);
                 $methods = $type->getMethods();
@@ -43,7 +46,7 @@ final class LayoutTemplateFieldAccess
                 }
             }
         }
-        $property = new \ReflectionProperty($block, '_template');
+        $property = new \ReflectionProperty($block, $this->field);
         return $this->external || ($this->classes[get_class($block)] ?? false) || $property->isPublic() || $property->isPromoted();
     }
 
@@ -52,9 +55,9 @@ final class LayoutTemplateFieldAccess
         $file = $method->getFileName();
         if (!is_string($file) || !is_file($file) || !is_readable($file) || realpath($file) !== $file || filesize($file) > 262144) return null;
         if (isset($this->files[$file])) return $this->files[$file]['accesses'];
-        if (count($this->files) >= 1024) throw new \RuntimeException('Template implementation inventory exceeded 1024 files');
+        if (count($this->files) >= 1024) throw new \RuntimeException($this->description . ' implementation inventory exceeded 1024 files');
         $source = @file_get_contents($file);
-        if (!is_string($source)) throw new \RuntimeException('Cannot inspect template implementation source');
+        if (!is_string($source)) throw new \RuntimeException('Cannot inspect ' . $this->description . ' implementation source');
         $tokens = [];
         $line = 1;
         foreach (token_get_all($source) as $token) {
@@ -70,13 +73,13 @@ final class LayoutTemplateFieldAccess
             // Reflection can replace protected storage without an accessor call.
             // A literal storage operand establishes capability, not an observed write.
             if ($token['id'] === T_CONSTANT_ENCAPSED_STRING
-                && in_array($token['text'], ["'_template'", '"_template"'], true)) {
-                if (count($accesses) >= 4096) throw new \RuntimeException('Template implementation inventory exceeded 4096 field accesses');
+                && in_array($token['text'], ["'" . $this->field . "'", '"' . $this->field . '"'], true)) {
+                if (count($accesses) >= 4096) throw new \RuntimeException($this->description . ' implementation inventory exceeded 4096 field accesses');
                 $accesses[] = ['line' => $token['line'], 'self' => true];
             }
             if (!in_array($token['id'], [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR], true)) continue;
             $property = $tokens[$index + 1] ?? [];
-            if (($property['id'] ?? null) === T_STRING && ($property['text'] ?? null) !== '_template') continue;
+            if (($property['id'] ?? null) === T_STRING && ($property['text'] ?? null) !== $this->field) continue;
             $end = $index + 1;
             if (($property['text'] ?? null) === '{') {
                 for ($depth = 1, $end++; $depth && $end < count($tokens); $end++) {
@@ -88,7 +91,7 @@ final class LayoutTemplateFieldAccess
             if (($tokens[$end + 1]['text'] ?? null) === '(') continue;
             if (($property['id'] ?? null) !== T_STRING && ($property['id'] ?? null) !== T_VARIABLE
                 && ($property['text'] ?? null) !== '{') continue;
-            if (count($accesses) >= 4096) throw new \RuntimeException('Template implementation inventory exceeded 4096 field accesses');
+            if (count($accesses) >= 4096) throw new \RuntimeException($this->description . ' implementation inventory exceeded 4096 field accesses');
             $accesses[] = ['line' => $token['line'], 'self' => ($tokens[$index - 1]['text'] ?? null) === '$this'];
         }
         $this->files[$file] = ['hash' => hash('sha256', $source), 'accesses' => $accesses];
@@ -100,7 +103,7 @@ final class LayoutTemplateFieldAccess
         foreach ($this->files as $file => $source) {
             if (!is_file($file) || !is_readable($file) || realpath($file) !== $file
                 || @hash_file('sha256', $file) !== $source['hash']) {
-                throw new \RuntimeException('Template implementation source changed during layout collection');
+                throw new \RuntimeException($this->description . ' implementation source changed during layout collection');
             }
         }
     }

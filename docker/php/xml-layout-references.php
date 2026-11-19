@@ -25,7 +25,7 @@ final class LayoutReferenceCoverage
         'layout-template-resolver-storage-unconfirmed', 'layout-template-context-storage-unconfirmed',
         'layout-template-engine-pool-storage-unconfirmed', 'layout-template-validation-rejected',
         'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
-        'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed',
+        'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed', 'layout-argument-field-access-unconfirmed',
         'layout-action-executed', 'layout-action-ambiguous',
         'layout-container-wrapper-rendered', 'layout-container-label-applied', 'layout-container-label-read',
         'layout-container-wrapper-zero-class-emitted', 'layout-template-empty-ignored',

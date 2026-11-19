@@ -7,9 +7,9 @@
 declare(strict_types=1);
 require '/var/www/html/app/bootstrap.php';
 $hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
-require $hooks . '/xml-layout-template-field-access.php';
+require $hooks . '/xml-layout-field-access.php';
 
-use MageLens\XmlCoverage\LayoutTemplateFieldAccess;
+use MageLens\XmlCoverage\LayoutFieldAccess;
 use Magento\Framework\View\Element\Template;
 
 $mode = $argv[1] ?? 'literal';
@@ -27,16 +27,18 @@ $directory = sys_get_temp_dir() . '/magelens-template-field-' . bin2hex(random_b
 if (!mkdir($directory, 0700)) throw new RuntimeException('Cannot create disposable implementation fixture');
 $file = $directory . '/implementation.php';
 $class = 'MageLensTemplateFieldFixture';
+$field = in_array('--data', $argv, true) ? '_data' : '_template';
 $source = '<?php class ' . $class . ' extends \\' . Template::class . ' {' . ($bodies[$mode] ?? $bodies['clean']) . '}';
 try {
     if ($mode === 'access-limit') $source = '<?php class ' . $class . ' extends \\' . Template::class
         . ' { public function fixture() {' . str_repeat('$this->_template = "same";', 4097) . '} }';
+    $source = str_replace('_template', $field, $source);
     if ($mode === 'opaque') eval('class ' . $class . ' extends \\' . Template::class . ' { public function fixture() {} }');
     else {
         file_put_contents($file, $source);
         require $file;
     }
-    $guard = new LayoutTemplateFieldAccess();
+    $guard = new LayoutFieldAccess($field, $field === '_data' ? Magento\Framework\View\Element\AbstractBlock::class : Template::class, $field === '_data' ? 'Block data' : 'Template');
     if (in_array($mode, ['class-limit', 'file-limit'], true)) {
         $property = new ReflectionProperty($guard, $mode === 'class-limit' ? 'classes' : 'files');
         $property->setValue($guard, array_fill_keys(array_map(static fn($index) => 'fixture.' . $index, range(1, 1024)), false));
@@ -62,7 +64,7 @@ try {
     } catch (RuntimeException $error) {
         if ($expectedError === null || !str_contains($error->getMessage(), $expectedError)) throw $error;
     }
-    echo 'Verified passive template field capability/integrity control: ', $mode, ".\n";
+    echo 'Verified passive ', $field, ' capability/integrity control: ', $mode, ".\n";
 } finally {
     foreach (glob($directory . '/*') as $entry) unlink($entry);
     rmdir($directory);
