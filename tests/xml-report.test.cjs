@@ -649,7 +649,7 @@ test('native file selection remains a zero-hit observation and cannot substitute
     assert.throws(() => merge(manifest, [request], sources), /No functioning XML layout hook/);
 });
 
-test('full-page cache observations preserve a functioning zero-hit layout inventory', () => {
+test('cache and opaque file-list observations preserve a functioning zero-hit layout inventory', () => {
     const {manifest, record, sources} = fixture();
     const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
     const source = Buffer.from('<layout><container name="fixture"/></layout>');
@@ -670,6 +670,13 @@ test('full-page cache observations preserve a functioning zero-hit layout invent
     assert.match(report.layout.limitations[0], /native full-page cache lookup returned a response/);
     assert.deepEqual(report.requests[0].events, []);
     assert.deepEqual(report.requests[0].layoutLimitations, report.layout.limitations);
+    const fileList = merge(manifest, [{...warm, layoutLimitations: ['layout-file-replacement-storage-unconfirmed']}], sources);
+    assert.equal(fileList.layout.covered, 0);
+    assert.equal(fileList.files[1].declarations.length, 1);
+    assert.equal(fileList.files[1].declarations[0].state, 'unmeasured');
+    assert.deepEqual(fileList.files[1].declarations[0].evidence, []);
+    assert.match(fileList.layout.limitations[0], /file-list backing storage/);
+    assert.deepEqual(fileList.requests[0].layoutLimitations, fileList.layout.limitations);
     assert.throws(() => merge(manifest, [{...warm, layoutHook: false}], sources), /No functioning XML layout hook/);
 });
 

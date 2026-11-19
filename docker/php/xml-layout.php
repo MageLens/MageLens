@@ -289,19 +289,21 @@ final class LayoutCoverage
         if ($class === Merge::class) $this->packages[] = ['merge' => $merge, 'files' => [], 'pending' => null, 'replacements' => []];
     }
 
-    private static function viewFiles(FileList $list): array
+    private static function viewFiles(FileList $list): ?array
     {
-        static $files;
-        $files ??= new \ReflectionProperty(FileList::class, 'files');
-        return $files->getValue($list);
+        $property = LayoutXmlOwnership::unhookedProperty($list, 'files');
+        $files = $property?->getRawValue($list);
+        return is_array($files) ? $files : null;
     }
 
     private function beginFileReplacement($list, array $params, string $class): void
     {
         if ($class !== FileList::class) return;
         $index = array_key_last($this->packages);
-        $this->replacingFiles[] = $index === null ? null
-            : ['package' => $index, 'before' => self::viewFiles($list), 'incoming' => $params[0]];
+        $before = $index === null ? null : self::viewFiles($list);
+        if ($index !== null && $before === null) $this->limitations['layout-file-replacement-storage-unconfirmed'] = true;
+        $this->replacingFiles[] = $before === null ? null
+            : ['package' => $index, 'before' => $before, 'incoming' => $params[0]];
     }
 
     private function completeFileReplacement($list, array $params, $result, ?\Throwable $error, string $class): void
@@ -309,7 +311,12 @@ final class LayoutCoverage
         if ($class !== FileList::class) return;
         $frame = array_pop($this->replacingFiles);
         if ($error || !$frame || $frame['package'] !== array_key_last($this->packages)) return;
-        foreach (self::viewFiles($list) as $identifier => $file) {
+        $after = self::viewFiles($list);
+        if ($after === null) {
+            $this->limitations['layout-file-replacement-storage-unconfirmed'] = true;
+            return;
+        }
+        foreach ($after as $identifier => $file) {
             $before = $frame['before'][$identifier] ?? null;
             if (!$file instanceof File || !$before instanceof File || $file === $before
                 || !in_array($file, $frame['incoming'], true)) continue;
