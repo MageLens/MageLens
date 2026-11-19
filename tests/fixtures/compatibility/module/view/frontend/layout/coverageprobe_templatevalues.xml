@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.template.values.root" output="1">
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.argument">
+            <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.action">
+            <action method="setTemplate"><argument name="filename" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></action>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.equal.action" template="MageLens_Compatibility::layout-template-value.phtml">
+            <action method="setTemplate"><argument name="filename" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></action>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.equal.argument" template="MageLens_Compatibility::layout-template-value.phtml">
+            <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.late.argument">
+            <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.late.action">
+            <action method="setTemplate"><argument name="filename" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></action>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.empty">
+            <arguments><argument name="template" xsi:type="string"/></arguments>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.zero">
+            <arguments><argument name="template" xsi:type="string">0</argument></arguments>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.empty.action">
+            <action method="setTemplate"><argument name="filename" xsi:type="string"/></action>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.zero.action">
+            <action method="setTemplate"><argument name="filename" xsi:type="string">0</argument></action>
+        </block>
+    </container>
+    <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.never">
+        <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+    </block>
+</layout>

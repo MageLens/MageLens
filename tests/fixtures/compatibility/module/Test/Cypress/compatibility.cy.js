@@ -264,6 +264,12 @@ describe('Magento storefront coverage compatibility', () => {
                 else cy.get('[data-layout-name-case="moved"]').should('not.exist');
             }
         }
+        cy.visit('/coverageprobe/templatevalues/');
+        cy.get('[data-layout-template-value-proof]').should('have.text', 'verified');
+        cy.get('[data-layout-template-value]').then(nodes => {
+            expect([...nodes].map(node => node.getAttribute('data-layout-template-value')))
+                .to.deep.equal(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action'].map(name => 'magelens.template.values.' + name));
+        });
         cy.visit('/coverageprobe/actionfailure/');
         for (const failureCase of ['body', 'interpreter', 'partial', 'dispatch', 'type', 'denied', 'success']) {
             cy.get('[data-layout-action-failure="' + failureCase + '"]').should('have.text', 'verified');
