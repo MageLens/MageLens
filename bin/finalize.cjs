@@ -63,7 +63,8 @@ for (const [type, metric] of Object.entries(metrics).filter(([type]) => type !==
 const generatedAt = new Date().toISOString();
 const htmlValidation = writeHtmlValidationReport(run);
 const limitations = templateLimitations(templates);
-writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
+// The coverage database is opt-in: it costs generation time and disk space on every run.
+if (process.argv.includes('--include-machine-report')) writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
 fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
     templateLimitations: limitations}, null, 2));
 writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});

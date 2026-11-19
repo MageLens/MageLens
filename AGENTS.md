@@ -68,6 +68,7 @@ Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. A
 | `./bin/run-coverage --refresh-cache` | Clean caches before collection |
 | `./bin/run-coverage --refresh-assets` | Refresh static assets and caches before collection |
 | `./bin/run-coverage --restart-php` | Restart PHP before collection |
+| `./bin/run-coverage --include-machine-report` | Also write the SQLite coverage database |
 | `./bin/runner COMMAND` | Run Node, npm or a shell in the selected runner container |
 | `bin/magento`, `bin/composer`, `bin/bash` | Work in the application container |
 | `./bin/application-compose logs app phpfpm runner` | Inspect application and browser services |
@@ -80,7 +81,7 @@ Use the pinned Chrome for Testing build for every Cypress and Playwright journey
 
 Automated browser scenarios disable page-change animations. Uncaught application errors still fail the run.
 
-Open `coverage/index.html` after a successful run. To analyse results, query `coverage/report.sqlite` read-only as described in the [coverage-database skill](.agents/skills/coverage-database/SKILL.md) instead of parsing HTML or loading whole exports. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. XML configuration consumption appears separately in `coverage/xml/`, preserving source directories. Read measurement warnings before interpreting template and XML percentages.
+Open `coverage/index.html` after a successful run. To analyse results, run `./bin/run-coverage --include-machine-report` and query `coverage/report.sqlite` read-only as described in the [coverage-database skill](.agents/skills/coverage-database/SKILL.md) instead of parsing HTML or loading whole exports. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. XML configuration consumption appears separately in `coverage/xml/`, preserving source directories. Read measurement warnings before interpreting template and XML percentages.
 
 Tests audit the HTML source of selected pages by calling `cy.mageLensValidateHtml()` in Cypress or the `mageLensValidateHtml(page)` fixture in Playwright. Audits are opt-in and listed in the separate Reports section of `coverage/index.html`, with details in `coverage/html-validation/`; a run without calls is shown as not audited. Captures are validated after the tests finish; findings never fail a test or the run. See [HTML validation](docs/coverage.md#html-validation) for the validation target and its limitations.
 

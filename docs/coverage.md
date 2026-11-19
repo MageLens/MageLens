@@ -49,6 +49,7 @@ Optional flags can be combined:
 | Option | Use when |
 | --- | --- |
 | `--update-readme` | Update the README badge section for this run |
+| `--include-machine-report` | Also write the [coverage database](#coverage-database) for CI, scripts and AI-assisted analysis |
 
 Installation merges [docker/php/env.php.sample](../docker/php/env.php.sample) into `src/app/etc/env.php`, preserving credentials, theme selections and unrelated settings. The fragment enables developer mode, disables full-page/block output caching and HTML/PHTML, JavaScript and CSS minification, and sets local URLs and Admin defaults. These settings also apply at website and store scope. HTML assets pass through unchanged; PHTML executes directly. CSS/LESS compilation remains available for themes. Edit the fragment and rerun installation to change these defaults.
 
@@ -229,7 +230,7 @@ The result may include `warmupPaths`, an array of HTML page paths such as `["/ad
 
 ## Reports and artifacts
 
-Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templates/`, and `coverage/xml/`. `coverage/summary.json` records the run ID, generation time, and displayed metrics. [`coverage/report.sqlite`](#coverage-database) holds the results of all collectors as one queryable database.
+Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templates/`, and `coverage/xml/`. `coverage/summary.json` records the run ID, generation time, and displayed metrics. With `--include-machine-report`, [`coverage/report.sqlite`](#coverage-database) holds the results of all collectors as one queryable database.
 
 For collection details, inspect PHP records under `coverage/raw/php/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
 
@@ -259,7 +260,7 @@ Each DI section counts a declaration once per eligible area. Source highlights s
 
 ## Coverage database
 
-Every successful run writes `coverage/report.sqlite`, a SQLite database for CI, scripts and AI-assisted analysis. It stores the underlying results of all collectors in one structure: every eligible unit, whether a test reached it or not. `coverage/schema.sql` is the formal schema. The collector exports and `coverage/summary.json` are unchanged, and the database totals are checked against them before reports are published. The printed report URL serves both files beside `index.html`.
+`./bin/run-coverage --include-machine-report` also writes `coverage/report.sqlite`, a SQLite database for CI, scripts and AI-assisted analysis. It is opt-in because it adds generation time and disk space; a run without the flag writes neither file and its reports are unaffected. It stores the underlying results of all collectors in one structure: every eligible unit, whether a test reached it or not. `coverage/schema.sql` is the formal schema. The collector exports and `coverage/summary.json` are unchanged, and the database totals are checked against them before the reports of such a run are published. The printed report URL serves both files beside `index.html`.
 
 | Table or view | Contents |
 | --- | --- |
