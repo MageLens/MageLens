@@ -101,6 +101,7 @@ const layoutEvents = {
         'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed', 'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed', 'layout-argument-field-access-unconfirmed'],
     'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
     'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
+    'asset-removal-node': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
     wireframe: ['layout-wireframe-selected'],
     removal: ['layout-removal-applied', 'layout-removal-canceled', 'layout-removal-restored'],
     move: ['layout-move-applied', 'layout-move-removed', 'layout-move-detached', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved', 'layout-move-replaced', 'layout-move-overridden', 'layout-move-origin-unconfirmed'],
@@ -125,10 +126,15 @@ for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 're
         'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
 }
 for (const [kind, type] of [
-    ['template', 'layout-template-empty-ignored'], ['block-group', 'layout-block-group-empty-ignored'],
+    ['template', 'layout-template-empty-ignored'], ['page-title', 'layout-title-empty-ignored'], ['block-group', 'layout-block-group-empty-ignored'],
     ['block-ttl', 'layout-block-ttl-empty-ignored'], ['block-display', 'layout-display-empty-ignored'],
     ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
 ]) layoutEvents[kind].push(type);
+for (const kind of ['page-attribute', 'page-attribute-name', 'page-attribute-value']) {
+    layoutEvents[kind].push('layout-page-attribute-removed', 'layout-page-attribute-removed-before-output',
+        'layout-page-attribute-removal-target-missing');
+}
+for (const kind of ['metadata', 'metadata-name', 'metadata-content']) layoutEvents[kind].push('layout-metadata-empty-suppressed');
 for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater',
     'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
     'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name']) layoutEvents[kind].push('layout-argument-group-ignored');
@@ -258,6 +264,10 @@ const layoutDecisions = {
     'layout-action-ambiguous': 'Multiple scheduled actions match the native method and arguments; the executed declaration could not be identified.',
     'layout-action-argument-ambiguous': 'Multiple scheduled actions supplied matching arguments, preventing a unique original parameter origin.',
     'layout-argument-replaced': 'A runtime data write revoked this XML value origin before a later native getter could consume it.',
+    'layout-title-empty-ignored': 'The native head generator skipped assigning the effective empty or zero title.',
+    'layout-metadata-empty-suppressed': 'The native metadata renderer suppressed the effective empty or zero content.',
+    'layout-page-attribute-removed-before-output': 'The native removal pass discarded this scheduled attribute before it could reach the renderer.',
+    'layout-page-attribute-removal-target-missing': 'The native removal queue found no remaining value for this element attribute.',
     'layout-title-overridden': 'A later title replaced this declaration before the page configuration was applied.',
     'layout-title-replaced': 'A runtime title assignment replaced this declaration before attribution at the renderer.',
     'layout-asset-removal-target-missing': 'The scheduled removal had no asset in the native page configuration.',

@@ -122,6 +122,13 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.get('head').invoke('html').should('contain', '<!--[if lt IE 9]>');
         cy.window().then(win => expect(typeof win.magelensConditionalAsset).to.equal('undefined'));
+        cy.visit('/coverageprobe/handle/?variant=page-values');
+        cy.get('body').should('have.attr', 'data-layout-body-truthy', '00');
+        cy.get('meta[name="0"]').should('have.attr', 'content', 'zero-key');
+        cy.get('meta[name=""]').should('have.attr', 'content', 'empty-key');
+        cy.get('[data-layout-html-removed], [data-layout-head-removed], [data-layout-body-removed], [data-layout-no-target]').should('not.exist');
+        cy.get('meta[name="layout-empty"], meta[name="layout-zero"], link[href=""][rel="preconnect"]').should('not.exist');
+        cy.title().should(title => expect(title).not.to.be.oneOf(['Displaced XML title', '0']));
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
         cy.visit('/coverageprobe/fragment/');

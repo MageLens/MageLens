@@ -37,6 +37,7 @@ final class LayoutPageCoverage
         return [
             [HeadReader::class, 'processNode', $this->beginRead(...), $this->completeRead(...)],
             [Structure::class, 'setTitle', null, $this->scheduleTitle(...)],
+            [Structure::class, 'getTitle', null, $this->readScheduledTitle(...)],
             [Structure::class, 'removeAssets', null, $this->scheduleRemoval(...)],
             [Structure::class, 'populateWithArray', null, $this->replaceStructure(...)],
             [Structure::class, 'processRemoveAssets', $this->beginRemoval(...), $this->completeRemoval(...)],
@@ -47,6 +48,11 @@ final class LayoutPageCoverage
             ...$this->values->hooks(),
             ...$this->assets->hooks(),
         ];
+    }
+
+    public function finish(): void
+    {
+        $this->values->finish();
     }
 
     public function snapshot(Structure $structure): array
@@ -124,7 +130,8 @@ final class LayoutPageCoverage
         $read = $this->reading[array_key_last($this->reading)] ?? null;
         if ($read && $read['structure'] === $structure && isset($read['ids']['asset-removal'])
             && self::calledFrom($structure, 'removeAssets', HeadReader::class, 'processNode')) {
-            $state['removals'][$name] = ['id' => $read['ids']['asset-removal'], 'context' => $read['context']];
+            $ids = array_intersect_key($read['ids'], array_flip(['asset-removal', 'asset-removal-node']));
+            $state['removals'][$name] = ['ids' => $ids, 'context' => $read['context']];
         }
         $this->restore($structure, $state);
     }
@@ -138,8 +145,9 @@ final class LayoutPageCoverage
     {
         if ($class !== Structure::class) return;
         $removals = $this->structures[$structure]['removals'] ?? [];
+        $removals = array_intersect_key($removals, self::assetProperty($structure, 'removeAssets'));
         $this->removing[] = self::calledFrom($structure, 'processRemoveAssets', HeadGenerator::class, 'process') && $removals
-            ? ['present' => array_keys(array_intersect_key($structure->getAssets(), $removals)), 'origins' => $removals]
+            ? ['present' => array_keys(array_intersect_key(self::assetProperty($structure, 'assets'), $removals)), 'origins' => $removals]
             : null;
     }
 
@@ -152,11 +160,30 @@ final class LayoutPageCoverage
         $this->reset($structure);
         $this->restore($structure, $state);
         if ($error || !$frame) return;
-        $assets = $structure->getAssets();
+        $assets = self::assetProperty($structure, 'assets');
         foreach ($frame['origins'] as $name => $origin) {
             if (array_key_exists($name, $assets)) continue;
-            self::record($origin, in_array($name, $frame['present'], true)
-                ? 'layout-asset-removed' : 'layout-asset-removal-target-missing');
+            $effect = in_array($name, $frame['present'], true) ? 'layout-asset-removed' : 'layout-asset-removal-target-missing';
+            foreach ($origin['ids'] as $id) Recorder::layout($id, $effect, $origin['context']);
+        }
+    }
+
+    private static function assetProperty(Structure $structure, string $field): array
+    {
+        static $properties = [];
+        $property = $properties[$field] ??= new \ReflectionProperty(Structure::class, $field);
+        return $property->getRawValue($structure);
+    }
+
+    private function readScheduledTitle($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== Structure::class || $result
+            || !self::calledFrom($structure, 'getTitle', HeadGenerator::class, 'processTitle')) return;
+        $frame = $this->applying[array_key_last($this->applying)] ?? [];
+        $origin = $frame['title'] ?? null;
+        if ($origin) self::record($origin, 'layout-title-empty-ignored');
+        foreach ($frame['overridden'] ?? [] as $previous) {
+            if ($previous !== $origin) self::record($previous, 'layout-title-overridden');
         }
     }
 

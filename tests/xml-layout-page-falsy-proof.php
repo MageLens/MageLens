@@ -24,7 +24,13 @@ foreach (['base', 'falsy'] as $variant) {
         'declarations' => LayoutManifest::declarations($path, $source)];
 }
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
+$missing = array_values(array_intersect($argv, ['--missing-removal-pre', '--missing-removal-post', '--missing-removal-both']))[0] ?? null;
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $method, $pre, $post]) {
+    if ($class === Structure::class && $method === 'processRemoveElementAttributes') {
+        if (in_array($missing, ['--missing-removal-pre', '--missing-removal-both'], true)) $pre = null;
+        if (in_array($missing, ['--missing-removal-post', '--missing-removal-both'], true)) $post = null;
+        if (!$pre && !$post) continue;
+    }
     if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot observe native falsy page configuration');
 }
 $removal = [];
@@ -79,6 +85,16 @@ foreach ($files as $file) if (hash_file('sha256', BP . '/' . $file['path']) !== 
 }
 echo "Verified native zero/empty metadata, title suppression, attribute removal and empty asset removal.\n";
 if (in_array('--without-collector', $argv, true)) exit;
+if ($missing) {
+    try {
+        $collector->finish();
+    } catch (RuntimeException $error) {
+        if (!str_contains($error->getMessage(), 'Layout runtime hook callback failed')) throw $error;
+        echo "Missing removal observation rejected publication after unchanged native output.\n";
+        exit;
+    }
+    throw new RuntimeException('Incomplete page attribute removal hooks were accepted');
+}
 $collector->finish();
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $expected = [
@@ -91,6 +107,7 @@ $expected = [
     '/page/head/attribute[1]' => 'layout-page-attribute-removed',
     '/page/head/attribute[2]' => 'layout-page-attribute-removal-target-missing',
     '/page/head/remove' => 'layout-asset-removed',
+    '/page/head/remove/@src' => 'layout-asset-removed',
     '/page/body/attribute[1]' => 'layout-page-attribute-removed',
     '/page/body/attribute[2]' => 'layout-page-attribute-removed-before-output',
     '/page/body/attribute[3]' => 'layout-page-attribute-rendered',

@@ -67,11 +67,12 @@ final class LayoutManifest
                 $fileType === 'page' && $node->tagName === 'attribute'
                     && in_array($node->parentNode->nodeName, ['html', 'head', 'body'], true)
                     && $element !== '' && !($node->parentNode->nodeName === 'body' && $element === 'class') => 'page-attribute',
-                $fileType === 'page' && $node->tagName === 'meta' && $node->parentNode->nodeName === 'head'
-                    && $element !== '' => 'metadata',
+                $fileType === 'page' && $node->tagName === 'meta' && $node->parentNode->nodeName === 'head' => 'metadata',
                 $fileType === 'page' && $node->parentNode->nodeName === 'head'
                     && in_array($node->tagName, ['css', 'script', 'link', 'font'], true)
-                    && $node->getAttribute('src') !== '' => 'asset-reference',
+                    && $node->hasAttribute('src') => 'asset-reference',
+                $fileType === 'page' && $node->parentNode->nodeName === 'head'
+                    && $node->tagName === 'remove' && $node->hasAttribute('src') => 'asset-removal-node',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'action' && $node->hasAttribute('method')
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'argument' && $element !== ''
@@ -153,7 +154,7 @@ final class LayoutManifest
                     in_array($fileType, ['page', 'generic', 'wireframe'], true) && $attribute->nodeName === 'remove' && $element !== ''
                         && in_array($node->tagName, ['referenceBlock', 'referenceContainer'], true) => 'removal',
                     $fileType === 'page' && $node->tagName === 'remove' && $node->parentNode->nodeName === 'head'
-                        && $attribute->nodeName === 'src' && $element !== '' => 'asset-removal',
+                        && $attribute->nodeName === 'src' => 'asset-removal',
                     $blockNode && $attribute->nodeName === 'template' => 'template',
                     $fileType === 'page' && $index === 0 && $attribute->nodeName === 'layout'
                         && $attribute->nodeValue !== '' => 'wireframe-selection',
@@ -163,7 +164,7 @@ final class LayoutManifest
             }
             foreach ($instructions as [$attribute, $kind]) {
                 $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'action-item', 'action-item-name', 'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'parameter', 'parameter-name', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
-                    'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
+                    'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'asset-removal-node', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
                     'block-class', 'block-group', 'block-ttl', 'cacheability',

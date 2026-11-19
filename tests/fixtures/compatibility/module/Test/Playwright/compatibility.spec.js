@@ -114,6 +114,15 @@ test('starts the next test with fresh state', async ({page}) => {
     expect(order).toEqual(['layout-head.css', 'layout-second.css']);
     expect(await page.locator('head').innerHTML()).toContain('<!--[if lt IE 9]>');
     expect(await page.evaluate(() => typeof window.magelensConditionalAsset)).toBe('undefined');
+    await page.goto('/coverageprobe/handle/?variant=page-values');
+    await expect(page.locator('body')).toHaveAttribute('data-layout-body-truthy', '00');
+    await expect(page.locator('meta[name="0"]')).toHaveAttribute('content', 'zero-key');
+    await expect(page.locator('meta[name=""]')).toHaveAttribute('content', 'empty-key');
+    await expect(page.locator('[data-layout-html-removed], [data-layout-head-removed], [data-layout-body-removed], [data-layout-no-target]')).toHaveCount(0);
+    await expect(page.locator('meta[name="layout-empty"], meta[name="layout-zero"], link[href=""][rel="preconnect"]')).toHaveCount(0);
+    const falsyTitle = await page.title();
+    expect(falsyTitle).not.toBe('Displaced XML title');
+    expect(falsyTitle).not.toBe('0');
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
     await page.goto('/coverageprobe/fragment/');

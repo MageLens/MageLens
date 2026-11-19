@@ -167,6 +167,7 @@ final class LayoutCoverage
         $this->templateFields->finish();
         $this->dataFields->finish();
         $this->selectionOwnership->finish();
+        $this->page->finish();
         if ($this->moveReads || $this->moveReadOverflow || $this->moving || $this->movingOverflow
             || $this->moveReaders || $this->moveReaderOverflow) {
             $this->errors['Unbalanced native move hook evidence'] = true;

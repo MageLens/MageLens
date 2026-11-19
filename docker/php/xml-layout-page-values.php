@@ -22,7 +22,9 @@ final class LayoutPageValuesCoverage
     private \WeakMap $configs;
     private array $reading = [];
     private array $generating = [];
+    private array $removing = [];
     private array $rendering = [];
+    private array $metadataContents = [];
     private array $classWrites = [];
     private array $classGeneration = [];
     private array $classAssignments = [];
@@ -45,6 +47,7 @@ final class LayoutPageValuesCoverage
             [Html::class, 'interpret', $this->beginRead(...), $this->endRead(...)],
             [Structure::class, 'setMetadata', null, $this->scheduleMetadata(...)],
             [Structure::class, 'setElementAttribute', null, $this->scheduleAttribute(...)],
+            [Structure::class, 'processRemoveElementAttributes', $this->beginRemoval(...), $this->endRemoval(...)],
             [Generator::class, 'processMetadata', $this->beginGeneration(...), $this->endGeneration(...)],
             [Generator::class, 'processElementAttributes', $this->beginGeneration(...), $this->endGeneration(...)],
             [Config::class, 'setMetadata', null, $this->applyMetadata(...)],
@@ -54,8 +57,14 @@ final class LayoutPageValuesCoverage
             [Config::class, 'getDescription', null, $this->readDescription(...)],
             [Renderer::class, 'renderElementAttributes', $this->beginRender(...), $this->endRender(...)],
             [Renderer::class, 'renderMetadata', $this->beginRender(...), $this->endRender(...)],
-            [Renderer::class, 'processMetadataContent', null, $this->metadataContent(...)],
+            [Renderer::class, 'processMetadataContent', $this->beginMetadataContent(...), $this->metadataContent(...)],
         ];
+    }
+
+    public function finish(): void
+    {
+        if ($this->removing) throw new \RuntimeException('Unbalanced native page attribute removal evidence');
+        if ($this->metadataContents) throw new \RuntimeException('Unbalanced native metadata content evidence');
     }
 
     public function snapshot(Structure $structure): array
@@ -100,7 +109,8 @@ final class LayoutPageValuesCoverage
     {
         if ($error || $class !== Structure::class) return;
         $caller = self::caller($structure, 'setMetadata');
-        $this->scheduleValue($structure, ['metadata', $params[0]], $caller, Head::class, 'setMetadata', 'metadata');
+        $origin = $this->readOrigin($structure, $caller, Head::class, 'setMetadata', 'metadata');
+        $this->scheduleValue($structure, ['metadata', $params[0]], 'metadata', $origin);
     }
 
     private function scheduleAttribute($structure, array $params, $result, ?\Throwable $error, string $class): void
@@ -114,35 +124,112 @@ final class LayoutPageValuesCoverage
             default => 'interpret',
         };
         $caller = self::caller($structure, 'setElementAttribute');
-        $this->scheduleValue($structure, ['attributes', $params[0], $params[1]], $caller, $reader, $method, 'page-attribute');
+        $origin = $this->readOrigin($structure, $caller, $reader, $method, 'page-attribute');
+        [$element, $name, $value] = $params;
+        if (!empty($value)) {
+            $this->scheduleValue($structure, ['attributes', $element, $name], 'page-attribute', $origin);
+            return;
+        }
+        if (!$origin) return;
+        $queue = self::removalQueue($structure)[$element] ?? [];
+        $index = array_key_last($queue);
+        if ($index === null || $queue[$index] !== $name) return;
+        $state = $this->snapshot($structure);
+        $state['attributeRemovals'][$element][$index] = ['name' => $name, 'origin' => $origin];
+        $this->restore($structure, $state);
     }
 
-    private function scheduleValue($structure, array $keys, array $caller, ?string $reader, string $method, string $kind): void
+    private function readOrigin($structure, array $caller, ?string $reader, string $method, string $kind): ?array
+    {
+        $index = array_key_last($this->reading);
+        $frame = $this->reading[$index] ?? null;
+        if (!$frame || $frame['structure'] !== $structure || ($caller['class'] ?? null) !== $reader
+            || ($caller['function'] ?? null) !== $method) return null;
+        $node = $frame['nodes'][$frame['index']] ?? null;
+        $this->reading[$index]['index']++;
+        if (!$node) return null;
+        [$ids, $context] = ($this->origin)($node);
+        $ids = array_intersect_key($ids, array_flip([$kind, $kind . '-name', $kind . '-value', $kind . '-content']));
+        return $ids ? ['ids' => array_values($ids), 'context' => $context] : null;
+    }
+
+    private function scheduleValue($structure, array $keys, string $kind, ?array $origin): void
     {
         $state = $this->snapshot($structure);
         $target = &$state;
         foreach ($keys as $key) $target = &$target[$key];
-        $previous = $target;
-        $target = null;
-        $index = array_key_last($this->reading);
-        $frame = $this->reading[$index] ?? null;
-        if ($frame && $frame['structure'] === $structure && ($caller['class'] ?? null) === $reader
-            && ($caller['function'] ?? null) === $method) {
-            $node = $frame['nodes'][$frame['index']] ?? null;
-            $this->reading[$index]['index']++;
-            if ($node) {
-                [$ids, $context] = ($this->origin)($node);
-                $ids = array_intersect_key($ids, array_flip([$kind, $kind . '-name', $kind . '-value', $kind . '-content']));
-                if ($ids) $target = ['ids' => array_values($ids), 'context' => $context];
-            }
-        }
-        if ($previous && $previous !== $target) $state['overridden'][$kind][] = $previous;
+        if ($target && $target !== $origin) $state['overridden'][$kind][] = $target;
+        $target = $origin;
         $this->restore($structure, $state);
     }
 
-    private function beginGeneration($generator, array $params, string $class): void
+    private static function removalQueue(Structure $structure): array
     {
-        if ($class === Generator::class) $this->generating[] = $this->snapshot($params[0]);
+        static $queue;
+        $queue ??= new \ReflectionProperty(Structure::class, 'removeElementAttributes');
+        return $queue->getRawValue($structure);
+    }
+
+    private static function elementAttributes(Structure $structure): array
+    {
+        static $attributes;
+        $attributes ??= new \ReflectionProperty(Structure::class, 'elementAttributes');
+        return $attributes->getRawValue($structure);
+    }
+
+    private function beginRemoval($structure, array $params, string $class): void
+    {
+        if ($class !== Structure::class) return;
+        if (count($this->removing) >= 256) throw new \RuntimeException('Native page attribute removal nesting exceeded 256 calls');
+        $caller = self::caller($structure, 'processRemoveElementAttributes');
+        $native = ($caller['class'] ?? null) === Generator::class && ($caller['function'] ?? null) === 'process';
+        $state = $this->snapshot($structure);
+        $attributes = self::elementAttributes($structure);
+        $targets = [];
+        foreach (self::removalQueue($structure) as $element => $names) {
+            $seen = [];
+            foreach ($names as $index => $name) {
+                $present = !isset($seen[$name]) && array_key_exists($name, $attributes[$element] ?? []);
+                $seen[$name] = true;
+                $entry = $state['attributeRemovals'][$element][$index] ?? null;
+                $targets[$element][] = ['name' => $name, 'present' => $present,
+                    'origin' => $native && ($entry['name'] ?? null) === $name ? $entry['origin'] : null];
+            }
+        }
+        $this->removing[] = ['structure' => $structure, 'targets' => $targets];
+    }
+
+    private function endRemoval($structure, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Structure::class) return;
+        $frame = array_pop($this->removing);
+        if (($frame['structure'] ?? null) !== $structure) throw new \RuntimeException('Missing native page attribute removal entry evidence');
+        if ($error) return;
+        $state = $this->snapshot($structure);
+        unset($state['attributeRemovals']);
+        $attributes = self::elementAttributes($structure);
+        foreach ($frame['targets'] as $element => $targets) {
+            foreach ($targets as ['name' => $name, 'present' => $present, 'origin' => $origin]) {
+                if (array_key_exists($name, $attributes[$element] ?? [])) continue;
+                if ($origin) self::record($origin, $present ? 'layout-page-attribute-removed' : 'layout-page-attribute-removal-target-missing');
+                $displaced = $state['attributes'][$element][$name] ?? null;
+                if ($present && $displaced) self::record($displaced, 'layout-page-attribute-removed-before-output');
+                unset($state['attributes'][$element][$name]);
+            }
+        }
+        foreach ($state['overridden']['page-attribute'] ?? [] as $origin) self::record($origin, 'layout-page-attribute-overridden');
+        unset($state['overridden']['page-attribute']);
+        $this->restore($structure, $state);
+    }
+
+    private function beginGeneration($generator, array $params, string $class, string $method): void
+    {
+        if ($class !== Generator::class) return;
+        $state = $this->snapshot($params[0]);
+        if ($method === 'processElementAttributes' && !empty($state['attributeRemovals'])) {
+            throw new \RuntimeException('Missing native page attribute removal evidence');
+        }
+        $this->generating[] = $state;
     }
 
     private function endGeneration($generator, array $params, $result, ?\Throwable $error, string $class): void
@@ -333,17 +420,27 @@ final class LayoutPageValuesCoverage
         }
     }
 
+    private function beginMetadataContent($renderer, array $params, string $class): void
+    {
+        if ($class !== Renderer::class) return;
+        if (count($this->metadataContents) >= 256) throw new \RuntimeException('Native metadata content nesting exceeded 256 calls');
+        $this->metadataContents[] = ['renderer' => $renderer, 'name' => (string) $params[0], 'nonempty' => !empty($params[1])];
+    }
+
     private function metadataContent($renderer, array $params, $result, ?\Throwable $error, string $class): void
     {
+        if ($class !== Renderer::class) return;
+        $input = array_pop($this->metadataContents);
+        if (($input['renderer'] ?? null) !== $renderer) throw new \RuntimeException('Missing native metadata content entry evidence');
         $index = array_key_last($this->rendering);
-        if ($error || $class !== Renderer::class || $index === null || !$result) return;
+        if ($error || $index === null) return;
         $frame = $this->rendering[$index];
-        $name = $params[0];
+        $name = $input['name'];
         $origin = $frame['metadata'][$name] ?? null;
         if (!$origin) return;
         $method = 'get' . str_replace(' ', '', ucwords(str_replace('_', ' ', $name)));
-        if ($name === 'description' ? !$frame['description'] : method_exists($frame['config'], $method)) return;
-        $this->rendering[$index]['origins'][] = [$origin, 'layout-metadata-rendered'];
+        if ($name === 'description' ? (!$frame['description'] || !$input['nonempty']) : method_exists($frame['config'], $method)) return;
+        $this->rendering[$index]['origins'][] = [$origin, $result ? 'layout-metadata-rendered' : 'layout-metadata-empty-suppressed'];
     }
 
     private function endRender($renderer, array $params, $result, ?\Throwable $error, string $class): void
