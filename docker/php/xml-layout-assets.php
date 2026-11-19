@@ -7,6 +7,7 @@
 declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
+use Magento\Framework\Url;
 use Magento\Framework\View\Asset\Collection;
 use Magento\Framework\View\Asset\File;
 use Magento\Framework\View\Asset\Remote;
@@ -24,6 +25,7 @@ final class LayoutAssetsCoverage
     private array $reading = [];
     private array $removing = [];
     private array $generating = [];
+    private array $routing = [];
     private array $adding = [];
     private array $rendering = [];
 
@@ -41,6 +43,7 @@ final class LayoutAssetsCoverage
             [Structure::class, 'processRemoveAssets', $this->beginRemoval(...), $this->endRemoval(...)],
             [Generator::class, 'processAssets', $this->beginGeneration(...), $this->endGeneration(...)],
             [Generator::class, 'getAssetProperties', null, $this->assetProperties(...)],
+            [Url::class, 'getUrl', $this->beginControllerUrl(...), $this->endControllerUrl(...)],
             [Config::class, 'addPageAsset', $this->beginAdd(...), $this->endAdd(...)],
             [Config::class, 'addRemotePageAsset', $this->beginAdd(...), $this->endAdd(...)],
             [GroupedCollection::class, 'add', null, $this->addedAsset(...)],
@@ -56,6 +59,11 @@ final class LayoutAssetsCoverage
             [File::class, 'getUrl', null, $this->referenceUrl(...)],
             [Remote::class, 'getUrl', null, $this->referenceUrl(...)],
         ];
+    }
+
+    public function finish(): void
+    {
+        if ($this->routing) throw new \RuntimeException('Unbalanced native controller asset URL evidence');
     }
 
     public function snapshot(Structure $structure): array
@@ -144,10 +152,15 @@ final class LayoutAssetsCoverage
         $state = $this->snapshot($params[0]);
         $valid = [];
         foreach ($params[0]->getAssets() as $name => $data) {
-            if (isset($state[$name]) && $state[$name]['signature'] !== null
-                && $state[$name]['signature'] === self::signature($data)) $valid[$name] = $state[$name];
+            if (!isset($state[$name]) || $state[$name]['signature'] === null
+                || $state[$name]['signature'] !== self::signature($data)) continue;
+            $valid[$name] = $state[$name];
+            if (($data['src_type'] ?? null) === Generator::SRC_TYPE_CONTROLLER) {
+                unset($data['src']);
+                $valid[$name]['controller'] = self::signature($data);
+            }
         }
-        $this->generating[] = ['state' => $valid, 'properties' => null];
+        $this->generating[] = ['state' => $valid, 'properties' => null, 'route' => null];
     }
 
     private function endGeneration($generator, array $params, $result, ?\Throwable $error, string $class): void
@@ -155,15 +168,56 @@ final class LayoutAssetsCoverage
         if ($class === Generator::class) array_pop($this->generating);
     }
 
+    private function beginControllerUrl($url, array $params, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($class !== Url::class || $index === null) return;
+        if (count($this->routing) >= 256) throw new \RuntimeException('Native controller asset URL nesting exceeded 256 calls');
+        $name = $params[0] ?? null;
+        $caller = self::caller($url, 'getUrl');
+        $native = is_string($name) && isset($this->generating[$index]['state'][$name]['controller'])
+            && ($caller['class'] ?? null) === Generator::class && ($caller['function'] ?? null) === 'processAssets';
+        $this->routing[] = $native ? ['url' => $url, 'index' => $index, 'name' => $name] : null;
+    }
+
+    private function endControllerUrl($url, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($class !== Url::class || $index === null) return;
+        if (!$this->routing) throw new \RuntimeException('Missing native controller asset URL entry evidence');
+        $call = array_pop($this->routing);
+        if (!$call || $error || !is_string($result)) return;
+        if ($call['url'] !== $url || $call['index'] !== $index) throw new \RuntimeException('Mismatched native controller asset URL evidence');
+        $this->generating[$index]['route'] = ['name' => $call['name'], 'signature' => hash('sha256', $result)];
+    }
+
     private function assetProperties($generator, array $params, $properties, ?\Throwable $error, string $class): void
     {
         $index = array_key_last($this->generating);
         if ($error || $class !== Generator::class || $index === null) return;
+        $frame = &$this->generating[$index];
         $data = $params[0];
-        $origin = $this->generating[$index]['state'][$data['src'] ?? ''] ?? null;
-        $this->generating[$index]['properties'] = $origin && $origin['signature'] === self::signature($data)
-            ? ['name' => $data['src'], 'origin' => $origin, 'signature' => self::signature($properties),
+        $src = $data['src'] ?? '';
+        $name = $src;
+        $signature = self::signature($data);
+        $route = $frame['route'];
+        $frame['route'] = null;
+        $controller = ($data['src_type'] ?? null) === Generator::SRC_TYPE_CONTROLLER;
+        if ($controller) {
+            if (!$route || !is_string($src) || $route['signature'] !== hash('sha256', $src)) {
+                $frame['properties'] = null;
+                return;
+            }
+            $name = $route['name'];
+            unset($data['src']);
+            $signature = self::signature($data);
+        }
+        $origin = $frame['state'][$name] ?? null;
+        $expected = $origin[$controller ? 'controller' : 'signature'] ?? null;
+        $frame['properties'] = $expected !== null && $expected === $signature
+            ? ['name' => $name, 'origin' => $origin, 'signature' => self::signature($properties),
                 'attributes' => self::signature($properties['attributes'] ?? []),
+                'controller' => $controller ? $route['signature'] : null,
                 'order' => isset($properties['order']) ? (string) $properties['order'] : null] : null;
     }
 
@@ -171,13 +225,20 @@ final class LayoutAssetsCoverage
     {
         if ($class !== Config::class) return;
         $index = array_key_last($this->generating);
-        $candidate = $index === null ? null : $this->generating[$index]['properties'];
+        $candidate = $this->generating[$index]['properties'] ?? null;
         $caller = self::caller($config, $function);
         $remote = $function === 'addRemotePageAsset';
-        $name = $remote ? ($params[3] ?? $params[0]) : ($params[2] ?? $params[0]);
+        $name = (string) ($remote ? ($params[3] ?? $params[0]) : ($params[2] ?? $params[0]));
         $properties = $params[$remote ? 2 : 1] ?? [];
-        $valid = $candidate && $candidate['name'] === $name && $candidate['signature'] === self::signature($properties)
-            && ($caller['class'] ?? null) === Generator::class && ($caller['function'] ?? null) === 'processAssets';
+        $native = ($caller['class'] ?? null) === Generator::class && ($caller['function'] ?? null) === 'processAssets';
+        $valid = $native && $candidate && $candidate['name'] === $name && $candidate['signature'] === self::signature($properties)
+            && ($candidate['controller'] === null || ($remote && is_string($params[0]) && $candidate['controller'] === hash('sha256', $params[0])));
+        if ($valid && $candidate['controller'] !== null) {
+            self::record($candidate['origin'], 'layout-asset-controller-url-generated', ['asset-src', 'asset-src-type']);
+        } elseif (!$valid && $remote && $native && isset($this->generating[$index]['state'][$name]['controller'])) {
+            self::record($this->generating[$index]['state'][$name], 'layout-asset-controller-origin-unconfirmed');
+        }
+        if ($valid && $remote && !$name) $candidate['name'] = (string) $params[0];
         $this->adding[] = $valid ? $candidate : null;
         if ($index !== null) $this->generating[$index]['properties'] = null;
     }
@@ -204,7 +265,7 @@ final class LayoutAssetsCoverage
         if ($error || $class !== GroupedCollection::class) return;
         $candidate = $this->adding[array_key_last($this->adding)] ?? null;
         $caller = self::caller($collection, 'add');
-        if (!$candidate || $candidate['name'] !== $params[0] || ($caller['class'] ?? null) !== Config::class
+        if (!$candidate || $candidate['name'] !== (string) $params[0] || ($caller['class'] ?? null) !== Config::class
             || !in_array($caller['function'] ?? null, ['addPageAsset', 'addRemotePageAsset'], true)) return;
         foreach ($collection->getGroups() as $group) {
             if (($group->getAll()[$params[0]] ?? null) !== $params[1]) continue;

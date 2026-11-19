@@ -131,6 +131,8 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('meta[property="og:layout-fixture"]')).toHaveAttribute('content', 'property metadata');
     await expect(page.locator('meta[http-equiv="X-UA-Compatible"]')).toHaveAttribute('content', 'IE=edge');
     await expect(page.locator('meta[name="media_type"]')).toHaveCount(0);
+    await page.goto('/coverageprobe/handle/?variant=controller-asset');
+    await expect(page.locator('head link[rel="magelens-controller-fixture"]')).toHaveAttribute('href', /\/coverageprobe\/fragment\//);
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
     await page.goto('/coverageprobe/fragment/');

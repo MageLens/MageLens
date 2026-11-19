@@ -14,6 +14,8 @@ require $hooks . '/xml-layout-manifest.php';
 use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, LayoutRuntimeHooks, Recorder};
 use Magento\Framework\App\Area;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\Url;
+use Magento\Framework\View\Page\Config\Generator\Head;
 
 $path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_page_controller_asset.xml';
 $source = file_get_contents(BP . '/' . $path);
@@ -21,8 +23,35 @@ $file = ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $
     'declarations' => LayoutManifest::declarations($path, $source)];
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets([$file]));
 $nativeOnly = in_array('--without-collector', $argv, true);
+$custom = in_array('--custom-url', $argv, true);
+$missingPre = in_array('--missing-url-pre', $argv, true);
+$missingPost = in_array('--missing-url-post', $argv, true);
 if (!$nativeOnly) foreach ($callbacks as [$class, $method, $pre, $post]) {
+    if ($class === Url::class && $method === 'getUrl') {
+        if ($missingPre) $pre = null;
+        if ($missingPost) $post = null;
+    }
     if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot observe native controller asset');
+}
+if ($custom) {
+    $field = new ReflectionProperty(Head::class, 'url');
+    $original = null;
+    if (!LayoutRuntimeHooks::register(Head::class, 'processAssets',
+        static function ($generator) use ($field, &$original): void {
+            $original = $field->getRawValue($generator);
+            $field->setRawValue($generator, new class($original) extends Url {
+                public function __construct(private Url $delegate)
+                {
+                }
+
+                public function getUrl($routePath = null, $routeParams = null)
+                {
+                    return $this->delegate->getUrl($routePath, $routeParams);
+                }
+            });
+        }, static function ($generator) use ($field, &$original): void {
+            if ($original) $field->setRawValue($generator, $original);
+        })) throw new RuntimeException('Cannot install disposable controller URL provider');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');
@@ -45,6 +74,16 @@ if ($links->length !== 1 || !is_string($url) || !str_contains((string) parse_url
 if (hash_file('sha256', BP . '/' . $path) !== $file['sourceHash']) throw new RuntimeException('Controller asset fixture changed original XML');
 echo "Verified native controller asset URL and output.\n";
 if ($nativeOnly) exit;
+if ($missingPre || $missingPost) {
+    try {
+        $collector->finish();
+    } catch (RuntimeException $error) {
+        if (!preg_match('/Layout runtime hook callback failed|Unbalanced native controller asset URL evidence/', $error->getMessage())) throw $error;
+        echo "Incomplete controller URL observations rejected publication after unchanged native output.\n";
+        exit;
+    }
+    throw new RuntimeException('Incomplete controller URL observations were accepted');
+}
 $collector->finish();
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $expected = [
@@ -54,6 +93,7 @@ $expected = [
     'asset-attribute-rel' => ['layout-asset-attribute-emitted'],
     'asset-order' => ['layout-asset-group-applied'],
 ];
+if ($custom) $expected = array_fill_keys(array_keys($expected), ['layout-asset-controller-origin-unconfirmed']);
 foreach ($file['declarations'] as $declaration) {
     $kind = $declaration['layout']['kind'];
     if (!isset($expected[$kind])) continue;

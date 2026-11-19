@@ -137,6 +137,8 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('meta[property="og:layout-fixture"]').should('have.attr', 'content', 'property metadata');
         cy.get('meta[http-equiv="X-UA-Compatible"]').should('have.attr', 'content', 'IE=edge');
         cy.get('meta[name="media_type"]').should('not.exist');
+        cy.visit('/coverageprobe/handle/?variant=controller-asset');
+        cy.get('head link[rel="magelens-controller-fixture"]').should('have.length', 1).invoke('attr', 'href').should('include', '/coverageprobe/fragment/');
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
         cy.visit('/coverageprobe/fragment/');

@@ -53,6 +53,7 @@ final class LayoutPageCoverage
     public function finish(): void
     {
         $this->values->finish();
+        $this->assets->finish();
     }
 
     public function snapshot(Structure $structure): array
