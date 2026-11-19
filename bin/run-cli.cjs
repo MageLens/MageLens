@@ -30,7 +30,7 @@ async function runCli(send) {
         setTransport(request => {
             const response = pending.then(async () => {
                 if (transportError) throw transportError;
-                send(JSON.stringify({run, ...request}) + '\n');
+                send(request.tool + '\t' + JSON.stringify({run, ...request}) + '\n');
                 const {value, done} = await responses.next();
                 assert.ok(!done, 'The PHP command relay disconnected');
                 const result = JSON.parse(value);

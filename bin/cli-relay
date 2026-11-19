@@ -14,11 +14,26 @@ dc exec -T runner node bin/run-cli.cjs \
     < "$relay/responses" > "$relay/requests" &
 runner_pid=$!
 exec 4>"$relay/responses" 3<"$relay/requests"
-while IFS= read -r request <&3; do
-    [[ -n "$request" ]] || break
-    if ! response=$(dc exec -T -e MAGERUN_VERSION -e MAGERUN_SHA256 phpfpm php -d display_errors=stderr /application/docker/php/cli-command.php <<< "$request" 3<&- 4>&-) ||
+# The runner prefixes the tool so the host can prepare MageRun without parsing JSON.
+execute_request() {
+    local tool=$1 request=$2
+    if [[ "$tool" == magerun ]]; then
+        if [[ ! -x bin/n98-magerun2 ]] || ! grep -Fq 'MAGELENS_MAGERUN_PREPARE' bin/n98-magerun2; then
+            printf '%s\n' '{"code":125,"stdout":"","stderr":"Rerun ./install.sh with your saved selections to update ./bin/n98-magerun2."}'
+            return
+        fi
+        if ! MAGELENS_MAGERUN_PREPARE=1 ./bin/n98-magerun2 </dev/null >&2; then
+            printf '%s\n' '{"code":125,"stdout":"","stderr":"Could not prepare the pinned n98-magerun2 PHAR. See the wrapper output."}'
+            return
+        fi
+    fi
+    dc exec -T phpfpm php -d display_errors=stderr /application/docker/php/cli-command.php "$tool" <<< "$request"
+}
+while IFS=$'\t' read -r tool request <&3; do
+    [[ -n "$tool" ]] || break
+    if ! response=$(execute_request "$tool" "$request" 3<&- 4>&-) ||
         ! printf '%s\n' "$response" >&4; then
-        exec 4>&-
+        exec 4>&- 3<&-
         wait "$runner_pid" || true
         fail 'Magento CLI command relay failed.'
     fi

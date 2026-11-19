@@ -15,6 +15,9 @@ for file in "$upstream"/bin/*; do
     cp -R "$file" bin/
     chmod +x "bin/$name"
 done
+if [[ -f "$upstream/bin/n98-magerun2" ]]; then
+    git apply --no-index "$ROOT/patches/docker-magento/n98-magerun2.patch"
+fi
 mkdir -p lib env
 cp -R "$upstream/lib/." lib/
 for file in "$upstream"/env/*; do

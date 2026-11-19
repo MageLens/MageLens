@@ -8,15 +8,20 @@ const {test, magento, magerun} = require('../../../../../../../cli/support.cjs')
 
 const probe = (action, value) => magento(['magelens:probe', action, value]);
 
-test('preserves command arguments and reports an expected nonzero exit', async () => {
+test('preserves command arguments and runs a named cron job through MageRun', async () => {
     const value = "a space, a quote ' and a dollar $";
     assert.equal((await probe('echo', value)).stdout.trim(), value);
     const result = await magento(['magelens:probe', 'invalid', value], {expectedExitCode: 2});
     assert.match(result.stderr, /Unknown probe action/);
-    assert.match((await magerun(['--skip-core-commands', '--version'])).stdout, /n98-magerun2/i);
     assert.equal((await probe('fork', value)).stdout.trim(), value);
-    const database = await magerun(['db:query', 'SELECT 42 AS result']);
-    assert.deepEqual(database.stdout.trim().split(/\r?\n/), ['result', '42']);
+    const job = 'magelens_magerun_probe';
+    try {
+        assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), []);
+        await magerun(['sys:cron:run', job]);
+        assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), ['magerun-handler-ran']);
+    } finally {
+        await probe('clean-magerun', job);
+    }
 });
 
 test('executes a scheduled Magento cron job', async () => {

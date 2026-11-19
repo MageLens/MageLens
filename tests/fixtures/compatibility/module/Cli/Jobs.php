@@ -30,6 +30,11 @@ class Jobs
         }
     }
 
+    public function runNamed(Schedule $schedule): void
+    {
+        $schedule->setMessages($this->config->getValue('magelens_probe/cron/magerun_message'));
+    }
+
     public function consume(string $token): void
     {
         if (file_put_contents(self::marker($token), $token) === false) {

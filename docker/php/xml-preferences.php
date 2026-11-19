@@ -22,6 +22,7 @@ use Magento\Framework\ObjectManager\Config\Compiled as CompiledConfig;
 use Magento\Framework\ObjectManager\Factory\Compiled as CompiledFactory;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer as DeveloperFactory;
 use Magento\Framework\ObjectManager\ObjectManager;
+use N98\Magento\Command\System\Cron\RunCommand as MageRunCron;
 
 final class Preferences
 {
@@ -122,6 +123,8 @@ final class Preferences
             [Cron::class, 'launch'] => 'cron',
             [StaticResource::class, 'launch'] => 'static',
             [Area::class, '_initConfig'] => 'area',
+            // The pinned MageRun command applies the native crontab DI loader directly.
+            [MageRunCron::class, 'execute'] => PHP_SAPI === 'cli' ? 'magerun-cron' : null,
             default => null,
         };
     }
