@@ -82,6 +82,8 @@ Automated browser scenarios disable page-change animations. Uncaught application
 
 Open `coverage/index.html` after a successful run. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. XML configuration consumption appears separately in `coverage/xml/`, preserving source directories. Read measurement warnings before interpreting template and XML percentages.
 
+Tests audit the HTML source of selected pages by calling `cy.validateHtml()` in Cypress or the `validateHtml(page)` fixture in Playwright. Audits are opt-in and listed in the separate Reports section of `coverage/index.html`, with details in `coverage/html-validation/`; a run without calls is shown as not audited. Captures are validated after the tests finish; findings never fail a test or the run. See [HTML validation](docs/coverage.md#html-validation) for the validation target and its limitations.
+
 Coverage includes application modules and active local themes. Third-party packages require an explicit `vendorRoots` entry in `coverage.config.json`. Inactive themes and directories named `Test`, `Setup`, `node_modules` or `tailwind` are excluded. Eligible unvisited files remain uncovered.
 
 Run installation and coverage one at a time. Do not bypass `.runtime/workflow.lock` or remove it before checking for an active run. Default coverage does not restart services or refresh caches and assets; request those actions through the documented flags.

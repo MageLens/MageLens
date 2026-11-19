@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -23,7 +23,8 @@ function syncDependencies(root, env = process.env, execute = execFileSync) {
         'istanbul-lib-instrument': env.ISTANBUL_LIB_INSTRUMENT_VERSION,
         'istanbul-lib-report': env.ISTANBUL_LIB_REPORT_VERSION,
         'istanbul-reports': env.ISTANBUL_REPORTS_VERSION,
-        nyc: env.NYC_VERSION
+        nyc: env.NYC_VERSION,
+        'html-validate': env.HTML_VALIDATE_VERSION
     };
     for (const [name, version] of Object.entries(requested)) {
         if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?$/.test(version || '')) {

@@ -18,3 +18,9 @@ beforeEach(() => {
         domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
     });
 });
+
+// Captures the HTML source of the current page for the validation report; see docs/coverage.md#html-validation.
+Cypress.Commands.add('validateHtml', () => cy.url().then(url =>
+    cy.request({url, headers: {accept: 'text/html'}, failOnStatusCode: false, followRedirect: false, timeout: 60000}).then(response =>
+        cy.task('magelens:validateHtml', {url, status: response.status, contentType: response.headers['content-type'],
+            html: response.body, spec: Cypress.spec.relative, test: Cypress.currentTest.titlePath.join(' › ')}))));

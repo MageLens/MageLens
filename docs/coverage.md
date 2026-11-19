@@ -143,6 +143,41 @@ The template badge measures **executable template lines**: starting lines of bin
 
 **DOM presence** is reported separately. Hidden elements count as present, while fetching HTML alone does not. Templates with unsupported execution syntax remain visible with an explanation of the available DOM coverage.
 
+## HTML validation
+
+Tests can audit the HTML of selected pages. Validation is opt-in: only pages for which a test calls `validateHtml` are audited, and a run without calls is shown as not audited.
+
+In Cypress, call the command after the page you want to audit has loaded:
+
+```js
+cy.visit('/customer/account/');
+cy.validateHtml();
+```
+
+In Playwright, request the `validateHtml` fixture and pass it the page. With [your own fixtures](#use-an-existing-playwright-fixture), `withCoverage` adds it to each wrapped test object:
+
+```js
+test('audits the account page', async ({page, validateHtml}) => {
+    await page.goto('/customer/account/');
+    await validateHtml(page);
+});
+```
+
+The call captures the page's HTML and returns no result. Captures are validated after the tests finish, while the reports are generated, so findings never fail a test or the run. A response that cannot be validated is listed as not validated with the reason: a redirect, a response that is not an HTML document, an empty response or, in Playwright, a failed request. In Cypress, a request that the application does not answer within 60 seconds fails like any other request of the test.
+
+**Validation target.** The helper requests the current URL again with the cookies of the test session, so signed-in storefront and Admin pages are audited as that user sees them. It captures the HTML source of that response, before the browser parses it. A browser repairs invalid markup while parsing, so the rendered DOM is never used in place of the source. As a result:
+
+- Markup created or changed by JavaScript, such as Knockout or Alpine output and opened dialogs, is not validated.
+- The response to a form submission is not validated; the audit covers a new `GET` of the URL shown after it.
+- Redirects are not followed. A page that redirects when requested again, such as an order confirmation, is listed as not validated.
+- The extra request runs application code like any other request of the test and is included in PHP and XML coverage.
+- Coverage runs serve instrumented templates. They add marker comments and coverage counters in attribute values and inline scripts; elements and line numbers are unchanged.
+- Lines and columns refer to the captured response, not to a template file. The report names the capture in `coverage/raw/html-validation/` for each audit; its `html` field holds the audited source.
+
+[html-validate](https://html-validate.org/) checks the source with its `html-validate:standard` rules, which cover markup validity without style or accessibility conventions. The version is set by `HTML_VALIDATE_VERSION` in `dependencies.yaml`. The report contains no page source: findings show the rule, message, selector and position only, and Admin secret keys, form keys and session tokens are removed from recorded URLs.
+
+After a successful run, the combined report lists HTML validation in a separate **Reports** section and links to `coverage/html-validation/index.html`. That report shows every audit with its page, test and spec, and each finding's severity, rule, message, response line and column, or states that no issues were found. `coverage/html-validation/results.json` contains the same data. The captured responses stay in the private `coverage/raw/html-validation/` directory and are not published with the report. Existing installations must rerun installation with their saved platform, theme and runner flags to install the validator.
+
 ## Use your project
 
 For a Cypress installation, follow the [source setup instructions](../README.md#work-with-the-source), then add scenarios in `cypress/e2e/**/*.cy.js` or a module's `Test/Cypress/**/*.cy.js`. All matching scenarios run with `./bin/run-coverage`.

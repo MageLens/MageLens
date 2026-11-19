@@ -135,3 +135,44 @@ test('CLI results require current coverage for every command and a fully passing
             !fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8').includes('CLI passed'));
     }
 });
+
+test('a run without validateHtml invocations is shown as not audited', t => {
+    const fixture = reports(t, 1);
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+    assert.match(html, /<caption>Reports<\/caption>/);
+    assert.match(html, /HTML validation<small>.*<td colspan="2">Not run<small>No test called validateHtml, so no page was audited\./s);
+    assert.doesNotMatch(html, /html-validation\/index\.html|0 errors/);
+    assert.ok(!fs.existsSync(`${fixture.root}/coverage/html-validation`));
+    assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).htmlValidation,
+        {audits: 0, pages: 0, errors: 0, warnings: 0, notValidated: 0});
+});
+
+test('validateHtml captures are validated into a separate Reports section with their own report', t => {
+    const fixture = reports(t, 1);
+    const capture = {run: 'fixture', runner: 'cypress', spec: 'cypress/e2e/pages.cy.js', test: 'audits pages', status: 200, contentType: 'text/html'};
+    const document = body => `<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><title>Page</title></head><body>\n${body}\n</body></html>`;
+    fs.mkdirSync(`${fixture.root}/coverage/raw/html-validation`, {recursive: true});
+    fixture.json('coverage/raw/html-validation/1.json', {...capture, url: 'https://shop.test/clean', html: document('<p>Fine</p>')});
+    fixture.json('coverage/raw/html-validation/2.json', {...capture, url: 'https://shop.test/broken', html: document('<p id="a">One</p><p id="a">Two</p>')});
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+    assert.match(html, /<a href="html-validation\/index\.html">HTML validation/);
+    assert.match(html, /<td>2 audits<small>2 pages<\/small><\/td>\s*<td>1 errors<small>0 warnings<\/small><\/td>/);
+    assert.doesNotMatch(html, /Not run|not validated/);
+    const report = fs.readFileSync(`${fixture.root}/coverage/html-validation/index.html`, 'utf8');
+    assert.match(report, /<code>https:\/\/shop\.test\/clean<\/code>.*No issues found\..*<code>https:\/\/shop\.test\/broken<\/code>.*Duplicate ID &quot;a&quot;.*3:25/s);
+    assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).htmlValidation,
+        {audits: 2, pages: 2, errors: 1, warnings: 0, notValidated: 0});
+});
+
+test('validation records from another run block publication', t => {
+    const fixture = reports(t, 1);
+    fs.mkdirSync(`${fixture.root}/coverage/raw/html-validation`, {recursive: true});
+    fixture.json('coverage/raw/html-validation/1.json', {run: 'stale', url: '/', status: 200, contentType: 'text/html', html: ''});
+    assert.notEqual(fixture.run().status, 0);
+    assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`));
+    assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
+});

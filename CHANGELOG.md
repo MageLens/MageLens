@@ -14,6 +14,7 @@ License: see LICENSE in the repository root.
 - Report HTTP `di.xml` preference, virtual type, constructor argument and object lifetime usage in developer and production modes. Use `./bin/deploy-production` to record compiled DI provenance before collecting production coverage.
 - Report DI and observer usage for authorized REST and GraphQL requests by Magento configuration area.
 - Add Blog Journal settings scenarios for Cypress and Playwright to exercise configuration consumption across default, website and store scopes.
+- Add opt-in HTML validation for Cypress and Playwright tests. `validateHtml` captures the HTML source of the current page, including signed-in pages. Captures are validated after the tests finish without affecting their result, and the combined report lists the findings in a separate Reports section with a dedicated report in `coverage/html-validation/`. ([#67](https://github.com/MageLens/MageLens/issues/67))
 - Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
 
 Rerun installation with your saved platform, theme and runner selections to install the XML collector extension, then regenerate reports with `./bin/run-coverage`.

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -40,10 +40,15 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
     await page.goto('/customer/account/login/');
     await expect(page.locator('#email')).toBeVisible();
 });
-test('starts the next test with fresh state', async ({page}) => {
+test('starts the next test with fresh state', async ({page, context, baseURL, validateHtml}) => {
     await page.goto('/coverageprobe/');
     await expect(page.locator('[data-cy="inline-probe"]')).toHaveText('inline-ready');
     expect(await page.evaluate(() => window.magelensChildScript)).toBe('child-ready');
     await expect(page.locator('[data-cy="probe-count"]')).toHaveText('0');
     await expect(page.getByRole('textbox', {name: 'Probe name'})).toHaveValue('initial');
+    await context.addCookies([{name: 'magelens_markup_session', value: 'signed-in', url: baseURL}]);
+    for (const markup of ['valid', 'invalid']) {
+        await page.goto(`/coverageprobe/index/markup/case/${markup}`);
+        await validateHtml(page);
+    }
 });

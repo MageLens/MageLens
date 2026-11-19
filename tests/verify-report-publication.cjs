@@ -64,7 +64,8 @@ async function main() {
         assert.ok(nested, `Missing nested ${type} report`);
         await verifyPage(`${type}/${nested}`);
     }
-    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json']) await verify(file);
+    await verifyPage('html-validation/index.html');
+    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json', 'html-validation/results.json']) await verify(file);
     const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8')).id;
     const raw = path.posix.join('raw/php', run);
     const record = fs.readdirSync(path.join('coverage', raw)).find(file => file.endsWith('.json'));

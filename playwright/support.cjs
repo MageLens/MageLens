@@ -3,11 +3,13 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
+const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {withTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
 const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
+const {captureHtml} = require('../bin/html-validation.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         browserIdentity: [async ({browser}, use, testInfo) => {
@@ -29,6 +31,25 @@ function withCoverage(base = playwright.test) {
                 playwright.expect(errors, 'Uncaught application errors').toEqual([]);
             }
         }, {auto: true}],
+        // Captures the HTML source of the page's current URL for the validation report; see docs/coverage.md#html-validation.
+        validateHtml: async ({}, use, testInfo) => {
+            await use(async page => {
+                // A capture problem must not fail the test that requested the audit.
+                try {
+                    const url = page.url();
+                    const capture = {runner: 'playwright', url, spec: path.relative(testInfo.config.rootDir, testInfo.file),
+                        test: testInfo.titlePath.slice(1).join(' › ')};
+                    try {
+                        const response = await page.request.get(url, {headers: {accept: 'text/html'}, maxRedirects: 0, timeout: 60000});
+                        captureHtml({...capture, status: response.status(), contentType: response.headers()['content-type'], html: await response.text()});
+                    } catch (error) {
+                        captureHtml({...capture, error: error.message.split('\n')[0]});
+                    }
+                } catch (error) {
+                    console.error('HTML validation capture failed:', error.message);
+                }
+            });
+        },
         context: async ({context, baseURL}, use) => {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));

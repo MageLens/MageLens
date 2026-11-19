@@ -19,7 +19,7 @@ function templateLimitations(templates) {
     };
 }
 
-function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli}) {
+function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation}) {
     const runner = run.runner === 'playwright' ? 'Playwright' : 'Cypress';
     const reports = [
         ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines', description: `Runtime config value consumption and Admin field rendering. ${xml.warnings?.length || 0} measurement warnings; unsupported XML remains unmeasured.`}] : []),
@@ -46,6 +46,15 @@ function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, 
     const templateDetails = templates.scripts ? `<p class="note">Template scripts: ${templates.scripts.instrumented} instrumented; ${templates.scripts.unsupported.length} unsupported; ${templates.scripts.generated.length} PHP-generated fragments without a static map. <a href="templates/index.html">Template report</a> · <a href="templates/coverage-summary.json">Template coverage details</a>.</p>` : '';
     const gaps = templateLimitations(templates);
     const templateWarning = Object.values(gaps).some(items => items.length) ? `<p class="note"><strong>Template measurement is partial.</strong> ${gaps.directives.length} unsupported directives, ${gaps.scripts.length} unsupported scripts and ${gaps.generated.length} unmapped PHP outputs are not fully measured. The percentage covers instrumented constructs only. <a href="templates/coverage-summary.json">Inspect the affected files and reasons</a>.</p>` : '';
+    // An unaudited run has no report to open and must not read as a clean result.
+    const htmlValidationRow = htmlValidation.audits ? `<tr>
+<th scope="row"><a href="html-validation/index.html">HTML validation <span aria-hidden="true">↗</span></a><small>HTML source of the pages for which a test called validateHtml.</small></th>
+<td>${htmlValidation.audits} audits<small>${htmlValidation.pages} pages</small></td>
+<td>${htmlValidation.errors} errors<small>${htmlValidation.warnings} warnings${htmlValidation.notValidated ? ` · ${htmlValidation.notValidated} not validated` : ''}</small></td>
+</tr>` : `<tr>
+<th scope="row">HTML validation<small>HTML source of the pages for which a test called validateHtml.</small></th>
+<td colspan="2">Not run<small>No test called validateHtml, so no page was audited.</small></td>
+</tr>`;
     fs.writeFileSync('coverage/index.html', `<!doctype html>
 <html lang="en">
 <head>
@@ -98,6 +107,14 @@ ${cli.totalTests ? `<span class="status">CLI passed · ${cli.totalPassed}/${cli.
 ${javascriptDetails}
 ${templateDetails}
 ${templateWarning}
+<div class="reports">
+<table>
+<caption>Reports</caption>
+<thead><tr><th scope="col">Report</th><th scope="col">Audited</th><th scope="col">Findings</th></tr></thead>
+<tbody>${htmlValidationRow}</tbody>
+</table>
+</div>
+<p class="note">Reports list findings from checks that tests request explicitly. Findings do not change the test result.</p>
 <footer>
 <p>Run <code>${escapeHtml(run.id)}</code><br>Generated <time datetime="${escapeHtml(generatedAt)}">${escapeHtml(generatedAt)}</time> · <a href="summary.json">Coverage data (JSON)</a></p>
 </footer>
