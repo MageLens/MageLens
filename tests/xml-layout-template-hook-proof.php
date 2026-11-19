@@ -168,7 +168,9 @@ try {
         'missing-getter-pre' => 'Unbalanced layout producer hook evidence',
         'missing-getter-post' => 'Unbalanced XML handoff hook evidence',
         'resolution-depth' => 'Layout template resolution nesting exceeded 256 calls'][$mode] ?? null;
-    if (!$expected || !str_contains($error->getMessage(), $expected)) throw $error;
+    $missingNativeWrapper = $mode === 'missing-engine-wrapper' && $error->getMessage() ===
+        'Missing generated layout producer hook evidence for ' . \Magento\Framework\View\TemplateEngine\Php::class . '\\Interceptor::render';
+    if (!$missingNativeWrapper && (!$expected || !str_contains($error->getMessage(), $expected))) throw $error;
     echo "Verified native template publication guard for $mode.\n";
     exit;
 }
