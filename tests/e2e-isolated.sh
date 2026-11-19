@@ -389,6 +389,14 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-direct-template-proof.php "$direct_template"
     done
+    for action_type_option in --without-collector ''; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --action-types "$action_type_option"
+    done
+    for action_type_missing in --missing-action-dispatch-pre --missing-action-dispatch-post --missing-action-dispatch-both; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --action-types "$action_type_missing"
+    done
     for nested_modifier_option in --without-collector ''; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php "$nested_modifier_option"

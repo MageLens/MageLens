@@ -15,7 +15,8 @@ for (const name of ['native', 'reader', 'generator']) {
             assert.equal(item.state, 'unmeasured', `${name}/${item.node}`);
             assert.equal(item.hits, 0, `${name}/${item.node}`);
             assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(),
-                ['layout-argument-modifier-deferred', 'layout-argument-modifier-origin-unconfirmed']);
+                item.node.includes('/action/') ? ['layout-argument-modifier-origin-unconfirmed']
+                    : ['layout-argument-modifier-deferred', 'layout-argument-modifier-origin-unconfirmed']);
             continue;
         }
         if (name === 'reader' && kind === 'argument-type'

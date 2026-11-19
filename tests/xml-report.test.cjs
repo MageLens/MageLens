@@ -761,7 +761,7 @@ test('layout argument type operands require their own native dispatch evidence',
                 handle: 'types', fileType: 'generic', instruction, attribute: 'xsi:type'}}]});
         manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {'argument-type': 'type-field'}}}}};
         const event = type => ({id: 'type-field', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
-        for (const type of ['layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed']) {
+        for (const type of ['layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed', 'layout-argument-type-ambiguous']) {
             const item = merge(manifest, [{...record, layoutHook: true, events: [event(type)]}], sources).files[1].declarations[0];
             assert.equal(item.hits, 0, type);
             assert.equal(item.state, 'unmeasured', type);
@@ -791,7 +791,7 @@ test('argument modifier facts require an original operand and their own complete
                 handle: 'modifiers', fileType: 'generic', instruction: 'argument', attribute}}]});
         manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {[kind]: 'modifier'}}}}};
         const event = type => ({id: 'modifier', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
-        for (const type of ['layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed']) {
+        for (const type of ['layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous']) {
             const item = merge(manifest, [{...record, layoutHook: true, events: [event(type)]}], sources).files[1].declarations[0];
             assert.equal(item.hits, 0, type);
             assert.equal(item.state, 'unmeasured', type);

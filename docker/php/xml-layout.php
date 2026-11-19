@@ -1122,12 +1122,16 @@ final class LayoutCoverage
         foreach ($xml->action as $node) {
             [$origin] = $this->origin($node);
             $arguments = [];
+            $argumentTypes = [];
             foreach ($node->argument as $argument) {
                 [$argumentOrigin] = $this->origin($argument);
-                if (isset($argumentOrigin['action-argument'])) $arguments[] = $argumentOrigin['action-argument'];
+                if (isset($argumentOrigin['action-argument'])) {
+                    $arguments[] = $argumentOrigin['action-argument'];
+                    $argumentTypes[(string)$argument['name']] = $this->argumentOrigins($argument);
+                }
             }
             $action = $actions[count($origins)] ?? null;
-            $origins[] = ['id' => $origin['action'] ?? null, 'methodId' => $origin['action-method'] ?? null, 'arguments' => $arguments,
+            $origins[] = ['id' => $origin['action'] ?? null, 'methodId' => $origin['action-method'] ?? null, 'arguments' => $arguments, 'argumentTypes' => $argumentTypes,
                 'callSignature' => is_array($action) ? Xml::scalarTreeSignature([$action[0] ?? null, $action[1] ?? null]) : null,
                 'guardSignature' => is_array($action) ? Xml::scalarTreeSignature($action) : null,
                 'guard' => isset($origin['action-ifconfig'])
@@ -2089,7 +2093,27 @@ final class LayoutCoverage
         $caller = self::nativeCaller($generator, 'evaluateArguments');
         $source = $index !== null && ($caller['class'] ?? null) === BlockGenerator::class
             && ($caller['function'] ?? null) === 'generateBlock' ? $this->generating[$index]['source'] : [];
+        if (($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'generateAction') {
+            $action = array_key_last($this->actionEvaluations);
+            $entries = $action === null ? [] : ($this->actionEvaluations[$action]['origins'] ?? []);
+            if (count($entries) === 1 && $entries[0]['safe'] && $entries[0]['unique']) {
+                $source = ['arguments' => $entries[0]['origin']['argumentTypes'] ?? [], 'context' => $entries[0]['context']];
+            } else foreach ($entries as $entry) {
+                if ($entry['context'] === null) continue;
+                $this->unconfirmedActionTypes($entry['origin']['argumentTypes'] ?? [], $entry['context'], $entry['safe'] && !$entry['unique']);
+            }
+        }
         $this->argumentOwnership->beginBatch($generator, false, $params[0], $source['arguments'] ?? [], $source['context'] ?? null);
+    }
+
+    private function unconfirmedActionTypes(array $arguments, array $context, bool $ambiguous): void
+    {
+        $outcome = $ambiguous ? 'ambiguous' : 'origin-unconfirmed';
+        foreach ($arguments as $argument) {
+            $this->event($argument['type']['id'] ?? null, 'layout-argument-type-' . $outcome, $context);
+            foreach ($argument['type']['fields'] ?? [] as $field) $this->event($field['id'], 'layout-argument-modifier-' . $outcome, $context);
+            $this->unconfirmedActionTypes($argument['children'] ?? [], $context, $ambiguous);
+        }
     }
 
     private function evaluatedArguments($generator, array $params, $values, ?\Throwable $error, string $class): void

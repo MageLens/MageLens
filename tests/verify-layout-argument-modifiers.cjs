@@ -28,7 +28,8 @@ assert.equal(servicePath?.state, 'covered', 'Native service URL path');
 assert.deepEqual([...new Set(servicePath.evidence.map(event => event.type))], ['layout-argument-modifier-evaluated']);
 const unvisited = report.files.find(file => file.path.endsWith('/layout/coverageprobe_interpreter_index.xml'));
 const unvisitedFields = unvisited?.declarations.filter(item => item.layout.kind === 'argument-helper');
-assert.equal(unvisitedFields?.length, 2, 'Unvisited original modifier inventory');
+assert.equal(unvisitedFields?.length, 3, 'Complete unvisited block/item/action modifier inventory');
+assert.equal(unvisitedFields.filter(item => item.node.includes('/action/')).length, 1, 'Retain the unvisited action helper field');
 for (const item of unvisitedFields) {
     assert.equal(item.state, 'uncovered', item.node);
     assert.equal(item.hits, 0, item.node);

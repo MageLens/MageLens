@@ -20,7 +20,8 @@ function finishArgumentFields(LayoutCoverage $collector, array $arguments): arra
     $missing = (bool) array_intersect($arguments, ['--missing-dispatch-pre', '--missing-dispatch-post',
         '--missing-first-dispatch-pre', '--missing-first-dispatch-post',
         '--missing-native-first-pre', '--missing-native-first-post', '--missing-items-pre', '--missing-items-post',
-        '--missing-modifier-pre', '--missing-modifier-post', '--missing-modifier-both']);
+        '--missing-modifier-pre', '--missing-modifier-post', '--missing-modifier-both',
+        '--missing-action-dispatch-pre', '--missing-action-dispatch-post', '--missing-action-dispatch-both']);
     try { $state = $collector->finish(); }
     catch (RuntimeException $error) {
         if (!$missing || (!str_contains($error->getMessage(), 'Missing native layout argument type dispatch hook evidence')
@@ -48,6 +49,12 @@ foreach ($serviceUrl ? ['coverageprobe_grammar_serviceurl.xml'] : ($firstLayout 
         'declarations' => LayoutManifest::declarations($path, $source)];
 }
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
+$actionTypeIds = [];
+foreach ($files as $file) foreach ($file['declarations'] as $declaration) {
+    if ($declaration['layout']['attribute'] === 'xsi:type' && str_contains($declaration['node'], '/action[')) {
+        $actionTypeIds[$declaration['id']] = true;
+    }
+}
 $inForeignLookup = false;
 $foreignObserved = 0;
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $method, $pre, $post]) {
@@ -70,6 +77,17 @@ if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$clas
         if (in_array('--missing-items-post', $argv, true)) $post = null;
     }
     if ($class === Composite::class && $method === 'getInterpreter') {
+        foreach (['pre', 'post'] as $half) {
+            if (!in_array('--missing-action-dispatch-' . $half, $argv, true)
+                && !in_array('--missing-action-dispatch-both', $argv, true)) continue;
+            $observe = ${$half};
+            ${$half} = static function (...$arguments) use ($collector, $actionTypeIds, $observe): void {
+                $ownership = (new ReflectionProperty($collector, 'argumentOwnership'))->getValue($collector);
+                $frames = (new ReflectionProperty($ownership, 'evaluating'))->getValue($ownership);
+                $frame = $frames[array_key_last($frames)] ?? [];
+                if (!isset($actionTypeIds[$frame['type']['id'] ?? ''])) $observe(...$arguments);
+            };
+        }
         if (in_array('--missing-dispatch-pre', $argv, true)) $pre = null;
         if (in_array('--missing-dispatch-post', $argv, true)) $post = null;
         foreach (['pre', 'post'] as $half) {
