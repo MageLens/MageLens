@@ -98,7 +98,7 @@ const layoutEvents = {
     move: ['layout-move-applied', 'layout-move-removed', 'layout-move-detached', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved', 'layout-move-replaced', 'layout-move-overridden', 'layout-move-origin-unconfirmed'],
     'wireframe-selection': ['layout-wireframe-selected', 'layout-wireframe-origin-unconfirmed'],
     include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
-    template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed', 'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed',
+    template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed', 'layout-template-field-access-unconfirmed', 'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed',
         'layout-template-resolver-storage-unconfirmed', 'layout-template-context-storage-unconfirmed', 'layout-template-engine-pool-storage-unconfirmed', 'layout-template-validation-rejected'],
 };
 for (const name of ['element', 'destination', 'as', 'before', 'after']) {
@@ -172,6 +172,7 @@ const layoutDecisions = {
     'layout-block-render-origin-unconfirmed': 'A shared block object has multiple original layout declarations. A direct PHP render lacks a unique layout element origin.',
     'layout-block-cache-unconfirmed': 'The native block HTML cache path supplied data while fresh template execution was bypassed. The original source of the cached bytes is unverified.',
     'layout-template-cache-unconfirmed': 'Cached block HTML bypassed this selected template. Cached bytes do not establish fresh original XML template execution.',
+    'layout-template-field-access-unconfirmed': 'A custom block implementation is opaque or can access template storage outside the observed native accessors, or exposes publicly writable/promoted storage. Those accesses are not traced; an equal filename cannot establish original XML execution ownership.',
     'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, or template validation supplied no attributable native decision. Native XML selection cannot establish original template execution ownership. Hooked or magic property storage can replace the selection even when values match.',
     'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation, plugin or hooked, magic or uninitialized lazy data storage. Their later application lacks verified original ownership.',
     'layout-argument-storage-unconfirmed': 'The block data property became hooked, unset, magic or subject to unverified lazy initialization. Original application evidence is retained; later reads lack verified XML lineage.',

@@ -804,6 +804,34 @@ test('argument modifier facts require an original operand and their own complete
     }
 });
 
+test('unobserved template field access cannot infer XML execution or erase earlier value application', () => {
+    for (const kind of ['template', 'argument', 'action-argument']) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/direct.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'direct', family: 'layout',
+            path: '/layout/block/@template', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind, ordinal: 2, element: 'template',
+                handle: 'direct', fileType: 'generic', instruction: 'block'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {[kind]: 'direct'}}}}};
+        const event = type => ({id: 'direct', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+        const uncertain = event('layout-template-field-access-unconfirmed');
+        const limited = merge(manifest, [{...record, layoutHook: true, events: [uncertain]}], sources).files[1].declarations[0];
+        assert.equal(limited.hits, 0);
+        assert.equal(limited.state, 'unmeasured');
+        assert.match(limited.reason, /outside the observed native accessors/);
+        assert.throws(() => merge(manifest, [{...record, events: [uncertain]}], sources), /layout.*hook/i);
+        if (kind !== 'template') {
+            const applied = event(kind === 'argument' ? 'layout-argument-applied' : 'layout-action-argument-applied');
+            const retained = merge(manifest, [{...record, layoutHook: true, events: [applied, uncertain]}], sources).files[1].declarations[0];
+            assert.equal(retained.hits, 1);
+            assert.equal(retained.state, 'covered');
+        }
+    }
+});
+
 test('template-valued XML arguments retain selection and execution as independent facts', () => {
     for (const kind of ['argument', 'action-argument']) {
         const {manifest, record, sources} = fixture();

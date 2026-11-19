@@ -103,6 +103,7 @@ final class LayoutCoverage
     private array $errors = [];
     private array $validating = [];
     private LayoutReferenceCoverage $references;
+    private LayoutTemplateFieldAccess $templateFields;
 
     private function __construct(private readonly array $sources)
     {
@@ -117,6 +118,7 @@ final class LayoutCoverage
         Recorder::layoutReferences($this->references);
         Recorder::layoutArgumentNames(new LayoutArgumentNames($sources));
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
+        $this->templateFields = new LayoutTemplateFieldAccess();
         $this->blockRendering = new LayoutBlockRendering($this->ownership);
         $this->handleMetadata = new LayoutHandleMetadata($this->ownership, $this->packageOrigin(...));
         $this->selectionOwnership = new LayoutSelectionOwnership($this->ownership, $this->readSelection(...));
@@ -156,6 +158,7 @@ final class LayoutCoverage
         $this->references->finish();
         $this->ownership->finish();
         $this->templateOwnership->finish();
+        $this->templateFields->finish();
         $this->selectionOwnership->finish();
         if ($this->moveReads || $this->moveReadOverflow || $this->moving || $this->movingOverflow
             || $this->moveReaders || $this->moveReaderOverflow) {
@@ -2835,6 +2838,10 @@ final class LayoutCoverage
         if ($origin !== null && (!is_object($context) || !is_object($pool))) {
             if (!is_object($context)) $dependencyLimits[] = 'layout-template-context-storage-unconfirmed';
             if (!is_object($pool)) $dependencyLimits[] = 'layout-template-engine-pool-storage-unconfirmed';
+            $origin = null;
+        }
+        if ($origin !== null && $this->templateFields->unconfirmed($block)) {
+            $this->event($origin, 'layout-template-field-access-unconfirmed', $this->blocks[$block]['context']);
             $origin = null;
         }
         $this->fetching[] = ['origin' => $origin, 'sourceOrigin' => $sourceOrigin, 'dependencyLimits' => $dependencyLimits,

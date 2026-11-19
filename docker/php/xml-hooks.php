@@ -21,6 +21,7 @@ require_once __DIR__ . '/xml-layout-argument-ownership.php';
 require_once __DIR__ . '/xml-layout-argument-groups.php';
 require_once __DIR__ . '/xml-layout-action-guards.php';
 require_once __DIR__ . '/xml-layout-template-ownership.php';
+require_once __DIR__ . '/xml-layout-template-field-access.php';
 require_once __DIR__ . '/xml-layout-block-rendering.php';
 require_once __DIR__ . '/xml-layout-handle-metadata.php';
 require_once __DIR__ . '/xml-layout-selection-ownership.php';

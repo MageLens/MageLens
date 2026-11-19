@@ -14,14 +14,41 @@ require $hooks . '/xml-layout-manifest.php';
 use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, LayoutRuntimeHooks, Recorder};
 use Magento\Framework\View\Element\Template;
 
-class MageLensDirectTemplateFixture extends Template
-{
-    public static int $writes = 0;
-    protected function _beforeToHtml()
+if (in_array('--reflection', $argv, true)) {
+    class MageLensDirectTemplateFixture extends Template
     {
-        self::$writes++;
-        $this->_template = 'MageLens_Compatibility::layout-mutation.phtml';
-        return parent::_beforeToHtml();
+        public static int $writes = 0;
+        protected function _beforeToHtml()
+        {
+            self::$writes++;
+            (new ReflectionProperty(Template::class, '_template'))->setRawValue($this, 'MageLens_Compatibility::layout-mutation.phtml');
+            return parent::_beforeToHtml();
+        }
+    }
+} elseif (in_array('--closure', $argv, true)) {
+    class MageLensDirectTemplateFixture extends Template
+    {
+        public static int $writes = 0;
+        protected function _beforeToHtml()
+        {
+            self::$writes++;
+            $write = Closure::bind(static function ($block): void {
+                $block->_template = 'MageLens_Compatibility::layout-mutation.phtml';
+            }, null, Template::class);
+            $write($this);
+            return parent::_beforeToHtml();
+        }
+    }
+} else {
+    class MageLensDirectTemplateFixture extends Template
+    {
+        public static int $writes = 0;
+        protected function _beforeToHtml()
+        {
+            self::$writes++;
+            $this->_template = 'MageLens_Compatibility::layout-mutation.phtml';
+            return parent::_beforeToHtml();
+        }
     }
 }
 $path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_packagemutation_native.xml';
@@ -63,6 +90,11 @@ $collector->finish();
 $template = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === 'template'))[0];
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $effects = array_column(array_filter($events, static fn($event) => $event['id'] === $template['id']), 'type');
-if (in_array('layout-template-executed', $effects, true)) {
+if (!in_array('layout-template-field-access-unconfirmed', $effects, true)
+    || in_array('layout-template-executed', $effects, true)) {
     throw new RuntimeException('Direct PHP template write retained original XML execution credit');
 }
+$blockOrigin = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === 'block'))[0];
+$blockEffects = array_column(array_filter($events, static fn($event) => $event['id'] === $blockOrigin['id']), 'type');
+if (!in_array('layout-block-rendered', $blockEffects, true)) throw new RuntimeException('Direct template field limit erased independent XML block rendering');
+echo "Verified explicit direct-field template limitation and independent original block rendering.\n";
