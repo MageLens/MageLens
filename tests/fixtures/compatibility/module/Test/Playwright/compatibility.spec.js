@@ -280,7 +280,7 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-reference-output="base"], #layout-reference-removed, #layout-reference-empty')).toHaveCount(0);
     await page.goto('/coverageprobe/propertyownership/');
     for (const effect of ['native', 'template-get', 'template-set', 'template-magic', 'template-redeclared',
-        'data-get', 'data-magic', 'data-set', 'data-redeclared', 'after-failure']) {
+        'data-get', 'data-magic', 'data-set', 'data-redeclared', 'data-direct', 'after-failure']) {
         await expect(page.locator(`[data-layout-property="${effect}"]`)).toHaveText('verified');
     }
     await page.goto('/coverageprobe/dependencies/');

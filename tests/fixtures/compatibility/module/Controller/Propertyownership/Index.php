@@ -26,7 +26,7 @@ class Index implements HttpGetActionInterface
         $output = '';
         $instances = new \SplObjectStorage();
         foreach (['native', 'template-get', 'template-set', 'template-magic', 'template-redeclared',
-            'data-get', 'data-magic', 'data-redeclared', 'data-set', 'after-failure'] as $case) {
+            'data-get', 'data-magic', 'data-redeclared', 'data-set', 'data-direct', 'after-failure'] as $case) {
             $fragment = $this->layouts->create();
             $layout = $fragment->getLayout();
             if ($instances->contains($layout)) throw new \LogicException('Property fixtures require independent native layout instances');
@@ -56,6 +56,7 @@ class Index implements HttpGetActionInterface
             if (!str_contains($block->toHtml(), 'data-layout-property-value>verified</span>')) {
                 throw new \RuntimeException('Native property storage changed the fixture output');
             }
+            if ($case === 'data-direct' && Block\LayoutDataDirect::$writes !== 1) throw new \RuntimeException('Native direct data writes were bypassed');
             $reads = match ($case) {
                 'template-get' => Block\LayoutTemplatePropertyGet::$reads,
                 'template-magic' => Block\LayoutTemplatePropertyMagic::$reads,

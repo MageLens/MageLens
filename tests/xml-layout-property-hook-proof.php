@@ -23,7 +23,7 @@ if (!OpenTelemetry\Instrumentation\hook(Magento\Framework\View\Element\AbstractB
 
 $files = [];
 foreach (['native', 'template_get', 'template_set', 'template_magic', 'template_redeclared',
-    'data_get', 'data_magic', 'data_set', 'data_redeclared'] as $case) {
+    'data_get', 'data_magic', 'data_set', 'data_redeclared', 'data_direct'] as $case) {
     $path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_propertyownership_' . $case . '.xml';
     $source = file_get_contents(BP . '/' . $path);
     $files[$case] = ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source),
@@ -43,7 +43,7 @@ $cache = $objects->get(Magento\Framework\App\Cache\StateInterface::class);
 foreach (['layout', 'block_html', 'full_page'] as $type) $cache->setEnabled($type, false);
 $result = $objects->get(Index::class)->execute();
 $output = (new ReflectionProperty(Magento\Framework\Controller\Result\Raw::class, 'contents'))->getRawValue($result);
-if (substr_count($output, '>verified</span>') !== 10) throw new RuntimeException('Expected ten native property storage outcomes');
+if (substr_count($output, '>verified</span>') !== 11) throw new RuntimeException('Expected eleven native property storage outcomes');
 if (!$magic instanceof MageLens\Compatibility\Block\LayoutDataPropertyMagic) throw new RuntimeException('Native magic storage fixture was bypassed');
 $property = new ReflectionProperty(Magento\Framework\DataObject::class, '_data');
 if ($property->isInitialized($magic)) throw new RuntimeException('Expected unset native data storage after magic rendering');
@@ -77,6 +77,8 @@ foreach ($files as $case => $file) {
             $expected = $case === 'data_set' ? [] : (in_array($case, ['template_get', 'template_set', 'template_magic'], true)
                 ? ['layout-template-origin-unconfirmed', 'layout-template-selected']
                 : ['layout-template-executed', 'layout-template-selected']);
+        } elseif ($case === 'data_direct') {
+            $expected = ['layout-argument-applied', 'layout-argument-evaluated', 'layout-argument-field-access-unconfirmed'];
         } elseif ($case === 'data_get') {
             $expected = ['layout-argument-application-unconfirmed', 'layout-argument-evaluated'];
         } elseif ($case === 'data_set') {
