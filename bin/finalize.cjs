@@ -5,8 +5,9 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const {sourceHashes} = require('./prepare.cjs');
-const {badge, cypressBadge, setBadgeSection} = require('./badges.cjs');
+const {badge, cypressBadge, setBadgeSection, formatPercent} = require('./badges.cjs');
 const {writeIndex, templateLimitations} = require('./report-index.cjs');
+const {writeReport: writeHtmlValidationReport} = require('./html-validation.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const run = read('coverage/run.json');
 const php = read('coverage/php/coverage-summary.json');
@@ -22,15 +23,21 @@ const runner = run.runner || 'cypress';
 assert.ok(['cypress', 'playwright'].includes(runner));
 const label = runner === 'playwright' ? 'Playwright' : 'Cypress';
 const tests = read(`coverage/${runner}-results.json`);
-assert.equal(tests.run, run.id);
+const cli = read('coverage/cli-results.json');
+for (const results of [tests, cli]) {
+    assert.equal(results.run, run.id);
+    assert.equal(results.totalPassed, results.totalTests);
+    assert.equal(results.totalFailed, 0);
+    assert.equal(results.totalPending, 0);
+    assert.equal(results.totalSkipped, 0);
+}
 assert.ok(tests.totalTests > 0);
-assert.equal(tests.totalPassed, tests.totalTests);
-assert.equal(tests.totalFailed, 0);
-assert.equal(tests.totalPending, 0);
-assert.equal(tests.totalSkipped, 0);
 assert.equal(php.run, run.id);
 assert.ok(php.requests.length > 0, 'No current-run PHP requests were collected');
-if (php.collection === 'manifest') assert.ok(php.requests.every(request => request.mode === 'hit-only'), 'Expected validated native hit-only exports');
+assert.equal(php.commands.length, cli.commands, 'Missing or extra current-run CLI PHP coverage');
+if (php.collection === 'manifest') {
+    assert.ok([...php.requests, ...php.commands].every(record => record.mode === 'hit-only'), 'Expected validated native hit-only exports');
+}
 assert.equal(templates.schemaVersion, 2);
 assert.ok(templates.templates.every(template => template.path.endsWith('.html') || template.path.endsWith('.phtml') && template.kind === 'browser-phtml'), 'Only HTML and browser PHTML belong in template coverage');
 for (const [covered, total] of [[php.covered, php.total], [js.total.statements.covered, js.total.statements.total], [templates.lines.covered, templates.lines.total], [xml.covered, xml.total]]) {
@@ -53,12 +60,13 @@ for (const [type, metric] of Object.entries(metrics).filter(([type]) => type !==
     fs.writeFileSync(`coverage/badges/${type}.svg`, badge(type, metric.percent));
 }
 const generatedAt = new Date().toISOString();
-fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics,
+const htmlValidation = writeHtmlValidationReport(run);
+fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
     templateLimitations: templateLimitations(templates)}, null, 2));
-writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests});
+writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});
 if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
-    `[![${metric.label}: ${metric.percent.toFixed(2)}%](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
+    `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
 ).join('\n') + `\n\nFull ${label} run: \`${run.id}\` · ${generatedAt}`);
 fs.rmSync('coverage/.active-run', {force: true});
-console.log('Verified all reports, current HTTP collection and unchanged original sources.');
+console.log('Verified all reports, current PHP collection and unchanged original sources.');
 console.log(JSON.stringify(metrics, null, 2));

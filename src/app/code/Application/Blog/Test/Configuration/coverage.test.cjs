@@ -190,7 +190,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
             {subject, method, phase, state});
         return callback.hits;
     };
-    assert.deepEqual(result.plugins, {total: 42 + 4, covered: 16 + 3, hook: true});
+    assert.deepEqual(result.plugins, {total: 50 + 4, covered: 16 + 3, hook: true});
     assert.deepEqual([global.journal_shared.startLine, global.journal_shared.endLine], [9, 10]);
     assert.equal(global.journal_shared.registration.target, subject + 'Interface');
     assert.deepEqual([global.journal_duplicate.startLine, global.journal_duplicate.endLine], [14, 14]);
@@ -224,7 +224,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
 
 test('reports preference resolution by native binding and original configuration area', () => {
     const result = report();
-    assert.deepEqual(result.preferences, {total: 44, covered: 8, hook: true});
+    assert.deepEqual(result.preferences, {total: 53, covered: 8, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const globalFile = result.files.find(file => file.path === root + 'di.xml');
     assert.deepEqual([globalFile.covered, globalFile.total], [0, 0]);
@@ -281,15 +281,15 @@ test('reports preference resolution by native binding and original configuration
     }
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Preference usage/);
-    assert.match(html, /8\/44 eligible declaration–area pairs resolved/);
+    assert.match(html, /8\/53 eligible declaration–area pairs resolved/);
     assert.match(html, /href="app\/code\/Application\/Blog\/etc\/di.xml.html#L21"/);
 });
 
 test('reports only factory-resolved virtual types and applied constructor arguments', () => {
     const result = report();
-    assert.deepEqual(result.virtualTypes, {total: 15 + 2, covered: 9 + 2, hook: true});
-    assert.deepEqual(result.arguments, {total: 30 + 14, covered: 17 + 14, hook: true});
-    assert.deepEqual(result.lifecycles, {total: 5, covered: 4, hook: true});
+    assert.deepEqual(result.virtualTypes, {total: 18 + 2, covered: 9 + 2, hook: true});
+    assert.deepEqual(result.arguments, {total: 43 + 14, covered: 19 + 14, hook: true});
+    assert.deepEqual(result.lifecycles, {total: 6, covered: 4, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
     const site = (type, scope = 'global', argument = '') => declaration(result,
@@ -335,9 +335,9 @@ test('reports only factory-resolved virtual types and applied constructor argume
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Virtual type usage/);
     assert.match(html, /Constructor argument usage/);
-    assert.match(html, /11\/17 eligible declaration–area pairs resolved/);
-    assert.match(html, /31\/44 eligible declaration–area pairs applied/);
-    assert.match(html, /4\/5 eligible declaration–area pairs applied/);
+    assert.match(html, /11\/20 eligible declaration–area pairs resolved/);
+    assert.match(html, /33\/57 eligible declaration–area pairs applied/);
+    assert.match(html, /4\/6 eligible declaration–area pairs applied/);
 });
 
 test('reports the additional frontend DI declarations for the layout fixtures', () => {

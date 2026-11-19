@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Copyright (c)  MageLens
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+source "$(dirname "$0")/common"
+
+# Keep these pipes on the host. The runner only sees standard input and output,
+# so it needs neither Docker access nor a command endpoint on the network.
+relay=$(mktemp -d "${TMPDIR:-/tmp}/magelens-cli.XXXXXX")
+trap 'rm -rf "$relay"' EXIT
+mkfifo "$relay/requests" "$relay/responses"
+dc exec -T runner node bin/run-cli.cjs \
+    < "$relay/responses" > "$relay/requests" &
+runner_pid=$!
+exec 4>"$relay/responses" 3<"$relay/requests"
+# The runner prefixes the tool so the host can prepare MageRun without parsing JSON.
+execute_request() {
+    local tool=$1 request=$2
+    if [[ "$tool" == magerun ]]; then
+        if [[ ! -x bin/n98-magerun2 ]] || ! grep -Fq 'MAGELENS_MAGERUN_PREPARE' bin/n98-magerun2; then
+            printf '%s\n' '{"code":125,"stdout":"","stderr":"Rerun ./install.sh with your saved selections to update ./bin/n98-magerun2."}'
+            return
+        fi
+        if ! MAGELENS_MAGERUN_PREPARE=1 ./bin/n98-magerun2 </dev/null >&2; then
+            printf '%s\n' '{"code":125,"stdout":"","stderr":"Could not prepare the pinned n98-magerun2 PHAR. See the wrapper output."}'
+            return
+        fi
+    fi
+    dc exec -T phpfpm php -d display_errors=stderr /application/docker/php/cli-command.php "$tool" <<< "$request"
+}
+while IFS=$'\t' read -r tool request <&3; do
+    [[ -n "$tool" ]] || break
+    if ! response=$(execute_request "$tool" "$request" 3<&- 4>&-) ||
+        ! printf '%s\n' "$response" >&4; then
+        exec 4>&- 3<&-
+        wait "$runner_pid" || true
+        fail 'Magento CLI command relay failed.'
+    fi
+done
+exec 4>&- 3<&-
+wait "$runner_pid"

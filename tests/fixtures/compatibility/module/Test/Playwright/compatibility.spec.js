@@ -45,12 +45,17 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
     await page.goto('/customer/account/login/');
     await expect(page.locator('#email')).toBeVisible();
 });
-test('starts the next test with fresh state', async ({page}) => {
+test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
     await page.goto('/coverageprobe/');
     await expect(page.locator('[data-cy="inline-probe"]')).toHaveText('inline-ready');
     expect(await page.evaluate(() => window.magelensChildScript)).toBe('child-ready');
     await expect(page.locator('[data-cy="probe-count"]')).toHaveText('0');
     await expect(page.getByRole('textbox', {name: 'Probe name'})).toHaveValue('initial');
+    await context.addCookies([{name: 'magelens_markup_session', value: 'signed-in', url: baseURL}]);
+    for (const markup of ['valid', 'invalid']) {
+        await page.goto(`/coverageprobe/index/markup/case/${markup}`);
+        await mageLensValidateHtml(page);
+    }
     await page.goto('/coverageprobe/handle/');
     const wireframe = page.locator('#layout-wireframe');
     await expect(wireframe.locator('[data-layout-handle]')).toHaveText(['repeat', 'nested', 'action']);

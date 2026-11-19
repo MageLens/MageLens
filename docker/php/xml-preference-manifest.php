@@ -27,7 +27,7 @@ use Magento\Framework\ObjectManager\ObjectManager;
 
 final class PreferenceManifest
 {
-    public const AREAS = Xml::HTTP_AREAS;
+    public const AREAS = Xml::AREAS;
     public const LOOKUP_LINES = ['get' => 71, 'create' => 59];
 
     public static function nativeHooks(bool $compiled = false): bool
@@ -245,7 +245,7 @@ final class PreferenceManifest
         foreach ($all as &$item) {
             $scope = $item['declaredScope']['type'];
             if (!in_array($scope, self::AREAS, true)) {
-                $item['areas'][$scope] = ['status' => 'unsupported', 'reason' => 'Configuration area is outside supported HTTP collection',
+                $item['areas'][$scope] = ['status' => 'unsupported', 'reason' => 'Configuration area is outside supported runtime collection',
                     'origin' => null, 'effectiveReplacement' => null, 'resolved' => null];
             }
             $item['effective'] = $item['supported'];

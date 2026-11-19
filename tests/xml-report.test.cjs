@@ -670,6 +670,18 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     assert.match(report.layout.limitations[0], /native full-page cache lookup returned a response/);
     assert.deepEqual(report.requests[0].events, []);
     assert.deepEqual(report.requests[0].layoutLimitations, report.layout.limitations);
+    const command = {...warm, tool: 'magento'};
+    const fromWorkers = merge(manifest, [
+        command,
+        {...command, events: record.events, layoutLimitations: ['scheduled-layout-cache']},
+        command,
+    ], sources);
+    assert.equal(fromWorkers.requests.length, 1);
+    assert.equal(fromWorkers.requests[0].tool, 'magento');
+    assert.deepEqual(fromWorkers.requests[0].events, record.events);
+    assert.deepEqual(fromWorkers.requests[0].layoutLimitations, [...fromWorkers.layout.limitations].sort());
+    assert.equal(fromWorkers.requests[0].layoutLimitations.length, 2);
+    assert.equal(fromWorkers.layout.covered, 0);
     const fileList = merge(manifest, [{...warm, layoutLimitations: ['layout-file-replacement-storage-unconfirmed']}], sources);
     assert.equal(fileList.layout.covered, 0);
     assert.equal(fileList.files[1].declarations.length, 1);

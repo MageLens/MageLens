@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
+const {formatPercent} = require('./badges.cjs');
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, character => ({
@@ -18,12 +19,12 @@ function templateLimitations(templates) {
     };
 }
 
-function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests}) {
+function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation}) {
     const runner = run.runner === 'playwright' ? 'Playwright' : 'Cypress';
     const reports = [
         ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines', description: `Runtime config value consumption and Admin field rendering. ${xml.warnings?.length || 0} measurement warnings; unsupported XML remains unmeasured.`}] : []),
         {key: 'php', covered: php.covered, total: php.total, unit: 'lines',
-            description: 'Executable PHP in .php and .phtml files; original source, without HTML or JavaScript lines.'},
+            description: 'Executable PHP lines from HTTP requests and Magento CLI commands.'},
         {key: 'js', covered: js.total.statements.covered, total: js.total.statements.total, unit: 'statements',
             description: 'Whole .js files executed in the browser.'},
         {key: 'templates', covered: templates.lines.covered, total: templates.lines.total, unit: 'template lines',
@@ -31,12 +32,13 @@ function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests})
     ];
     const rows = reports.map(report => {
         const metric = metrics[report.key];
-        const percent = metric.percent.toFixed(2);
+        const percent = formatPercent(metric.percent);
+        const track = metric.percent === null ? '' : `<div class="track" aria-hidden="true"><span style="width:${metric.percent.toFixed(2)}%"></span></div>`;
         return `<tr>
 <th scope="row"><a href="${report.key}/index.html">${escapeHtml(metric.label)} <span aria-hidden="true">↗</span></a><small>${report.description}</small></th>
 <td>${report.covered} / ${report.total}<small>${report.unit} covered</small></td>
 <td>${report.total - report.covered}<small>${report.unit} uncovered</small></td>
-<td><strong>${percent}%</strong><div class="track" aria-hidden="true"><span style="width:${percent}%"></span></div></td>
+<td><strong>${percent}</strong>${track}</td>
 </tr>`;
     }).join('\n');
     const javascript = fs.existsSync('coverage/javascript-summary.json') ? JSON.parse(fs.readFileSync('coverage/javascript-summary.json')) : null;
@@ -44,6 +46,15 @@ function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests})
     const templateDetails = templates.scripts ? `<p class="note">Template scripts: ${templates.scripts.instrumented} instrumented; ${templates.scripts.unsupported.length} unsupported; ${templates.scripts.generated.length} PHP-generated fragments without a static map. <a href="templates/index.html">Template report</a> · <a href="templates/coverage-summary.json">Template coverage details</a>.</p>` : '';
     const gaps = templateLimitations(templates);
     const templateWarning = Object.values(gaps).some(items => items.length) ? `<p class="note"><strong>Template measurement is partial.</strong> ${gaps.directives.length} unsupported directives, ${gaps.scripts.length} unsupported scripts and ${gaps.generated.length} unmapped PHP outputs are not fully measured. The percentage covers instrumented constructs only. <a href="templates/coverage-summary.json">Inspect the affected files and reasons</a>.</p>` : '';
+    // An unaudited run has no report to open and must not read as a clean result.
+    const htmlValidationRow = htmlValidation.audits ? `<tr>
+<th scope="row"><a href="html-validation/index.html">HTML validation <span aria-hidden="true">↗</span></a><small>HTML source of the pages for which a test called mageLensValidateHtml.</small></th>
+<td>${htmlValidation.audits} audits<small>${htmlValidation.pages} pages</small></td>
+<td>${htmlValidation.errors} errors<small>${htmlValidation.warnings} warnings${htmlValidation.notValidated ? ` · ${htmlValidation.notValidated} not validated` : ''}</small></td>
+</tr>` : `<tr>
+<th scope="row">HTML validation<small>HTML source of the pages for which a test called mageLensValidateHtml.</small></th>
+<td colspan="2">Not run<small>No test called mageLensValidateHtml, so no page was audited.</small></td>
+</tr>`;
     fs.writeFileSync('coverage/index.html', `<!doctype html>
 <html lang="en">
 <head>
@@ -82,6 +93,7 @@ code { overflow-wrap: anywhere; }
 <body>
 <main>
 <span class="status">${runner} passed · ${tests.totalPassed}/${tests.totalTests} tests</span>
+${cli.totalTests ? `<span class="status">CLI passed · ${cli.totalPassed}/${cli.totalTests} tests</span>` : ''}
 <h1>MageLens coverage report</h1>
 <p class="intro">PHP, JavaScript, browser-template and XML configuration coverage from the same ${runner} run. Open a report to inspect individual files.</p>
 <div class="reports">
@@ -95,6 +107,14 @@ code { overflow-wrap: anywhere; }
 ${javascriptDetails}
 ${templateDetails}
 ${templateWarning}
+<div class="reports">
+<table>
+<caption>Reports</caption>
+<thead><tr><th scope="col">Report</th><th scope="col">Audited</th><th scope="col">Findings</th></tr></thead>
+<tbody>${htmlValidationRow}</tbody>
+</table>
+</div>
+<p class="note">Reports list findings from checks that tests request explicitly. Findings do not change the test result.</p>
 <footer>
 <p>Run <code>${escapeHtml(run.id)}</code><br>Generated <time datetime="${escapeHtml(generatedAt)}">${escapeHtml(generatedAt)}</time> · <a href="summary.json">Coverage data (JSON)</a></p>
 </footer>
@@ -104,4 +124,4 @@ ${templateWarning}
 `);
 }
 
-module.exports = {writeIndex, templateLimitations};
+module.exports = {writeIndex, templateLimitations, escapeHtml};

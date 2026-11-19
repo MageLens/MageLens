@@ -712,3 +712,17 @@ diff --git a/.node-version b/.node-version
 @@ -1 +1 @@
 -24.22.1
 +24.22.3
+diff --git a/nx.json b/nx.json
+index 097763c..3fe83bb 100644
+--- a/nx.json
++++ b/nx.json
+@@ -17,7 +17,8 @@
+       "dependsOn": [
+         "^build"
+       ],
+-      "cache": false
++      "cache": false,
++      "parallelism": false
+     },
+     "build-prod": {
+       "dependsOn": [

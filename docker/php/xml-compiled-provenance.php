@@ -160,7 +160,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
     $inputs = CompiledProvenance::snapshot($manager);
     if ($argc === 1) echo $inputs, PHP_EOL;
     else {
-        $areas = Xml::enabledHttpAreas($manager->get(\Magento\Framework\App\AreaList::class)->getCodes());
+        $areas = Xml::enabledAreas($manager->get(\Magento\Framework\App\AreaList::class)->getCodes());
         CompiledProvenance::publish($argv[1], $inputs, $areas);
     }
 }

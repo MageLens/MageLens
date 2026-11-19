@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 use Magento\Framework\App\Area;
+use Magento\Framework\App\Cron;
 use Magento\Framework\App\Http;
 use Magento\Framework\App\StaticResource;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
@@ -21,6 +22,7 @@ use Magento\Framework\ObjectManager\Config\Compiled as CompiledConfig;
 use Magento\Framework\ObjectManager\Factory\Compiled as CompiledFactory;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer as DeveloperFactory;
 use Magento\Framework\ObjectManager\ObjectManager;
+use N98\Magento\Command\System\Cron\RunCommand as MageRunCron;
 
 final class Preferences
 {
@@ -118,8 +120,11 @@ final class Preferences
         return match ($method) {
             [DeveloperEnvironment::class, 'configureObjectManager'], [CompiledEnvironment::class, 'configureObjectManager'] => 'bootstrap',
             [Http::class, 'launch'] => 'http',
+            [Cron::class, 'launch'] => 'cron',
             [StaticResource::class, 'launch'] => 'static',
             [Area::class, '_initConfig'] => 'area',
+            // The pinned MageRun command applies the native crontab DI loader directly.
+            [MageRunCron::class, 'execute'] => PHP_SAPI === 'cli' ? 'magerun-cron' : null,
             default => null,
         };
     }

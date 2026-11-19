@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 Run `./bin/run-coverage` from the repository root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, and HTML template reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
 
-The public report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous public link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
+The local report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous report link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
 
 ## Coverage scope
 
@@ -56,6 +56,33 @@ The combined report and badges are published after all tests pass and the covera
 
 If a process is forcibly terminated, check for active installation or coverage processes before removing `.runtime/workflow.lock` and rerunning the command. For the demo's patch recovery command, see [Cypress patch notes](../patches/cypress/README.md).
 
+## CLI tests
+
+Add standalone CLI specs named `*.test.cjs` under `cli/e2e/` or a module's `Test/Cli/` directory, including Composer modules listed in `vendorRoots`. These specs run after the Cypress or Playwright browser suite when you use `./bin/run-coverage`.
+
+Standalone CLI specs can import `test`, `magento` and `magerun` from `cli/support.cjs`. Both command helpers take an array of arguments and return `{code, stdout, stderr}`. Commands run in the Magento PHP container using the installed application's configuration. `magerun()` and `./bin/n98-magerun2` share a pinned, checksum-verified PHAR that downloads on first use. For a run without outbound access, prepare the PHAR with `./bin/n98-magerun2 --skip-core-commands --version` while online, then run `MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage` to require the verified cache. For an existing installation with an older wrapper, rerun `./install.sh` with your saved platform, theme and runner flags.
+
+Use `sys:cron:run <job_code>` to execute one configured handler immediately. Use Magento's native `cron:run --group=<group>` to test scheduler behavior, such as processing a pending schedule when it becomes due. This example uses the compatibility module from the isolated acceptance suite.
+
+```js
+const assert = require('node:assert/strict');
+const {test, magento, magerun} = require('../support.cjs');
+
+test('runs one cron handler and checks its recorded message', async () => {
+    const job = 'magelens_magerun_probe';
+    const messages = async () => JSON.parse((await magento(['magelens:probe', 'magerun-messages', job])).stdout);
+    try {
+        assert.deepEqual(await messages(), []);
+        await magerun(['sys:cron:run', job]);
+        assert.deepEqual(await messages(), ['magerun-handler-ran']);
+    } finally {
+        await magento(['magelens:probe', 'clean-magerun', job]);
+    }
+});
+```
+
+Use `{timeout: 30000}` to change the default 60-second timeout for each command, or `{expectedExitCode: 2}` to assert a specific error exit. Keep fixture writes scoped to an isolated installation and remove them during cleanup. Set `use_separate_process` to `0` for a cron test group to collect the job’s PHP execution in the same command. CLI test results are written to `coverage/cli-results.json`.
+
 ## Watch a test run
 
 Open `https://magelens.test:6080/`, then start `./bin/run-coverage` in your terminal. For both Cypress and Playwright, the noVNC viewer shows the browser running inside Docker during warm-up and tests. Between runs, it displays a waiting screen. Viewing is read-only, so watching a run does not send mouse or keyboard input to the tests. You do not need a browser installation or graphical desktop on the host to execute tests.
@@ -70,7 +97,7 @@ Both runners supply the missing Prototype dependency in Braintree 4.8's Admin se
 
 ## PHP coverage
 
-[PCOV](https://github.com/VitaliyBoyko/pcov) collects PHP execution from Magento HTTP requests made during the current browser run. CLI execution is outside the collection scope.
+[PCOV](https://github.com/VitaliyBoyko/pcov) collects PHP execution from Magento HTTP requests and CLI test commands in the current run.
 
 The PHP report measures executable lines. Unvisited files are included through static analysis with zero hits. `phpunit/php-code-coverage` generates HTML and Clover reports.
 
@@ -116,6 +143,41 @@ The template badge measures **executable template lines**: starting lines of bin
 
 **DOM presence** is reported separately. Hidden elements count as present, while fetching HTML alone does not. Templates with unsupported execution syntax remain visible with an explanation of the available DOM coverage.
 
+## HTML validation
+
+Tests can audit the HTML of selected pages. Validation is opt-in: only pages for which a test calls `mageLensValidateHtml` are audited, and a run without calls is shown as not audited.
+
+In Cypress, call the command after the page you want to audit has loaded:
+
+```js
+cy.visit('/customer/account/');
+cy.mageLensValidateHtml();
+```
+
+In Playwright, request the `mageLensValidateHtml` fixture and pass it the page. With [your own fixtures](#use-an-existing-playwright-fixture), `withCoverage` adds it to each wrapped test object:
+
+```js
+test('audits the account page', async ({page, mageLensValidateHtml}) => {
+    await page.goto('/customer/account/');
+    await mageLensValidateHtml(page);
+});
+```
+
+The call captures the page's HTML and returns no result. Captures are validated after the tests finish, while the reports are generated, so findings never fail a test or the run. A response that cannot be validated is listed as not validated with the reason: a redirect, a response that is not an HTML document, an empty response, or a request that failed or took longer than 60 seconds.
+
+**Validation target.** The helper requests the current URL again with the cookies of the test session, so signed-in storefront and Admin pages are audited as that user sees them. It captures the HTML source of that response, before the browser parses it. A browser repairs invalid markup while parsing, so the rendered DOM is never used in place of the source. As a result:
+
+- Markup created or changed by JavaScript, such as Knockout or Alpine output and opened dialogs, is not validated.
+- The response to a form submission is not validated; the audit covers a new `GET` of the URL shown after it.
+- Redirects are not followed. A page that redirects when requested again, such as an order confirmation, is listed as not validated.
+- The extra request runs application code like any other request of the test and is included in PHP and XML coverage.
+- Coverage runs serve instrumented templates. They add marker comments and coverage counters in attribute values and inline scripts; elements and line numbers are unchanged.
+- Lines and columns refer to the captured response, not to a template file. The report names the capture in `coverage/raw/html-validation/` for each audit; its `html` field holds the audited source.
+
+[html-validate](https://html-validate.org/) checks the source with its `html-validate:standard` rules, which cover markup validity without style or accessibility conventions. The version is set by `HTML_VALIDATE_VERSION` in `dependencies.yaml`. The report contains no page source: findings show the rule, message, selector and position only, and Admin secret keys, form keys and session tokens are removed from recorded URLs.
+
+After a successful run, the combined report lists HTML validation in a separate **Reports** section and links to `coverage/html-validation/index.html`. That report shows every audit with its page, test and spec, and each finding's severity, rule, message, response line and column, or states that no issues were found. `coverage/html-validation/results.json` contains the same data. The captured responses stay in the private `coverage/raw/html-validation/` directory and are not published with the report. Existing installations must rerun installation with their saved platform, theme and runner flags to install the validator.
+
 ## Use your project
 
 For a Cypress installation, follow the [source setup instructions](../README.md#work-with-the-source), then add scenarios in `cypress/e2e/**/*.cy.js` or a module's `Test/Cypress/**/*.cy.js`. All matching scenarios run with `./bin/run-coverage`.
@@ -142,13 +204,15 @@ Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templat
 
 For collection details, inspect PHP records under `coverage/raw/php/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
 
-Reports, raw artifacts and the SVGs in `coverage/badges/` are ignored by Git. To share browsable reports, copy the entire `coverage/` directory so relative links continue to work.
+After a successful run, use `./bin/export-coverage` and share only **`coverage/share.html`**. The standalone HTML file opens offline and includes coverage metrics, layout declaration totals, and project-relative file paths. If the recipient also needs the measured source code, run `./bin/export-coverage --include-source` and share **`coverage/share-with-source.html`** with them.
+
+Keep the full `coverage/` directory private. It contains local debugging artifacts, including raw request URLs and custom fixture data that can contain credentials. After upgrading, run `./bin/run-coverage` once to replace the old local web link with one that serves only report files. Git ignores the reports, raw artifacts and SVGs in `coverage/badges/`.
 
 XML configuration coverage appears separately in `coverage/xml/index.html`, with source directories preserved. Supported `config.xml` leaves turn green when a runtime read consumes their effective value at default, website or store scope. Supported `system.xml` fields turn green when Admin renders them; unopened fields and unread values remain red. Loading XML grants no credit. Unsupported XML and ambiguous field origins are shown as unmeasured. The collector uses OpenTelemetry runtime hooks without adding Magento modules, changing DI or rewriting application sources. Existing installations must rerun installation with their saved platform, theme and runner selections to install the hook extension.
 
 Configuration coverage includes Backend value and flag reads and Magento's lowercase aliases for store codes. Explicit paths and subtrees requested through these accessors earn credit for their native values before plugins decorate the result. Internal storage reads and whole-configuration snapshots, including accessor calls without a path, grant no execution credit. Replacements that bypass the native getter provide no XML evidence. Empty-node conflicts and empty CDATA whose exact ownership cannot be preserved are shown as unmeasured.
 
-The XML report also shows synchronous HTTP `events.xml` observer execution for global, frontend, adminhtml, REST (`webapi_rest`), and GraphQL (`graphql`) configuration. An observer earns credit when Magento reaches its underlying `execute()` method. The report links each registration to its original lines and shows covered and uncovered outcomes by area, even for observers that share a PHP class. Disabled, overridden, ambiguous and unsupported registrations are outside the observer totals for the affected area. Browser warm-up contributes no observer hits. If the collector reports stale event configuration, rerun `./bin/run-coverage --refresh-cache`.
+The XML report also shows synchronous `events.xml` observer execution for global, frontend, adminhtml, REST (`webapi_rest`), GraphQL (`graphql`), and the CLI cron area (`crontab`). An observer earns credit when Magento reaches its underlying `execute()` method. The report links each registration to its original lines and shows covered and uncovered outcomes by area, even for observers that share a PHP class. Disabled, overridden, ambiguous and unsupported registrations are outside the observer totals for the affected area. Browser warm-up contributes no observer hits. If the collector reports stale event configuration, rerun `./bin/run-coverage --refresh-cache`.
 
 Layout XML reports list original declarations and attributes, with a separate layout total. Block creation and template selection remain visible facts. Block declarations require the native block HTML boundary for rendering coverage; template declarations require successful template engine execution. A constructed block or selected template that is never rendered remains uncovered. A native template file validation rejection is shown separately from execution failures and unconfirmed execution origins. The report also shows traversed include edges, duplicate inclusions, cycles, selected wireframes and moves. It records missing move targets, moves into removed subtrees, applied removals and surviving restorations. Container construction, emitted wrappers, display decisions, configuration flags and Admin ACL decisions have independent evidence. Ignored empty or zero operands retain explicit outcomes; native zero-class wrapper interpolation is shown separately. Class, group and TTL evidence identifies native application. A fresh cacheability check can identify a surviving block whose cacheable attribute is the literal false. An intercepted wireframe getter can prevent attribution of the original page attribute. An XML template assignment, a superseding XML declaration, a later PHP replacement and actual PHP template engine execution have separate evidence. The report identifies the originating handle and the area and theme observed during the request.
 
@@ -164,11 +228,11 @@ Layout registry coverage distinguishes native membership checks, option-label co
 
 The schema inventory links each declaration and runtime boundary to the native consumer, fixture, required evidence and platform verification. [Layout XML measurement inventory](../tests/layout-xml-inventory.md)
 
-The XML report measures `di.xml` usage during authorized developer and production HTTP requests in those same configuration areas. Run `./bin/deploy-production` to switch the local application to production, run Magento’s compiler and static deployment, and record the DI source and generated metadata fingerprints. Then run `./bin/run-coverage`. Redeploy when the DI sources or compiled metadata change. Use `--refresh-assets` to rebuild production static files from current instrumented sources without recompiling DI.
+The XML report measures `di.xml` usage during developer and production HTTP requests and CLI tests in those same configuration areas. Run `./bin/deploy-production` to switch the local application to production, run Magento’s compiler and static deployment, and record the DI source and generated metadata fingerprints. Then run `./bin/run-coverage`. Redeploy when the DI sources or compiled metadata change. Use `--refresh-assets` to rebuild production static files from current instrumented sources without recompiling DI.
 
 **Plugin execution** counts registered before, around or after callbacks that Magento reaches. Around callbacks earn credit when they short-circuit, as do enclosing after callbacks that run. The source view links inherited registrations to their unique sources and shows the effective subject, intercepted method, phase, and registration outcomes by area.
 
-**Preference usage** shows which `di.xml` bindings Magento selected in a successful Object Manager resolution. It also includes attributable pre-resolved constructor dependencies in production. Shared returns count, and a chain can credit each binding with a unique original source. The report shows the requested and replacement types, the effective type, and the original lines. Unvisited bindings are uncovered, and overridden, inactive, ambiguous or unsupported bindings are unmeasured. Direct construction, isolated lookups, failed resolutions, CLI, background work, and warm-up grant no hits.
+**Preference usage** shows which `di.xml` bindings Magento selected in a successful Object Manager resolution. It also includes attributable pre-resolved constructor dependencies in production. Shared returns count, and a chain can credit each binding with a unique original source. The report shows the requested and replacement types, the effective type, and the original lines. Unvisited bindings are uncovered, and overridden, inactive, ambiguous or unsupported bindings are unmeasured. Direct construction, isolated lookups, failed resolutions, untracked background work, and warm-up grant no hits.
 
 **Virtual type usage** records virtual aliases selected when Magento’s factory successfully returns an object. Each uniquely sourced alias in a chain counts. Retrieving an already shared instance adds no factory evidence. An area declaration that only supplies arguments can contribute to argument usage while inheriting its virtual target.
 

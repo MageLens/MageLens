@@ -19,7 +19,7 @@ use Magento\Framework\ObjectManager\ConfigLoaderInterface;
 
 final class ObserverManifest
 {
-    public const AREAS = Xml::HTTP_AREAS;
+    public const AREAS = Xml::AREAS;
     private const DEFAULTS = ['disabled' => false, 'shared' => true];
 
     /** Replay the installed reader over a single snapshot, retaining per-attribute origins. */
@@ -171,7 +171,7 @@ final class ObserverManifest
                     [$status, $reason, $class] = self::registration($config, $owners[$event][$observer] ?? [], $item['id'], $active, $implementation);
                     if ($area === 'global' && $status === 'eligible' && isset($configs['primary'][$event][$observer])) {
                         $status = 'unsupported';
-                        $reason = 'An installation-level declaration also contributes before the HTTP area is set';
+                        $reason = 'An installation-level declaration also contributes before the configuration area is set';
                     }
                     $item['areas'][$area] = ['status' => $status, 'reason' => $reason];
                     $item['supported'] = $item['supported'] || $status === 'eligible';
@@ -197,7 +197,7 @@ final class ObserverManifest
                 if (!isset($item['areas'])) {
                     $scope = $item['declaredScope']['type'];
                     $reason = in_array($scope, self::AREAS, true) ? 'Configuration area is not registered in the installation'
-                        : 'Configuration scope is outside HTTP observer coverage';
+                        : 'Configuration scope is outside observer coverage';
                     $item['areas'] = [$scope => ['status' => 'unsupported', 'reason' => $reason]];
                 }
             }

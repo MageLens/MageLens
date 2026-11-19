@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -69,3 +69,21 @@ if (theme === 'hyva') {
     assert.equal(proof.inlineExecuted, false);
     console.log('Verified enforced CSP blocks dynamic code and unsigned inline scripts.');
 }
+
+const validation = read('coverage/html-validation/results.json');
+assert.equal(validation.run, read('coverage/run.json').id);
+const page = name => new URL(`/coverageprobe/index/markup/case/${name}`, process.env.PLAYWRIGHT_BASE_URL || process.env.CYPRESS_BASE_URL).href;
+// Browsers repair the misnested tags of the invalid page, so these findings prove the response source was audited.
+assert.deepEqual(validation.audits.map(audit => [audit.url, audit.status, audit.notValidated, audit.messages.map(message => [message.rule, message.line, message.column])]), [
+    [page('valid'), 200, null, []],
+    [page('invalid'), 200, null, [['close-order', 4, 8], ['close-order', 4, 17], ['close-order', 4, 25], ['close-order', 5, 2], ['close-order', 5, 9]]]
+], 'Only the two requested pages are audited, with the session of the test');
+// The runner's proxy must not have changed the audited document.
+assert.equal(read(`coverage/${validation.audits[0].capture}`).html,
+    '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><title>Markup probe</title></head><body>\n<p>First</p>\n<p><b><i>Second</i></b></p>\n</body></html>',
+    'The capture is the unmodified server response');
+assert.ok(validation.audits.every(audit => audit.test.includes('starts the next test with fresh state')));
+assert.deepEqual(read('coverage/summary.json').htmlValidation, {audits: 2, pages: 2, errors: 5, warnings: 0, notValidated: 0});
+assert.equal(validation.target, 'source');
+assert.match(fs.readFileSync('coverage/index.html', 'utf8'), /<a href="html-validation\/index\.html">HTML validation/);
+console.log('Verified opt-in HTML validation of a valid and an invalid session-protected page.');

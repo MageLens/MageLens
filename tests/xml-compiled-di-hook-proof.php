@@ -180,8 +180,8 @@ function verifyCompiledProvenance(): void
     mkdir(dirname($session), 0777, true);
     $original = '<?php namespace ' . __NAMESPACE__ . '; class ProvenanceConsumer extends OriginalParent {}';
     $files = [$directory . '/app/etc/config.php', $directory . '/composer.lock'];
-    $areas = Xml::enabledHttpAreas(['frontend', 'adminhtml', 'webapi_rest', 'crontab', 'webapi_soap']);
-    check($areas === ['global', 'frontend', 'adminhtml', 'webapi_rest'], 'Only installed HTTP scopes are stamped');
+    $areas = Xml::enabledAreas(['frontend', 'adminhtml', 'webapi_rest', 'crontab', 'webapi_soap']);
+    check($areas === ['global', 'frontend', 'adminhtml', 'webapi_rest', 'crontab'], 'Only installed supported scopes are stamped');
     foreach ($areas as $area) $files[] = CompiledLoader::getFilePath($area);
     try {
         foreach ($files as $file) file_put_contents($file, 'fixture');

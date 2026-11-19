@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -26,7 +26,9 @@ test('missing, duplicate and reversed markers fail without rewriting README', ()
 test('SVG values derive from the supplied report and invalid metrics are rejected', () => {
     assert.match(badge('php', 37.125), /37\.13%/);
     assert.match(badge('templates', 0), /0\.00%/);
-    for (const value of [null, undefined, NaN, Infinity, -1, 101]) {
+    assert.match(badge('templates', null), /Template executable lines: N\/A/);
+    assert.match(badge('templates', null), /fill="#555"/);
+    for (const value of [undefined, NaN, Infinity, -1, 101]) {
         assert.throws(() => badge('php', value));
     }
 });
