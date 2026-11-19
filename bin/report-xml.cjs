@@ -46,6 +46,7 @@ const layoutEvents = {
     'visibility-name': ['layout-condition-name-applied', 'layout-condition-name-unused', 'layout-condition-unconfirmed'],
     'visibility-class': ['layout-condition-class-selected', 'layout-condition-unconfirmed'],
     'visibility-argument': ['layout-condition-argument-applied', 'layout-condition-argument-unconsumed', 'layout-condition-unconfirmed'],
+    'visibility-argument-name': ['layout-condition-argument-applied', 'layout-condition-argument-unconsumed', 'layout-condition-unconfirmed'],
     'page-type': ['layout-page-type-applied'],
     'page-type-id': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
     'page-type-label': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
@@ -142,7 +143,8 @@ for (const kind of ['metadata', 'metadata-name']) layoutEvents[kind].push('layou
 layoutEvents['metadata-content'].push('layout-metadata-content-fallback');
 for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater',
     'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
-    'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name']) layoutEvents[kind].push('layout-argument-group-ignored');
+    'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name',
+    'visibility-argument', 'visibility-argument-name']) layoutEvents[kind].push('layout-argument-group-ignored');
 for (const kind of ['argument', 'action-argument']) layoutEvents[kind].push(...layoutEvents.template.filter(type => type !== 'layout-template-empty-ignored'));
 layoutEvents.argument.push('layout-template-constructor-origin-unconfirmed');
 layoutEvents['action-argument'].push('layout-template-assignment-origin-unconfirmed');

@@ -23,6 +23,7 @@ use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
 use Magento\Framework\View\Layout\Argument\Interpreter\Decorator\Updater;
 use Magento\Framework\View\Layout\GeneratorPool;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
+use Magento\Framework\View\Layout\Reader\Visibility\Condition as ConditionReader;
 use Magento\Framework\View\Layout\Reader\Container as ContainerReader;
 use Magento\Framework\View\Layout\Reader\Move as MoveReader;
 use Magento\Framework\View\Layout\ScheduledStructure;
@@ -236,6 +237,8 @@ final class LayoutCoverage
             [BlockReader::class, 'scheduleReference', $this->beginArgumentSchedule(...), $this->scheduleReference(...)],
             [ContainerReader::class, 'containerReference', null, $this->ignoredRemoval(...)],
             [BlockReader::class, 'getActions', null, $this->readActions(...)],
+            [ConditionReader::class, 'getArguments', null, $this->readArguments(...)],
+            [ConditionReader::class, 'evaluateArguments', $this->beginReaderArguments(...), $this->completeReaderArguments(...)],
             [BlockReader::class, 'getArguments', null, $this->readArguments(...)],
             [BlockReader::class, 'evaluateArguments', $this->beginReaderArguments(...), $this->completeReaderArguments(...)],
             [MoveReader::class, 'scheduleMove', $this->beginMoveRead(...), $this->scheduleMove(...)],
@@ -1263,11 +1266,11 @@ final class LayoutCoverage
 
     private function readArguments($reader, array $params, $arguments, ?\Throwable $error, string $class): void
     {
-        if ($error || $class !== BlockReader::class) return;
+        if ($error || !in_array($class, [BlockReader::class, ConditionReader::class], true)) return;
         $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
-        if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
-        if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
-        if ((new \ReflectionMethod($reader, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
+        if (($caller['class'] ?? null) !== $class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
+        if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== $class) return;
+        if ((new \ReflectionMethod($reader, 'evaluateArguments'))->getDeclaringClass()->getName() !== $class) return;
         $xml = $params[0];
         $origins = [];
         foreach ($xml->arguments[0]->argument ?? [] as $node) {
@@ -1289,28 +1292,36 @@ final class LayoutCoverage
             }
         }
         [, $context] = $this->origin($xml);
+        if ($class === ConditionReader::class) {
+            $parser = (new \ReflectionProperty(ConditionReader::class, 'argumentParser'))->getRawValue($reader);
+            if (get_class($parser) !== \Magento\Framework\View\Layout\Argument\Parser::class) {
+                if ($context !== null) foreach ($origins as $origin) $this->unconfirmedArgument($origin, $context);
+                $origins = [];
+            }
+        }
         $this->argumentOwnership->supply($arguments, $reader, $origins, $context);
         if (array_keys($origins) === array_keys($arguments)) $this->argumentReads[$xml] = $origins;
     }
 
     private function beginReaderArguments($reader, array $params, string $class): void
     {
-        if ($class === BlockReader::class) $this->argumentOwnership->beginBatch($reader, true);
+        if (in_array($class, [BlockReader::class, ConditionReader::class], true)) $this->argumentOwnership->beginBatch($reader, true);
     }
 
     private function completeReaderArguments($reader, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($class !== BlockReader::class) return;
+        if (!in_array($class, [BlockReader::class, ConditionReader::class], true)) return;
         $names = $this->argumentOwnership->endBatch($error);
-        if ($error || !$names) return;
         $xml = $params[0];
         $origins = $this->argumentReads[$xml] ?? [];
+        if ($class === ConditionReader::class) unset($this->argumentReads[$xml]);
+        if ($error || !$names) return;
         [, $context] = $this->origin($xml);
         foreach ($names as $name) {
             if ($context !== null) $this->unconfirmedArgument($origins[$name] ?? [], $context);
             $origins[$name] = [];
         }
-        $this->argumentReads[$xml] = $origins;
+        if ($class === BlockReader::class) $this->argumentReads[$xml] = $origins;
     }
 
     private function unconfirmedArgument(array $origin, array $context, string $effect = 'layout-argument-origin-unconfirmed'): void

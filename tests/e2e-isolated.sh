@@ -210,7 +210,11 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-registry-hook-proof.php "$registry_case"
     done
-    for ui_case in native missing-factory missing-key missing-decision missing-dynamic-key missing-dynamic-decision missing-magic dynamic-limit; do
+    for ui_case in native custom-parser; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-ui-hook-proof.php "$ui_case" --without-collector
+    done
+    for ui_case in native custom-parser missing-factory missing-key missing-decision missing-dynamic-key missing-dynamic-decision missing-magic dynamic-limit; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-ui-hook-proof.php "$ui_case"
     done

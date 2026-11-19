@@ -11,6 +11,7 @@ use Magento\Framework\Data\Argument\InterpreterInterface;
 use Magento\Framework\Data\Argument\Interpreter;
 use Magento\Framework\View\Layout\Argument\Interpreter as LayoutInterpreter;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
+use Magento\Framework\View\Layout\Reader\Visibility\Condition as ConditionReader;
 use Magento\Framework\ObjectManager\ObjectManager;
 use Magento\Framework\ObjectManagerInterface;
 use Magento\Framework\View\Element\UiComponent\Argument\Interpreter\ConfigurableObject;
@@ -156,7 +157,9 @@ final class LayoutArgumentOwnership
         $index = array_key_last($this->batches);
         $batch = $this->batches[$index];
         $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 3)[2] ?? [];
-        $native = $batch['reader'] ? BlockReader::class : BlockGenerator::class;
+        $native = $batch['reader']
+            ? ($batch['owner'] instanceof ConditionReader ? ConditionReader::class : BlockReader::class)
+            : BlockGenerator::class;
         $root = ($caller['class'] ?? null) === $native && ($caller['function'] ?? null) === 'evaluateArguments';
         $name = null;
         $type = null;

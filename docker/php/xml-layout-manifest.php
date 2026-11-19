@@ -83,7 +83,7 @@ final class LayoutManifest
                     && self::configuredOperand($node) => $node->tagName === 'argument' ? 'configured-argument' : 'configured-item',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'arguments'
-                    && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'argument-group',
+                    && in_array($node->parentNode->nodeName, ['block', 'referenceBlock', 'visibilityCondition'], true) => 'argument-group',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::blockArgument($node) => 'argument',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'param'
                     && (self::blockArgument($node->parentNode) || self::actionArrayItem($node->parentNode)
@@ -108,9 +108,10 @@ final class LayoutManifest
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
                     $valueKind === 'action' && $attribute->nodeName === 'ifconfig' => 'action-ifconfig',
-                    in_array($valueKind, ['argument', 'action-argument', 'action-item', 'configured-argument', 'configured-item'], true) && $attribute->nodeName === 'xsi:type' => 'argument-type',
-                    in_array($valueKind, ['argument', 'action-argument', 'action-item', 'configured-argument', 'configured-item'], true) && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
+                    in_array($valueKind, ['argument', 'action-argument', 'action-item', 'configured-argument', 'configured-item', 'visibility-argument'], true) && $attribute->nodeName === 'xsi:type' => 'argument-type',
+                    in_array($valueKind, ['argument', 'action-argument', 'action-item', 'configured-argument', 'configured-item', 'visibility-argument'], true) && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
                     $valueKind === 'argument' && $attribute->nodeName === 'name' => 'argument-name',
+                    $valueKind === 'visibility-argument' && $attribute->nodeName === 'name' => 'visibility-argument-name',
                     $valueKind === 'action-item' && $attribute->nodeName === 'name' => 'action-item-name',
                     in_array($valueKind, ['configured-argument', 'configured-item'], true)
                         && $attribute->nodeName === 'name' => $valueKind . '-name',
@@ -174,7 +175,7 @@ final class LayoutManifest
                     'move-element', 'move-destination', 'move-as', 'move-before', 'move-after',
                     'handle-label', 'handle-type',
                     'condition-ifconfig', 'condition-aclResource', 'condition-acl', 'file-override',
-                    'visibility', 'visibility-name', 'visibility-class', 'visibility-argument', 'ui-group'], true);
+                    'visibility', 'visibility-name', 'visibility-class', 'visibility-argument', 'visibility-argument-name', 'ui-group'], true);
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
                         'body-class', 'body-class-name', 'body-class-value'], true);
@@ -314,8 +315,24 @@ final class LayoutManifest
         if ($node === 'updater' && in_array($attribute, ['enabled', 'sortOrder'], true)) {
             return 'Native parsing turns an attributed updater into an array class descriptor. The decorator passes it to ObjectManager::get and raises TypeError before flag or ordering effects can occur';
         }
+        if ($element && in_array($fileType, ['page', 'generic', 'wireframe'], true)) {
+            $ancestor = $element;
+            while ($ancestor->parentNode instanceof \DOMElement) {
+                if ($ancestor->tagName === 'argument' && $ancestor->parentNode->tagName === 'uiComponent') {
+                    return 'The native UI layout reader does not forward direct component arguments to the component factory';
+                }
+                $ancestor = $ancestor->parentNode;
+            }
+        }
         if ($fileType === 'registry' && $node === 'label' && $attribute === 'translate') {
             return 'The schema fixes this flag to true. Native registry extraction consumes label text and leaves the flag unused';
+        }
+        if (in_array($node, ['page_layouts', 'page_types'], true)
+            && in_array($fileType, ['registry', 'page-types'], true)) {
+            return 'The native registry reader uses this envelope to validate and merge entries. Its consumers read the individual entry fields';
+        }
+        if ($fileType === 'page' && $attribute === null && in_array($node, ['html', 'head', 'body'], true)) {
+            return 'The native page reader dispatches the children of this wrapper. Runtime effects belong to the individual instructions';
         }
         if ($fileType === 'registry' || $fileType === 'page-types') return 'Registry consumers lack a trace back through the merged registry to this declaration';
         if ($fileType === 'wireframe' && $node === 'block' && $attribute === 'cacheable') {

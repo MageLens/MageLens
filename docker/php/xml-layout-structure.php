@@ -278,7 +278,7 @@ final class LayoutStructureCoverage
     private function conditionValue($xml, $value): array
     {
         [$source] = ($this->origin)($xml);
-        $ids = isset($source['visibility-argument']) ? [$source['visibility-argument']] : [];
+        $ids = array_values(array_intersect_key($source, ['visibility-argument' => true, 'visibility-argument-name' => true]));
         if ((string) $xml->attributes('http://www.w3.org/2001/XMLSchema-instance')['type'] !== 'array' || !is_array($value)) return $ids;
         $nodes = [];
         foreach ($xml->item as $node) $nodes[(string) $node['name']] = $node;

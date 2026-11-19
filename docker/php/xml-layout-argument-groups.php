@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
 use Magento\Framework\View\Layout\Reader\Block;
+use Magento\Framework\View\Layout\Reader\Visibility\Condition;
 
 /** Group selection is separate from interpretation and application of its values. */
 final class LayoutArgumentGroups
@@ -20,11 +21,15 @@ final class LayoutArgumentGroups
 
     public function hooks(): array
     {
-        return [[Block::class, 'getArguments', $this->begin(...), $this->end(...)],
-            [Block::class, 'parseArguments', null, $this->parsed(...)]];
+        $hooks = [];
+        foreach ([Block::class, Condition::class] as $class) {
+            $hooks[] = [$class, 'getArguments', $this->begin(...), $this->end(...)];
+            $hooks[] = [$class, 'parseArguments', null, $this->parsed(...)];
+        }
+        return $hooks;
     }
 
-    private function begin($reader, array $params): void
+    private function begin($reader, array $params, string $class): void
     {
         if ($this->overflow || count($this->reading) >= 256) {
             $this->overflow++;
@@ -33,9 +38,9 @@ final class LayoutArgumentGroups
         }
         $native = true;
         foreach (['getArguments', 'getElementsByType', 'parseArguments'] as $method) {
-            $native = $native && LayoutXmlOwnership::nativeMethod($reader, Block::class, $method);
+            $native = $native && LayoutXmlOwnership::nativeMethod($reader, $class, $method);
         }
-        $this->reading[] = ['reader' => $reader, 'xml' => $params[0], 'native' => $native,
+        $this->reading[] = ['reader' => $reader, 'class' => $class, 'xml' => $params[0], 'native' => $native,
             'observed' => false, 'group' => null];
     }
 
@@ -45,7 +50,7 @@ final class LayoutArgumentGroups
         $index = array_key_last($this->reading);
         $caller = LayoutXmlOwnership::caller($reader, 'parseArguments');
         if ($index === null || !is_array($this->reading[$index]) || $this->reading[$index]['reader'] !== $reader
-            || ($caller['class'] ?? null) !== Block::class || ($caller['function'] ?? null) !== 'getArguments'
+            || ($caller['class'] ?? null) !== $this->reading[$index]['class'] || ($caller['function'] ?? null) !== 'getArguments'
             || ($caller['object'] ?? null) !== $reader) return;
         $this->reading[$index]['observed'] = true;
         if (!$error && is_array($result)) $this->reading[$index]['group'] = dom_import_simplexml($params[0]);
@@ -64,7 +69,7 @@ final class LayoutArgumentGroups
             foreach (['argument', 'argument-name', 'argument-type', 'argument-updater',
                 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
                 'parameter', 'parameter-name', 'configured-argument', 'configured-argument-name',
-                'configured-item', 'configured-item-name'] as $kind) {
+                'configured-item', 'configured-item-name', 'visibility-argument', 'visibility-argument-name'] as $kind) {
                 if (isset($ids[$kind])) ($this->emit)($ids[$kind], 'layout-argument-group-ignored', $context);
             }
         }
