@@ -229,7 +229,7 @@ The result may include `warmupPaths`, an array of HTML page paths such as `["/ad
 
 ## Reports and artifacts
 
-Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templates/`, and `coverage/xml/`. `coverage/summary.json` records the run ID, generation time, and displayed metrics.
+Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templates/`, and `coverage/xml/`. `coverage/summary.json` records the run ID, generation time, and displayed metrics. [`coverage/report.sqlite`](#coverage-database) holds the results of all collectors as one queryable database.
 
 For collection details, inspect PHP records under `coverage/raw/php/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
 
@@ -284,6 +284,42 @@ Custom routers, no-route fallbacks, SOAP, asynchronous and bulk REST, GraphQL an
 **Admin ACL and menus** report the decision on a native resource check and the individual menu entries rendered or followed. ACL declarations describe the resource hierarchy. Role assignments come from the database. Following an entry requires a browser navigation linked to that entry's emitted anchor and destination response.
 
 **Cron** separates evaluation of a literal `crontab.xml` schedule, entry into the configured handler and successful or failed completion. A pre-seeded due row and a direct MageRun job can exercise the handler. They supply schedule evidence only when Magento also evaluates that XML expression.
+
+## Coverage database
+
+Every successful run writes `coverage/report.sqlite`, a SQLite database for CI, scripts and AI-assisted analysis. It stores the underlying results of all collectors in one structure: every eligible unit, whether a test reached it or not. `coverage/schema.sql` is the formal schema. The collector exports and `coverage/summary.json` are unchanged, and the database totals are checked against them before reports are published. The printed report URL serves both files beside `index.html`.
+
+| Table or view | Contents |
+| --- | --- |
+| `manifest` | One row per collector: `php`, `js`, `template` and `xml`, named as in `records.source_type`, and `test-attribution`. `status` is `collected` or `not_collected`; `scope` says what is measured; `limitations` is a JSON array of `{id, count, description}` for what could not be measured; `export_paths` is a JSON array of the detailed exports. Every row repeats `schema_version`, `run_id`, `generated_at` and `commit_sha` (`NULL` when it cannot be read from the checkout). |
+| `records` | One eligible unit per row: `record_type`, `source_type`, `metric`, `record_key`, `file_path`, `module_name`, `start_line`, `end_line`. Uncovered units are included; unmeasurable code has no row. |
+| `hits` | Positive observations only, by `record_id`. `hit_count` is the number of observations the collector counted: executions of a statement, function or branch, the sum over the units of a template or XML line, or the observations of a template in a document. It is `NULL` where the collector records only that the unit ran (PHP lines). |
+| `tests`, `test_hits` | Test attribution: which test reached which record. Empty while `test-attribution` is `not_collected`. |
+| `metric_totals`, `module_totals`, `file_totals` | Views with `total`, `covered` and `percent` per metric for the run, a module or a file, summed from counts. |
+| `uncovered_records` | View of eligible units without a hit. |
+
+`file_path` is relative to the Magento root (`src/`). `module_name` is `Vendor_Module` for `app/code`, `design/<area>/<Vendor>/<theme>` for local themes and `vendor/<vendor>/<package>` for opted-in packages.
+
+| `source_type` | `metric` | One record is |
+| --- | --- | --- |
+| `php` | `lines` | An executable PHP line. |
+| `js` | `statements`, `functions`, `branches` | A statement, function or branch path of a whole `.js` file. |
+| `template` | `executable-lines` | A template line that starts a binding, expression or inline script statement; this is the template headline. |
+| `template` | `statements`, `functions`, `branches` | A binding or inline script statement, an inline script function, or a branch path. |
+| `template` | `dom-presence` | A template; hit when it entered a tested document. |
+| `xml` | `lines` | A supported XML configuration line. |
+| `xml` | `observers`, `plugins`, `preferences`, `virtual-types`, `arguments`, `lifecycles` | A declaration in one eligible configuration area. |
+
+A metric is the pair of `source_type` and `metric`: PHP `lines` and XML `lines` are different metrics. Metrics have different denominators, so never add or compare their totals. `record_key` identifies a unit within its file and metric for the sources of this run: a line number, the collector's statement, function or branch identifier, or `<declaration>@<area>` for XML declarations. Keys of a file can change when the file changes, so compare runs by file and line only for unchanged sources (`commit_sha`). A file or metric without eligible units has no rows. A collector with status `collected` and no hits has uncovered code; `not_collected` means there is no data, which is not 0%. `schema_version` and `PRAGMA user_version` increase when a table, column, view or documented value is removed, renamed or changes meaning; additions keep the version.
+
+Query it read-only with any client based on SQLite 3.37 or newer, or with `node:sqlite` through `./bin/runner node`. For example, the least covered PHP files of a module and the uncovered lines of one file:
+
+```bash
+sqlite3 -readonly coverage/report.sqlite "SELECT file_path, covered, total, percent FROM file_totals WHERE module_name = 'Application_Blog' AND source_type = 'php' ORDER BY percent LIMIT 5"
+sqlite3 -readonly coverage/report.sqlite "SELECT start_line FROM uncovered_records WHERE file_path = 'app/code/Application/Blog/Model/Posts.php' AND metric = 'lines'"
+```
+
+The [coverage-database skill](../.agents/skills/coverage-database/SKILL.md) gives coding agents the access rules and more example queries.
 
 ## Use an existing Playwright fixture
 

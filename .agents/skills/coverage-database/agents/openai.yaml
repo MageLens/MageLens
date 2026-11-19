@@ -1,0 +1,7 @@
+# Copyright (c)  MageLens
+# SPDX-License-Identifier: Elastic-2.0
+# License: see LICENSE in the repository root.
+
+interface:
+  display_name: "Coverage Database"
+  short_description: "Targeted read-only SQL over MageLens coverage results"

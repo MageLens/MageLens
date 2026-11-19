@@ -45,6 +45,9 @@
 !/bin/public-report.cjs
 !/bin/javascript-scope.cjs
 !/bin/report-browser.cjs
+!/bin/report-database.cjs
+!/bin/report-schema.sql
+!/bin/report-schema.sql.license
 !/bin/report-index.cjs
 !/bin/report-xml.cjs
 !/bin/run-browser.cjs
