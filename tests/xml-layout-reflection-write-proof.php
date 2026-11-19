@@ -59,9 +59,9 @@ $declarations = LayoutManifest::declarations($path, $source);
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $methodName, $pre, $post]) {
     if (!LayoutRuntimeHooks::register($class, $methodName, $pre, $post)) throw new RuntimeException('Cannot observe reflection field fixture');
 }
-if ($duringGeneration && !LayoutRuntimeHooks::register(DataObject::class, 'setData', null,
-    static function ($block, array $params, $result, ?Throwable $error) use ($mode, $method, $failed): void {
-        if (!$error && $block instanceof Template && ($params[0] ?? null) === 'ttl' && ($params[1] ?? null) === 73) {
+if ($duringGeneration && !LayoutRuntimeHooks::register(Magento\Framework\View\Layout\Generator\Block::class, 'generateBlock', null,
+    static function ($generator, array $params, $block, ?Throwable $error) use ($mode, $method, $failed): void {
+        if (!$error && $block instanceof Template && ($params[2] ?? null) === 'magelens.layout.package.native') {
             MageLensExternalReflectionWriter::write($block, $mode === 'template' ? '_template' : '_data', $method, $failed);
         }
     })) throw new RuntimeException('Cannot schedule native reflection generation fixture');
@@ -74,7 +74,6 @@ $objects->get(Magento\Framework\App\ViewInterface::class);
 $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
 $page->addHandle('coverageprobe_packagemutation_native');
 $layout = $page->getLayout();
-if ($duringGeneration) $layout->getUpdate()->addUpdate('<body><referenceBlock name="magelens.layout.package.native" ttl="73"/></body>');
 $block = $layout->getBlock('magelens.layout.package.native');
 if (!$duringGeneration) MageLensExternalReflectionWriter::write($block, $mode === 'template' ? '_template' : '_data', $method, $failed);
 $html = $block->toHtml();
