@@ -698,6 +698,8 @@ fi
         ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout
         provider_proof --without-collector
         provider_proof
+        provider_proof --without-collector --unvisited
+        provider_proof --unvisited
         for provider_missing in --missing-filter-pre --missing-filter-post --missing-filter-candidates; do
             provider_proof "$provider_missing"
         done

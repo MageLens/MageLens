@@ -808,3 +808,8 @@ The next native controller asset fixture validates 184 positive XML files and re
 ### Configured URL parameters
 
 Native parser checks on both installed versions accept the helper and URL fixtures. A single parameter below a direct constructor argument is flattened and a repeated parameter fails parsing. An array-wrapped parameter retains its original key. The installed Composite has no configured-object helper interpreter, while its Magento UI URL interpreter accepts the wrapped keyed map. On Magento Open Source production, the original layout fixture reaches native construction with both URL values before the old exact assertion fails at the original item. The corrected proof passes for the item, type, discrete path, parameter names and values. Direct URL and helper cases retain precise tested limitations.
+
+
+### Handle-scoped provider exclusion
+
+The 79-verifier production checkpoint passed all eight browser scenarios and all exact checks on both engines. The complete comparison still found one differing Hyvä source file and its XML total. Mage-OS excluded the Hyvä Braintree layout provider during package assembly, while Magento Open Source included it. Neither request traversed that file's handle. The new native control visits a different handle and passes unchanged output before the previous collector fails for recording an unrelated exclusion. The corrected collector records an exclusion only when the affected package handle is natively traversed. The provider fixture verifies both the requested exclusion and the unvisited zero-hit case, and all three missing-filter observations still reject publication. Full comparison follows the corrected run.

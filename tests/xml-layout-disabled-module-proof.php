@@ -55,14 +55,22 @@ if ($objects->get(Magento\Framework\Module\Manager::class)->isOutputEnabled('Mag
     throw new RuntimeException('Native module output setting differs from the fixture mode');
 }
 $fragment = $objects->create(Magento\Framework\View\Result\Layout::class, ['isIsolated' => true]);
-$fragment->addHandle('coverageprobe_theme_index');
+$unvisited = in_array('--unvisited', $argv, true);
+$fragment->addHandle($unvisited ? 'coverageprobe_fragment_index' : 'coverageprobe_theme_index');
 $layout = $fragment->getLayout();
 $block = $layout->getBlock('magelens.layout.provider.disabled');
 $html = $layout->getOutput();
-if (($block !== false) !== $available || str_contains($html, 'provider.disabled') !== $available
-    || !str_contains($html, 'provider.base')) throw new RuntimeException('Native module selection or active provider output changed');
+if ($unvisited) {
+    if ($block !== false || !str_contains($html, 'fragment-marker')) {
+        throw new RuntimeException('Unrelated layout traversal or output changed');
+    }
+} elseif (($block !== false) !== $available || str_contains($html, 'provider.disabled') !== $available
+    || !str_contains($html, 'provider.base')) {
+    throw new RuntimeException('Native module selection or active provider output changed');
+}
 if (hash_file('sha256', BP . '/' . $path) !== hash('sha256', $source)) throw new RuntimeException('Original disabled provider source changed');
-echo 'Verified native registered provider is ', $available ? 'enabled and rendered' : ($enabled ? 'enabled with output excluded' : 'disabled and excluded'), ".\n";
+if ($unvisited) echo "Verified an unrelated native handle while the module is excluded.\n";
+else echo 'Verified native registered provider is ', $available ? 'enabled and rendered' : ($enabled ? 'enabled with output excluded' : 'disabled and excluded'), ".\n";
 if (in_array('--without-collector', $argv, true)) exit;
 try {
     $collector->finish();
@@ -75,6 +83,11 @@ try {
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $ids = array_fill_keys(array_column($files[0]['declarations'], 'id'), true);
 $effects = array_values(array_filter($events, static fn($event) => isset($ids[$event['id']])));
+if ($unvisited) {
+    if ($effects) throw new RuntimeException('Unvisited provider received a request-scoped exclusion decision');
+    echo "Verified the unvisited provider remains fully inventoried with zero hits and no exclusion decision.\n";
+    exit;
+}
 if ($available) {
     if (!in_array('layout-block-rendered', array_column($effects, 'type'), true)) throw new RuntimeException('Enabled provider lacks original block rendering');
 } else {

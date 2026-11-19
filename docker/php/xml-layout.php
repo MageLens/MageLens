@@ -215,6 +215,7 @@ final class LayoutCoverage
             [FileList::class, 'replace', $this->beginFileReplacement(...), $this->completeFileReplacement(...)],
             [Read::class, 'readAll', null, $this->readFile(...)],
             [Merge::class, '_loadXmlString', null, $this->parseFile(...)],
+            [Merge::class, '_fetchPackageLayoutUpdates', null, $this->completePackageHandle(...)],
             [Merge::class, '_fetchRecursiveUpdates', $this->beginEntry(...), $this->traverseEntry(...)],
             [Merge::class, '_merge', $this->beginHandle(...), $this->completeHandle(...)],
             [Merge::class, '_fetchDbLayoutUpdates', null, $this->completeDatabaseUpdate(...)],
@@ -465,13 +466,9 @@ final class LayoutCoverage
         if ($class !== Merge::class) return;
         $package = array_pop($this->packages);
         if ($error || !$xml instanceof Layout\Element || !$package || count($xml->children()) !== count($package['files'])) return;
-        if ($package['excluded']) {
-            $context = $this->themeContext($merge);
-            foreach ($package['excluded'] as $relative => $_) {
-                foreach ($this->sources[$relative]['targets'] as $target) {
-                    foreach ($target['ids'] as $id) $this->event($id, 'layout-file-provider-excluded', $context);
-                }
-            }
+        $excluded = [];
+        foreach (array_keys($package['excluded']) as $relative) {
+            $excluded[basename($relative, '.xml')][] = $relative;
         }
         $entries = [];
         $replacements = [];
@@ -490,9 +487,26 @@ final class LayoutCoverage
                 }
             }
         }
-        $state['package'] = ['root' => dom_import_simplexml($xml), 'entries' => $entries, 'replacements' => $replacements,
+        $state['package'] = ['root' => dom_import_simplexml($xml), 'entries' => $entries, 'replacements' => $replacements, 'excluded' => $excluded,
             'eventObserved' => false, 'revoked' => !$this->ownership->producerTrusted($merge, 'getFileLayoutUpdatesXml')];
         $this->merges[$merge] = $state;
+    }
+
+    private function completePackageHandle($merge, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== Merge::class || $result !== true) return;
+        $frame = $this->handles[array_key_last($this->handles)] ?? null;
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        if (!$frame || $frame['merge'] !== $merge || ($caller['class'] ?? null) !== Merge::class
+            || ($caller['function'] ?? null) !== '_merge') return;
+        $excluded = $this->merges[$merge]['package']['excluded'][$frame['name']] ?? [];
+        if (!$excluded) return;
+        $context = $this->themeContext($merge);
+        foreach ($excluded as $relative) {
+            foreach ($this->sources[$relative]['targets'] as $target) {
+                foreach ($target['ids'] as $id) $this->event($id, 'layout-file-provider-excluded', $context);
+            }
+        }
     }
 
     private function beginEntry($merge, array $params, string $class): void
@@ -563,7 +577,7 @@ final class LayoutCoverage
         $processing ??= new \ReflectionProperty(Merge::class, 'handleProcessing');
         $state = $allHandles->getValue($merge)[$params[0]] ?? null;
         $effect = $state === null ? null : ($state === $processing->getValue($merge) ? 'cycle' : 'duplicate');
-        $this->handles[] = ['merge' => $merge, 'id' => $source, 'handleId' => $handleSource, 'effect' => $effect, 'found' => false];
+        $this->handles[] = ['merge' => $merge, 'name' => $params[0], 'id' => $source, 'handleId' => $handleSource, 'effect' => $effect, 'found' => false];
     }
 
     private function completeDatabaseUpdate($merge, array $params, $result, ?\Throwable $error, string $class): void
