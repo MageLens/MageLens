@@ -13,16 +13,31 @@ require $hooks . '/xml-layout-manifest.php';
 use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, LayoutRuntimeHooks, Recorder};
 use Magento\Framework\View\Element\Template;
 
+class MageLensBlockScopedWriter extends Template
+{
+    public function writer(string $field): Closure
+    {
+        return function () use ($field): void {
+            MageLensExternalScopedWriter::$writes++;
+            $this->$field = $field === '_template' ? 'MageLens_Compatibility::layout-mutation.phtml'
+                : ['value' => 'xml-value', 'late' => 'xml-value'];
+        };
+    }
+}
 class MageLensExternalScopedWriter
 {
     public static int $writes = 0;
-    public static function write(Template $block, string $field, string $method): void
+    public static function write(Template $block, string $field, string $method, bool $blockDefined): void
     {
         $write = function () use ($field): void {
             MageLensExternalScopedWriter::$writes++;
             $this->$field = $field === '_template' ? 'MageLens_Compatibility::layout-mutation.phtml'
                 : ['value' => 'xml-value', 'late' => 'xml-value'];
         };
+        if ($blockDefined) {
+            $creator = (new ReflectionClass(MageLensBlockScopedWriter::class))->newInstanceWithoutConstructor();
+            $write = $creator->writer($field);
+        }
         if ($method === 'call') $write->call($block);
         else {
             $bound = $method === 'bind' ? Closure::bind($write, $block, Template::class)
@@ -57,7 +72,7 @@ $objects->get(Magento\Framework\App\ViewInterface::class);
 $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
 $page->addHandle('coverageprobe_packagemutation_native');
 $block = $page->getLayout()->getBlock('magelens.layout.package.native');
-MageLensExternalScopedWriter::write($block, $field === 'template' ? '_template' : '_data', $method);
+MageLensExternalScopedWriter::write($block, $field === 'template' ? '_template' : '_data', $method, in_array('--block-defined', $argv, true));
 if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>') || MageLensExternalScopedWriter::$writes !== 1
     || hash_file('sha256', BP . '/' . $path) !== hash('sha256', $source)) {
     throw new RuntimeException('Native external scoped closure effect, output or XML changed');

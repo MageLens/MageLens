@@ -41,7 +41,9 @@ final class LayoutFieldAccess
         if ($error || $class !== \Closure::class || !$result instanceof \Closure) return;
         if ($this->probe !== null && (($params[0] ?? null) === $this->probe || $closure === $this->probe)) $this->observed[$method] = true;
         $function = new \ReflectionFunction($result);
-        $this->scope($function->getClosureScopeClass());
+        $original = $method === 'bind' ? $params[0] : $closure;
+        if (self::within($function->getClosureScopeClass(), DataObject::class)
+            && !self::sameBlockScope($original, $function->getClosureThis())) $this->external = true;
     }
 
     private function called($closure, array $params, string $class): void
@@ -49,22 +51,27 @@ final class LayoutFieldAccess
         if ($class !== \Closure::class) return;
         if ($this->probe !== null && $closure === $this->probe) $this->observed['call'] = true;
         if (!($params[0] ?? null) instanceof DataObject) return;
-        $this->scope(new \ReflectionClass($params[0]));
+        if (!self::sameBlockScope($closure, $params[0])) $this->external = true;
     }
 
-    private function scope(?\ReflectionClass $scope): void
+    private static function sameBlockScope(\Closure $closure, ?object $receiver): bool
+    {
+        $original = new \ReflectionFunction($closure);
+        // An existing block scope on the same receiver gains no protected-field
+        // access. Its containing methods retain the existing source capability
+        // checks. Rebinding another receiver still needs a separate limit.
+        return self::within($original->getClosureScopeClass(), AbstractBlock::class)
+            && $original->getClosureThis() === $receiver;
+    }
+
+    private static function within(?\ReflectionClass $scope, string $ancestor): bool
     {
         while ($scope) {
-            if ($scope->getName() === DataObject::class) {
-                // Binding exposes protected storage on captured receivers too.
-                // Direct invocation has no native __invoke hook, so neither
-                // execution nor the eventual write target is established.
-                $this->external = true;
-                return;
-            }
+            if ($scope->getName() === $ancestor) return true;
             // isSubclassOf() can autoload the application before bootstrap.
             $scope = $scope->getParentClass();
         }
+        return false;
     }
 
     public function unconfirmed(AbstractBlock $block): bool

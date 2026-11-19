@@ -401,11 +401,13 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-direct-template-proof.php "$direct_template"
     done
-    for scoped_field in template data; do
-        for scoped_method in bind bindTo call; do
-            for scoped_collection in --without-collector ''; do
-                ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                    php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-scoped-closure-proof.php "$scoped_field" "$scoped_method" "$scoped_collection"
+    for scoped_definition in '' --block-defined; do
+        for scoped_field in template data; do
+            for scoped_method in bind bindTo call; do
+                for scoped_collection in --without-collector ''; do
+                    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-scoped-closure-proof.php "$scoped_field" "$scoped_method" "$scoped_collection" "$scoped_definition"
+                done
             done
         done
     done

@@ -98,4 +98,7 @@ if (!in_array($ownershipOutcome, $effects, true)
 $blockOrigin = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === 'block'))[0];
 $blockEffects = array_column(array_filter($events, static fn($event) => $event['id'] === $blockOrigin['id']), 'type');
 if (!in_array('layout-block-rendered', $blockEffects, true)) throw new RuntimeException('Direct template field limit erased independent XML block rendering');
+$argument = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === 'argument' && $item['layout']['element'] === 'value'))[0];
+$argumentEffects = array_column(array_filter($events, static fn($event) => $event['id'] === $argument['id']), 'type');
+if (!in_array('layout-argument-read', $argumentEffects, true)) throw new RuntimeException('A template-only write erased independent original data consumption');
 echo "Verified explicit direct-field template limitation and independent original block rendering.\n";
