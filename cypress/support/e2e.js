@@ -9,12 +9,12 @@ registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
 Cypress.on('window:before:load', disablePageTransitions);
 
-let attempt = null;
+const {currentAttempt, setAttempt} = require('./attempt');
 beforeEach(function () {
     // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
     cy.task('mageLensAttempt', {event: 'start', id, spec: Cypress.spec.relative,
-        test: Cypress.currentTest.titlePath, retry: this.currentTest.currentRetry()}, {log: false}).then(() => { attempt = id; });
+        test: Cypress.currentTest.titlePath, retry: this.currentTest.currentRetry()}, {log: false}).then(() => setAttempt(id));
     installCypressAdminDependencies();
     const run = Cypress.expose('coverageRun');
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
@@ -24,10 +24,11 @@ beforeEach(function () {
     cy.setCookie('application_coverage_attempt', id, cookie);
 });
 afterEach(function () {
+    const attempt = currentAttempt();
     if (!attempt) return;
     // Mocha leaves the state unset on an attempt that will be retried.
     cy.task('mageLensAttempt', {event: 'finish', id: attempt, outcome: this.currentTest.state || 'failed'}, {log: false});
-    attempt = null;
+    setAttempt(null);
 });
 
 // Captures the HTML source of the current page for the validation report; see docs/coverage.md#html-validation.

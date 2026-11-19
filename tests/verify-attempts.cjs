@@ -44,4 +44,22 @@ for (const request of requests) {
     used.set(request.attempt, used.get(request.attempt) + 1);
 }
 for (const [id, count] of used) assert.ok(count > 0, `No PHP execution attributed to ${attempts.get(id).test.join(' › ')}`);
-console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed.`);
+
+// Every test runs in an attributed browser context, so the attempts' JavaScript counters add up to the aggregate.
+const {mergeCounters} = require('../bin/javascript-attempts.cjs');
+const javascript = {};
+for (const file of fs.readdirSync('coverage/raw/javascript-attempts')) {
+    assert.ok(attempts.get(path.basename(file, '.json'))?.runner === runner, 'JavaScript counters of an unknown attempt');
+    mergeCounters(javascript, read(`raw/javascript-attempts/${file}`));
+}
+const aggregate = JSON.parse(fs.readFileSync('.nyc_output/out.json', 'utf8'));
+let statements = 0;
+for (const [file, {s, f, b}] of Object.entries(aggregate)) {
+    const attributed = javascript[file] || {};
+    for (const [id, hits] of Object.entries(s)) assert.equal(attributed.s?.[id] || 0, hits, `Statement ${id} of ${file}`);
+    for (const [id, hits] of Object.entries(f)) assert.equal(attributed.f?.[id] || 0, hits, `Function ${id} of ${file}`);
+    for (const [id, hits] of Object.entries(b)) assert.deepEqual(attributed.b?.[id] || hits.map(() => 0), hits, `Branch ${id} of ${file}`);
+    statements += Object.values(s).filter(hits => hits > 0).length;
+}
+assert.ok(statements > 0, 'No JavaScript statements were attributed');
+console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed; per-attempt JavaScript counters match ${statements} covered statements.`);

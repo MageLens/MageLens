@@ -12,7 +12,7 @@ const {spawnSync} = require('node:child_process');
 function suite(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cli-tests-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-    for (const file of ['bin/cli-relay', 'bin/run-cli.cjs', 'bin/project.cjs', 'bin/test-attempts.cjs', 'cli/support.cjs']) {
+    for (const file of ['bin/cli-relay', 'bin/run-cli.cjs', 'bin/project.cjs', 'bin/test-attempts.cjs', 'bin/javascript-attempts.cjs', 'cli/support.cjs']) {
         fs.mkdirSync(path.join(root, path.dirname(file)), {recursive: true});
         fs.copyFileSync(path.join(__dirname, '..', file), path.join(root, file));
     }

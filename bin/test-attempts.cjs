@@ -8,8 +8,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {randomBytes} = require('node:crypto');
+const {mergeCounters} = require('./javascript-attempts.cjs');
 
 const directory = 'coverage/raw/attempts';
+const javascriptDirectory = 'coverage/raw/javascript-attempts';
 const runners = ['cypress', 'playwright', 'cli'];
 const isAttemptId = id => typeof id === 'string' && /^[a-f0-9]{32}$/.test(id);
 
@@ -47,4 +49,17 @@ function finishAttempt({id, outcome}) {
     return null;
 }
 
-module.exports = {newAttemptId, isAttemptId, startAttempt, finishAttempt};
+// Adds sparse JavaScript counters (bin/javascript-attempts.cjs) to the attempt's own file.
+// The aggregate JavaScript report keeps its separate input and is not changed.
+function recordJavascript({id, counters}) {
+    const attempt = JSON.parse(fs.readFileSync(attemptFile(id), 'utf8'));
+    if (attempt.finishedAt) throw new Error('This test attempt has already finished');
+    if (!Object.keys(counters).length) return null;
+    const file = path.join(javascriptDirectory, `${id}.json`);
+    fs.mkdirSync(javascriptDirectory, {recursive: true});
+    const recorded = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+    fs.writeFileSync(file, JSON.stringify(mergeCounters(recorded, counters)));
+    return null;
+}
+
+module.exports = {newAttemptId, isAttemptId, startAttempt, finishAttempt, recordJavascript};

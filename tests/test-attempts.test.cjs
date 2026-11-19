@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {newAttemptId, isAttemptId, startAttempt, finishAttempt} = require('../bin/test-attempts.cjs');
+const {newAttemptId, isAttemptId, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
+const {sparseCounters, mergeCounters} = require('../bin/javascript-attempts.cjs');
 
 const read = id => JSON.parse(fs.readFileSync(`coverage/raw/attempts/${id}.json`, 'utf8'));
 
@@ -64,4 +65,28 @@ test('attempt records reject reused IDs, unknown identities and a second outcome
     assert.throws(() => finishAttempt({id, outcome: 'failed'}), /already finished/);
     assert.equal(read(id).outcome, 'passed');
     assert.throws(() => finishAttempt({id: newAttemptId(), outcome: 'passed'}), /ENOENT/);
+});
+
+test('JavaScript counters keep only hits and add up across the pages of one attempt', () => {
+    const page = (statement, branch) => ({'/src/cart.js': {path: '/src/cart.js', statementMap: {}, s: {0: statement, 1: 0}, f: {0: 0}, b: {0: branch}},
+        '/src/unused.js': {path: '/src/unused.js', s: {0: 0}, f: {0: 0}, b: {0: [0, 0]}}});
+    const first = sparseCounters(page(2, [1, 0]));
+    assert.deepEqual(first, {'/src/cart.js': {s: {0: 2}, b: {0: [1, 0]}}});
+    assert.deepEqual(mergeCounters(first, sparseCounters(page(1, [0, 3]))), {'/src/cart.js': {s: {0: 3}, b: {0: [1, 3]}}});
+    assert.deepEqual(sparseCounters(page(0, [0, 0])), {});
+    assert.throws(() => mergeCounters({'/src/cart.js': {b: {0: [1]}}}, first), /changed its paths/);
+});
+
+test('JavaScript counters are stored per attempt while it runs', t => {
+    workspace(t);
+    const [id, other] = [newAttemptId(), newAttemptId()];
+    for (const attempt of [id, other]) startAttempt({id: attempt, runner: 'cypress', spec: 'cypress/e2e/cart.cy.js', test: ['cart', attempt]});
+    recordJavascript({id, counters: {'/src/cart.js': {s: {0: 1}}}});
+    recordJavascript({id, counters: {'/src/cart.js': {s: {0: 2, 4: 1}}}});
+    recordJavascript({id: other, counters: {}});
+    assert.deepEqual(JSON.parse(fs.readFileSync(`coverage/raw/javascript-attempts/${id}.json`, 'utf8')), {'/src/cart.js': {s: {0: 3, 4: 1}}});
+    assert.deepEqual(fs.readdirSync('coverage/raw/javascript-attempts'), [`${id}.json`]);
+    finishAttempt({id, outcome: 'passed'});
+    assert.throws(() => recordJavascript({id, counters: {'/src/cart.js': {s: {0: 1}}}}), /already finished/);
+    assert.throws(() => recordJavascript({id: newAttemptId(), counters: {}}), /ENOENT/);
 });

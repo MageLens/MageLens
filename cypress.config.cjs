@@ -30,9 +30,10 @@ module.exports = defineConfig({
             } else {
                 require('@cypress/code-coverage/task')(on, config);
                 const {captureHtml} = require('./bin/html-validation.cjs');
-                const {startAttempt, finishAttempt} = require('./bin/test-attempts.cjs');
+                const {startAttempt, finishAttempt, recordJavascript} = require('./bin/test-attempts.cjs');
                 on('task', {mageLensAttempt: ({event, ...attempt}) => event === 'start'
-                    ? startAttempt({runner: 'cypress', ...attempt}) : finishAttempt(attempt)});
+                    ? startAttempt({runner: 'cypress', ...attempt}) : finishAttempt(attempt),
+                mageLensAttemptJavascript: recordJavascript});
                 // A capture problem must not fail the test that requested the audit.
                 on('task', {mageLensValidateHtml(capture) {
                     try { captureHtml({runner: 'cypress', ...capture}); }

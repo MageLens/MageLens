@@ -10,7 +10,8 @@ const {withTemplateCoverage} = require('@magelens/magento-template-coverage/play
 const playwright = require('@playwright/test');
 const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
 const {captureHtml} = require('../bin/html-validation.cjs');
-const {newAttemptId, startAttempt, finishAttempt} = require('../bin/test-attempts.cjs');
+const {newAttemptId, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
+const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         browserIdentity: [async ({browser}, use, testInfo) => {
@@ -99,6 +100,7 @@ function withCoverage(base = playwright.test) {
                 for (const snapshot of snapshots.values()) coverage.merge(snapshot);
                 fs.mkdirSync('.nyc_output', {recursive: true});
                 fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
+                recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
                 checkAdminDependencies();
             }
         }
