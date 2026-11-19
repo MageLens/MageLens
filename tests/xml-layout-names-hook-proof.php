@@ -37,6 +37,10 @@ $result->renderResult($response);
 if (!str_contains($response->getBody(), '<span data-layout-name-proof>verified</span>')) throw new RuntimeException('Native numeric name proof marker is missing');
 $stale = $case === 'containers' && $objects->get(Magento\Framework\Module\ModuleListInterface::class)->has('MageOS_Seo') ? 1 : 0;
 if (!str_contains($response->getBody(), '<span data-layout-name-stale-roots="' . $stale . '">verified</span>')) throw new RuntimeException('Native CLI shared-layout output retention differs');
+if ($case !== 'containers') {
+    $expected = $objects->get(Magento\Framework\App\State::class)->getMode() === Magento\Framework\App\State::MODE_DEVELOPER ? 'thrown' : 'logged';
+    if (!str_contains($response->getBody(), 'data-layout-name-render-outcome="' . $expected . '"')) throw new RuntimeException('Native numeric exception outcome differs from the application mode');
+}
 echo "Verified native $case name structure and rendering.\n";
 if (in_array('--without-collector', $argv, true)) exit;
 $state = $collector->finish();
