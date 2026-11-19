@@ -19,6 +19,8 @@ final class LayoutArgumentNames
         'layout-argument-application-unconfirmed' => 'layout-argument-name-origin-unconfirmed',
     ];
     private const ACTIONS = [
+        'layout-action-argument-evaluated' => 'layout-action-argument-name-evaluated',
+        'layout-action-argument-evaluation-incomplete' => 'layout-action-argument-name-evaluation-incomplete',
         'layout-action-argument-applied' => 'layout-action-argument-name-applied',
         'layout-action-argument-ambiguous' => 'layout-action-argument-name-ambiguous',
         'layout-argument-origin-unconfirmed' => 'layout-action-argument-name-origin-unconfirmed',

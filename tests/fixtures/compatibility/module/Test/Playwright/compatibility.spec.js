@@ -232,6 +232,10 @@ test('starts the next test with fresh state', async ({page}) => {
             else await expect(page.locator('[data-layout-name-case="moved"]')).toHaveCount(0);
         }
     }
+    await page.goto('/coverageprobe/actionfailure/');
+    for (const failureCase of ['body', 'interpreter', 'partial', 'dispatch', 'type', 'denied', 'success']) {
+        await expect(page.locator('[data-layout-action-failure="' + failureCase + '"]')).toHaveText('verified');
+    }
     for (const sharedCase of ['guarded', 'unguarded', 'distinct']) {
         await page.goto('/coverageprobe/sharedactions/?case=' + sharedCase);
         await expect(page.locator('[data-layout-shared-action-proof]')).toHaveText('verified');

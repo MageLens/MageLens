@@ -58,7 +58,7 @@ final class LayoutArgumentOwnership
             return;
         }
         $this->batches[] = ['owner' => $owner, 'reader' => $reader, 'queue' => [], 'next' => 0,
-            'unconfirmed' => [], 'depth' => count($this->evaluating)];
+            'unconfirmed' => [], 'completed' => [], 'depth' => count($this->evaluating)];
         if (!$reader) $this->supply($arguments);
     }
 
@@ -87,8 +87,9 @@ final class LayoutArgumentOwnership
         $this->batches[$index]['queue'] = $queue;
     }
 
-    public function endBatch(?\Throwable $error): array
+    public function endBatch(?\Throwable $error, ?array &$completed = null): array
     {
+        $completed = [];
         if ($this->batchOverflow) {
             $this->batchOverflow--;
             return [];
@@ -98,9 +99,10 @@ final class LayoutArgumentOwnership
             $this->errors['Unbalanced layout argument batch hook evidence'] = true;
             return [];
         }
-        if (!$error && ($batch['next'] !== count($batch['queue']) || $batch['depth'] !== count($this->evaluating))) {
+        if ((!$error && $batch['next'] !== count($batch['queue'])) || $batch['depth'] !== count($this->evaluating)) {
             $this->errors['Missing native layout argument interpreter hook evidence'] = true;
         }
+        $completed = array_keys(array_diff_key($batch['completed'], $batch['unconfirmed']));
         return array_keys($batch['unconfirmed']);
     }
 
@@ -146,16 +148,23 @@ final class LayoutArgumentOwnership
                 && is_a($caller['class'] ?? '', InterpreterInterface::class, true)) $name = $parent['name'];
         }
         if ($name !== null && !self::native($interpreter)) $this->batches[$index]['unconfirmed'][$name] = true;
-        $this->evaluating[] = ['batch' => $index, 'name' => $name];
+        $this->evaluating[] = ['batch' => $index, 'name' => $name, 'root' => $root];
     }
 
-    private function end(): void
+    private function end($interpreter, array $params, $result, ?\Throwable $error): void
     {
         if (!$this->batches || $this->batchOverflow) return;
         if ($this->evaluationOverflow) {
             $this->evaluationOverflow--;
             return;
         }
-        array_pop($this->evaluating);
+        $frame = array_pop($this->evaluating);
+        if ($frame === null) {
+            $this->errors['Missing native layout argument interpreter entry hook evidence'] = true;
+            return;
+        }
+        if (!$error && $frame['root'] && $frame['name'] !== null && isset($this->batches[$frame['batch']])) {
+            $this->batches[$frame['batch']]['completed'][$frame['name']] = true;
+        }
     }
 }

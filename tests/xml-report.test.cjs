@@ -718,6 +718,33 @@ test('empty layout operands remain zero-hit decisions while zero class interpola
     }
 });
 
+test('failed action boundaries retain zero call hits and independent argument evaluation', () => {
+    for (const [kind, type, covered] of [
+        ['action', 'layout-action-completion-failed', false],
+        ['action-method', 'layout-action-evaluation-failed', false],
+        ['action-argument', 'layout-action-argument-evaluated', true],
+        ['action-argument-name', 'layout-action-argument-name-evaluated', true],
+        ['action-argument', 'layout-action-argument-evaluation-incomplete', false],
+        ['action-argument-name', 'layout-action-argument-name-evaluation-incomplete', false],
+    ]) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/failure.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'failed', family: 'layout',
+            path: '/layout/block/action', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind, ordinal: 2, element: 'observe',
+                handle: 'failure', fileType: 'generic', instruction: 'action'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {[kind]: 'failed'}}}}};
+        const event = {id: 'failed', type, hits: 4, area: 'frontend', theme: 'frontend/Acme/theme'};
+        const item = merge(manifest, [{...record, layoutHook: true, events: [event]}], sources).files[1].declarations[0];
+        assert.equal(item.hits > 0, covered);
+        assert.equal(item.state, covered ? 'covered' : 'unmeasured');
+        if (!covered) assert.match(item.reason, /evaluat|dispatch|body|call/i);
+    }
+});
+
 test('unverified native action snapshots retain zero-hit original call operands', () => {
     for (const kind of ['action', 'action-method']) {
         const {manifest, record, sources} = fixture();
