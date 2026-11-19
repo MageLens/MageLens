@@ -204,7 +204,7 @@ $emptyGroup = array_values(array_filter($emptyGroups, static fn($item) => $item[
 checkXml(!$emptyGroup['supported'] && str_contains($emptyGroup['reason'], 'requires at least one argument'),
     'Schema-invalid empty argument groups remain explicitly unmeasured');
 $typeFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-type'));
-checkXml(count($typeFields) === 37 && count(array_filter($typeFields, static fn($item) => !$item['supported'])) === 0,
+checkXml(count($typeFields) === 38 && count(array_filter($typeFields, static fn($item) => !$item['supported'])) === 0,
     'Block/action argument and nested item type operands preserve independent supported source identities');
 foreach ($typeFields as $field) {
     checkXml(str_ends_with($field['node'], '/@xsi:type'),

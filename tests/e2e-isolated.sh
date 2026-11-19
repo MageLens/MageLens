@@ -97,7 +97,7 @@ mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-layout-data-reference-proof.php tests/xml-layout-scope-bootstrap-proof.php tests/xml-layout-internal-bridge.test.php tests/xml-layout-early-hooks.php tests/xml-layout-scoped-closure-proof.php tests/xml-internal-closure-hooks.test.php tests/xml-layout-reflection-write-proof.php tests/xml-layout-opaque-action-proof.php tests/xml-internal-property-hooks.test.php tests/xml-layout-direct-data-proof.php tests/xml-layout-merge-cache-proof.php tests/xml-layout-nested-modifiers-proof.php tests/xml-compiled-di-hook-proof.php tests/xml-layout-template-field-proof.php tests/xml-layout-direct-template-proof.php tests/xml-layout-factory-lazy-proof.php tests/xml-layout-argument-groups-proof.php tests/xml-layout-argument-fields-proof.php tests/xml-layout-template-value-proof.php tests/xml-layout-failed-action-proof.php tests/xml-layout-shared-action-proof.php tests/xml-layout-magic-action-proof.php tests/xml-layout-callback-health-proof.php tests/xml-layout-argument-storage-proof.php tests/xml-layout-runtime-hooks.test.php tests/xml-layout-names-hook-proof.php tests/xml-layout-action-guard-proof.php tests/xml-layout-file-descriptor-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-template-validation-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-page-cache-hook-proof.php tests/xml-layout-shared-hook-proof.php tests/xml-layout-move-hook-proof.php tests/xml-layout-move-lazy-proof.php tests/xml-layout-file-list-hook-proof.php tests/xml-layout-render-hook-proof.php tests/xml-layout-falsy-hook-proof.php tests/xml-layout-property-hook-proof.php tests/xml-layout-dependency-hook-proof.php tests/xml-layout-reference-hook-proof.php tests/xml-layout-metadata-hook-proof.php tests/xml-layout-selection-hook-proof.php tests/xml-config-theme-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/xml-layout-disabled-module-proof.php tests/xml-layout-configured-fields-proof.php tests/xml-layout-data-reference-proof.php tests/xml-layout-scope-bootstrap-proof.php tests/xml-layout-internal-bridge.test.php tests/xml-layout-early-hooks.php tests/xml-layout-scoped-closure-proof.php tests/xml-internal-closure-hooks.test.php tests/xml-layout-reflection-write-proof.php tests/xml-layout-opaque-action-proof.php tests/xml-internal-property-hooks.test.php tests/xml-layout-direct-data-proof.php tests/xml-layout-merge-cache-proof.php tests/xml-layout-nested-modifiers-proof.php tests/xml-compiled-di-hook-proof.php tests/xml-layout-template-field-proof.php tests/xml-layout-direct-template-proof.php tests/xml-layout-factory-lazy-proof.php tests/xml-layout-argument-groups-proof.php tests/xml-layout-argument-fields-proof.php tests/xml-layout-template-value-proof.php tests/xml-layout-failed-action-proof.php tests/xml-layout-shared-action-proof.php tests/xml-layout-magic-action-proof.php tests/xml-layout-callback-health-proof.php tests/xml-layout-argument-storage-proof.php tests/xml-layout-runtime-hooks.test.php tests/xml-layout-names-hook-proof.php tests/xml-layout-action-guard-proof.php tests/xml-layout-file-descriptor-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-template-validation-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-page-cache-hook-proof.php tests/xml-layout-shared-hook-proof.php tests/xml-layout-move-hook-proof.php tests/xml-layout-move-lazy-proof.php tests/xml-layout-file-list-hook-proof.php tests/xml-layout-render-hook-proof.php tests/xml-layout-falsy-hook-proof.php tests/xml-layout-property-hook-proof.php tests/xml-layout-dependency-hook-proof.php tests/xml-layout-reference-hook-proof.php tests/xml-layout-metadata-hook-proof.php tests/xml-layout-selection-hook-proof.php tests/xml-config-theme-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -112,6 +112,7 @@ cp -a src/app/design/frontend/Application "$scratch/src/app/design/frontend/"
 mkdir -p "$scratch/src/app/code/MageLens"
 cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
 cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
+cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
 mkdir -p "$scratch/src/app/design/frontend/MageLens"
 cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
@@ -469,6 +470,14 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --action-types "$action_type_missing"
     done
+    for configured_case in '' --action --nested-failure; do
+        for configured_collection in --without-collector ''; do
+            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-configured-fields-proof.php "$configured_case" "$configured_collection"
+        done
+    done
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-configured-fields-proof.php --missing-create
     for named_parameter_option in --without-collector '' --custom-parameter-string; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php --parameters "$named_parameter_option"
@@ -644,6 +653,36 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-hook-proof.php "$argument_case"
     done
+    (
+        provider_proof() {
+            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-disabled-module-proof.php "$@"
+        }
+        cleanup_provider_mode() {
+            local result=$?
+            trap - EXIT
+            provider_proof --clear-output-disabled || result=1
+            ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout || result=1
+            exit "$result"
+        }
+        trap cleanup_provider_mode EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        provider_proof --without-collector --enabled
+        provider_proof --enabled
+        provider_proof --set-output-disabled
+        ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout
+        provider_proof --without-collector --output-disabled
+        provider_proof --output-disabled
+        ./bin/application-compose exec -T phpfpm php bin/magento module:disable MageLens_LayoutDisabled
+        provider_proof --clear-output-disabled
+        ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout
+        provider_proof --without-collector
+        provider_proof
+        for provider_missing in --missing-filter-pre --missing-filter-post --missing-filter-candidates; do
+            provider_proof "$provider_missing"
+        done
+    )
     # Original-source fixture assertions need fresh native layout interpretation.
     # Registry proofs separately verify warm cache zero-hit provenance boundaries.
     ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page

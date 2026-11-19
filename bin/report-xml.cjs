@@ -26,6 +26,10 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'configured-argument': ['layout-configured-argument-evaluated', 'layout-configured-class-selected', 'layout-configured-argument-supplied', 'layout-configured-operand-origin-unconfirmed'],
+    'configured-argument-name': ['layout-configured-class-selected', 'layout-configured-argument-supplied', 'layout-configured-operand-origin-unconfirmed'],
+    'configured-item': ['layout-configured-item-evaluated', 'layout-configured-operand-origin-unconfirmed'],
+    'configured-item-name': ['layout-configured-item-name-applied', 'layout-configured-operand-origin-unconfirmed'],
     'action-item': ['layout-action-item-evaluated', 'layout-action-item-origin-unconfirmed'],
     'action-item-name': ['layout-action-item-name-applied', 'layout-action-item-origin-unconfirmed'],
     parameter: ['layout-parameter-evaluated', 'layout-parameter-value-inherited', 'layout-parameter-origin-unconfirmed', 'layout-parameter-overridden', 'layout-argument-group-ignored'],
@@ -126,7 +130,8 @@ for (const [kind, type] of [
     ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
 ]) layoutEvents[kind].push(type);
 for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater',
-    'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path']) layoutEvents[kind].push('layout-argument-group-ignored');
+    'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
+    'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name']) layoutEvents[kind].push('layout-argument-group-ignored');
 for (const kind of ['argument', 'action-argument']) layoutEvents[kind].push(...layoutEvents.template.filter(type => type !== 'layout-template-empty-ignored'));
 layoutEvents.argument.push('layout-template-constructor-origin-unconfirmed');
 layoutEvents['action-argument'].push('layout-template-assignment-origin-unconfirmed');
@@ -137,8 +142,10 @@ const referenceEvents = [...new Set(['template', 'argument', 'action', 'containe
 for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...referenceEvents,
     'layout-reference-target-observed', 'layout-reference-unchanged', 'layout-reference-target-missing',
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
-for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
+for (const events of Object.values(layoutEvents)) events.push('layout-file-provider-excluded', 'layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-file-provider-excluded': 'Magento’s native module output filter excluded this provider from the effective layout file list.',
+    'layout-configured-operand-origin-unconfirmed': 'The native configured object argument or constructor handoff has no uniquely verified source.',
     'layout-action-item-origin-unconfirmed': 'The nested action array operand has no uniquely verified native evaluation.',
     'layout-parameter-overridden': 'A later parameter replaced this operand in Magento’s named parameter map.',
     'layout-parameter-value-inherited': 'This empty overlay supplied the name while Magento retained the earlier parameter value.',

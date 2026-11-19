@@ -15,7 +15,7 @@ $validate = static function (string $source, string $schema): array {
     return \Magento\Framework\Config\Dom::validateDomDocument($document, $schema);
 };
 $files = [];
-foreach (['app/code/MageLens/Compatibility/view', 'app/code/MageLens/LayoutOverlay/view',
+foreach (['app/code/MageLens/Compatibility/view', 'app/code/MageLens/LayoutOverlay/view', 'app/code/MageLens/LayoutDisabled/view',
     'app/design/frontend/MageLens/parent', 'app/design/frontend/MageLens/child',
     'app/design/frontend/MageLens/inactive'] as $directory) {
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(BP . '/' . $directory, FilesystemIterator::SKIP_DOTS)) as $file) {

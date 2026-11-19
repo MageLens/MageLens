@@ -11,6 +11,9 @@ use Magento\Framework\Data\Argument\InterpreterInterface;
 use Magento\Framework\Data\Argument\Interpreter;
 use Magento\Framework\View\Layout\Argument\Interpreter as LayoutInterpreter;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
+use Magento\Framework\ObjectManager\ObjectManager;
+use Magento\Framework\ObjectManagerInterface;
+use Magento\Framework\View\Element\UiComponent\Argument\Interpreter\ConfigurableObject;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
 
 /** Attribute values only across an observed native interpreter chain. */
@@ -24,7 +27,7 @@ final class LayoutArgumentOwnership
         LayoutInterpreter\Decorator\Updater::class, LayoutInterpreter\DataObject::class,
         LayoutInterpreter\Options::class, LayoutInterpreter\Passthrough::class,
         LayoutInterpreter\Url::class, LayoutInterpreter\HelperMethod::class, LayoutInterpreter\NamedParams::class,
-        'Magento\\Framework\\View\\Element\\UiComponent\\Argument\\Interpreter\\ConfigurableObject',
+        ConfigurableObject::class,
         'Magento\\Store\\Model\\Argument\\Interpreter\\ServiceUrl',
     ];
     private array $batches = [];
@@ -41,6 +44,7 @@ final class LayoutArgumentOwnership
     public function hooks(): array
     {
         return [[InterpreterInterface::class, 'evaluate', $this->begin(...), $this->end(...)],
+            [ObjectManagerInterface::class, 'create', null, $this->configuredObjectCreated(...)],
             [Interpreter\Composite::class, 'getInterpreter', $this->beginTypeLookup(...), $this->selectedType(...)],
             [\Magento\Framework\ObjectManager\Helper\SortItems::class, 'sortItems', $this->beginItems(...), $this->sortedItems(...)]];
     }
@@ -159,7 +163,8 @@ final class LayoutArgumentOwnership
         $children = [];
         $parameter = null;
         $namedParameterParent = null;
-        $actionItem = null;
+        $arrayOperand = null;
+        $configuredChild = null;
         if ($root) {
             $expected = $batch['queue'][$batch['next']] ?? null;
             $this->batches[$index]['next']++;
@@ -203,7 +208,21 @@ final class LayoutArgumentOwnership
                         $type = self::evaluationType($item['origin']);
                         $children = $item['origin']['children'] ?? [];
                         $input = $item['input'];
-                        if (isset($type['actionItem'])) $actionItem = ['parent' => array_key_last($this->evaluating), 'key' => $item['key']];
+                        if (isset($type['actionItem']) || isset($type['configuredOperand'])) $arrayOperand = ['parent' => array_key_last($this->evaluating), 'key' => $item['key']];
+                    }
+                } elseif (($caller['object'] ?? null) === $parent['object']
+                    && $parent['object'] instanceof ConfigurableObject && self::native($parent['object'])
+                    && $parent['configuredArguments']) {
+                    $position = $parent['configuredNext'];
+                    $parentIndex = array_key_last($this->evaluating);
+                    $this->evaluating[$parentIndex]['configuredNext']++;
+                    $candidate = $parent['configuredArguments'][$position] ?? null;
+                    if ($candidate === null) $this->errors['Unexpected native configurable object argument'] = true;
+                    elseif ($candidate['input'] !== null && ($this->matches)($candidate['input'], $params[0])) {
+                        $type = self::evaluationType($candidate['origin']);
+                        $children = $candidate['origin']['children'] ?? [];
+                        $input = $candidate['input'];
+                        $configuredChild = ['parent' => $parentIndex, 'key' => $candidate['key']];
                     }
                 } elseif (($caller['object'] ?? null) === $parent['object']
                     && $parent['object'] instanceof LayoutInterpreter\NamedParams && self::native($parent['object'])
@@ -255,13 +274,25 @@ final class LayoutArgumentOwnership
                 $parameters[] = ['key' => $key, 'origin' => $origin, 'input' => ($this->fingerprint)($data)];
             }
         }
+        $configuredArguments = [];
+        if ($input !== null && $children && $interpreter instanceof ConfigurableObject && self::native($interpreter)
+            && !isset($params[0]['value']) && is_array($params[0]['argument'] ?? null)) {
+            if (count($params[0]['argument']) > 1024) {
+                $this->errors['Layout configurable object argument map exceeded 1024 entries'] = true;
+            } else foreach ($params[0]['argument'] as $key => $data) {
+                $configuredArguments[] = ['key' => $key, 'origin' => $children[$key] ?? [],
+                    'input' => ($this->fingerprint)($data)];
+            }
+        }
         $this->evaluating[] = ['batch' => $index, 'name' => $name, 'root' => $root,
             'object' => $interpreter, 'type' => $type, 'children' => $children, 'modifierInputs' => $modifierInputs,
             'parameters' => $parameters, 'parameterNext' => 0, 'parameter' => $parameter,
             'parameterBaseObserved' => false, 'parameterBaseTrusted' => false,
             'namedParameterParent' => $namedParameterParent, 'parameterMapEntered' => false, 'parameterMapObserved' => false,
             'itemsEntered' => false, 'itemsObserved' => false, 'sorter' => null, 'sortInputConfirmed' => false,
-            'items' => [], 'itemNext' => 0, 'actionItem' => $actionItem, 'actionItemNames' => [],
+            'items' => [], 'itemNext' => 0, 'arrayOperand' => $arrayOperand, 'arrayOperandsApplied' => [],
+            'configuredArguments' => $configuredArguments, 'configuredNext' => 0, 'configuredChild' => $configuredChild,
+            'configuredValues' => [], 'configuredCreate' => null,
             'itemInput' => $interpreter instanceof Interpreter\ArrayType ? ($this->fingerprint)($params[0]['item'] ?? []) : null,
             'input' => $input, 'forwarded' => $forwarded, 'expectedType' => $expected,
             'dispatchInput' => $dispatchInput, 'dispatchType' => ($this->fingerprint)($params[0]['xsi:type'] ?? null),
@@ -331,6 +362,9 @@ final class LayoutArgumentOwnership
             foreach ($type['fields'] ?? [] as $field) ($this->emit)($field['id'], 'layout-argument-modifier-origin-unconfirmed', $context);
             foreach ($type['parameters'] ?? [] as $parameter) {
                 foreach (['id', 'name'] as $key) ($this->emit)($parameter[$key], 'layout-parameter-origin-unconfirmed', $context);
+            }
+            if (isset($type['configuredOperand'])) foreach (['id', 'name'] as $part) {
+                ($this->emit)($type['configuredOperand'][$part], 'layout-configured-operand-origin-unconfirmed', $context);
             }
             foreach ($type['actionItem'] ?? [] as $id) ($this->emit)($id, 'layout-action-item-origin-unconfirmed', $context);
             foreach ($origin['children'] ?? [] as $child) $pending[] = $child;
@@ -466,6 +500,48 @@ final class LayoutArgumentOwnership
         }
     }
 
+    private function configuredObjectCreated($manager, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->evaluating);
+        $frame = $index === null ? null : $this->evaluating[$index];
+        if (!$frame || !$frame['configuredArguments'] || !$frame['object'] instanceof ConfigurableObject) return;
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 3)[2] ?? [];
+        if (($caller['object'] ?? null) !== $frame['object'] || ($caller['class'] ?? null) !== ConfigurableObject::class
+            || ($caller['function'] ?? null) !== 'evaluate') return;
+        $supplied = [];
+        $native = $class === ObjectManager::class && LayoutXmlOwnership::nativeMethod($manager, ObjectManager::class, 'create');
+        if (!$error && $native && is_object($result) && is_array($params[1] ?? null)) {
+            foreach ($frame['configuredValues'] as $key => $entry) {
+                $present = $key === 'class' ? array_key_exists(0, $params) : array_key_exists($key, $params[1]);
+                if ($present && ($this->matches)($entry['value'], $key === 'class' ? $params[0] : $params[1][$key])) {
+                    $supplied[$key] = $entry['origin'];
+                }
+            }
+        }
+        $this->evaluating[$index]['configuredCreate'] = [
+            'result' => $native && is_object($result) ? \WeakReference::create($result) : null, 'supplied' => $supplied,
+        ];
+    }
+
+    private function finishConfiguredObject(array $frame, $result, ?\Throwable $error): void
+    {
+        if (!$frame['configuredArguments']) return;
+        if (!$error && ($frame['configuredNext'] !== count($frame['configuredArguments']) || $frame['configuredCreate'] === null)) {
+            $this->errors['Missing native configurable object argument or construction hook evidence'] = true;
+            return;
+        }
+        $context = $this->batches[$frame['batch']]['context'] ?? null;
+        if ($error || $context === null || $this->emit === null) return;
+        $created = $frame['configuredCreate'];
+        foreach ($frame['configuredValues'] as $key => $entry) {
+            $origin = $entry['origin'];
+            $supplied = $created['result']?->get() === $result && isset($created['supplied'][$key]);
+            $effect = !$supplied ? 'layout-configured-operand-origin-unconfirmed'
+                : ($key === 'class' ? 'layout-configured-class-selected' : 'layout-configured-argument-supplied');
+            foreach (['id', 'name'] as $part) ($this->emit)($origin[$part], $effect, $context);
+        }
+    }
+
     private function end($interpreter, array $params, $result, ?\Throwable $error): void
     {
         if (!$this->batches || $this->batchOverflow) return;
@@ -480,11 +556,12 @@ final class LayoutArgumentOwnership
         }
         $this->modifiers($frame, $interpreter, $error);
         $this->observeParameters($frame, $interpreter, $result, $error);
+        $this->finishConfiguredObject($frame, $result, $error);
         if ($frame['children'] && $interpreter instanceof Interpreter\ArrayType && self::native($interpreter)) {
             $context = $this->batches[$frame['batch']]['context'] ?? null;
             if (!$error && is_array($result) && $context !== null && $this->emit !== null) {
-                foreach ($frame['actionItemNames'] as $key => $id) if (array_key_exists($key, $result)) {
-                    ($this->emit)($id, 'layout-action-item-name-applied', $context);
+                foreach ($frame['arrayOperandsApplied'] as $key => $observation) if (array_key_exists($key, $result)) {
+                    ($this->emit)($observation['name'], $observation['effect'], $context);
                 }
             }
 
@@ -509,13 +586,34 @@ final class LayoutArgumentOwnership
                     ? 'layout-argument-type-origin-unconfirmed' : ($frame['deferred']
                         ? 'layout-argument-type-deferred' : 'layout-argument-type-evaluated')));
                 ($this->emit)($frame['type']['id'], $effect, $context);
+                if (isset($frame['type']['configuredOperand'])) {
+                    $origin = $frame['type']['configuredOperand'];
+                    if ($effect === 'layout-argument-type-evaluated'
+                        && empty($this->batches[$frame['batch']]['unconfirmed'][$frame['name']])) {
+                        ($this->emit)($origin['id'], 'layout-' . $origin['kind'] . '-evaluated', $context);
+                        if ($frame['configuredChild'] !== null && ($value = ($this->fingerprint)($result)) !== null) {
+                            $parent = $frame['configuredChild'];
+                            $this->evaluating[$parent['parent']]['configuredValues'][$parent['key']] = ['origin' => $origin, 'value' => $value];
+                        } elseif ($frame['arrayOperand'] !== null) {
+                            $parent = $frame['arrayOperand'];
+                            $this->evaluating[$parent['parent']]['arrayOperandsApplied'][$parent['key']] = [
+                                'name' => $origin['name'], 'effect' => 'layout-configured-item-name-applied',
+                            ];
+                        }
+                    } else foreach (['id', 'name'] as $part) {
+                        ($this->emit)($origin[$part], 'layout-configured-operand-origin-unconfirmed', $context);
+                    }
+                }
                 if (isset($frame['type']['actionItem'])) {
                     $item = $frame['type']['actionItem'];
                     if ($effect === 'layout-argument-type-evaluated'
                         && empty($this->batches[$frame['batch']]['unconfirmed'][$frame['name']])) {
                         ($this->emit)($item['id'], 'layout-action-item-evaluated', $context);
-                        if ($frame['actionItem'] !== null) {
-                            $this->evaluating[$frame['actionItem']['parent']]['actionItemNames'][$frame['actionItem']['key']] = $item['name'];
+                        if ($frame['arrayOperand'] !== null) {
+                            $parent = $frame['arrayOperand'];
+                            $this->evaluating[$parent['parent']]['arrayOperandsApplied'][$parent['key']] = [
+                                'name' => $item['name'], 'effect' => 'layout-action-item-name-applied',
+                            ];
                         }
                     } else foreach ($item as $id) {
                         ($this->emit)($id, 'layout-action-item-origin-unconfirmed', $context);

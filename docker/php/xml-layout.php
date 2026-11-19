@@ -17,6 +17,7 @@ use Magento\Framework\View\Element\BlockFactory;
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\View\File;
 use Magento\Framework\View\File\FileList;
+use Magento\Framework\View\File\Collector\Decorator\ModuleOutput;
 use Magento\Framework\View\Layout;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
 use Magento\Framework\View\Layout\Argument\Interpreter\Decorator\Updater;
@@ -42,6 +43,8 @@ final class LayoutCoverage
     ];
     private array $packages = [];
     private array $replacingFiles = [];
+    private array $providerFilters = [];
+    private int $providerFilterOverflow = 0;
     private array $entries = [];
     private array $handles = [];
     private array $pageBuilders = [];
@@ -181,6 +184,7 @@ final class LayoutCoverage
         $guardHealthy = $this->actionGuards->finish();
         if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
         if ($this->actionEvaluations) $this->errors['Unbalanced native layout action hook evidence'] = true;
+        if ($this->providerFilters || $this->providerFilterOverflow) $this->errors['Unbalanced native layout provider hook evidence'] = true;
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
@@ -200,7 +204,8 @@ final class LayoutCoverage
             ...$this->blockRendering->hooks(),
             ...$this->handleMetadata->hooks(),
             ...$this->selectionOwnership->hooks(),
-            [\Magento\Framework\View\File\CollectorInterface::class, 'getFiles', $this->expectTheme(...), null],
+            [ModuleOutput::class, 'getFiles', $this->beginProviderFilter(...), $this->finishProviderFilter(...)],
+            [\Magento\Framework\View\File\CollectorInterface::class, 'getFiles', $this->expectTheme(...), $this->observeProviderFiles(...)],
             [Merge::class, 'generateCacheId', $this->expectTheme(...), null],
             [\Magento\Framework\View\Design\ThemeInterface::class, 'getArea', null, $this->observeTheme(...)],
             [\Magento\Framework\View\Design\ThemeInterface::class, 'getFullPath', null, $this->observeTheme(...)],
@@ -310,7 +315,61 @@ final class LayoutCoverage
 
     private function beginPackage($merge, array $params, string $class): void
     {
-        if ($class === Merge::class) $this->packages[] = ['merge' => $merge, 'files' => [], 'pending' => null, 'replacements' => []];
+        if ($class === Merge::class) $this->packages[] = ['merge' => $merge, 'files' => [], 'pending' => null, 'replacements' => [], 'excluded' => []];
+    }
+
+    private function beginProviderFilter($filter, array $params, string $class): void
+    {
+        if ($class !== ModuleOutput::class || !$this->packages) return;
+        if ($this->providerFilterOverflow || count($this->providerFilters) >= 256) {
+            $this->providerFilterOverflow++;
+            $this->errors['Layout provider filter depth exceeded 256 calls'] = true;
+            return;
+        }
+        $this->providerFilters[] = ['filter' => $filter, 'package' => array_key_last($this->packages), 'candidates' => null];
+    }
+
+    private function observeProviderFiles($collector, array $params, $files, ?\Throwable $error): void
+    {
+        $index = array_key_last($this->providerFilters);
+        if ($index === null || $this->providerFilterOverflow || $error || !is_array($files)) return;
+        $frame = $this->providerFilters[$index];
+        $caller = LayoutXmlOwnership::caller($collector, 'getFiles', false);
+        if (($caller['object'] ?? null) !== $frame['filter'] || ($caller['class'] ?? null) !== ModuleOutput::class
+            || ($caller['function'] ?? null) !== 'getFiles') return;
+        $candidates = [];
+        foreach ($files as $file) {
+            if (!$file instanceof File) continue;
+            $path = self::descriptorFilename($file);
+            if ($path === null || !str_starts_with($path, BP . '/')) continue;
+            $relative = substr($path, strlen(BP) + 1);
+            if (!isset($this->sources[$relative])) continue;
+            if (count($candidates) >= 1024) {
+                $this->errors['Layout provider candidates exceeded 1024 tracked descriptors'] = true;
+                return;
+            }
+            $candidates[spl_object_id($file)] = [$file, $relative];
+        }
+        $this->providerFilters[$index]['candidates'] = $candidates;
+    }
+
+    private function finishProviderFilter($filter, array $params, $files, ?\Throwable $error, string $class): void
+    {
+        if ($class !== ModuleOutput::class || !$this->packages) return;
+        if ($this->providerFilterOverflow) { $this->providerFilterOverflow--; return; }
+        $frame = array_pop($this->providerFilters);
+        if (!$frame || $frame['filter'] !== $filter || $frame['package'] !== array_key_last($this->packages)) {
+            $this->errors['Missing native layout provider filter entry observation'] = true;
+            return;
+        }
+        if ($error || !is_array($files)) return;
+        if ($frame['candidates'] === null) {
+            $this->errors['Missing native layout provider candidate observation'] = true;
+            return;
+        }
+        $candidates = $frame['candidates'];
+        foreach ($files as $file) if ($file instanceof File) unset($candidates[spl_object_id($file)]);
+        foreach ($candidates as [, $relative]) $this->packages[$frame['package']]['excluded'][$relative] = true;
     }
 
     private static function viewFiles(FileList $list): ?array
@@ -405,6 +464,14 @@ final class LayoutCoverage
         if ($class !== Merge::class) return;
         $package = array_pop($this->packages);
         if ($error || !$xml instanceof Layout\Element || !$package || count($xml->children()) !== count($package['files'])) return;
+        if ($package['excluded']) {
+            $context = $this->themeContext($merge);
+            foreach ($package['excluded'] as $relative => $_) {
+                foreach ($this->sources[$relative]['targets'] as $target) {
+                    foreach ($target['ids'] as $id) $this->event($id, 'layout-file-provider-excluded', $context);
+                }
+            }
+        }
         $entries = [];
         $replacements = [];
         foreach ($xml->children() as $entry) {
@@ -1236,6 +1303,9 @@ final class LayoutCoverage
         foreach (self::argumentRootIds($origin) as $id) $this->event($id, $effect, $context);
         if (isset($origin['type']['id'])) $this->event($origin['type']['id'], 'layout-argument-type-origin-unconfirmed', $context);
         foreach ($origin['type']['fields'] ?? [] as $field) $this->event($field['id'], 'layout-argument-modifier-origin-unconfirmed', $context);
+        if (isset($origin['type']['configuredOperand'])) {
+            foreach (['id', 'name'] as $part) $this->event($origin['type']['configuredOperand'][$part], 'layout-configured-operand-origin-unconfirmed', $context);
+        }
         foreach ($origin['type']['parameters'] ?? $origin['pending']['type']['parameters'] ?? [] as $parameter) {
             foreach (['id', 'name'] as $key) $this->event($parameter[$key], 'layout-parameter-origin-unconfirmed', $context);
         }
@@ -1251,6 +1321,11 @@ final class LayoutCoverage
         if (isset($origin['action-item'], $origin['action-item-name'], $result['type'])) {
             $result['type']['actionItem'] = ['id' => $origin['action-item'], 'name' => $origin['action-item-name']];
         }
+        foreach (['configured-argument', 'configured-item'] as $kind) {
+            if (isset($origin[$kind], $origin[$kind . '-name'], $result['type'])) {
+                $result['type']['configuredOperand'] = ['kind' => $kind, 'id' => $origin[$kind], 'name' => $origin[$kind . '-name']];
+            }
+        }
         foreach (['translate', 'shared', 'model', 'helper', 'path'] as $attribute) {
             if (isset($origin['argument-' . $attribute], $result['type'])) {
                 $result['type']['fields'][$attribute] = ['id' => $origin['argument-' . $attribute],
@@ -1261,11 +1336,17 @@ final class LayoutCoverage
             $parameters = $this->parameterOrigins($node, $context);
             if ($parameters) $result['type']['parameters'] = $parameters;
         }
-        if ((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'array'
-            || isset($node->updater)) return $result;
+        if (isset($node->updater)) return $result;
+        $type = (string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type;
+        $childTag = match ($type) {
+            'array' => 'item',
+            'configurableObject' => 'argument',
+            default => null,
+        };
+        if ($childTag === null) return $result;
         $children = [];
-        foreach ($node->item as $item) $children[$item->getAttribute('name')] = $this->argumentOrigins($item);
-        return [...$result, 'children' => $children];
+        foreach ($node->$childTag as $child) $children[$child->getAttribute('name')] = $this->argumentOrigins($child);
+        return [...$result, 'children' => $children, 'childTag' => $childTag];
     }
 
     private function parameterOrigins($node, ?array $context): array
@@ -1357,7 +1438,8 @@ final class LayoutCoverage
         foreach ($read as $name => $origin) {
             $before = $previous[$name] ?? [];
             $entry = ['overridden' => $before['overridden'] ?? [], 'mixed' => $before['mixed'] ?? []];
-            if (isset($origin['children']) && isset($values[$name]) && is_array($values[$name])) {
+            if (isset($origin['children']) && ($origin['childTag'] ?? 'item') === 'item'
+                && isset($values[$name]) && is_array($values[$name])) {
                 $nested = isset($existing[$name]) ? array_fill_keys(array_keys($values[$name]), true) : [];
                 $entry['children'] = $this->bindArgumentLeaves($origin['children'], $values[$name], $before['children'] ?? [], $nested, $context);
             }
@@ -2215,6 +2297,9 @@ final class LayoutCoverage
         foreach ($arguments as $argument) {
             $this->event($argument['type']['id'] ?? null, 'layout-argument-type-' . $outcome, $context);
             foreach ($argument['type']['fields'] ?? [] as $field) $this->event($field['id'], 'layout-argument-modifier-' . $outcome, $context);
+            if (isset($argument['type']['configuredOperand'])) {
+                foreach (['id', 'name'] as $part) $this->event($argument['type']['configuredOperand'][$part], 'layout-configured-operand-origin-unconfirmed', $context);
+            }
             foreach ($argument['type']['parameters'] ?? [] as $parameter) {
                 foreach (['id', 'name'] as $key) $this->event($parameter[$key], 'layout-parameter-origin-unconfirmed', $context);
             }

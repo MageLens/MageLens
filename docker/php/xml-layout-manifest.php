@@ -78,6 +78,8 @@ final class LayoutManifest
                     && $node->parentNode->nodeName === 'action' => 'action-argument',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'item'
                     && self::actionArrayItem($node) => 'action-item',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true)
+                    && self::configuredOperand($node) => $node->tagName === 'argument' ? 'configured-argument' : 'configured-item',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'arguments'
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'argument-group',
@@ -103,10 +105,12 @@ final class LayoutManifest
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
                     $valueKind === 'action' && $attribute->nodeName === 'ifconfig' => 'action-ifconfig',
-                    in_array($valueKind, ['argument', 'action-argument', 'action-item'], true) && $attribute->nodeName === 'xsi:type' => 'argument-type',
-                    in_array($valueKind, ['argument', 'action-argument', 'action-item'], true) && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
+                    in_array($valueKind, ['argument', 'action-argument', 'action-item', 'configured-argument', 'configured-item'], true) && $attribute->nodeName === 'xsi:type' => 'argument-type',
+                    in_array($valueKind, ['argument', 'action-argument', 'action-item', 'configured-argument', 'configured-item'], true) && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
                     $valueKind === 'argument' && $attribute->nodeName === 'name' => 'argument-name',
                     $valueKind === 'action-item' && $attribute->nodeName === 'name' => 'action-item-name',
+                    in_array($valueKind, ['configured-argument', 'configured-item'], true)
+                        && $attribute->nodeName === 'name' => $valueKind . '-name',
                     $valueKind === 'parameter' && $attribute->nodeName === 'name' => 'parameter-name',
                     $valueKind === 'action-argument' && $attribute->nodeName === 'name' => 'action-argument-name',
                     $valueKind === 'reference' && $attribute->nodeName === 'name' => 'reference-name',
@@ -158,7 +162,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'action-item', 'action-item-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'parameter', 'parameter-name', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'action-item', 'action-item-name', 'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'parameter', 'parameter-name', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -228,6 +232,38 @@ final class LayoutManifest
             && $node->parentNode->parentNode->nodeName === 'visibilityCondition';
     }
 
+    private static function configuredOperand(\DOMElement $node): bool
+    {
+        if (!in_array($node->tagName, ['argument', 'item'], true) || !$node->hasAttribute('name')) return false;
+        if (self::unkeyedConfiguredOperand($node)) return false;
+        $configured = false;
+        while (in_array($node->tagName, ['argument', 'item'], true)) {
+            $parent = $node->parentNode;
+            if (!$parent instanceof \DOMElement) return false;
+            if ($node->tagName === 'argument' && in_array($parent->tagName, ['arguments', 'action'], true)) {
+                return $configured && ($parent->tagName === 'action' || self::blockArgument($node));
+            }
+            if ($node->tagName === 'argument') {
+                if ($parent->getAttribute('xsi:type') !== 'configurableObject') return false;
+                $configured = true;
+            } elseif ($parent->getAttribute('xsi:type') !== 'array') {
+                return false;
+            }
+            $node = $parent;
+        }
+        return false;
+    }
+
+    private static function unkeyedConfiguredOperand(\DOMElement $node): bool
+    {
+        while ($node->parentNode instanceof \DOMElement && in_array($node->tagName, ['argument', 'item'], true)) {
+            if ($node->tagName === 'argument' && $node->parentNode->tagName === 'item'
+                && $node->parentNode->getAttribute('xsi:type') === 'configurableObject') return true;
+            $node = $node->parentNode;
+        }
+        return false;
+    }
+
     private static function actionArrayItem(\DOMElement $node): bool
     {
         if ($node->tagName !== 'item' || !$node->hasAttribute('name')) return false;
@@ -256,6 +292,9 @@ final class LayoutManifest
 
     private static function limitation(string $fileType, string $node, ?string $attribute, ?\DOMElement $element = null): string
     {
+        if ($element && self::unkeyedConfiguredOperand($element)) {
+            return 'The native layout parser does not key configurable object arguments under an array item. This subtree cannot supply named constructor operands';
+        }
         if ($node === 'param' && $element?->parentNode instanceof \DOMElement
             && $element->parentNode->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type') === 'serviceUrl') {
             return 'The installed ServiceUrl interpreter reads path and ignores all param children. This parameter has no native application effect';
