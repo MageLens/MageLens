@@ -84,7 +84,7 @@ if (!str_contains($html, 'data-layout-mutation>xml-value</span>') || MageLensExt
 }
 echo 'Verified native external reflection ', $failed ? 'rejection' : 'write', ', unchanged output and zero application metadata getter calls.', "\n";
 if (in_array('--without-collector', $argv, true)) exit;
-$collector->finish();
+$state = $collector->finish();
 $kind = $mode === 'template' ? 'template' : 'argument';
 $declaration = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === $kind
     && ($kind === 'template' || $item['layout']['element'] === 'value')))[0];
@@ -103,3 +103,10 @@ if (!in_array($mode === 'template' ? 'layout-argument-read' : 'layout-template-e
     throw new RuntimeException('Reflection write erased an independent surviving XML origin');
 }
 echo "Verified external reflection effects retain only surviving original XML ownership.\n";
+$destination = array_search('--evidence-file', $argv, true);
+if ($destination !== false) {
+    $files = [['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source), 'declarations' => $declarations]];
+    $json = json_encode(['files' => $files, 'layoutSources' => LayoutManifest::targets($files), 'layoutHook' => $state[0],
+        'layoutSourceTrace' => $state[1], 'layoutLimitations' => $state[2], 'events' => $events], JSON_THROW_ON_ERROR);
+    if (file_put_contents($argv[$destination + 1], $json) !== strlen($json)) throw new RuntimeException('Cannot save bounded reflection evidence');
+}

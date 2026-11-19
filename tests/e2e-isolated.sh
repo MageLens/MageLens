@@ -404,6 +404,16 @@ fi
             done
         done
     done
+    for reflection_field in template data; do
+        for reflection_outcome in success failed; do
+            reflection_options=()
+            [[ "$reflection_outcome" != failed ]] || reflection_options+=(--failed)
+            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                php /application/docker/php/e2e/xml-layout-reflection-write-proof.php "$reflection_field" "${reflection_options[@]}" --during-generation --evidence-file /tmp/magelens-reflection-proof.json
+            ./bin/application-compose exec -T phpfpm cat /tmp/magelens-reflection-proof.json > .runtime/layout-reflection-proof.json
+            ./bin/runner node tests/layout-reflection-report-proof.cjs "$reflection_field" "$reflection_outcome" .runtime/layout-reflection-proof.json
+        done
+    done
     for opaque_action_option in --without-collector ''; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php /application/docker/php/e2e/xml-layout-opaque-action-proof.php "$opaque_action_option"
