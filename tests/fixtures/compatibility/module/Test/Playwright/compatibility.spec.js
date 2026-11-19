@@ -46,6 +46,8 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
     await expect(page.locator('#email')).toBeVisible();
 });
 test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
+    // This journey visits the layout fixtures, audits two responses and signs in as two Admin roles.
+    test.setTimeout(180_000);
     await page.goto('/coverageprobe/');
     await expect(page.locator('[data-cy="inline-probe"]')).toHaveText('inline-ready');
     expect(await page.evaluate(() => window.magelensChildScript)).toBe('child-ready');
