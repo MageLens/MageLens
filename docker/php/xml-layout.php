@@ -86,6 +86,7 @@ final class LayoutCoverage
     private int $moveReaderOverflow = 0;
     private array $generating = [];
     private array $constructing = [];
+    private array $templateValueMethods = [];
     private array $blockObjectCreations = [];
     private int $blockObjectOverflow = 0;
     private \WeakMap $blocks;
@@ -262,6 +263,8 @@ final class LayoutCoverage
             [DataObject::class, 'getDataByKey', null, $this->consumeArgument(...)],
             [DataObject::class, 'getDataByPath', null, $this->consumeArgument(...)],
             [DataObject::class, 'offsetGet', null, $this->consumeArgument(...)],
+            [Template::class, '_construct', $this->beginConstructorTemplate(...), $this->endConstructorTemplate(...)],
+            [\Magento\Framework\Interception\PluginListInterface::class, 'getNext', null, $this->constructorTemplateQuery(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
             [\Magento\Framework\App\PageCache\Kernel::class, 'load', $this->beginPageCache(...), $this->loadedPageCache(...)],
             [AbstractBlock::class, '_loadCache', $this->beginBlockHtml(...), $this->loadBlockHtml(...)],
@@ -1927,9 +1930,16 @@ final class LayoutCoverage
                 && ($caller['function'] ?? null) === 'createBlock'
                 && ($factoryCaller['class'] ?? null) === BlockGenerator::class && ($factoryCaller['function'] ?? null) === 'getBlockInstance'
                 && LayoutXmlOwnership::nativeMethod($factory, BlockFactory::class, 'createBlock')
-                && self::nativeObjectManager($manager) && ($params[0] ?? null) === ltrim($frame['source']['attributes']['class']['value'], '\\')) {
+                && self::nativeObjectManager($manager) && ($params[0] ?? null) === ltrim($frame['factoryInputClass'], '\\')) {
                 $entry = $index;
             }
+        }
+        if ($entry !== null && $this->generating[$entry]['creationTrusted']
+            && !$this->generating[$entry]['creationUnconfirmed']
+            && LayoutXmlOwnership::nativeMethod($this->generating[$entry]['subject'], BlockGenerator::class, 'getBlockInstance')
+            && is_array($params[1]['data'] ?? null)) {
+            $this->generating[$entry]['constructorArguments'] = $this->matchingArguments(
+                $this->generating[$entry]['arguments'], $params[1]['data']);
         }
         $this->blockObjectCreations[] = $entry;
     }
@@ -1970,7 +1980,8 @@ final class LayoutCoverage
             'generator' => get_class($generator), 'subject' => $generator, 'creating' => false,
             'creationObserved' => false, 'creationTrusted' => false, 'creationUnconfirmed' => false,
             'factoryObserved' => false, 'factoryBlock' => null, 'factory' => null, 'managerBlock' => null, 'managerObserved' => false, 'applied' => [], 'arguments' => [], 'evaluationObserved' => false,
-            'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false];
+            'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false,
+            'constructorArguments' => [], 'constructorTemplate' => null, 'constructorObserved' => false];
     }
 
     private function beginArgumentUpdate($interpreter, array $params, string $class): void
@@ -2099,11 +2110,31 @@ final class LayoutCoverage
         $index = array_key_last($this->generating);
         $origin = $index === null ? null : ($this->generating[$index]['source']['attributes']['class'] ?? null);
         $caller = self::nativeCaller($generator, 'getBlockInstance');
-        $eligible = $origin && $origin['value'] !== '' && $origin['value'] === $params[0]
-            && ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'createBlock';
+        $consumer = ($caller['class'] ?? null) === BlockGenerator::class && ($caller['function'] ?? null) === 'createBlock';
+        $classEligible = $origin && $origin['value'] !== '' && $origin['value'] === $params[0] && $consumer;
+        $constructorEligible = $index !== null && isset($this->generating[$index]['arguments']['template']['id'])
+            && $consumer && is_string($params[0] ?? null)
+            && LayoutXmlOwnership::nativeMethod($generator, BlockGenerator::class, 'getBlockInstance');
+        $factory = null;
+        if ($classEligible) $factory = (new \ReflectionProperty(BlockGenerator::class, 'blockFactory'))->getValue($generator);
+        elseif ($constructorEligible) {
+            // Constructor data attribution must not invoke customized storage.
+            $property = LayoutXmlOwnership::unhookedProperty($generator, 'blockFactory');
+            $factory = $property?->getRawValue($generator);
+            if (!$factory instanceof BlockFactory || get_class($factory) !== BlockFactory::class) $constructorEligible = false;
+            $managerProperty = $constructorEligible ? LayoutXmlOwnership::unhookedProperty($factory, 'objectManager') : null;
+            $manager = $managerProperty?->getRawValue($factory);
+            $objectFactory = is_object($manager) ? LayoutXmlOwnership::unhookedProperty($manager, '_factory') : null;
+            $objectConfig = is_object($manager) ? LayoutXmlOwnership::unhookedProperty($manager, '_config') : null;
+            if (!is_object($manager) || !in_array(get_class($manager), [ObjectManager::class, \Magento\Framework\App\ObjectManager::class], true)
+                || $objectFactory === null || $objectConfig === null
+                || !is_object($objectFactory->getRawValue($manager)) || !is_object($objectConfig->getRawValue($manager))) $constructorEligible = false;
+        }
+        $eligible = $classEligible || $constructorEligible;
         if ($eligible) {
-            $factory = (new \ReflectionProperty(BlockGenerator::class, 'blockFactory'))->getValue($generator);
             $this->generating[$index]['factory'] = $factory;
+            $this->generating[$index]['factoryInputClass'] = $params[0];
+            $this->generating[$index]['classOriginEligible'] = (bool) $classEligible;
             $this->generating[$index]['factoryExpected'] = self::nativeBlockFactory($factory);
         }
         $this->constructing[] = $eligible ? $index : null;
@@ -2119,6 +2150,7 @@ final class LayoutCoverage
                 $this->errors['Missing native block factory hook evidence'] = true;
             }
             if ($this->generating[$index]['creationTrusted'] && !$this->generating[$index]['creationUnconfirmed']
+                && !empty($this->generating[$index]['classOriginEligible'])
                 && $this->generating[$index]['factoryBlock'] === $block) {
                 $this->generating[$index]['class'] = $block;
             }
@@ -2201,6 +2233,11 @@ final class LayoutCoverage
 
     private function invalidateArgumentData(AbstractBlock $block, ?array $keys): void
     {
+        $generation = array_key_last($this->generating);
+        if ($generation !== null && ($this->generating[$generation]['constructorTemplate']['block'] ?? null) === $block
+            && ($keys === null || in_array('template', $keys, true))) {
+            $this->generating[$generation]['constructorTemplate']['dataRevoked'] = true;
+        }
         $binding = $this->argumentBindings[$block] ?? null;
         if (!$binding) return;
         if ($keys !== null) $keys = array_map(self::dataKey(...), $keys);
@@ -2230,6 +2267,7 @@ final class LayoutCoverage
 
     private function consumeArgument($block, array $params, $value, ?\Throwable $error, string $class, string $function): void
     {
+        $this->consumeConstructorTemplate($block, $params, $value, $error, $class, $function);
         if ($error || $class !== DataObject::class || !isset($this->blocks[$block], $this->argumentBindings[$block])) return;
         $key = $params[0] ?? null;
         if (!is_scalar($key) && $key !== null) return;
@@ -2318,9 +2356,30 @@ final class LayoutCoverage
         foreach (array_keys($source['overridden'] ?? []) as $previous) {
             if ($previous !== $templateId) $this->event($previous, 'layout-template-overridden', $context);
         }
+        $constructor = $frame['constructorTemplate'];
+        $constructorOrigin = $frame['constructorArguments']['template'] ?? null;
+        if (isset($constructorOrigin['id']) && $block instanceof Template
+            && $frame['factoryBlock'] === $block && $frame['managerBlock'] === $block
+            && $this->templateValueMethod($block, '__construct', Template::class)
+            && LayoutXmlOwnership::nativeMethod($block, Template::class, '_construct')) {
+            if (!$frame['constructorObserved']) $this->errors['Missing native template constructor hook evidence'] = true;
+            elseif (!$constructor || !$constructor['complete']) $this->errors['Missing native template constructor completion hook evidence'] = true;
+            if ($constructor && $constructor['block'] === $block && $constructor['selected']) {
+                $this->event($constructorOrigin['id'], 'layout-template-selected', $context);
+                if ($frame['selected'] === $block) $this->event($constructorOrigin['id'], 'layout-template-overridden', $context);
+                elseif ($constructor['replaced']) $this->event($constructorOrigin['id'], 'layout-template-replaced', $context);
+                else $templateId = $constructorOrigin['id'];
+            } else $this->event($constructorOrigin['id'], 'layout-template-constructor-origin-unconfirmed', $context);
+        }
+        if ((!isset($constructorOrigin['id']) || !$block instanceof Template
+                || !$this->templateValueMethod($block, '__construct', Template::class)
+                || !LayoutXmlOwnership::nativeMethod($block, Template::class, '_construct'))
+            && $block instanceof Template && isset($frame['arguments']['template']['id'])) {
+            $this->event($frame['arguments']['template']['id'], 'layout-template-constructor-origin-unconfirmed', $context);
+        }
         $this->event($blockId, 'layout-block-created', $context);
         $this->blockRendering->generated($block, $params[2], $blockId, $context);
-        $this->event($templateId, 'layout-template-selected', $context);
+        $this->event($frame['selected'] === $block ? $templateId : null, 'layout-template-selected', $context);
         foreach (array_keys($source['overriddenAttributes'] ?? []) as $id) {
             $this->event($id, 'layout-block-attribute-overridden', $context);
         }
@@ -2338,6 +2397,7 @@ final class LayoutCoverage
             if ($block === $target) $this->event($id, 'layout-argument-applied', $context);
         }
         $this->blocks[$block] = ['block' => $blockId, 'template' => $templateId, 'context' => $context];
+        if ($block instanceof Template) $this->templateOwnership->watch($block, $templateId !== null);
     }
 
     private function beginAction($generator, array $params, string $class): void
@@ -2349,6 +2409,9 @@ final class LayoutCoverage
             return;
         }
         $this->actionEvaluations[] = ['observed' => false, 'failed' => null, 'native' => false, 'completed' => [], 'unconfirmed' => [],
+            'block' => $params[0] ?? null, 'method' => $params[1] ?? null,
+            'firstArgument' => is_array($params[2] ?? null) ? array_key_first($params[2]) : null,
+            'argumentCount' => is_array($params[2] ?? null) ? count($params[2]) : 0, 'templateSelectionObserved' => false,
             'origins' => $this->actionGuards->callOrigins($generator, $params[0] ?? null, $params)];
     }
 
@@ -2370,6 +2433,11 @@ final class LayoutCoverage
         if ((new \ReflectionMethod($generator, 'generateAction'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
         $origins = $evaluation['origins'] ?? [];
         if ($origins && empty($evaluation['observed'])) $this->errors['Missing native action argument evaluation hook evidence'] = true;
+        if ($block instanceof Template && is_string($evaluation['method']) && strcasecmp($evaluation['method'], 'setTemplate') === 0
+            && !$evaluation['templateSelectionObserved']) {
+            foreach ($origins as $entry) $this->event($entry['origin']['arguments'][0] ?? null,
+                'layout-template-assignment-origin-unconfirmed', $entry['context']);
+        }
         foreach ($origins as $entry) {
             $origin = $entry['origin']; $context = $entry['context'];
             if ($context === null) continue;
@@ -2393,20 +2461,172 @@ final class LayoutCoverage
         }
     }
 
+    private function templateValueMethod(object $block, string $method, string $native): bool
+    {
+        $key = get_class($block) . '::' . $method;
+        if (isset($this->templateValueMethods[$key])) return $this->templateValueMethods[$key];
+        if (strlen($key) > 4096 || count($this->templateValueMethods) >= 1024) {
+            $this->errors['Template value method checks exceeded their bounded inventory'] = true;
+            return false;
+        }
+        $function = new \ReflectionMethod($block, $method);
+        if ($function->getDeclaringClass()->getName() === $native) return $this->templateValueMethods[$key] = true;
+        if (!LayoutXmlOwnership::nativeMethod($block, Template::class, $method)
+            && !($function->getDeclaringClass()->getName() === get_class($block)
+                && get_class($block) === get_parent_class($block) . '\\Interceptor'
+                && (new \ReflectionMethod(get_parent_class($block), $method))->getDeclaringClass()->getName() === $native)) {
+            return $this->templateValueMethods[$key] = false;
+        }
+        $file = $function->getFileName();
+        if (!is_string($file) || !str_starts_with($file, BP . '/generated/code/')) return $this->templateValueMethods[$key] = false;
+        if ($method === '__construct') {
+            foreach (['{parent::__construct($context, $data);}', '{$this->___init(); parent::__construct($context, $data);}',
+                '{$this->____om = $____om; $this->____scope = $____scope; parent::__construct($context, $data);}'] as $body) {
+                if (LayoutXmlOwnership::bodyMatches($function, $body)) return $this->templateValueMethods[$key] = true;
+            }
+            return $this->templateValueMethods[$key] = false;
+        }
+        $arguments = ['getData' => '$key, $index', 'hasData' => '$key', 'setTemplate' => '$template'][$method];
+        $body = '{$pluginInfo = $this->pluginList->getNext($this->subjectType, "' . $method . '");'
+            . 'return $pluginInfo ? $this->___callPlugins("' . $method . '", func_get_args(), $pluginInfo) : parent::'
+            . $method . '(' . $arguments . ');}';
+        // Generated PHP uses single-quoted method literals. Token comparison
+        // intentionally accepts only that reviewed, direct-delegation body.
+        $body = str_replace('"' . $method . '"', "'" . $method . "'", $body);
+        return $this->templateValueMethods[$key] = LayoutXmlOwnership::bodyMatches($function, $body);
+    }
+
+    private function beginConstructorTemplate($block, array $params, string $class): void
+    {
+        // Arm generated getters before constructor or application code can
+        // call them; registering after their first invocation is too late.
+        if ($class === Template::class && $block instanceof Template) $this->templateOwnership->watch($block, false);
+        $key = array_key_last($this->blockObjectCreations);
+        $index = $key === null ? null : $this->blockObjectCreations[$key];
+        if ($class !== Template::class || $index === null || $index !== array_key_last($this->generating)) return;
+        $this->generating[$index]['constructorObserved'] = true;
+        $origin = $this->generating[$index]['constructorArguments']['template'] ?? null;
+        if (!isset($origin['id']) || !$block instanceof Template) return;
+        $data = LayoutXmlOwnership::unhookedProperty($block, '_data');
+        $values = $data?->getRawValue($block);
+        $trusted = $this->templateValueMethod($block, '__construct', Template::class)
+            && LayoutXmlOwnership::nativeMethod($block, Template::class, '_construct')
+            && is_array($values) && isset($this->matchingArguments(['template' => $origin], $values)['template'])
+            && $this->templateValueMethod($block, 'hasData', DataObject::class)
+            && $this->templateValueMethod($block, 'getData', DataObject::class)
+            && $this->templateValueMethod($block, 'setTemplate', Template::class);
+        $this->generating[$index]['constructorTemplate'] = ['block' => $block, 'origin' => $origin, 'trusted' => $trusted,
+            'queries' => [], 'read' => false, 'getterObserved' => false, 'setterObserved' => false,
+            'selected' => false, 'replaced' => false, 'dataRevoked' => false, 'active' => true, 'complete' => false];
+    }
+
+    private function constructorTemplateQuery($list, array $params, $result, ?\Throwable $error): void
+    {
+        $index = array_key_last($this->generating);
+        $candidate = $index === null ? null : $this->generating[$index]['constructorTemplate'];
+        $method = $params[1] ?? null;
+        if (!$candidate || !$candidate['active'] || !in_array($method, ['hasData', 'getData', 'setTemplate'], true)) return;
+        $caller = self::nativeCaller($list, 'getNext');
+        if (($caller['object'] ?? null) !== $candidate['block'] || ($caller['function'] ?? null) !== $method) return;
+        $this->generating[$index]['constructorTemplate']['queries'][$method] = !$error && !$result
+            && LayoutXmlOwnership::nativeMethod($list, \Magento\Framework\Interception\PluginList\PluginList::class, 'getNext');
+    }
+
+    private function constructorTemplateDirect(array $candidate, string $method, string $native): bool
+    {
+        return (new \ReflectionMethod($candidate['block'], $method))->getDeclaringClass()->getName() === $native
+            || ($candidate['queries'][$method] ?? false);
+    }
+
+    private function consumeConstructorTemplate($block, array $params, $value, ?\Throwable $error, string $class, string $function): void
+    {
+        $index = array_key_last($this->generating);
+        $candidate = $index === null ? null : $this->generating[$index]['constructorTemplate'];
+        if (!$candidate || !$candidate['active'] || $candidate['block'] !== $block
+            || $class !== DataObject::class || $function !== 'getData') return;
+        $this->generating[$index]['constructorTemplate']['getterObserved'] = true;
+        $caller = self::nativeCaller($block, 'getData');
+        if ($error || !$candidate['trusted'] || $candidate['dataRevoked'] || ($params[0] ?? null) !== 'template'
+            || ($params[1] ?? null) !== null || ($caller['class'] ?? null) !== Template::class
+            || ($caller['function'] ?? null) !== '_construct'
+            || !$this->constructorTemplateDirect($candidate, 'hasData', DataObject::class)
+            || !$this->constructorTemplateDirect($candidate, 'getData', DataObject::class)
+            || !isset($this->matchingArguments(['template' => $candidate['origin']], ['template' => $value])['template'])) return;
+        $this->generating[$index]['constructorTemplate']['read'] = true;
+        $this->event($candidate['origin']['id'], 'layout-argument-read', $this->generating[$index]['source']['context']);
+    }
+
+    private function endConstructorTemplate($block, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        $candidate = $index === null ? null : $this->generating[$index]['constructorTemplate'];
+        if ($class !== Template::class || !$candidate || $candidate['block'] !== $block) return;
+        $this->generating[$index]['constructorTemplate']['active'] = false;
+        $this->generating[$index]['constructorTemplate']['complete'] = true;
+        if ($error || !$candidate['trusted']) return;
+        foreach (['hasData' => DataObject::class, 'getData' => DataObject::class, 'setTemplate' => Template::class] as $method => $native) {
+            if ((new \ReflectionMethod($block, $method))->getDeclaringClass()->getName() !== $native
+                && !array_key_exists($method, $candidate['queries'])) $this->errors['Missing native constructor template plugin query evidence'] = true;
+        }
+        if ($this->constructorTemplateDirect($candidate, 'hasData', DataObject::class)
+            && $this->constructorTemplateDirect($candidate, 'getData', DataObject::class) && !$candidate['getterObserved']) {
+            $this->errors['Missing native constructor template getter hook evidence'] = true;
+        }
+        if ($this->constructorTemplateDirect($candidate, 'setTemplate', Template::class) && !$candidate['setterObserved']) {
+            $this->errors['Missing native constructor template setter hook evidence'] = true;
+        }
+    }
+
     private function assignTemplate($block, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error) return;
         $caller = self::nativeCaller($block, 'setTemplate');
         $generation = array_key_last($this->generating);
+        $constructor = $generation === null ? null : $this->generating[$generation]['constructorTemplate'];
+        $nativeSetter = $class === Template::class && $this->templateValueMethod($block, 'setTemplate', Template::class)
+            && LayoutXmlOwnership::unhookedProperty($block, '_template') !== null;
+        if ($constructor && $constructor['block'] === $block) {
+            if ($constructor['active']) {
+                $this->generating[$generation]['constructorTemplate']['setterObserved'] = true;
+                if ($nativeSetter && $constructor['trusted'] && $constructor['read']
+                    && ($caller['class'] ?? null) === Template::class && ($caller['function'] ?? null) === '_construct'
+                    && $this->constructorTemplateDirect($constructor, 'setTemplate', Template::class)
+                    && isset($this->matchingArguments(['template' => $constructor['origin']], ['template' => $params[0] ?? null])['template'])) {
+                    $this->generating[$generation]['constructorTemplate']['selected'] = true;
+                }
+            } elseif ($constructor['selected']) $this->generating[$generation]['constructorTemplate']['replaced'] = true;
+        }
         if ($generation !== null && $class === Template::class && ($caller['class'] ?? null) === BlockGenerator::class
             && ($caller['function'] ?? null) === 'generateBlock') {
             $this->generating[$generation]['selected'] = $block;
         }
+        $action = array_key_last($this->actionEvaluations);
+        $evaluation = $action === null ? null : $this->actionEvaluations[$action];
+        $selection = null;
+        if ($nativeSetter && $evaluation && $evaluation['block'] === $block && is_string($evaluation['method']) && strcasecmp($evaluation['method'], 'setTemplate') === 0
+            && $evaluation['observed'] && $evaluation['native'] && !$evaluation['failed']
+            && ($caller['function'] ?? null) === 'call_user_func_array') {
+            foreach ($evaluation['origins'] as $entry) {
+                $id = $entry['origin']['arguments'][0] ?? null;
+                if ($id !== null && $entry['safe'] && $entry['unique']
+                    && count($entry['origin']['arguments']) === $evaluation['argumentCount']
+                    && !in_array($evaluation['firstArgument'], $evaluation['unconfirmed'], true)) {
+                    $selection = ['id' => $id, 'context' => $entry['context']];
+                }
+            }
+        }
         if (isset($this->blocks[$block]['template'])) {
             $evidence = $this->blocks[$block];
-            $this->event($evidence['template'], 'layout-template-replaced', $evidence['context']);
+            $this->event($evidence['template'], $selection ? 'layout-template-overridden' : 'layout-template-replaced', $evidence['context']);
             $evidence['template'] = null;
             $this->blocks[$block] = $evidence;
+        }
+        if ($selection !== null && isset($this->blocks[$block])) {
+            $evidence = $this->blocks[$block];
+            $evidence['template'] = $selection['id'];
+            $this->blocks[$block] = $evidence;
+            $this->actionEvaluations[$action]['templateSelectionObserved'] = true;
+            $this->event($selection['id'], 'layout-template-selected', $selection['context']);
         }
     }
 

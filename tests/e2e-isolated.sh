@@ -328,6 +328,12 @@ fi
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-template-value-proof.php --without-collector
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php /application/docker/php/e2e/xml-layout-template-value-proof.php
+    for template_value_missing in --missing-constructor-pre --missing-constructor-post --missing-getter --missing-setter --missing-query --method-limit --method-name-limit; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-template-value-proof.php "$template_value_missing"
+    done
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-failed-action-proof.php --without-collector
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-failed-action-proof.php

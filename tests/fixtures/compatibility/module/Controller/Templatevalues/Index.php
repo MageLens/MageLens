@@ -20,14 +20,14 @@ class Index implements HttpGetActionInterface
         $fragment = $this->layouts->create();
         $fragment->addHandle('coverageprobe_templatevalues');
         $layout = $fragment->getLayout();
-        foreach (['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'never', 'empty', 'zero', 'empty.action', 'zero.action'] as $case) {
+        foreach (['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'never', 'empty', 'zero', 'empty.action', 'zero.action', 'default', 'case', 'interceptor'] as $case) {
             $block = $layout->getBlock('magelens.template.values.' . $case);
             $expected = match ($case) { 'empty', 'empty.action' => '', 'zero', 'zero.action' => '0', default => 'MageLens_Compatibility::layout-template-value.phtml' };
             if (!$block || $block->getTemplate() !== $expected) throw new \RuntimeException('Native template value selection changed: ' . $case);
             if (str_starts_with($case, 'late.')) $block->setTemplate('MageLens_Compatibility::layout-template-value.phtml');
         }
         $html = $layout->getOutput();
-        if (substr_count($html, 'data-layout-template-value=') !== 6 || str_contains($html, 'magelens.template.values.never')) {
+        if (substr_count($html, 'data-layout-template-value=') !== 9 || str_contains($html, 'magelens.template.values.never')) {
             throw new \RuntimeException('Native template value output changed');
         }
         return $this->raw->create()->setContents($html . '<span data-layout-template-value-proof>verified</span>');

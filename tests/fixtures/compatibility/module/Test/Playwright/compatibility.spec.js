@@ -235,7 +235,7 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/templatevalues/');
     await expect(page.locator('[data-layout-template-value-proof]')).toHaveText('verified');
     expect(await page.locator('[data-layout-template-value]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-layout-template-value'))))
-        .toEqual(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action'].map(name => 'magelens.template.values.' + name));
+        .toEqual(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'default', 'case', 'interceptor'].map(name => 'magelens.template.values.' + name));
     await page.goto('/coverageprobe/actionfailure/');
     for (const failureCase of ['body', 'interpreter', 'partial', 'dispatch', 'type', 'denied', 'success']) {
         await expect(page.locator('[data-layout-action-failure="' + failureCase + '"]')).toHaveText('verified');

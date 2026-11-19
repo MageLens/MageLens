@@ -558,7 +558,7 @@ test('layout structural and page-value reports require the correct native effect
             assert.throws(() => merge(manifest, [unconfirmed], sources), /Unexpected layout effect/, kind);
         }
         assert.throws(() => merge(manifest, [{...record, layoutHook: true,
-            events: [{...event, type: 'layout-template-executed'}]}], sources), kind);
+            events: [{...event, type: ['argument', 'action-argument'].includes(kind) ? 'layout-move-applied' : 'layout-template-executed'}]}], sources), kind);
         assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [event]}], sources), /Stale XML request/);
     }
 });
@@ -715,6 +715,34 @@ test('empty layout operands remain zero-hit decisions while zero class interpola
         if (!covered) assert.match(item.reason, /empty|zero|0/);
         manifest.files[1].declarations[0].layout.kind = 'block';
         assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /Unexpected layout effect/);
+    }
+});
+
+test('template-valued XML arguments retain selection and execution as independent facts', () => {
+    for (const kind of ['argument', 'action-argument']) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/template.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'filename', family: 'layout',
+            path: '/layout/block/arguments/argument', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind, ordinal: 2, element: 'block',
+                handle: 'template', fileType: 'generic', instruction: 'argument'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {[kind]: 'filename'}}}}};
+        const event = type => ({id: 'filename', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+        const selected = event('layout-template-selected');
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [event('layout-template-empty-ignored')]}], sources), /Unexpected layout effect/);
+        const observed = merge(manifest, [{...record, layoutHook: true, events: [selected]}], sources).files[1].declarations[0];
+        assert.equal(observed.hits, 0);
+        for (const type of ['layout-template-overridden', 'layout-template-replaced', 'layout-template-failed']) {
+            const replaced = merge(manifest, [{...record, layoutHook: true, events: [selected, event(type)]}], sources).files[1].declarations[0];
+            assert.equal(replaced.hits, 0);
+            assert.equal(replaced.state, 'unmeasured');
+        }
+        const executed = merge(manifest, [{...record, layoutHook: true, events: [selected, event('layout-template-executed')]}], sources).files[1].declarations[0];
+        assert.equal(executed.hits, 1);
+        assert.equal(executed.state, 'covered');
     }
 });
 

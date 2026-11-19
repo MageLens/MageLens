@@ -36,6 +36,15 @@ License: see LICENSE in the repository root.
         <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.zero.action">
             <action method="setTemplate"><argument name="filename" xsi:type="string">0</argument></action>
         </block>
+        <block name="magelens.template.values.default">
+            <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+        </block>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.case">
+            <action method="SETTEMPLATE"><argument name="filename" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></action>
+        </block>
+        <block class="MageLens\Compatibility\Block\LayoutTemplateValueIntercepted" name="magelens.template.values.interceptor">
+            <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+        </block>
     </container>
     <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.never">
         <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>

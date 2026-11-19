@@ -114,6 +114,9 @@ for (const [kind, type] of [
     ['block-ttl', 'layout-block-ttl-empty-ignored'], ['block-display', 'layout-display-empty-ignored'],
     ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
 ]) layoutEvents[kind].push(type);
+for (const kind of ['argument', 'action-argument']) layoutEvents[kind].push(...layoutEvents.template.filter(type => type !== 'layout-template-empty-ignored'));
+layoutEvents.argument.push('layout-template-constructor-origin-unconfirmed');
+layoutEvents['action-argument'].push('layout-template-assignment-origin-unconfirmed');
 const referenceEvents = [...new Set(['template', 'argument', 'action', 'container-htmlTag', 'container-label',
     'block-class', 'block-group', 'block-ttl', 'block-display', 'removal'].flatMap(kind => layoutEvents[kind]))]
     .filter(type => !['layout-argument-evaluated', 'layout-argument-mixed-origin', 'layout-argument-overridden',
@@ -124,6 +127,8 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
     'layout-position-name-defaulted': 'Native scheduling ignores the empty or zero name and generates an anonymous identifier. The original name operand did not assign that identifier; the declaration retains independent creation and rendering evidence.',
+    'layout-template-assignment-origin-unconfirmed': 'The action call did not establish a unique native template assignment from this original argument. Custom setters, plugins, storage and ambiguous calls retain no template execution credit.',
+    'layout-template-constructor-origin-unconfirmed': 'The native constructor data, value getter or template setter did not establish this original argument as the template selection. Argument application and reads remain independent.',
     'layout-template-empty-ignored': 'The native block generator treats the original empty string or zero template spelling as empty and skips its template assignment. Any PHP default template has a separate origin.',
     'layout-block-group-empty-ignored': 'The native block generator treats this empty string or zero group name as empty and skips group registration.',
     'layout-block-ttl-empty-ignored': 'The native block generator treats the zero TTL spelling as empty and skips its assignment. A constructor or other provider can retain its own TTL.',
