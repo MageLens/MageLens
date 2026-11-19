@@ -66,7 +66,7 @@ final class LayoutManifest
                     && $node->parentNode->nodeName === 'body' && $element === 'class' => 'body-class',
                 $fileType === 'page' && $node->tagName === 'attribute'
                     && in_array($node->parentNode->nodeName, ['html', 'head', 'body'], true)
-                    && $element !== '' && !($node->parentNode->nodeName === 'body' && $element === 'class') => 'page-attribute',
+                    && !($node->parentNode->nodeName === 'body' && $element === 'class') => 'page-attribute',
                 $fileType === 'page' && $node->tagName === 'meta' && $node->parentNode->nodeName === 'head' => 'metadata',
                 $fileType === 'page' && $node->parentNode->nodeName === 'head'
                     && in_array($node->tagName, ['css', 'script', 'link', 'font'], true)

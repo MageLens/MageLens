@@ -129,6 +129,14 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-html-removed], [data-layout-head-removed], [data-layout-body-removed], [data-layout-no-target]').should('not.exist');
         cy.get('meta[name="layout-empty"], meta[name="layout-zero"], link[href=""][rel="preconnect"]').should('not.exist');
         cy.title().should(title => expect(title).not.to.be.oneOf(['Displaced XML title', '0']));
+        cy.visit('/coverageprobe/handle/?variant=page-metadata');
+        cy.get('meta[charset]').should('have.attr', 'charset', 'UTF-8');
+        cy.get('meta[http-equiv="Content-Type"]').should('have.attr', 'content', 'text/x-magelens; charset=UTF-8');
+        cy.get('meta[name="keywords"]').should('have.attr', 'content', 'layout keyword proof');
+        cy.get('meta[name="title"]').should('have.attr', 'content', 'Metadata title fallback');
+        cy.get('meta[property="og:layout-fixture"]').should('have.attr', 'content', 'property metadata');
+        cy.get('meta[http-equiv="X-UA-Compatible"]').should('have.attr', 'content', 'IE=edge');
+        cy.get('meta[name="media_type"]').should('not.exist');
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
         cy.visit('/coverageprobe/fragment/');

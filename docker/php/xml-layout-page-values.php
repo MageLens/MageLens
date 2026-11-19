@@ -18,6 +18,14 @@ use Magento\Framework\View\Page\Config\Structure;
 
 final class LayoutPageValuesCoverage
 {
+    private const METADATA_GETTERS = [
+        'getCharset' => 'charset',
+        'getContentType' => 'content_type',
+        'getDescription' => 'description',
+        'getKeywords' => 'keywords',
+        'getMediaType' => 'media_type',
+    ];
+
     private \WeakMap $scheduled;
     private \WeakMap $configs;
     private array $reading = [];
@@ -25,6 +33,7 @@ final class LayoutPageValuesCoverage
     private array $removing = [];
     private array $rendering = [];
     private array $metadataContents = [];
+    private array $metadataReads = [];
     private array $classWrites = [];
     private array $classGeneration = [];
     private array $classAssignments = [];
@@ -54,9 +63,11 @@ final class LayoutPageValuesCoverage
             [Config::class, 'setElementAttribute', null, $this->applyAttribute(...)],
             [Config::class, 'getMetadata', null, $this->readMetadata(...)],
             [Config::class, 'getElementAttributes', null, $this->readAttributes(...)],
-            [Config::class, 'getDescription', null, $this->readDescription(...)],
+            ...array_map(fn(string $method) => [Config::class, $method, $this->beginMetadataValue(...), $this->endMetadataValue(...)],
+                array_keys(self::METADATA_GETTERS)),
             [Renderer::class, 'renderElementAttributes', $this->beginRender(...), $this->endRender(...)],
             [Renderer::class, 'renderMetadata', $this->beginRender(...), $this->endRender(...)],
+            [Renderer::class, 'getMetadataTemplate', null, $this->metadataTemplate(...)],
             [Renderer::class, 'processMetadataContent', $this->beginMetadataContent(...), $this->metadataContent(...)],
         ];
     }
@@ -64,7 +75,7 @@ final class LayoutPageValuesCoverage
     public function finish(): void
     {
         if ($this->removing) throw new \RuntimeException('Unbalanced native page attribute removal evidence');
-        if ($this->metadataContents) throw new \RuntimeException('Unbalanced native metadata content evidence');
+        if ($this->metadataContents || $this->metadataReads) throw new \RuntimeException('Unbalanced native metadata content evidence');
     }
 
     public function snapshot(Structure $structure): array
@@ -150,7 +161,7 @@ final class LayoutPageValuesCoverage
         if (!$node) return null;
         [$ids, $context] = ($this->origin)($node);
         $ids = array_intersect_key($ids, array_flip([$kind, $kind . '-name', $kind . '-value', $kind . '-content']));
-        return $ids ? ['ids' => array_values($ids), 'context' => $context] : null;
+        return $ids ? ['ids' => $ids, 'context' => $context] : null;
     }
 
     private function scheduleValue($structure, array $keys, string $kind, ?array $origin): void
@@ -283,7 +294,7 @@ final class LayoutPageValuesCoverage
 
     private function beginRender($renderer, array $params, string $class): void
     {
-        if ($class === Renderer::class) $this->rendering[] = ['origins' => [], 'metadata' => [], 'config' => null, 'description' => false];
+        if ($class === Renderer::class) $this->rendering[] = ['origins' => [], 'metadata' => [], 'config' => null];
     }
 
     private function readAttributes($config, array $params, $result, ?\Throwable $error, string $class): void
@@ -409,22 +420,86 @@ final class LayoutPageValuesCoverage
         $this->rendering[$index]['config'] = $config;
     }
 
-    private function readDescription($config, array $params, $result, ?\Throwable $error, string $class): void
+    private static function metadataValue(Config $config, string $key): ?string
+    {
+        static $metadata;
+        $metadata ??= new \ReflectionProperty(Config::class, 'metadata');
+        $value = $metadata->getRawValue($config)[$key] ?? null;
+        return is_string($value) ? $value : null;
+    }
+
+    private function beginMetadataValue($config, array $params, string $class, string $method): void
+    {
+        if ($class !== Config::class) return;
+        if (count($this->metadataReads) >= 256) throw new \RuntimeException('Native metadata getter nesting exceeded 256 calls');
+        $key = self::METADATA_GETTERS[$method];
+        $content = array_key_last($this->metadataContents);
+        $rendering = array_key_last($this->rendering);
+        $input = $this->metadataContents[$content] ?? null;
+        $caller = self::caller($config, $method);
+        $parent = array_key_last($this->metadataReads);
+        $outer = $this->metadataReads[$parent] ?? null;
+        $nested = $outer && $outer['auto'] && $outer['config'] === $config
+            && ($caller['class'] ?? null) === Config::class && ($caller['function'] ?? null) === 'getContentType'
+            && in_array($key, ['charset', 'media_type'], true);
+        $direct = $input && $input['name'] === $key && ($caller['class'] ?? null) === Renderer::class
+            && ($caller['function'] ?? null) === 'processMetadataContent';
+        if ((!$nested && !$direct) || ($this->rendering[$rendering]['config'] ?? null) !== $config) {
+            $this->metadataReads[] = null;
+            return;
+        }
+        $value = self::metadataValue($config, $key);
+        $this->metadataReads[] = [
+            'config' => $config, 'method' => $method, 'key' => $key, 'content' => $content,
+            'parent' => $nested ? $parent : null, 'inputs' => [],
+            'auto' => $key === 'content_type' && $value !== null && strcasecmp($value, 'auto') === 0,
+            'nonempty' => !empty($value), 'signature' => $value === null ? null : hash('sha256', $value),
+        ];
+    }
+
+    private function endMetadataValue($config, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        if ($class !== Config::class) return;
+        if (!$this->metadataReads) throw new \RuntimeException('Missing native metadata getter entry evidence');
+        $read = array_pop($this->metadataReads);
+        if (!$read || $error) return;
+        if ($read['config'] !== $config || $read['method'] !== $method) throw new \RuntimeException('Mismatched native metadata getter evidence');
+        $key = $read['key'];
+        $literal = is_string($result) && $read['signature'] === hash('sha256', $result);
+        $applied = $literal && ($read['nonempty'] || $key === 'content_type');
+        if ($read['parent'] !== null) {
+            $this->metadataReads[$read['parent']]['inputs'][$key] = $applied;
+            return;
+        }
+        $content = $read['content'];
+        if ($read['auto'] && array_key_exists('media_type', $read['inputs']) && array_key_exists('charset', $read['inputs'])) {
+            $this->metadataContents[$content]['effect'] = 'layout-metadata-content-type-derived';
+            $this->metadataContents[$content]['inputs'] = array_keys(array_filter($read['inputs']));
+        } elseif ($applied) {
+            $this->metadataContents[$content]['effect'] = 'layout-metadata-rendered';
+        } elseif (!$read['nonempty']) {
+            $this->metadataContents[$content]['effect'] = 'layout-metadata-content-fallback';
+        }
+    }
+
+    private function metadataTemplate($renderer, array $params, $result, ?\Throwable $error, string $class): void
     {
         $index = array_key_last($this->rendering);
-        if ($error || $class !== Config::class || $index === null || !$result
-            || $this->rendering[$index]['config'] !== $config) return;
-        $caller = self::caller($config, 'getDescription');
-        if (($caller['class'] ?? null) === Renderer::class && ($caller['function'] ?? null) === 'processMetadataContent') {
-            $this->rendering[$index]['description'] = true;
-        }
+        if ($error || $class !== Renderer::class || $index === null) return;
+        $caller = self::caller($renderer, 'getMetadataTemplate');
+        if (($caller['class'] ?? null) !== Renderer::class || ($caller['function'] ?? null) !== 'renderMetadata') return;
+        $origin = $this->rendering[$index]['metadata'][$params[0]] ?? null;
+        if ($origin && !$result) $this->rendering[$index]['origins'][] = [$origin, 'layout-metadata-template-skipped'];
     }
 
     private function beginMetadataContent($renderer, array $params, string $class): void
     {
         if ($class !== Renderer::class) return;
         if (count($this->metadataContents) >= 256) throw new \RuntimeException('Native metadata content nesting exceeded 256 calls');
-        $this->metadataContents[] = ['renderer' => $renderer, 'name' => (string) $params[0], 'nonempty' => !empty($params[1])];
+        $caller = self::caller($renderer, 'processMetadataContent');
+        $native = ($caller['class'] ?? null) === Renderer::class && ($caller['function'] ?? null) === 'renderMetadata';
+        $this->metadataContents[] = ['renderer' => $renderer, 'name' => (string) $params[0], 'native' => $native,
+            'nonempty' => !empty($params[1]), 'effect' => null, 'inputs' => []];
     }
 
     private function metadataContent($renderer, array $params, $result, ?\Throwable $error, string $class): void
@@ -433,14 +508,31 @@ final class LayoutPageValuesCoverage
         $input = array_pop($this->metadataContents);
         if (($input['renderer'] ?? null) !== $renderer) throw new \RuntimeException('Missing native metadata content entry evidence');
         $index = array_key_last($this->rendering);
-        if ($error || $index === null) return;
-        $frame = $this->rendering[$index];
+        if ($error || !$input['native'] || $index === null) return;
+        $frame = &$this->rendering[$index];
         $name = $input['name'];
         $origin = $frame['metadata'][$name] ?? null;
         if (!$origin) return;
         $method = 'get' . str_replace(' ', '', ucwords(str_replace('_', ' ', $name)));
-        if ($name === 'description' ? (!$frame['description'] || !$input['nonempty']) : method_exists($frame['config'], $method)) return;
-        $this->rendering[$index]['origins'][] = [$origin, $result ? 'layout-metadata-rendered' : 'layout-metadata-empty-suppressed'];
+        $effect = $input['effect'];
+        if ($name === 'title') $effect = $input['nonempty'] ? 'layout-metadata-rendered' : 'layout-metadata-content-fallback';
+        if ($effect === 'layout-metadata-content-fallback') {
+            $content = array_intersect_key($origin['ids'], ['metadata-content' => true]);
+            if ($content) $frame['origins'][] = [['ids' => $content, 'context' => $origin['context']], $effect];
+            $key = array_diff_key($origin['ids'], $content);
+            $frame['origins'][] = [['ids' => $key, 'context' => $origin['context']],
+                $result ? 'layout-metadata-key-emitted' : 'layout-metadata-empty-suppressed'];
+            return;
+        }
+        if (!$effect && method_exists($frame['config'], $method)) {
+            $frame['origins'][] = [$origin, 'layout-metadata-origin-unconfirmed'];
+            return;
+        }
+        $frame['origins'][] = [$origin, !$result ? 'layout-metadata-empty-suppressed' : ($effect ?? 'layout-metadata-rendered')];
+        if (!$result) return;
+        foreach ($input['inputs'] as $key) {
+            if (isset($frame['metadata'][$key])) $frame['origins'][] = [$frame['metadata'][$key], 'layout-metadata-content-type-input'];
+        }
     }
 
     private function endRender($renderer, array $params, $result, ?\Throwable $error, string $class): void

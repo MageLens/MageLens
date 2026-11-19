@@ -123,6 +123,14 @@ test('starts the next test with fresh state', async ({page}) => {
     const falsyTitle = await page.title();
     expect(falsyTitle).not.toBe('Displaced XML title');
     expect(falsyTitle).not.toBe('0');
+    await page.goto('/coverageprobe/handle/?variant=page-metadata');
+    await expect(page.locator('meta[charset]')).toHaveAttribute('charset', 'UTF-8');
+    await expect(page.locator('meta[http-equiv="Content-Type"]')).toHaveAttribute('content', 'text/x-magelens; charset=UTF-8');
+    await expect(page.locator('meta[name="keywords"]')).toHaveAttribute('content', 'layout keyword proof');
+    await expect(page.locator('meta[name="title"]')).toHaveAttribute('content', 'Metadata title fallback');
+    await expect(page.locator('meta[property="og:layout-fixture"]')).toHaveAttribute('content', 'property metadata');
+    await expect(page.locator('meta[http-equiv="X-UA-Compatible"]')).toHaveAttribute('content', 'IE=edge');
+    await expect(page.locator('meta[name="media_type"]')).toHaveCount(0);
     await page.goto('/coverageprobe/handle/?variant=selected');
     await expect(wireframe.locator('[data-layout-handle="dynamic"]')).toHaveText(['dynamic']);
     await page.goto('/coverageprobe/fragment/');

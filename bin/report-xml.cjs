@@ -134,7 +134,12 @@ for (const kind of ['page-attribute', 'page-attribute-name', 'page-attribute-val
     layoutEvents[kind].push('layout-page-attribute-removed', 'layout-page-attribute-removed-before-output',
         'layout-page-attribute-removal-target-missing');
 }
-for (const kind of ['metadata', 'metadata-name', 'metadata-content']) layoutEvents[kind].push('layout-metadata-empty-suppressed');
+for (const kind of ['metadata', 'metadata-name', 'metadata-content']) {
+    layoutEvents[kind].push('layout-metadata-empty-suppressed', 'layout-metadata-content-type-derived',
+        'layout-metadata-content-type-input', 'layout-metadata-template-skipped', 'layout-metadata-origin-unconfirmed');
+}
+for (const kind of ['metadata', 'metadata-name']) layoutEvents[kind].push('layout-metadata-key-emitted');
+layoutEvents['metadata-content'].push('layout-metadata-content-fallback');
 for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater',
     'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
     'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name']) layoutEvents[kind].push('layout-argument-group-ignored');
@@ -265,6 +270,9 @@ const layoutDecisions = {
     'layout-action-argument-ambiguous': 'Multiple scheduled actions supplied matching arguments, preventing a unique original parameter origin.',
     'layout-argument-replaced': 'A runtime data write revoked this XML value origin before a later native getter could consume it.',
     'layout-title-empty-ignored': 'The native head generator skipped assigning the effective empty or zero title.',
+    'layout-metadata-template-skipped': 'Magento skipped emitting a tag for this metadata key at the native template selector.',
+    'layout-metadata-content-fallback': 'Magento used a fallback getter result in place of this empty XML content.',
+    'layout-metadata-origin-unconfirmed': 'The native metadata getter path did not establish that the output came from the original content.',
     'layout-metadata-empty-suppressed': 'The native metadata renderer suppressed the effective empty or zero content.',
     'layout-page-attribute-removed-before-output': 'The native removal pass discarded this scheduled attribute before it could reach the renderer.',
     'layout-page-attribute-removal-target-missing': 'The native removal queue found no remaining value for this element attribute.',
