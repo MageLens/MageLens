@@ -31,7 +31,7 @@ module.exports = defineConfig({
                 require('@cypress/code-coverage/task')(on, config);
                 const {captureHtml} = require('./bin/html-validation.cjs');
                 // A capture problem must not fail the test that requested the audit.
-                on('task', {'magelens:validateHtml'(capture) {
+                on('task', {mageLensValidateHtml(capture) {
                     try { captureHtml({runner: 'cypress', ...capture}); }
                     catch (error) { console.error('HTML validation capture failed:', error.message); }
                     return null;

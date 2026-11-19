@@ -76,7 +76,7 @@ test('one report collects every audit of a run with its page and test', t => {
     assert.match(html, /before the browser parses it/);
 });
 
-test('a run without validateHtml invocations writes no validation report', t => {
+test('a run without mageLensValidateHtml invocations writes no validation report', t => {
     const run = workspace(t);
     assert.deepEqual(writeReport(run), {audits: 0, pages: 0, errors: 0, warnings: 0, notValidated: 0});
     assert.equal(fs.existsSync('coverage/html-validation'), false);

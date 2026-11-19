@@ -48,12 +48,12 @@ function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, 
     const templateWarning = Object.values(gaps).some(items => items.length) ? `<p class="note"><strong>Template measurement is partial.</strong> ${gaps.directives.length} unsupported directives, ${gaps.scripts.length} unsupported scripts and ${gaps.generated.length} unmapped PHP outputs are not fully measured. The percentage covers instrumented constructs only. <a href="templates/coverage-summary.json">Inspect the affected files and reasons</a>.</p>` : '';
     // An unaudited run has no report to open and must not read as a clean result.
     const htmlValidationRow = htmlValidation.audits ? `<tr>
-<th scope="row"><a href="html-validation/index.html">HTML validation <span aria-hidden="true">↗</span></a><small>HTML source of the pages for which a test called validateHtml.</small></th>
+<th scope="row"><a href="html-validation/index.html">HTML validation <span aria-hidden="true">↗</span></a><small>HTML source of the pages for which a test called mageLensValidateHtml.</small></th>
 <td>${htmlValidation.audits} audits<small>${htmlValidation.pages} pages</small></td>
 <td>${htmlValidation.errors} errors<small>${htmlValidation.warnings} warnings${htmlValidation.notValidated ? ` · ${htmlValidation.notValidated} not validated` : ''}</small></td>
 </tr>` : `<tr>
-<th scope="row">HTML validation<small>HTML source of the pages for which a test called validateHtml.</small></th>
-<td colspan="2">Not run<small>No test called validateHtml, so no page was audited.</small></td>
+<th scope="row">HTML validation<small>HTML source of the pages for which a test called mageLensValidateHtml.</small></th>
+<td colspan="2">Not run<small>No test called mageLensValidateHtml, so no page was audited.</small></td>
 </tr>`;
     fs.writeFileSync('coverage/index.html', `<!doctype html>
 <html lang="en">

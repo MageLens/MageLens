@@ -145,21 +145,21 @@ The template badge measures **executable template lines**: starting lines of bin
 
 ## HTML validation
 
-Tests can audit the HTML of selected pages. Validation is opt-in: only pages for which a test calls `validateHtml` are audited, and a run without calls is shown as not audited.
+Tests can audit the HTML of selected pages. Validation is opt-in: only pages for which a test calls `mageLensValidateHtml` are audited, and a run without calls is shown as not audited.
 
 In Cypress, call the command after the page you want to audit has loaded:
 
 ```js
 cy.visit('/customer/account/');
-cy.validateHtml();
+cy.mageLensValidateHtml();
 ```
 
-In Playwright, request the `validateHtml` fixture and pass it the page. With [your own fixtures](#use-an-existing-playwright-fixture), `withCoverage` adds it to each wrapped test object:
+In Playwright, request the `mageLensValidateHtml` fixture and pass it the page. With [your own fixtures](#use-an-existing-playwright-fixture), `withCoverage` adds it to each wrapped test object:
 
 ```js
-test('audits the account page', async ({page, validateHtml}) => {
+test('audits the account page', async ({page, mageLensValidateHtml}) => {
     await page.goto('/customer/account/');
-    await validateHtml(page);
+    await mageLensValidateHtml(page);
 });
 ```
 

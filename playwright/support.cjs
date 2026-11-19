@@ -32,7 +32,7 @@ function withCoverage(base = playwright.test) {
             }
         }, {auto: true}],
         // Captures the HTML source of the page's current URL for the validation report; see docs/coverage.md#html-validation.
-        validateHtml: async ({}, use, testInfo) => {
+        mageLensValidateHtml: async ({}, use, testInfo) => {
             await use(async page => {
                 // A capture problem must not fail the test that requested the audit.
                 try {

@@ -40,7 +40,7 @@ function validateSource(html) {
     }));
 }
 
-// Called by the Cypress task and the Playwright fixture for each validateHtml invocation.
+// Called by the Cypress task and the Playwright fixture for each mageLensValidateHtml invocation.
 // Tests only capture the response; it is validated when the reports are generated, so
 // findings and unsupported responses can never fail a test. `error` records a failed request.
 function captureHtml({runner, spec, test, url, status, contentType, html, error}) {
@@ -92,7 +92,7 @@ ${findings}
 </section>`;
 }
 
-// Returns the totals shown on the dashboard. Without validateHtml invocations no report is
+// Returns the totals shown on the dashboard. Without mageLensValidateHtml invocations no report is
 // written, so an unaudited run cannot look like a clean one.
 function writeReport(run) {
     const files = fs.existsSync(rawDirectory) ? fs.readdirSync(rawDirectory).filter(file => file.endsWith('.json')).sort() : [];
@@ -140,7 +140,7 @@ footer { border-top: 1px solid #d6dfe5; padding-top: 12px; font-size: 13px; colo
 <main>
 <span class="status">${totals.audits} audits · ${totals.pages} pages · ${totals.errors} errors · ${totals.warnings} warnings${totals.notValidated ? ` · ${totals.notValidated} not validated` : ''}</span>
 <h1>HTML validation</h1>
-<p class="note">Only pages for which a test called <code>validateHtml</code> are listed. Each call requests the current URL again with the test session and captures the HTML source of that response, before the browser parses it. The captures are validated after the tests finish. Markup created or changed by JavaScript, responses to form submissions and pages that redirect when requested again are not validated. Coverage runs serve instrumented templates: they add marker comments and coverage counters in attribute values and inline scripts, while elements and line numbers are unchanged. Lines and columns refer to the captured response, which stays in the private <code>coverage/raw/html-validation/</code> directory. Findings never change the test or run result.</p>
+<p class="note">Only pages for which a test called <code>mageLensValidateHtml</code> are listed. Each call requests the current URL again with the test session and captures the HTML source of that response, before the browser parses it. The captures are validated after the tests finish. Markup created or changed by JavaScript, responses to form submissions and pages that redirect when requested again are not validated. Coverage runs serve instrumented templates: they add marker comments and coverage counters in attribute values and inline scripts, while elements and line numbers are unchanged. Lines and columns refer to the captured response, which stays in the private <code>coverage/raw/html-validation/</code> directory. Findings never change the test or run result.</p>
 ${audits.map(auditSection).join('\n')}
 <footer>
 <p>Run <code>${escapeHtml(run.id)}</code> · ${escapeHtml(engine.name)} ${escapeHtml(engine.version)} (<code>${escapeHtml(engine.preset)}</code>) · <a href="results.json">Validation data (JSON)</a> · <a href="../index.html">Coverage report</a></p>

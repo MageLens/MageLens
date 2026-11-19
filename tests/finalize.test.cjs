@@ -136,20 +136,20 @@ test('CLI results require current coverage for every command and a fully passing
     }
 });
 
-test('a run without validateHtml invocations is shown as not audited', t => {
+test('a run without mageLensValidateHtml invocations is shown as not audited', t => {
     const fixture = reports(t, 1);
     const result = fixture.run();
     assert.equal(result.status, 0, result.stderr);
     const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
     assert.match(html, /<caption>Reports<\/caption>/);
-    assert.match(html, /HTML validation<small>.*<td colspan="2">Not run<small>No test called validateHtml, so no page was audited\./s);
+    assert.match(html, /HTML validation<small>.*<td colspan="2">Not run<small>No test called mageLensValidateHtml, so no page was audited\./s);
     assert.doesNotMatch(html, /html-validation\/index\.html|0 errors/);
     assert.ok(!fs.existsSync(`${fixture.root}/coverage/html-validation`));
     assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).htmlValidation,
         {audits: 0, pages: 0, errors: 0, warnings: 0, notValidated: 0});
 });
 
-test('validateHtml captures are validated into a separate Reports section with their own report', t => {
+test('mageLensValidateHtml captures are validated into a separate Reports section with their own report', t => {
     const fixture = reports(t, 1);
     const capture = {run: 'fixture', runner: 'cypress', spec: 'cypress/e2e/pages.cy.js', test: 'audits pages', status: 200, contentType: 'text/html'};
     const document = body => `<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><title>Page</title></head><body>\n${body}\n</body></html>`;

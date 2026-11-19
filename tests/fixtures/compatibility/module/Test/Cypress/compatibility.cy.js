@@ -53,7 +53,7 @@ describe('Magento storefront coverage compatibility', () => {
         cy.setCookie('magelens_markup_session', 'signed-in');
         for (const markup of ['valid', 'invalid']) {
             cy.visit(`/coverageprobe/index/markup/case/${markup}`);
-            cy.validateHtml();
+            cy.mageLensValidateHtml();
         }
     });
 });

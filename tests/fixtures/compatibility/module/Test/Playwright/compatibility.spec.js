@@ -40,7 +40,7 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
     await page.goto('/customer/account/login/');
     await expect(page.locator('#email')).toBeVisible();
 });
-test('starts the next test with fresh state', async ({page, context, baseURL, validateHtml}) => {
+test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
     await page.goto('/coverageprobe/');
     await expect(page.locator('[data-cy="inline-probe"]')).toHaveText('inline-ready');
     expect(await page.evaluate(() => window.magelensChildScript)).toBe('child-ready');
@@ -49,6 +49,6 @@ test('starts the next test with fresh state', async ({page, context, baseURL, va
     await context.addCookies([{name: 'magelens_markup_session', value: 'signed-in', url: baseURL}]);
     for (const markup of ['valid', 'invalid']) {
         await page.goto(`/coverageprobe/index/markup/case/${markup}`);
-        await validateHtml(page);
+        await mageLensValidateHtml(page);
     }
 });
