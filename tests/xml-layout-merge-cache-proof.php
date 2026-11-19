@@ -45,13 +45,19 @@ if (!$seed && $mode !== 'cold') {
     if (array_keys($keys) !== ['package', 'merge', 'schedule']) throw new RuntimeException('Unexpected native cache key inventory');
 }
 
-$path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_packagemutation_native.xml';
-$source = file_get_contents(BP . '/' . $path);
-$files = [['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source),
-    'declarations' => LayoutManifest::declarations($path, $source)]];
-[$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
-if (!$nativeOnly) foreach ($callbacks as [$class, $method, $pre, $post]) {
-    if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot observe native layout cache proof');
+$handles = ['coverageprobe_packagemutation_native', 'coverageprobe_component_index'];
+$files = [];
+foreach ($handles as $handle) {
+    $path = 'app/code/MageLens/Compatibility/view/frontend/layout/' . $handle . '.xml';
+    $source = file_get_contents(BP . '/' . $path);
+    $files[] = ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source),
+        'declarations' => LayoutManifest::declarations($path, $source)];
+}
+if (!$nativeOnly) {
+    [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
+    foreach ($callbacks as [$class, $method, $pre, $post]) {
+        if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot observe native layout cache proof');
+    }
 }
 $saved = [];
 OpenTelemetry\Instrumentation\hook(Merge::class, '_saveCache', static function ($merge, $params) use (&$saved): void {
@@ -89,7 +95,7 @@ try {
     } as $remove) $storage->remove($keys[$remove]);
     $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true,
         ['isIsolated' => true, 'layoutFactory' => $factory]);
-    $page->addHandle(['coverageprobe_packagemutation_native', 'magelens_cache_probe_' . $nonce]);
+    $page->addHandle([...$handles, 'magelens_cache_probe_' . $nonce]);
     $layout = $page->getLayout();
     $merge = $layout->getUpdate();
     $block = $layout->getBlock('magelens.layout.package.native');
@@ -97,6 +103,8 @@ try {
     if (!$block || !str_contains($block->toHtml(), 'data-layout-mutation>' . $expected . '</span>')) {
         throw new RuntimeException('Native layout cache output changed for ' . $mode);
     }
+    if (!$layout->getBlock('magelens_layout_ui') instanceof \Magento\Ui\Component\Wrapper\UiComponent
+        || $layout->hasElement('magelens_layout_ui_denied')) throw new RuntimeException('Native layout cache visibility changed for ' . $mode);
     if ($seed && $mode === 'stale-provider' && $replacements !== 1) throw new RuntimeException('Native cached provider replacement count changed');
     $merge = $layout->getUpdate();
     $keys = ['package' => (new ReflectionMethod($merge, 'generateCacheId'))->invoke($merge, $processor->suffix),
@@ -110,7 +118,7 @@ try {
     $evidence = $collector->finish();
     $limits = $evidence[2];
     $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
-    $target = array_column($files[0]['declarations'], null, 'id');
+    $target = array_column(array_merge(...array_column($files, 'declarations')), null, 'id');
     $effects = array_values(array_filter($events, static fn($event) => isset($target[$event['id']])));
     $required = match ($mode) {
         'package' => ['layout-package-cache'], 'merge' => ['layout-merge-cache'],
@@ -118,15 +126,18 @@ try {
     };
     foreach ($required as $limit) if (!in_array($limit, $limits, true)) throw new RuntimeException('Missing native cache limitation: ' . $limit);
     if ($mode === 'cold') {
-        foreach (['layout-block-rendered', 'layout-template-executed', 'layout-argument-read'] as $effect) {
+        foreach (['layout-block-rendered', 'layout-template-executed', 'layout-argument-read', 'layout-condition-denied'] as $effect) {
             if (!in_array($effect, array_column($effects, 'type'), true)) throw new RuntimeException('Cold layout lacks original effect: ' . $effect);
         }
     } else {
-        foreach ($effects as $event) if (in_array($event['type'], ['layout-block-created', 'layout-block-rendered', 'layout-template-executed', 'layout-argument-applied', 'layout-argument-read'], true)) {
+        foreach ($effects as $event) if (in_array($event['type'], ['layout-block-created', 'layout-block-rendered', 'layout-template-executed',
+            'layout-argument-applied', 'layout-argument-read', 'layout-condition-allowed', 'layout-condition-denied'], true)) {
             throw new RuntimeException('Cached layout inferred fresh original effect: ' . $event['type']);
         }
     }
-    if (hash_file('sha256', BP . '/' . $path) !== hash('sha256', $source)) throw new RuntimeException('Native cache proof changed XML source');
+    foreach ($files as $file) {
+        if (hash_file('sha256', BP . '/' . $file['path']) !== $file['sourceHash']) throw new RuntimeException('Native cache proof changed XML source');
+    }
     foreach (['xml-value', 'cached-provider', 'data-layout-mutation'] as $privateValue) {
         if (str_contains(json_encode($events, JSON_THROW_ON_ERROR), $privateValue)) throw new RuntimeException('Layout cache evidence retained response or value bytes');
     }
