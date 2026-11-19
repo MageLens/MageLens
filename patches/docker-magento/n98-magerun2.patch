@@ -1,0 +1,48 @@
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+
+Target: Mark Shust Docker Magento 53.2.0
+
+Pin and verify the upstream wrapper download and allow cache preparation for CLI coverage.
+
+--- a/bin/n98-magerun2
++++ b/bin/n98-magerun2
+@@ -1,14 +1,25 @@
+ #!/usr/bin/env bash
+-if ! bin/cliq ls bin/n98-magerun2.phar; then
+-  echo "Downloading n98-magerun2.phar, just a moment..."
+-  bin/clinotty curl -sS -O https://files.magerun.net/n98-magerun2.phar
+-  bin/clinotty curl -sS -o n98-magerun2.phar.sha256 https://files.magerun.net/sha256.php?file=n98-magerun2.phar
+-  bin/clinotty shasum -a 256 -c n98-magerun2.phar.sha256
+-  [ $? != 0 ] && echo "sha256 checksum do not match!" && exit
++source "$(dirname "$0")/common"
+-
++
+-  bin/cliq chmod +x n98-magerun2.phar
+-  bin/cliq mkdir -p bin
+-  bin/cliq mv n98-magerun2.phar bin
++verify_phar() {
++  printf '%s  %s\n' "$MAGERUN_SHA256" "$1" | bin/clinotty sha256sum --check --status 2>/dev/null
++}
++
++phar=bin/n98-magerun2.phar
++if ! verify_phar "$phar"; then
++  [[ "${MAGELENS_MAGERUN_OFFLINE:-0}" != 1 ]] ||
++    fail 'Missing or invalid pinned n98-magerun2 PHAR. Run ./bin/n98-magerun2 --skip-core-commands --version with network access first.'
++  echo "Downloading n98-magerun2 $MAGERUN_VERSION, just a moment..."
++  temporary=$(bin/clinotty mktemp bin/.n98-magerun2.XXXXXX)
++  trap 'bin/cliq rm -f "$temporary" || true' EXIT
++  bin/clinotty curl --fail --silent --show-error --location --retry 2 --connect-timeout 10 --max-time 30 \
++    -o "$temporary" "https://files.magerun.net/n98-magerun2-$MAGERUN_VERSION.phar"
++  verify_phar "$temporary" || fail 'n98-magerun2 SHA-256 checksum does not match.'
++
++  bin/cliq chmod +x "$temporary"
++  bin/cliq mv -f "$temporary" "$phar"
+ fi
+-
++
+-bin/cli bin/n98-magerun2.phar "$@"
++if [[ "${MAGELENS_MAGERUN_PREPARE:-0}" != 1 ]]; then
++  bin/cli "$phar" "$@"
++fi

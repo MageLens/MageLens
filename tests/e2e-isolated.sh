@@ -193,10 +193,12 @@ fi
     else
         ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     fi
+    # Prepare the pinned cache through the interactive entry point before coverage.
+    ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
-    ./bin/run-coverage "${coverage_options[@]}" | tee .runtime/coverage-run.log
+    MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage "${coverage_options[@]}" | tee .runtime/coverage-run.log
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs

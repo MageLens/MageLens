@@ -10,6 +10,7 @@ License: see LICENSE in the repository root.
             <cron>
                 <enabled>1</enabled>
                 <unused>0</unused>
+                <magerun_message>magerun-handler-ran</magerun_message>
             </cron>
         </magelens_probe>
     </default>

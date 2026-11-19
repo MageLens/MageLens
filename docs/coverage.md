@@ -58,17 +58,26 @@ If a process is forcibly terminated, check for active installation or coverage p
 
 ## CLI tests
 
-Add CLI test files named `*.test.cjs` under `cli/e2e/` or a module's `Test/Cli/` directory, including Composer modules listed in `vendorRoots`. The same files run with either Cypress or Playwright when you use `./bin/run-coverage`.
+Add standalone CLI specs named `*.test.cjs` under `cli/e2e/` or a module's `Test/Cli/` directory, including Composer modules listed in `vendorRoots`. These specs run after the Cypress or Playwright browser suite when you use `./bin/run-coverage`.
 
-Import `test`, `magento` and `magerun` from `cli/support.cjs`. Both command helpers take an array of arguments and return `{code, stdout, stderr}`. Commands run in the Magento PHP container using the installed application's configuration. n98-magerun2 uses the database settings from `app/etc/env.php` and downloads a checksum-verified PHAR on first use.
+Standalone CLI specs can import `test`, `magento` and `magerun` from `cli/support.cjs`. Both command helpers take an array of arguments and return `{code, stdout, stderr}`. Commands run in the Magento PHP container using the installed application's configuration. `magerun()` and `./bin/n98-magerun2` share a pinned, checksum-verified PHAR that downloads on first use. For a run without outbound access, prepare the PHAR with `./bin/n98-magerun2 --skip-core-commands --version` while online, then run `MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage` to require the verified cache. For an existing installation with an older wrapper, rerun `./install.sh` with your saved platform, theme and runner flags.
+
+Use `sys:cron:run <job_code>` to execute one configured handler immediately. Use Magento's native `cron:run --group=<group>` to test scheduler behavior, such as processing a pending schedule when it becomes due. This example uses the compatibility module from the isolated acceptance suite.
 
 ```js
 const assert = require('node:assert/strict');
 const {test, magento, magerun} = require('../support.cjs');
 
-test('reads Magento status and queries its database', async () => {
-    assert.match((await magento(['cache:status'])).stdout, /config/);
-    assert.match((await magerun(['db:query', 'SELECT 42 AS result'])).stdout, /42/);
+test('runs one cron handler and checks its recorded message', async () => {
+    const job = 'magelens_magerun_probe';
+    const messages = async () => JSON.parse((await magento(['magelens:probe', 'magerun-messages', job])).stdout);
+    try {
+        assert.deepEqual(await messages(), []);
+        await magerun(['sys:cron:run', job]);
+        assert.deepEqual(await messages(), ['magerun-handler-ran']);
+    } finally {
+        await magento(['magelens:probe', 'clean-magerun', job]);
+    }
 });
 ```
 

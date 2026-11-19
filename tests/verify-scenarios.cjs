@@ -16,7 +16,7 @@ const browserTitles = [
     'uses inherited journal settings and shows the selected Admin fields'
 ];
 const cliTitles = [
-    'preserves command arguments and reports an expected nonzero exit',
+    'preserves command arguments and runs a named cron job through MageRun',
     'executes a scheduled Magento cron job',
     'processes a message through a Magento database queue'
 ];

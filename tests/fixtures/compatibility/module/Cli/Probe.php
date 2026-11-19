@@ -70,6 +70,17 @@ class Probe extends Command
                     'job_code = ?' => 'magelens_probe',
                 ]);
                 break;
+            case 'magerun-messages':
+                $db = $this->resource->getConnection();
+                $select = $db->select()->from($this->resource->getMainTable(), ['messages'])
+                    ->where('job_code = ?', 'magelens_magerun_probe');
+                $output->writeln(json_encode($db->fetchCol($select), JSON_THROW_ON_ERROR));
+                break;
+            case 'clean-magerun':
+                $this->resource->getConnection()->delete($this->resource->getMainTable(), [
+                    'job_code = ?' => 'magelens_magerun_probe',
+                ]);
+                break;
             case 'publish':
                 $this->publisher->publish('magelens.probe', $value);
                 break;

@@ -10,4 +10,7 @@ License: see LICENSE in the repository root.
             <schedule>* * * * *</schedule>
         </job>
     </group>
+    <group id="magelens_magerun_probe">
+        <job name="magelens_magerun_probe" instance="MageLens\Compatibility\Cli\Jobs" method="runNamed"/>
+    </group>
 </config>
