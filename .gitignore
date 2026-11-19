@@ -33,6 +33,7 @@
 !/bin/export-coverage.cjs
 !/bin/finalize.cjs
 !/bin/html-validation.cjs
+!/bin/test-attempts.cjs
 !/bin/install
 !/bin/image-inputs.cjs
 !/bin/prepare-images

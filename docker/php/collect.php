@@ -9,19 +9,28 @@ declare(strict_types=1);
 
 // FPM is configured at image build time. CLI collection is enabled only for
 // the specific Magento process started by the test command executor.
-$commandId = $tool = null;
+$commandId = $tool = $attempt = null;
+$startedAt = $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
 if (PHP_SAPI === 'cli') {
     $invocation = getenv('MAGELENS_CLI_COVERAGE', true);
     if (!is_string($invocation) || !preg_match('/^([a-f0-9]{32}):([a-f0-9]{32}):(magento|magerun)$/D', $invocation, $matches)) {
         return;
     }
     [, $token, $commandId, $tool] = $matches;
+    $attempt = getenv('MAGELENS_CLI_COVERAGE_ATTEMPT', true);
+    $attempt = is_string($attempt) && preg_match('/^[a-f0-9]{32}$/D', $attempt) ? $attempt : null;
     // Child commands are outside this invocation and must not replace its record.
     putenv('MAGELENS_CLI_COVERAGE');
+    putenv('MAGELENS_CLI_COVERAGE_ATTEMPT');
 } elseif (PHP_SAPI === 'fpm-fcgi') {
     $token = $_SERVER['HTTP_X_APPLICATION_COVERAGE'] ?? $_COOKIE['application_coverage'] ?? '';
     if (!is_string($token) || !preg_match('/^[a-f0-9]{32}$/D', $token)) {
         return;
+    }
+    // The test attempt that sent the request (docs/coverage.md#test-attempts); requests without one stay unattributed.
+    $attempt = $_SERVER['HTTP_X_APPLICATION_COVERAGE_ATTEMPT'] ?? $_COOKIE['application_coverage_attempt'] ?? null;
+    if (!is_string($attempt) || !preg_match('/^[a-f0-9]{32}$/D', $attempt)) {
+        $attempt = null;
     }
 } else {
     return;
@@ -50,7 +59,7 @@ pcov\start();
 // Retain the shared lock until process shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
 $initialPid = getmypid();
-register_shutdown_function(static function () use ($initialPid, $record, $token, $state, $collectionLock, $commandId, $tool): void {
+register_shutdown_function(static function () use ($initialPid, $record, $token, $state, $collectionLock, $commandId, $tool, $attempt, $startedAt): void {
     if ($commandId !== null && getmypid() !== $initialPid) {
         $record .= '.' . getmypid();
     }
@@ -74,6 +83,8 @@ register_shutdown_function(static function () use ($initialPid, $record, $token,
         file_put_contents($record . '.json', json_encode([
             'xml' => $xmlRecord,
             'run' => $token,
+            'attempt' => $attempt,
+            'startedAt' => DateTimeImmutable::createFromFormat('U.u', sprintf('%.6F', $startedAt))->format('Y-m-d\\TH:i:s.v\\Z'),
             ...$origin,
             'mode' => $result['mode'],
             'cache' => $result['cache'] ?? 'bypass',

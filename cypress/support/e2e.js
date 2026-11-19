@@ -9,14 +9,25 @@ registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
 Cypress.on('window:before:load', disablePageTransitions);
 
-beforeEach(() => {
+let attempt = null;
+beforeEach(function () {
+    // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+    cy.task('mageLensAttempt', {event: 'start', id, spec: Cypress.spec.relative,
+        test: Cypress.currentTest.titlePath, retry: this.currentTest.currentRetry()}, {log: false}).then(() => { attempt = id; });
     installCypressAdminDependencies();
     const run = Cypress.expose('coverageRun');
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
     // Avoid intercepting multipart bodies: header mutation can corrupt binary uploads.
-    cy.setCookie('application_coverage', run, {
-        domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
-    });
+    const cookie = {domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true};
+    cy.setCookie('application_coverage', run, cookie);
+    cy.setCookie('application_coverage_attempt', id, cookie);
+});
+afterEach(function () {
+    if (!attempt) return;
+    // Mocha leaves the state unset on an attempt that will be retried.
+    cy.task('mageLensAttempt', {event: 'finish', id: attempt, outcome: this.currentTest.state || 'failed'}, {log: false});
+    attempt = null;
 });
 
 // Captures the HTML source of the current page for the validation report; see docs/coverage.md#html-validation.

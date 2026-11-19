@@ -1,0 +1,47 @@
+// Copyright (c)  MageLens
+// SPDX-License-Identifier: Elastic-2.0
+// License: see LICENSE in the repository root.
+
+// Checks the test attempt records of a passing E2E run and the attempt IDs in its PHP records.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const read = file => JSON.parse(fs.readFileSync(path.join('coverage', file), 'utf8'));
+const {id: run, runner} = read('run.json');
+const browser = read(`${runner}-results.json`);
+const cli = read('cli-results.json');
+const attempts = new Map(fs.readdirSync('coverage/raw/attempts').map(file => {
+    const attempt = read(`raw/attempts/${file}`);
+    assert.equal(file, `${attempt.id}.json`);
+    return [attempt.id, attempt];
+}));
+for (const attempt of attempts.values()) {
+    assert.equal(attempt.run, run, 'Attempt from another run');
+    assert.equal(attempt.outcome, 'passed', `Unfinished or failed attempt in a passing run: ${attempt.test.join(' › ')}`);
+    assert.ok(Date.parse(attempt.finishedAt) >= Date.parse(attempt.startedAt));
+}
+const byRunner = name => [...attempts.values()].filter(attempt => attempt.runner === name);
+// The suites run without retries, so every test has exactly one attempt.
+assert.equal(byRunner(runner).length, browser.totalTests);
+assert.equal(byRunner('cli').length, cli.totalTests);
+assert.equal(new Set(byRunner(runner).map(attempt => JSON.stringify([attempt.spec, attempt.test]))).size, browser.totalTests);
+
+const requests = fs.readdirSync(`coverage/raw/php/${run}`).filter(file => file.endsWith('.json'))
+    .map(file => read(`raw/php/${run}/${file}`));
+const used = new Map([...attempts.keys()].map(id => [id, 0]));
+let unattributed = 0;
+for (const request of requests) {
+    assert.ok(!Number.isNaN(Date.parse(request.startedAt)), 'PHP record without its start time');
+    if (request.attempt === null) {
+        assert.equal(request.commandId, undefined, 'A CLI command must belong to its CLI test');
+        unattributed++;
+        continue;
+    }
+    const attempt = attempts.get(request.attempt);
+    assert.ok(attempt, 'PHP record refers to an unknown attempt');
+    assert.equal(attempt.runner, request.commandId ? 'cli' : runner, 'PHP record attributed to the wrong suite');
+    used.set(request.attempt, used.get(request.attempt) + 1);
+}
+for (const [id, count] of used) assert.ok(count > 0, `No PHP execution attributed to ${attempts.get(id).test.join(' › ')}`);
+console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed.`);

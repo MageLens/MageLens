@@ -205,6 +205,7 @@ fi
     ./bin/runner node tests/verify-demo.cjs
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-cli-coverage.cjs
+    ./bin/runner node tests/verify-attempts.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
     if [[ "$runner" == cypress ]]; then

@@ -10,6 +10,7 @@ const {withTemplateCoverage} = require('@magelens/magento-template-coverage/play
 const playwright = require('@playwright/test');
 const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
 const {captureHtml} = require('../bin/html-validation.cjs');
+const {newAttemptId, startAttempt, finishAttempt} = require('../bin/test-attempts.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         browserIdentity: [async ({browser}, use, testInfo) => {
@@ -50,12 +51,21 @@ function withCoverage(base = playwright.test) {
                 }
             });
         },
-        context: async ({context, baseURL}, use) => {
+        // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
+        coverageAttempt: [async ({}, use, testInfo) => {
+            const id = newAttemptId();
+            startAttempt({id, runner: 'playwright', spec: path.relative(testInfo.config.rootDir, testInfo.file),
+                test: testInfo.titlePath.slice(1), retry: testInfo.retry, project: testInfo.project.name, worker: testInfo.workerIndex});
+            try { await use(id); }
+            finally { finishAttempt({id, outcome: testInfo.status}); }
+        }, {auto: true}],
+        context: async ({context, baseURL, coverageAttempt}, use) => {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
-            await context.addCookies([{name: 'application_coverage', value: run.id,
-                domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
+            const cookie = {domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true};
+            await context.addCookies([{name: 'application_coverage', value: run.id, ...cookie},
+                {name: 'application_coverage_attempt', value: coverageAttempt, ...cookie}]);
             const snapshots = new Map();
             const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
             await context.exposeBinding(binding, (_source, snapshot) => snapshots.set(snapshot.id, snapshot.coverage));

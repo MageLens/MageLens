@@ -14,7 +14,9 @@ $run = $request['run'] ?? '';
 $tool = $request['tool'] ?? '';
 $args = $request['args'] ?? [];
 $timeout = $request['timeout'] ?? 0;
+$attempt = $request['attempt'] ?? null;
 if (!is_string($run) || !preg_match('/^[a-f0-9]{32}$/D', $run)
+    || ($attempt !== null && (!is_string($attempt) || !preg_match('/^[a-f0-9]{32}$/D', $attempt)))
     || !in_array($tool, ['magento', 'magerun'], true)
     || $tool !== ($argv[1] ?? '')
     || !is_array($args) || !array_is_list($args) || !$args
@@ -33,6 +35,8 @@ if (trim((string) @file_get_contents('/coverage/.active-run')) !== $run) {
 $id = bin2hex(random_bytes(16));
 $entry = $tool === 'magerun' ? 'bin/n98-magerun2.phar' : 'bin/magento';
 putenv('MAGELENS_CLI_COVERAGE=' . $run . ':' . $id . ':' . $tool);
+// A separate variable keeps collectors in images built before attempt IDs working.
+putenv('MAGELENS_CLI_COVERAGE_ATTEMPT' . ($attempt === null ? '' : '=' . $attempt));
 
 $stdout = tmpfile();
 $stderr = tmpfile();

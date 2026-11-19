@@ -178,6 +178,14 @@ The call captures the page's HTML and returns no result. Captures are validated 
 
 After a successful run, the combined report lists HTML validation in a separate **Reports** section and links to `coverage/html-validation/index.html`. That report shows every audit with its page, test and spec, and each finding's severity, rule, message, response line and column, or states that no issues were found. `coverage/html-validation/results.json` contains the same data. The captured responses stay in the private `coverage/raw/html-validation/` directory and are not published with the report. Existing installations must rerun installation with their saved platform, theme and runner flags to install the validator.
 
+## Test attempts
+
+Each attempt of a test, including every retry, gets a random 32-character attempt ID when it starts: in the Cypress support file, the Playwright `context` fixture and the CLI suite. The runner writes the attempt's test identity once to `coverage/raw/attempts/<attempt ID>.json`: runner, spec, title path below the spec, retry number, Playwright project and worker, start and finish time, and the runner's outcome. A failed attempt keeps its record when a retry follows.
+
+Browser tests send the ID in the `application_coverage_attempt` cookie next to `application_coverage`; custom HTTP clients can send the `X-Application-Coverage-Attempt` header instead. CLI tests pass it to their commands. Each PHP request or command record stores the ID as `attempt`, with its start time as `startedAt`. Requests without an ID, such as shared setup in another browser context, are stored with `attempt: null` and stay unattributed. Aggregate coverage is unchanged: it does not read attempt IDs.
+
+The PHP collector is part of the PHP image: an existing installation writes these two fields only after rerunning installation with its saved platform, theme and runner flags. These records are private run data under `coverage/raw/` and are not published with the reports. Per-test reports are not generated yet ([#72](https://github.com/MageLens/MageLens/issues/72)).
+
 ## Use your project
 
 For a Cypress installation, follow the [source setup instructions](../README.md#work-with-the-source), then add scenarios in `cypress/e2e/**/*.cy.js` or a module's `Test/Cypress/**/*.cy.js`. All matching scenarios run with `./bin/run-coverage`.
