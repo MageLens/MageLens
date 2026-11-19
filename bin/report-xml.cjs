@@ -225,6 +225,7 @@ const layoutDecisions = {
 const layoutObservations = new Set(['layout-block-created', 'layout-template-selected', 'layout-reference-target-observed']);
 const countsAsLayoutCoverage = type => !Object.hasOwn(layoutDecisions, type) && !layoutObservations.has(type);
 const layoutLimitations = {
+    'layout-file-replacement-descriptor-unconfirmed': 'A replacement file descriptor has a custom filename accessor, hooked or unset filename storage, pending lazy initialization or no verified string. Original replacement ancestry is unconfirmed; independently verified file reads retain their own evidence.',
     'layout-file-replacement-storage-unconfirmed': 'The native file-list backing storage has hooks, unset storage, pending lazy initialization or no verified array. Replacement ancestry cannot be inspected without executing application code; independently verified file reads retain their own evidence.',
     'layout-programmatic-update': 'A native programmatic XML update appended input without original file provenance.',
     'full-page-cache-origin': 'A native full-page cache lookup returned a response. Its original XML/template lineage and fresh layout execution are unverified.',

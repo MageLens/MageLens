@@ -677,6 +677,12 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     assert.deepEqual(fileList.files[1].declarations[0].evidence, []);
     assert.match(fileList.layout.limitations[0], /file-list backing storage/);
     assert.deepEqual(fileList.requests[0].layoutLimitations, fileList.layout.limitations);
+    const descriptor = merge(manifest, [{...warm, layoutLimitations: ['layout-file-replacement-descriptor-unconfirmed']}], sources);
+    assert.equal(descriptor.layout.covered, 0);
+    assert.equal(descriptor.files[1].declarations.length, 1);
+    assert.deepEqual(descriptor.files[1].declarations[0].evidence, []);
+    assert.match(descriptor.layout.limitations[0], /file descriptor/);
+    assert.deepEqual(descriptor.requests[0].layoutLimitations, descriptor.layout.limitations);
     assert.throws(() => merge(manifest, [{...warm, layoutHook: false}], sources), /No functioning XML layout hook/);
 });
 

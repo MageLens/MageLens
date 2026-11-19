@@ -296,6 +296,15 @@ final class LayoutCoverage
         return is_array($files) ? $files : null;
     }
 
+    private static function descriptorFilename(File $file): ?string
+    {
+        if ((new \ReflectionClass($file))->isUninitializedLazyObject($file)
+            || (new \ReflectionMethod($file, 'getFilename'))->getDeclaringClass()->getName() !== File::class) return null;
+        $property = LayoutXmlOwnership::unhookedProperty($file, 'filename');
+        $filename = $property?->getRawValue($file);
+        return is_string($filename) ? $filename : null;
+    }
+
     private function beginFileReplacement($list, array $params, string $class): void
     {
         if ($class !== FileList::class) return;
@@ -321,8 +330,12 @@ final class LayoutCoverage
             if (!$file instanceof File || !$before instanceof File || $file === $before
                 || !in_array($file, $frame['incoming'], true)) continue;
             $index = $frame['package'];
-            $path = $file->getFilename();
-            $previous = $before->getFilename();
+            $path = self::descriptorFilename($file);
+            $previous = self::descriptorFilename($before);
+            if ($path === null || $previous === null) {
+                $this->limitations['layout-file-replacement-descriptor-unconfirmed'] = true;
+                continue;
+            }
             $displaced = $this->packages[$index]['replacements'][$previous] ?? [];
             $this->packages[$index]['replacements'][$path] = array_values(array_unique([...$displaced, $previous]));
         }
