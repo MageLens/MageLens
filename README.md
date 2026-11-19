@@ -133,6 +133,8 @@ To share coverage, run `./bin/export-coverage` and send only **`coverage/share.h
 
 Coverage includes PHP executable lines, whole JavaScript files, and HTML/PHTML templates with their bindings and inline scripts under `src/app/code/`, plus selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. JavaScript badges measure statements in whole `.js` files, with separate application/library reports. Inline scripts belong to template coverage, which also lists unsupported and PHP-generated script fragments. See [JavaScript coverage configuration](docs/coverage.md#javascript-coverage).
 
+`coverage/report.sqlite` holds the same results as a queryable database for CI, scripts and coding agents; see [Coverage database](docs/coverage.md#coverage-database).
+
 Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](docs/coverage.md#html-validation).
 
 Read the [coverage guide](docs/coverage.md) for report semantics, collection details, and adding tests and fixtures.

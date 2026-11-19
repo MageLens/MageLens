@@ -65,7 +65,8 @@ async function main() {
         await verifyPage(`${type}/${nested}`);
     }
     await verifyPage('html-validation/index.html');
-    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json', 'html-validation/results.json']) await verify(file);
+    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json', 'html-validation/results.json',
+        'report.sqlite', 'schema.sql']) await verify(file);
     const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8')).id;
     const raw = path.posix.join('raw/php', run);
     const record = fs.readdirSync(path.join('coverage', raw)).find(file => file.endsWith('.json'));

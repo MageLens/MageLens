@@ -8,6 +8,7 @@ const {sourceHashes} = require('./prepare.cjs');
 const {badge, cypressBadge, setBadgeSection, formatPercent} = require('./badges.cjs');
 const {writeIndex, templateLimitations} = require('./report-index.cjs');
 const {writeReport: writeHtmlValidationReport} = require('./html-validation.cjs');
+const {writeDatabase} = require('./report-database.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const run = read('coverage/run.json');
 const php = read('coverage/php/coverage-summary.json');
@@ -61,8 +62,10 @@ for (const [type, metric] of Object.entries(metrics).filter(([type]) => type !==
 }
 const generatedAt = new Date().toISOString();
 const htmlValidation = writeHtmlValidationReport(run);
+const limitations = templateLimitations(templates);
+writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
 fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
-    templateLimitations: templateLimitations(templates)}, null, 2));
+    templateLimitations: limitations}, null, 2));
 writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});
 if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
     `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`

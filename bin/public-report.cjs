@@ -9,7 +9,7 @@ const path = require('node:path');
 // The collectors share the parent directory with request records and fixture credentials.
 const reportDirectories = ['php', 'js', 'js-application', 'js-libraries', 'templates', 'xml', 'html-validation'];
 const downloads = new Set([
-    'index.html', 'summary.json', 'javascript-summary.json', 'javascript-scope.json',
+    'index.html', 'report.sqlite', 'schema.sql', 'summary.json', 'javascript-summary.json', 'javascript-scope.json',
     'php/clover.xml', 'php/line-coverage.json', 'templates/coverage-summary.json', 'xml/coverage.json',
     'html-validation/results.json',
     ...['cypress', 'playwright', 'php', 'js', 'templates'].map(name => `badges/${name}.svg`),
