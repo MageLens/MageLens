@@ -78,6 +78,10 @@ assert.deepEqual(validation.audits.map(audit => [audit.url, audit.status, audit.
     [page('valid'), 200, null, []],
     [page('invalid'), 200, null, [['close-order', 4, 8], ['close-order', 4, 17], ['close-order', 4, 25], ['close-order', 5, 2], ['close-order', 5, 9]]]
 ], 'Only the two requested pages are audited, with the session of the test');
+// The runner's proxy must not have changed the audited document.
+assert.equal(read(`coverage/${validation.audits[0].capture}`).html,
+    '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><title>Markup probe</title></head><body>\n<p>First</p>\n<p><b><i>Second</i></b></p>\n</body></html>',
+    'The capture is the unmodified server response');
 assert.ok(validation.audits.every(audit => audit.test.includes('starts the next test with fresh state')));
 assert.deepEqual(read('coverage/summary.json').htmlValidation, {audits: 2, pages: 2, errors: 5, warnings: 0, notValidated: 0});
 assert.equal(validation.target, 'source');

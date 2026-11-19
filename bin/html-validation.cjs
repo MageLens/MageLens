@@ -43,20 +43,22 @@ function validateSource(html) {
 // Called by the Cypress task and the Playwright fixture for each mageLensValidateHtml invocation.
 // Tests only capture the response; it is validated when the reports are generated, so
 // findings and unsupported responses can never fail a test. `error` records a failed request.
-function captureHtml({runner, spec, test, url, status, contentType, html, error}) {
+function captureHtml({runner, spec, test, url, status, contentType, html, redirected, error}) {
     const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8')).id;
     fs.mkdirSync(rawDirectory, {recursive: true});
     // File names keep the order of the calls, including several within one millisecond.
     const name = `${Date.now()}-${String(process.hrtime.bigint()).padStart(20, '0')}.json`;
     fs.writeFileSync(path.join(rawDirectory, name), JSON.stringify({
-        run, runner, spec, test, capturedAt: new Date().toISOString(), url: auditedUrl(url), status, contentType, html, error
+        run, runner, spec, test, capturedAt: new Date().toISOString(), url: auditedUrl(url), status, contentType, html, redirected, error
     }));
     return null;
 }
 
 // A page that could not be validated must never read as a clean one.
-function notValidatedReason({status, contentType, html, error}) {
+function notValidatedReason({status, contentType, html, redirected, error}) {
     if (error) return `the request failed (${redact(String(error))})`;
+    // A browser fetch reports a redirect without its status.
+    if (redirected) return 'the server answered with a redirect';
     if (status >= 300 && status < 400) return `the server answered with an HTTP ${status} redirect`;
     if (typeof html !== 'string' || !/^(text\/html|application\/xhtml\+xml)\b/i.test(contentType || '')) {
         return `the response was ${contentType || 'sent without a content type'}, not an HTML document`;
@@ -64,8 +66,8 @@ function notValidatedReason({status, contentType, html, error}) {
     return html.trim() ? null : 'the response was empty';
 }
 
-function auditCapture({html, error, ...capture}, file) {
-    const notValidated = notValidatedReason({html, error, ...capture});
+function auditCapture({html, redirected, error, ...capture}, file) {
+    const notValidated = notValidatedReason({html, redirected, error, ...capture});
     const messages = notValidated ? [] : validateSource(html);
     const errorCount = messages.filter(message => message.severity === 'error').length;
     return {...capture, target, capture: path.posix.join('raw/html-validation', file), contentType: capture.contentType || null,

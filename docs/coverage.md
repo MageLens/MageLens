@@ -163,7 +163,7 @@ test('audits the account page', async ({page, mageLensValidateHtml}) => {
 });
 ```
 
-The call captures the page's HTML and returns no result. Captures are validated after the tests finish, while the reports are generated, so findings never fail a test or the run. A response that cannot be validated is listed as not validated with the reason: a redirect, a response that is not an HTML document, an empty response or, in Playwright, a failed request. In Cypress, a request that the application does not answer within 60 seconds fails like any other request of the test.
+The call captures the page's HTML and returns no result. Captures are validated after the tests finish, while the reports are generated, so findings never fail a test or the run. A response that cannot be validated is listed as not validated with the reason: a redirect, a response that is not an HTML document, an empty response, or a request that failed or took longer than 60 seconds.
 
 **Validation target.** The helper requests the current URL again with the cookies of the test session, so signed-in storefront and Admin pages are audited as that user sees them. It captures the HTML source of that response, before the browser parses it. A browser repairs invalid markup while parsing, so the rendered DOM is never used in place of the source. As a result:
 

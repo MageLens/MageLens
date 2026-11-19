@@ -95,18 +95,20 @@ test('responses that cannot be validated are reported as not validated instead o
     captureHtml({...page, url: 'https://magelens.test/download', contentType: undefined, html: valid});
     captureHtml({...page, url: 'https://magelens.test/checkout/onepage/success/', status: 302, html: ''});
     captureHtml({...page, url: 'https://magelens.test/empty', html: ' \n'});
+    captureHtml({runner: 'cypress', spec: page.spec, test: page.test, url: 'https://magelens.test/sales/order/history/', redirected: true});
     captureHtml({runner: 'playwright', spec: page.spec, test: page.test, url: 'https://magelens.test/slow',
         error: 'Timeout 60000ms exceeded for https://magelens.test/slow?token=SeCrEt'});
-    assert.deepEqual(writeReport(run), {audits: 5, pages: 5, errors: 0, warnings: 0, notValidated: 5});
+    assert.deepEqual(writeReport(run), {audits: 6, pages: 6, errors: 0, warnings: 0, notValidated: 6});
     assert.deepEqual(results().audits.map(audit => [audit.status, audit.notValidated, audit.messages]), [
         [200, 'the response was application/json, not an HTML document', []],
         [200, 'the response was sent without a content type, not an HTML document', []],
         [302, 'the server answered with an HTTP 302 redirect', []],
         [200, 'the response was empty', []],
+        [null, 'the server answered with a redirect', []],
         [null, 'the request failed (Timeout 60000ms exceeded for https://magelens.test/slow?token=[redacted])', []]
     ]);
     const html = fs.readFileSync('coverage/html-validation/index.html', 'utf8');
-    assert.match(html, /5 not validated/);
+    assert.match(html, /6 not validated/);
     assert.match(html, /Not validated: the server answered with an HTTP 302 redirect\./);
     assert.match(html, /<p class="context">0 errors/, 'A failed request has no HTTP status');
     assert.doesNotMatch(html, /No issues found|SeCrEt/);
