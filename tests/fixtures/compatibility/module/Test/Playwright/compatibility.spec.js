@@ -235,7 +235,7 @@ test('starts the next test with fresh state', async ({page}) => {
     await page.goto('/coverageprobe/templatevalues/');
     await expect(page.locator('[data-layout-template-value-proof]')).toHaveText('verified');
     expect(await page.locator('[data-layout-template-value]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-layout-template-value'))))
-        .toEqual(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'default', 'case', 'interceptor'].map(name => 'magelens.template.values.' + name));
+        .toEqual(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'default', 'case', 'interceptor', 'direct.attribute', 'direct.argument', 'direct.action'].map(name => 'magelens.template.values.' + name));
     await page.goto('/coverageprobe/argumentgroups/');
     await expect(page.locator('[data-layout-argument-group="block"]')).toHaveText('first-group');
     await expect(page.locator('[data-layout-argument-group="reference"]')).toHaveText('first-reference-group');

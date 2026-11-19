@@ -45,6 +45,13 @@ License: see LICENSE in the repository root.
         <block class="MageLens\Compatibility\Block\LayoutTemplateValueIntercepted" name="magelens.template.values.interceptor">
             <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
         </block>
+        <block class="MageLens\Compatibility\Block\LayoutTemplateDirect" name="magelens.template.values.direct.attribute" template="MageLens_Compatibility::layout-template-value.phtml"/>
+        <block class="MageLens\Compatibility\Block\LayoutTemplateDirect" name="magelens.template.values.direct.argument">
+            <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
+        </block>
+        <block class="MageLens\Compatibility\Block\LayoutTemplateDirect" name="magelens.template.values.direct.action">
+            <action method="setTemplate"><argument name="filename" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></action>
+        </block>
     </container>
     <block class="Magento\Framework\View\Element\Template" name="magelens.template.values.never">
         <arguments><argument name="template" xsi:type="string">MageLens_Compatibility::layout-template-value.phtml</argument></arguments>
