@@ -61,7 +61,8 @@ final class LayoutArgumentGroups
         }
         foreach ($children as $child) {
             [$ids] = ($this->origin)(simplexml_import_dom($child));
-            foreach (['argument', 'argument-name', 'argument-type', 'argument-updater'] as $kind) {
+            foreach (['argument', 'argument-name', 'argument-type', 'argument-updater',
+                'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path'] as $kind) {
                 if (isset($ids[$kind])) ($this->emit)($ids[$kind], 'layout-argument-group-ignored', $context);
             }
         }

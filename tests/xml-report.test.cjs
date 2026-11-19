@@ -510,7 +510,7 @@ test('layout structural and page-value reports require the correct native effect
                 events: [{...event, type: incorrect}]}], sources), /Unexpected layout effect/, kind);
         }
         if (kind === 'block-class') {
-            for (const type of ['layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted']) {
+            for (const type of ['layout-block-class-origin-unconfirmed', 'layout-block-class-storage-unconfirmed', 'layout-block-class-defaulted']) {
                 const item = merge(manifest, [{...record, layoutHook: true, events: [{...event, type}]}], sources).files[1].declarations[0];
                 assert.equal(item.state, 'unmeasured', type);
                 assert.equal(item.hits, 0, type);
@@ -749,30 +749,59 @@ test('argument group selection and ignored descendants retain separate native ou
 });
 
 test('layout argument type operands require their own native dispatch evidence', () => {
-    const {manifest, record, sources} = fixture();
-    const path = 'app/code/Acme/Blog/view/frontend/layout/types.xml';
-    const source = Buffer.from('<layout/>');
-    const sourceHash = createHash('sha256').update(source).digest('hex');
-    sources[path] = source;
-    manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'type-field', family: 'layout',
-        path: '/layout/block/arguments/argument/@xsi:type', startLine: 1, endLine: 1, supported: true,
-        declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'argument-type', ordinal: 2, element: 'value',
-            handle: 'types', fileType: 'generic', instruction: 'argument', attribute: 'xsi:type'}}]});
-    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {'argument-type': 'type-field'}}}}};
-    const event = type => ({id: 'type-field', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
-    for (const type of ['layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed']) {
-        const item = merge(manifest, [{...record, layoutHook: true, events: [event(type)]}], sources).files[1].declarations[0];
-        assert.equal(item.hits, 0, type);
-        assert.equal(item.state, 'unmeasured', type);
+    for (const instruction of ['argument', 'item']) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/types.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'type-field', family: 'layout',
+            path: '/layout/block/arguments/argument' + (instruction === 'item' ? '/item' : '') + '/@xsi:type', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'argument-type', ordinal: 2, element: 'value',
+                handle: 'types', fileType: 'generic', instruction, attribute: 'xsi:type'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {'argument-type': 'type-field'}}}}};
+        const event = type => ({id: 'type-field', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+        for (const type of ['layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed']) {
+            const item = merge(manifest, [{...record, layoutHook: true, events: [event(type)]}], sources).files[1].declarations[0];
+            assert.equal(item.hits, 0, type);
+            assert.equal(item.state, 'unmeasured', type);
+        }
+        const evaluated = event('layout-argument-type-evaluated');
+        const item = merge(manifest, [{...record, layoutHook: true, events: [evaluated]}], sources).files[1].declarations[0];
+        assert.equal(item.hits, 1);
+        assert.equal(item.state, 'covered');
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [event('layout-argument-applied')]}], sources), /Unexpected layout effect/);
+        assert.throws(() => merge(manifest, [{...record, events: [evaluated]}], sources), /layout.*hook/i);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [evaluated]}], sources), /Stale XML request/);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [{...evaluated, id: 'unknown'}]}], sources), /Unknown or unmeasured XML evidence/);
     }
-    const evaluated = event('layout-argument-type-evaluated');
-    const item = merge(manifest, [{...record, layoutHook: true, events: [evaluated]}], sources).files[1].declarations[0];
-    assert.equal(item.hits, 1);
-    assert.equal(item.state, 'covered');
-    assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [event('layout-argument-applied')]}], sources), /Unexpected layout effect/);
-    assert.throws(() => merge(manifest, [{...record, events: [evaluated]}], sources), /layout.*hook/i);
-    assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [evaluated]}], sources), /Stale XML request/);
-    assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [{...evaluated, id: 'unknown'}]}], sources), /Unknown or unmeasured XML evidence/);
+});
+
+test('argument modifier facts require an original operand and their own completed native consumer', () => {
+    for (const attribute of ['translate', 'shared', 'model', 'helper', 'path']) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/modifiers.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        const kind = 'argument-' + attribute;
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'modifier', family: 'layout',
+            path: '/layout/block/arguments/argument/@' + attribute, startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind, ordinal: 2, element: 'value',
+                handle: 'modifiers', fileType: 'generic', instruction: 'argument', attribute}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {[kind]: 'modifier'}}}}};
+        const event = type => ({id: 'modifier', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+        for (const type of ['layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed']) {
+            const item = merge(manifest, [{...record, layoutHook: true, events: [event(type)]}], sources).files[1].declarations[0];
+            assert.equal(item.hits, 0, type);
+            assert.equal(item.state, 'unmeasured', type);
+        }
+        const evaluated = event('layout-argument-modifier-evaluated');
+        assert.equal(merge(manifest, [{...record, layoutHook: true, events: [evaluated]}], sources).files[1].declarations[0].hits, 1);
+        assert.throws(() => merge(manifest, [{...record, events: [evaluated]}], sources), /layout.*hook/i);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [event('layout-argument-applied')]}], sources), /Unexpected layout effect/);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, run: 'stale', events: [evaluated]}], sources), /Stale XML request/);
+    }
 });
 
 test('template-valued XML arguments retain selection and execution as independent facts', () => {

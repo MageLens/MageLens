@@ -130,6 +130,20 @@ foreach ([['layout', 'page', 'page'], ['layout', 'layout', 'generic'], ['page_la
             'Native file role and root determine the layout inventory independently of omitted source hints');
     }
 }
+$serviceItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_grammar_serviceurl.xml',
+    file_get_contents($layoutDirectory . 'coverageprobe_grammar_serviceurl.xml'));
+foreach ($serviceItems as $item) if ($item['layout']['instruction'] === 'param') {
+    checkXml(!$item['supported'] && str_contains($item['reason'], 'ServiceUrl') && str_contains($item['reason'], 'ignores'),
+        'Ignored service URL parameters retain their precise native consumer limitation');
+}
+foreach (['enabled', 'order'] as $variant) {
+    $updaterItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_grammar_updater' . $variant . '.xml',
+        file_get_contents($layoutDirectory . 'coverageprobe_grammar_updater' . $variant . '.xml'));
+    foreach ($updaterItems as $item) if ($item['layout']['instruction'] === 'updater' && $item['layout']['attribute'] !== null) {
+        checkXml(!$item['supported'] && str_contains($item['reason'], 'array') && str_contains($item['reason'], 'TypeError'),
+            'Updater modifiers retain the native array-class lookup failure rather than claiming flag or ordering effects');
+    }
+}
 $moveItems = LayoutManifest::declarations('app/code/Fixture/Module/view/frontend/layout/move.xml',
     '<layout><move element="source" destination="target" as="alias" before="first" after="last"/></layout>');
 $moveItems = array_values(array_filter($moveItems, static fn($item) => $item['layout']['instruction'] === 'move'));
@@ -190,12 +204,18 @@ $emptyGroup = array_values(array_filter($emptyGroups, static fn($item) => $item[
 checkXml(!$emptyGroup['supported'] && str_contains($emptyGroup['reason'], 'requires at least one argument'),
     'Schema-invalid empty argument groups remain explicitly unmeasured');
 $typeFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-type'));
-checkXml(count($typeFields) === 25 && count(array_filter($typeFields, static fn($item) => !$item['supported'])) === 0,
-    'Top-level argument type operands preserve independent supported source identities');
+checkXml(count($typeFields) === 34 && count(array_filter($typeFields, static fn($item) => !$item['supported'])) === 0,
+    'Argument and nested item type operands preserve independent supported source identities');
 foreach ($typeFields as $field) {
-    checkXml(str_ends_with($field['node'], '/@xsi:type') && !str_contains($field['node'], '/item'),
-        'Nested type dispatch has a separate attribution boundary');
+    checkXml(str_ends_with($field['node'], '/@xsi:type'),
+        'Type dispatch preserves each original field identity');
 }
+$modifierFields = array_values(array_filter($arrayItems, static fn($item) =>
+    in_array($item['layout']['kind'], ['argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path'], true)));
+checkXml(count($modifierFields) === 9 && count(array_filter($modifierFields, static fn($item) => !$item['supported'])) === 0,
+    'Native argument modifier operands preserve separate supported source identities');
+foreach ($modifierFields as $field) checkXml($field['layout']['kind'] === 'argument-' . $field['layout']['attribute'],
+    'Distinct modifier attributes cannot overwrite one another in a source target');
 $nameFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-name'));
 checkXml(count($nameFields) > count($leaves) && count(array_filter($nameFields, static fn($item) => !$item['supported'])) === 0,
     'Argument and item names preserve independent supported source identities');

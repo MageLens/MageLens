@@ -10,6 +10,22 @@ for (const name of ['native', 'reader', 'generator']) {
     assert.ok(file, name);
     for (const item of file.declarations.filter(item => item.supported)) {
         const kind = item.layout.kind;
+        if (kind === 'argument-helper' && (name === 'generator' || (name === 'reader'
+            && item.node.includes('/argument[3]/item[1]/')))) {
+            assert.equal(item.state, 'unmeasured', `${name}/${item.node}`);
+            assert.equal(item.hits, 0, `${name}/${item.node}`);
+            assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(),
+                ['layout-argument-modifier-deferred', 'layout-argument-modifier-origin-unconfirmed']);
+            continue;
+        }
+        if (name === 'reader' && kind === 'argument-type'
+            && item.node === '/page/body/block/arguments/argument[3]/item[1]/@xsi:type') {
+            assert.equal(item.state, 'unmeasured', `${name}/${item.node}`);
+            assert.equal(item.hits, 0, `${name}/${item.node}`);
+            assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(),
+                ['layout-argument-type-deferred', 'layout-argument-type-origin-unconfirmed']);
+            continue;
+        }
         const argument = ['argument', 'argument-name'].includes(kind);
         const actionArgument = ['action-argument', 'action-argument-name'].includes(kind);
         const nameOperand = kind.endsWith('-name');

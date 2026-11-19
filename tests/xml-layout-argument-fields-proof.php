@@ -19,10 +19,14 @@ function finishArgumentFields(LayoutCoverage $collector, array $arguments): arra
 {
     $missing = (bool) array_intersect($arguments, ['--missing-dispatch-pre', '--missing-dispatch-post',
         '--missing-first-dispatch-pre', '--missing-first-dispatch-post',
-        '--missing-native-first-pre', '--missing-native-first-post']);
+        '--missing-native-first-pre', '--missing-native-first-post', '--missing-items-pre', '--missing-items-post',
+        '--missing-modifier-pre', '--missing-modifier-post', '--missing-modifier-both']);
     try { $state = $collector->finish(); }
     catch (RuntimeException $error) {
-        if (!$missing || !str_contains($error->getMessage(), 'Missing native layout argument type dispatch hook evidence')) throw $error;
+        if (!$missing || (!str_contains($error->getMessage(), 'Missing native layout argument type dispatch hook evidence')
+            && !str_contains($error->getMessage(), 'Missing native layout array item traversal hook evidence')
+            && !str_contains($error->getMessage(), 'Missing native layout argument interpreter entry hook evidence')
+            && !str_contains($error->getMessage(), 'Missing native layout argument interpreter hook evidence'))) throw $error;
         echo "Verified missing type dispatch evidence rejects publication after unchanged native values.\n";
         exit;
     }
@@ -30,13 +34,14 @@ function finishArgumentFields(LayoutCoverage $collector, array $arguments): arra
     return $state;
 }
 $firstLayout = in_array('--first-layout', $argv, true);
+$serviceUrl = in_array('--service-url', $argv, true);
 if (!$firstLayout && array_intersect($argv, ['--foreign-lookup', '--missing-first-dispatch-pre',
     '--missing-first-dispatch-post', '--missing-native-first-pre', '--missing-native-first-post'])) {
     throw new InvalidArgumentException('First-layout controls require --first-layout');
 }
 $files = [];
-foreach ($firstLayout ? ['coverageprobe_argumentownership_native.xml']
-    : ['coverageprobe_layout_arguments.xml', 'coverageprobe_layout_arguments_overlay.xml'] as $name) {
+foreach ($serviceUrl ? ['coverageprobe_grammar_serviceurl.xml'] : ($firstLayout ? ['coverageprobe_argumentownership_native.xml']
+    : ['coverageprobe_layout_arguments.xml', 'coverageprobe_layout_arguments_overlay.xml']) as $name) {
     $path = 'app/code/MageLens/Compatibility/view/frontend/layout/' . $name;
     $source = file_get_contents(BP . '/' . $path);
     $files[] = ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source),
@@ -46,6 +51,24 @@ foreach ($firstLayout ? ['coverageprobe_argumentownership_native.xml']
 $inForeignLookup = false;
 $foreignObserved = 0;
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $method, $pre, $post]) {
+    if ($class === InterpreterInterface::class && $method === 'evaluate') {
+        foreach (['pre', 'post'] as $half) {
+            if (!in_array('--missing-modifier-' . $half, $argv, true) && !in_array('--missing-modifier-both', $argv, true)) continue;
+            $observe = ${$half};
+            ${$half} = static function (...$arguments) use ($observe, $collector): void {
+                $ownership = (new ReflectionProperty($collector, 'argumentOwnership'))->getValue($collector);
+                $frames = (new ReflectionProperty($ownership, 'evaluating'))->getValue($ownership);
+                $frame = $frames[array_key_last($frames)] ?? [];
+                $omit = $arguments[0] instanceof Magento\Framework\Data\Argument\Interpreter\StringUtils
+                    && isset($frame['type']['fields']['translate']);
+                if (!$omit) $observe(...$arguments);
+            };
+        }
+    }
+    if ($class === Magento\Framework\ObjectManager\Helper\SortItems::class && $method === 'sortItems') {
+        if (in_array('--missing-items-pre', $argv, true)) $pre = null;
+        if (in_array('--missing-items-post', $argv, true)) $post = null;
+    }
     if ($class === Composite::class && $method === 'getInterpreter') {
         if (in_array('--missing-dispatch-pre', $argv, true)) $pre = null;
         if (in_array('--missing-dispatch-post', $argv, true)) $post = null;
@@ -66,6 +89,26 @@ if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$clas
         }
     }
     if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register argument field proof');
+}
+$customItems = in_array('--custom-items', $argv, true);
+if ($customItems) {
+    class MageLensArgumentItemSorter extends Magento\Framework\ObjectManager\Helper\SortItems
+    {
+        public static int $calls = 0;
+        public function sortItems(array $items): array { self::$calls++; return parent::sortItems($items); }
+    }
+    $property = new ReflectionProperty(Magento\Framework\Data\Argument\Interpreter\ArrayType::class, 'sortItemsHelper');
+    $sorters = [];
+    OpenTelemetry\Instrumentation\hook(InterpreterInterface::class, 'evaluate',
+        static function ($interpreter) use ($property, &$sorters): void {
+            if (!$interpreter instanceof Magento\Framework\Data\Argument\Interpreter\ArrayType) return;
+            (new ReflectionClass($interpreter))->initializeLazyObject($interpreter);
+            $sorters[] = $property->getValue($interpreter);
+            $property->setValue($interpreter, new MageLensArgumentItemSorter());
+        }, static function ($interpreter) use ($property, &$sorters): void {
+            if (!$interpreter instanceof Magento\Framework\Data\Argument\Interpreter\ArrayType) return;
+            $property->setValue($interpreter, array_pop($sorters));
+        });
 }
 $selected = [];
 OpenTelemetry\Instrumentation\hook(Composite::class, 'getInterpreter', null,
@@ -108,6 +151,24 @@ if ($firstLayout && $foreignLookup) {
             $original = array_pop($saved);
             if ($original !== null) $property->setValue($reader, $original);
         });
+}
+if ($serviceUrl) {
+    $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
+    $page->addHandle('coverageprobe_grammar_serviceurl');
+    $value = $page->getLayout()->getBlock('magelens.layout.grammar.serviceurl')->getData('value');
+    if (!is_string($value) || !str_ends_with((string) parse_url($value, PHP_URL_PATH), '/rest/default/V1/coverageprobe/fragment/index')
+        || parse_url($value, PHP_URL_QUERY) !== null) {
+        throw new RuntimeException('Native service URL path or ignored parameter behavior changed');
+    }
+    echo "Verified native service URL path application and ignored parameters.\n";
+    if (in_array('--without-collector', $argv, true)) exit;
+    finishArgumentFields($collector, $argv);
+    $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
+    $field = array_values(array_filter($files[0]['declarations'], static fn($item) => $item['layout']['attribute'] === 'path'))[0];
+    $effects = array_column(array_filter($events, static fn($event) => $event['id'] === $field['id']), 'type');
+    if ($effects !== ['layout-argument-modifier-evaluated']) throw new RuntimeException('Original service URL path lacks native consumer evidence');
+    echo "Verified original service URL path independently of ignored parameters.\n";
+    exit;
 }
 if ($firstLayout) {
     $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
@@ -198,6 +259,7 @@ if (in_array('--nested-types', $argv, true) && $block->getData('indexed') !== [
 echo "Verified native typed values, nested overlays, shared/fresh identities, translation, options, helper/URL parameters and action dispatch.\n";
 if ($forwarder && MageLensArgumentFieldForwarder::$calls === 0) throw new RuntimeException('Custom interpreter forwarding was bypassed');
 if ($custom && MageLensArgumentFieldDispatch::$calls === 0) throw new RuntimeException('Custom type selector was bypassed');
+if ($customItems && MageLensArgumentItemSorter::$calls === 0) throw new RuntimeException('Custom native item sorter was bypassed');
 if (in_array('--without-collector', $argv, true)) exit;
 $state = finishArgumentFields($collector, $argv);
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
@@ -219,11 +281,38 @@ if (in_array('--nested-types', $argv, true)) {
         if ($declaration['layout']['instruction'] !== 'item' || $declaration['layout']['attribute'] !== 'xsi:type') continue;
         $count++;
         $types = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
-        if (!in_array('layout-argument-type-evaluated', $types, true)) {
-            throw new RuntimeException('Original nested type operand lacks native consumer evidence at ' . $declaration['node']);
+        if (in_array('layout-argument-type-evaluated', $types, true) === $customItems
+            || ($customItems && !in_array('layout-argument-type-origin-unconfirmed', $types, true))) {
+            throw new RuntimeException('Original nested type operand differs from native item traversal at ' . $declaration['node']);
         }
     }
     if ($count !== 12) throw new RuntimeException('Native nested type inventory changed');
+    if ($customItems) foreach ($files as $file) foreach ($file['declarations'] as $declaration) {
+        if ($declaration['layout']['instruction'] !== 'item' || $declaration['layout']['kind'] !== 'argument') continue;
+        $types = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
+        if (in_array('layout-argument-applied', $types, true)
+            || !in_array('layout-argument-origin-unconfirmed', $types, true)) {
+            throw new RuntimeException('Custom item sorter retained original value application credit at ' . $declaration['node']);
+        }
+    }
+}
+if (in_array('--modifier-fields', $argv, true)) {
+    $count = 0;
+    foreach ($files as $file) foreach ($file['declarations'] as $declaration) {
+        $attribute = $declaration['layout']['attribute'];
+        if ($declaration['layout']['instruction'] !== 'argument'
+            || !in_array($attribute, ['translate', 'shared', 'model', 'helper', 'path'], true)) continue;
+        $count++;
+        $types = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
+        $updater = str_contains($declaration['node'], '/argument[13]/');
+        $replaced = ($custom || $forwarder) ? !$updater
+            : ($alternate && !$updater && $attribute === 'translate');
+        if (in_array('layout-argument-modifier-evaluated', $types, true) === $replaced
+            || ($replaced && !in_array('layout-argument-modifier-origin-unconfirmed', $types, true))) {
+            throw new RuntimeException('Original argument modifier differs from native consumer evidence at ' . $declaration['node']);
+        }
+    }
+    if ($count !== 9) throw new RuntimeException('Native argument modifier inventory changed');
 }
 echo "Verified original type operands at their native interpretation boundary.\n";
 $evidencePath = array_search('--evidence-file', $argv, true);

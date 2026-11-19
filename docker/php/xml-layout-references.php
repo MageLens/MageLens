@@ -33,7 +33,7 @@ final class LayoutReferenceCoverage
         'layout-removal-empty-ignored',
         'layout-container-attribute-overridden', 'layout-container-attribute-replaced',
         'layout-block-class-applied', 'layout-block-group-applied', 'layout-block-ttl-applied',
-        'layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted', 'layout-block-ttl-origin-unconfirmed',
+        'layout-block-class-origin-unconfirmed', 'layout-block-class-storage-unconfirmed', 'layout-block-class-defaulted', 'layout-block-ttl-origin-unconfirmed',
         'layout-block-attribute-overridden', 'layout-display-allowed', 'layout-display-denied',
         'layout-removal-applied', 'layout-removal-restored', 'layout-removal-canceled', 'layout-removal-missing',
     ];

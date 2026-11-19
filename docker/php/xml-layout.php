@@ -1210,6 +1210,7 @@ final class LayoutCoverage
     {
         foreach (self::argumentRootIds($origin) as $id) $this->event($id, $effect, $context);
         if (isset($origin['type']['id'])) $this->event($origin['type']['id'], 'layout-argument-type-origin-unconfirmed', $context);
+        foreach ($origin['type']['fields'] ?? [] as $field) $this->event($field['id'], 'layout-argument-modifier-origin-unconfirmed', $context);
         foreach ($origin['children'] ?? [] as $child) $this->unconfirmedArgument($child, $context, $effect);
     }
 
@@ -1219,6 +1220,12 @@ final class LayoutCoverage
         $result = isset($origin['argument']) ? ['id' => $origin['argument']] : [];
         if (isset($origin['argument-type'])) $result['type'] = ['id' => $origin['argument-type'],
             'value' => self::valueFingerprint((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type)];
+        foreach (['translate', 'shared', 'model', 'helper', 'path'] as $attribute) {
+            if (isset($origin['argument-' . $attribute], $result['type'])) {
+                $result['type']['fields'][$attribute] = ['id' => $origin['argument-' . $attribute],
+                    'value' => self::valueFingerprint((string) $node[$attribute])];
+            }
+        }
         if ((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'array'
             || isset($node->updater)) return $result;
         $children = [];
@@ -1899,16 +1906,23 @@ final class LayoutCoverage
     {
         if (!LayoutXmlOwnership::nativeMethod($factory, BlockFactory::class, 'createBlock')
             || (new \ReflectionMethod($factory, 'createBlock'))->getDeclaringClass()->getName() !== BlockFactory::class) return false;
-        $manager = (new \ReflectionProperty(BlockFactory::class, 'objectManager'))->getValue($factory);
-        return self::nativeObjectManager($manager);
+        $property = LayoutXmlOwnership::unhookedProperty($factory, 'objectManager');
+        $manager = $property?->getRawValue($factory);
+        return is_object($manager) && self::nativeObjectManager($manager);
     }
 
-    private static function nativeObjectManager(object $manager): bool
+    private static function nativeObjectManager(object $manager, ?bool &$storageUnknown = null): bool
     {
+        $storageUnknown = false;
         if (!LayoutXmlOwnership::nativeMethod($manager, ObjectManager::class, 'create')) return false;
-        $nativeManager = ObjectManager::class;
-        $objectFactory = (new \ReflectionProperty($nativeManager, '_factory'))->getValue($manager);
-        $config = (new \ReflectionProperty($nativeManager, '_config'))->getValue($manager);
+        $factoryProperty = LayoutXmlOwnership::unhookedProperty($manager, '_factory');
+        $configProperty = LayoutXmlOwnership::unhookedProperty($manager, '_config');
+        $objectFactory = $factoryProperty?->getRawValue($manager);
+        $config = $configProperty?->getRawValue($manager);
+        if (!is_object($objectFactory) || !is_object($config)) {
+            $storageUnknown = true;
+            return false;
+        }
         $factories = [\Magento\Framework\ObjectManager\Factory\Dynamic\Developer::class,
             \Magento\Framework\ObjectManager\Factory\Dynamic\Production::class, \Magento\Framework\ObjectManager\Factory\Compiled::class];
         $configs = [\Magento\Framework\Interception\ObjectManager\Config\Developer::class,
@@ -1929,18 +1943,37 @@ final class LayoutCoverage
         $entry = null;
         if ($index !== null && $index === array_key_last($this->generating)) {
             $frame = $this->generating[$index];
-            $factory = $frame['factory'];
             $caller = self::nativeCaller($manager, 'create');
-            $factoryCaller = self::nativeCaller($factory, 'createBlock');
-            if (($caller['object'] ?? null) === $factory && ($caller['class'] ?? null) === BlockFactory::class
-                && ($caller['function'] ?? null) === 'createBlock') $this->generating[$index]['managerObserved'] = true;
-            if ($class === ObjectManager::class && ($caller['object'] ?? null) === $factory && ($caller['class'] ?? null) === BlockFactory::class
-                && ($caller['function'] ?? null) === 'createBlock'
-                && ($factoryCaller['class'] ?? null) === BlockGenerator::class && ($factoryCaller['function'] ?? null) === 'getBlockInstance'
+            $factory = $caller['object'] ?? null;
+            $factoryCaller = $factory instanceof BlockFactory ? self::nativeCaller($factory, 'createBlock') : [];
+            $nativeFactoryCaller = $factory instanceof BlockFactory && ($caller['class'] ?? null) === BlockFactory::class
+                && ($caller['function'] ?? null) === 'createBlock';
+            if ($nativeFactoryCaller) {
+                $key = spl_object_id($factory);
+                $observations = $this->generating[$index]['managerFactories'];
+                if (!isset($observations[$key]) && count($observations) >= 128) {
+                    $this->errors['Layout factory object-manager observations exceeded 128 receivers'] = true;
+                } else {
+                    $this->generating[$index]['managerFactories'][$key] = ['object' => $factory,
+                        'count' => ($observations[$key]['count'] ?? 0) + 1];
+                }
+            }
+            $handoff = $nativeFactoryCaller
+                && ($factoryCaller['object'] ?? null) === $frame['subject']
+                && ($factoryCaller['class'] ?? null) === BlockGenerator::class
+                && ($factoryCaller['function'] ?? null) === 'getBlockInstance';
+            if ($handoff) {
+                $this->generating[$index]['factory'] = $factory;
+                $this->generating[$index]['factoryExpected'] = self::nativeBlockFactory($factory);
+                $this->generating[$index]['managerObserved'] = true;
+            }
+            $storageUnknown = false;
+            if ($class === ObjectManager::class && $handoff
                 && LayoutXmlOwnership::nativeMethod($factory, BlockFactory::class, 'createBlock')
-                && self::nativeObjectManager($manager) && ($params[0] ?? null) === ltrim($frame['factoryInputClass'], '\\')) {
+                && self::nativeObjectManager($manager, $storageUnknown) && ($params[0] ?? null) === ltrim($frame['factoryInputClass'], '\\')) {
                 $entry = $index;
             }
+            if ($storageUnknown) $this->generating[$index]['classStorageUnconfirmed'] = true;
         }
         if ($entry !== null && $this->generating[$entry]['creationTrusted']
             && !$this->generating[$entry]['creationUnconfirmed']
@@ -1970,8 +2003,14 @@ final class LayoutCoverage
         $index = $this->constructing[array_key_last($this->constructing)] ?? null;
         if ($class !== BlockFactory::class || $index === null || $index !== array_key_last($this->generating)) return;
         $this->generating[$index]['factoryObserved'] = true;
-        if (!$error && $block instanceof AbstractBlock && !$this->generating[$index]['managerObserved']) {
+        $key = spl_object_id($factory);
+        $observation = $this->generating[$index]['managerFactories'][$key] ?? null;
+        if (!$error && $block instanceof AbstractBlock && ($observation['object'] ?? null) !== $factory) {
             $this->errors['Missing native block object manager hook evidence'] = true;
+        }
+        if ($observation !== null) {
+            if ($observation['count'] <= 1) unset($this->generating[$index]['managerFactories'][$key]);
+            else $this->generating[$index]['managerFactories'][$key]['count']--;
         }
         $caller = self::nativeCaller($factory, 'createBlock');
         if (!$error && $block instanceof AbstractBlock && $this->generating[$index]['managerBlock'] === $block
@@ -1987,7 +2026,7 @@ final class LayoutCoverage
         $this->generating[] = ['source' => $this->structures[$params[0]][$params[2]] ?? [], 'selected' => null,
             'generator' => get_class($generator), 'subject' => $generator, 'creating' => false,
             'creationObserved' => false, 'creationTrusted' => false, 'creationUnconfirmed' => false,
-            'factoryObserved' => false, 'factoryBlock' => null, 'factory' => null, 'managerBlock' => null, 'managerObserved' => false, 'applied' => [], 'arguments' => [], 'evaluationObserved' => false,
+            'classStorageUnconfirmed' => false, 'factoryObserved' => false, 'factoryBlock' => null, 'factory' => null, 'managerFactories' => [], 'managerBlock' => null, 'managerObserved' => false, 'applied' => [], 'arguments' => [], 'evaluationObserved' => false,
             'name' => $params[2], 'class' => null, 'ttl' => null, 'group' => false,
             'constructorArguments' => [], 'constructorTemplate' => null, 'constructorObserved' => false];
     }
@@ -2128,27 +2167,13 @@ final class LayoutCoverage
         $constructorEligible = $index !== null && isset($this->generating[$index]['arguments']['template']['id'])
             && $consumer && is_string($params[0] ?? null)
             && LayoutXmlOwnership::nativeMethod($generator, BlockGenerator::class, 'getBlockInstance');
-        $factory = null;
-        if ($classEligible) $factory = (new \ReflectionProperty(BlockGenerator::class, 'blockFactory'))->getValue($generator);
-        elseif ($constructorEligible) {
-            // Constructor data attribution must not invoke customized storage.
-            $property = LayoutXmlOwnership::unhookedProperty($generator, 'blockFactory');
-            $factory = $property?->getRawValue($generator);
-            if (!$factory instanceof BlockFactory || get_class($factory) !== BlockFactory::class) $constructorEligible = false;
-            $managerProperty = $constructorEligible ? LayoutXmlOwnership::unhookedProperty($factory, 'objectManager') : null;
-            $manager = $managerProperty?->getRawValue($factory);
-            $objectFactory = is_object($manager) ? LayoutXmlOwnership::unhookedProperty($manager, '_factory') : null;
-            $objectConfig = is_object($manager) ? LayoutXmlOwnership::unhookedProperty($manager, '_config') : null;
-            if (!is_object($manager) || !in_array(get_class($manager), [ObjectManager::class, \Magento\Framework\App\ObjectManager::class], true)
-                || $objectFactory === null || $objectConfig === null
-                || !is_object($objectFactory->getRawValue($manager)) || !is_object($objectConfig->getRawValue($manager))) $constructorEligible = false;
-        }
         $eligible = $classEligible || $constructorEligible;
         if ($eligible) {
-            $this->generating[$index]['factory'] = $factory;
+            // The actual factory is observed at its native object-manager
+            // handoff. Inspecting generator storage here can initialize it.
             $this->generating[$index]['factoryInputClass'] = $params[0];
             $this->generating[$index]['classOriginEligible'] = (bool) $classEligible;
-            $this->generating[$index]['factoryExpected'] = self::nativeBlockFactory($factory);
+            $this->generating[$index]['factoryExpected'] = false;
         }
         $this->constructing[] = $eligible ? $index : null;
     }
@@ -2403,7 +2428,8 @@ final class LayoutCoverage
         }
         if (isset($source['attributes']['class']) && $frame['class'] !== $block) {
             $this->event($source['attributes']['class']['id'], empty($source['attributes']['class']['value'])
-                ? 'layout-block-class-defaulted' : 'layout-block-class-origin-unconfirmed', $context);
+                ? 'layout-block-class-defaulted' : ($frame['classStorageUnconfirmed']
+                    ? 'layout-block-class-storage-unconfirmed' : 'layout-block-class-origin-unconfirmed'), $context);
         }
         if ($frame['group']) $this->event($source['attributes']['group']['id'], 'layout-block-group-applied', $context);
         foreach ($frame['applied'] as $id => $target) {

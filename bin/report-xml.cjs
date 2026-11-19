@@ -27,6 +27,11 @@ const diFamilies = {
 };
 const layoutEvents = {
     'argument-group': ['layout-argument-group-selected', 'layout-argument-group-ignored', 'layout-argument-group-failed', 'layout-argument-group-origin-unconfirmed'],
+    'argument-translate': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed'],
+    'argument-shared': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed'],
+    'argument-model': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed'],
+    'argument-helper': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed'],
+    'argument-path': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed'],
     'argument-type': ['layout-argument-type-evaluated', 'layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed'],
     'ui-group': ['layout-ui-group-applied'],
     'visibility': ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-unconfirmed', 'layout-condition-failed'],
@@ -71,7 +76,7 @@ const layoutEvents = {
     'container-htmlClass': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'container-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
     'block-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-replaced'],
-    'block-class': ['layout-block-class-applied', 'layout-block-attribute-overridden', 'layout-block-class-origin-unconfirmed', 'layout-block-class-defaulted'],
+    'block-class': ['layout-block-class-applied', 'layout-block-attribute-overridden', 'layout-block-class-origin-unconfirmed', 'layout-block-class-storage-unconfirmed', 'layout-block-class-defaulted'],
     'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
     'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden', 'layout-block-ttl-origin-unconfirmed'],
     cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
@@ -116,7 +121,8 @@ for (const [kind, type] of [
     ['block-ttl', 'layout-block-ttl-empty-ignored'], ['block-display', 'layout-display-empty-ignored'],
     ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
 ]) layoutEvents[kind].push(type);
-for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater']) layoutEvents[kind].push('layout-argument-group-ignored');
+for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater',
+    'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path']) layoutEvents[kind].push('layout-argument-group-ignored');
 for (const kind of ['argument', 'action-argument']) layoutEvents[kind].push(...layoutEvents.template.filter(type => type !== 'layout-template-empty-ignored'));
 layoutEvents.argument.push('layout-template-constructor-origin-unconfirmed');
 layoutEvents['action-argument'].push('layout-template-assignment-origin-unconfirmed');
@@ -134,6 +140,9 @@ const layoutDecisions = {
     'layout-argument-group-origin-unconfirmed': 'A custom group selector, parser or XML handoff did not establish the original group consumed by the reader.',
     'layout-argument-type-deferred': 'The native reader selected its pass-through interpreter for this original type. Concrete value interpretation is deferred; selection alone earns zero evaluation hits.',
     'layout-argument-type-failed': 'Native interpretation selected this type but failed before completing evaluation.',
+    'layout-argument-modifier-deferred': 'The native reader preserved this modifier for a later interpreter; it has not established modifier evaluation.',
+    'layout-argument-modifier-failed': 'The native modifier consumer failed before completing its evaluation.',
+    'layout-argument-modifier-origin-unconfirmed': 'The native interpreter handoff does not uniquely establish this original modifier operand.',
     'layout-argument-type-origin-unconfirmed': 'The type dispatch used an unverified selector or native input handoff. No original type evaluation is credited.',
     'layout-position-name-defaulted': 'Native scheduling ignores the empty or zero name and generates an anonymous identifier. The original name operand did not assign that identifier; the declaration retains independent creation and rendering evidence.',
     'layout-template-assignment-origin-unconfirmed': 'The action call did not establish a unique native template assignment from this original argument. Custom setters, plugins, storage and ambiguous calls retain no template execution credit.',
@@ -167,6 +176,7 @@ const layoutDecisions = {
     'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation, plugin or hooked, magic or uninitialized lazy data storage. Their later application lacks verified original ownership.',
     'layout-argument-storage-unconfirmed': 'The block data property became hooked, unset, magic or subject to unverified lazy initialization. Original application evidence is retained; later reads lack verified XML lineage.',
     'layout-block-class-defaulted': 'The native generator selected its configured default class after treating the XML attribute as empty.',
+    'layout-block-class-storage-unconfirmed': 'Pending lazy initialization, property hooks or unset block-factory/object-manager storage prevents passive verification of the native producer. Original class ownership remains unconfirmed.',
     'layout-block-class-origin-unconfirmed': 'Block creation used an unverified factory, object-manager dependency or intercepted creation method. Original-source class ownership is unavailable.',
     'layout-argument-origin-unconfirmed': 'The argument interpreter chain includes an unverified implementation or intercepted method. Original-source value ownership is unavailable for this argument tree.',
     'layout-origin-limit': 'Runtime layout document tracking reached its 256-document bound before this declaration could receive original-source evidence.',

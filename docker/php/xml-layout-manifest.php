@@ -97,7 +97,8 @@ final class LayoutManifest
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
                     $valueKind === 'action' && $attribute->nodeName === 'ifconfig' => 'action-ifconfig',
-                    $valueKind === 'argument' && $node->parentNode->nodeName === 'arguments' && $attribute->nodeName === 'xsi:type' => 'argument-type',
+                    $valueKind === 'argument' && $attribute->nodeName === 'xsi:type' => 'argument-type',
+                    $valueKind === 'argument' && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
                     $valueKind === 'argument' && $attribute->nodeName === 'name' => 'argument-name',
                     $valueKind === 'action-argument' && $attribute->nodeName === 'name' => 'action-argument-name',
                     $valueKind === 'reference' && $attribute->nodeName === 'name' => 'reference-name',
@@ -149,7 +150,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-type', 'argument-updater', 'argument-group', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -196,7 +197,7 @@ final class LayoutManifest
                         ? 'The installed wireframe root reader pool ignores head and body branches, including their descendants'
                         : ($discardedType
                         ? 'The reviewed native layout serializer preserves type attributes only under the literal xsi prefix. This namespace-equivalent attribute is discarded before argument interpretation'
-                        : self::limitation($fileType, $node->tagName, $attribute)))))),
+                        : self::limitation($fileType, $node->tagName, $attribute, $node)))))),
                 ];
             }
         }
@@ -234,8 +235,15 @@ final class LayoutManifest
             && in_array($node->parentNode->parentNode->nodeName, ['block', 'referenceBlock'], true);
     }
 
-    private static function limitation(string $fileType, string $node, ?string $attribute): string
+    private static function limitation(string $fileType, string $node, ?string $attribute, ?\DOMElement $element = null): string
     {
+        if ($node === 'param' && $element?->parentNode instanceof \DOMElement
+            && $element->parentNode->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type') === 'serviceUrl') {
+            return 'The installed ServiceUrl interpreter reads path and ignores all param children. This parameter has no native application effect';
+        }
+        if ($node === 'updater' && in_array($attribute, ['enabled', 'sortOrder'], true)) {
+            return 'Native parsing turns an attributed updater into an array class descriptor. The decorator passes it to ObjectManager::get and raises TypeError before flag or ordering effects can occur';
+        }
         if ($fileType === 'registry' && $node === 'label' && $attribute === 'translate') {
             return 'The schema fixes this flag to true. Native registry extraction consumes label text and leaves the flag unused';
         }

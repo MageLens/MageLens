@@ -18,6 +18,16 @@ for (let index = 1; index <= 25; index++) {
         assert.ok(item.evidence.some(event => event.type === 'layout-argument-type-deferred'), node);
     }
 }
+let nested = 0;
+for (const source of report.files.filter(item => /\/layout\/coverageprobe_layout_arguments(?:_overlay)?\.xml$/.test(item.path))) {
+    for (const item of source.declarations.filter(item => item.layout.instruction === 'item' && item.layout.attribute === 'xsi:type')) {
+        nested++;
+        assert.equal(item.layout.kind, 'argument-type', item.node);
+        assert.equal(item.state, 'covered', item.node);
+        assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-argument-type-evaluated'], item.node);
+    }
+}
+assert.equal(nested, 12, 'Original nested type inventory');
 for (const handle of ['const', 'serviceurl', 'configurable']) {
     const source = report.files.find(file => file.path.endsWith(`/layout/coverageprobe_grammar_${handle}.xml`));
     const type = source?.declarations.find(item => item.layout.kind === 'argument-type');
@@ -29,4 +39,4 @@ const failedType = failure?.declarations.find(item => item.layout.kind === 'argu
 assert.equal(failedType?.state, 'unmeasured');
 assert.equal(failedType.hits, 0);
 assert.deepEqual([...new Set(failedType.evidence.map(event => event.type))], ['layout-argument-type-failed']);
-console.log('Verified original top-level type evaluation, deferred selection and native updater forwarding independently of value application.');
+console.log('Verified original top-level and nested type evaluation, deferred selection and native updater forwarding independently of value application.');
