@@ -270,6 +270,9 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...nodes].map(node => node.getAttribute('data-layout-template-value')))
                 .to.deep.equal(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'default', 'case', 'interceptor'].map(name => 'magelens.template.values.' + name));
         });
+        cy.visit('/coverageprobe/argumentgroups/');
+        cy.get('[data-layout-argument-group="block"]').should('have.text', 'first-group');
+        cy.get('[data-layout-argument-group="reference"]').should('have.text', 'first-reference-group');
         cy.visit('/coverageprobe/actionfailure/');
         for (const failureCase of ['body', 'interpreter', 'partial', 'dispatch', 'type', 'denied', 'success']) {
             cy.get('[data-layout-action-failure="' + failureCase + '"]').should('have.text', 'verified');

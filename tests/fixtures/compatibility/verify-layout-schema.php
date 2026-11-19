@@ -70,6 +70,8 @@ $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
     ['missing action method', $genericSchema, '<layout><block name="fixture"><action/></block></layout>'],
+    ['empty argument group', $genericSchema, "<layout $namespace><block name=\"fixture\"><arguments/></block></layout>"],
+    ['duplicate keys across argument groups', $genericSchema, "<layout $namespace><block name=\"fixture\"><arguments><argument name=\"value\" xsi:type=\"string\">first</argument></arguments><arguments><argument name=\"value\" xsi:type=\"string\">second</argument></arguments></block></layout>"],
     ['duplicate action argument name', $genericSchema, "<layout $namespace><block name=\"fixture\"><action method=\"setTemplate\"><argument name=\"filename\" xsi:type=\"string\">first.phtml</argument><argument name=\"filename\" xsi:type=\"string\">last.phtml</argument></action></block></layout>"],
     ['spaced block TTL', $genericSchema, '<layout><block name="fixture" ttl=" 0 "/></layout>'],
     ['zero container ID', $genericSchema, '<layout><container name="fixture" htmlId="0"/></layout>'],
