@@ -26,6 +26,13 @@ class Index implements HttpGetActionInterface
     public function execute(): Page
     {
         $this->configCache->remove('page_types_config');
+        if ($this->request->getParam('variant') === 'page-values') {
+            $page = $this->pages->create(true, ['isIsolated' => true]);
+            $page->addHandle('default');
+            $page->addHandle('coverageprobe_page_values_base');
+            $page->addHandle('coverageprobe_page_values_falsy');
+            return $page;
+        }
         $page = $this->pages->create();
         if ($this->request->getParam('variant') === 'selected') {
             $page->getLayout()->getUpdate()->addHandle('coverageprobe_layout_dynamic');

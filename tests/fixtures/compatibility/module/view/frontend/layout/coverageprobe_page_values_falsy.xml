@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <html><attribute name="data-layout-html-removed" value=""/></html>
+    <head>
+        <title>0</title>
+        <meta name="layout-empty" content=""/>
+        <meta name="layout-zero" content="0"/>
+        <meta name="0" content="zero-key"/>
+        <meta content="empty-key"/>
+        <attribute name="data-layout-head-removed" value="0"/>
+        <attribute name="data-layout-no-target" value=""/>
+        <remove src=""/>
+    </head>
+    <body>
+        <attribute name="data-layout-body-removed"/>
+        <attribute name="data-layout-body-removed" value="later"/>
+        <attribute name="data-layout-body-truthy" value="00"/>
+    </body>
+</page>
