@@ -70,15 +70,20 @@ $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManag
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');
 $area = $objects->get(Magento\Framework\App\AreaList::class)->getArea('frontend');
 $area->load(Magento\Framework\App\Area::PART_CONFIG);
+$objects->get(Magento\Store\Model\StoreManagerInterface::class)->setCurrentStore('magelens_layout_fixture');
 $area->load(Magento\Framework\App\Area::PART_DESIGN);
 $counter = ['native' => LayoutFileAccessor::class, 'redeclared' => LayoutFileRedeclared::class, 'accessor' => LayoutFileAccessor::class, 'hook' => LayoutFileProperty::class, 'magic' => LayoutFileMagic::class][$mode];
 if ($mode !== 'native') $objects->configure(['preferences' => [Magento\Framework\View\File::class => $counter]]);
 foreach (['layout', 'block_html', 'full_page'] as $type) $objects->get(Magento\Framework\App\Cache\StateInterface::class)->setEnabled($type, false);
 $objects->get(Magento\Framework\App\ViewInterface::class);
 $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
-$page->addHandle('coverageprobe_templateownership_native');
-$block = $page->getLayout()->getBlock('magelens.layout.template.native');
+$page->addHandle(['coverageprobe_templateownership_native', 'coverageprobe_theme_index']);
+$layout = $page->getLayout();
+$block = $layout->getBlock('magelens.layout.template.native');
 if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')) throw new RuntimeException('Native file-descriptor fixture output changed');
+if (!$layout->hasElement('magelens.layout.provider.base-replacement') || $layout->hasElement('magelens.layout.provider.replaced-base')) {
+    throw new RuntimeException('Native file-descriptor fixture did not apply the child theme replacement');
+}
 if (!in_array($mode, ['native', 'redeclared'], true) && $counter::$reads === 0) throw new RuntimeException('Native file-descriptor getter was not used');
 echo "Verified native layout file collection and template output for $mode.\n";
 echo 'Native file-descriptor reads: ', $counter::$reads, "\n";
