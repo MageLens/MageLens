@@ -38,7 +38,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
     if ($mode === 'missing-lookup' && $class === Magento\Framework\Interception\PluginListInterface::class
         && $method === 'getPlugin' && $post instanceof Closure
         && (new ReflectionFunction($post))->getClosureThis() instanceof MageLens\XmlCoverage\LayoutSelectionOwnership) continue;
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register selection proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register selection proof hook');
 }
 $pluginCalls = 0;
 OpenTelemetry\Instrumentation\hook($pluginClass, 'afterGetPageLayout', null,

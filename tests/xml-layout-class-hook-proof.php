@@ -70,7 +70,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
             if ($arguments[4] !== get_class($arguments[0])) $nativePost(...$arguments);
         };
     }
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register class proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register class proof hook');
 }
 $parameters = $_SERVER;
 if (in_array($mode, ['empty-class', 'native-production'], true)) $parameters[\Magento\Framework\App\State::PARAM_MODE] = \Magento\Framework\App\State::MODE_PRODUCTION;

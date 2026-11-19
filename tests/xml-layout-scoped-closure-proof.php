@@ -42,7 +42,10 @@ $declarations = LayoutManifest::declarations($path, $source);
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets([
     ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source), 'declarations' => $declarations],
 ]));
+$missingIndex = array_search('--missing-hook', $argv, true);
+$missing = $missingIndex === false ? null : $argv[$missingIndex + 1];
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $name, $pre, $post]) {
+    if ($class === Closure::class && $name === $missing) continue;
     if (!LayoutRuntimeHooks::register($class, $name, $pre, $post)) throw new RuntimeException('Cannot observe scoped closure fixture');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
@@ -61,7 +64,14 @@ if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>') || 
 }
 echo "Verified native external scoped closure write and unchanged output/source.\n";
 if (in_array('--without-collector', $argv, true)) exit;
-$collector->finish();
+try {
+    $collector->finish();
+    if ($missing !== null) throw new LogicException('Missing scoped observer did not block publication');
+} catch (RuntimeException $error) {
+    if ($missing === null || $error->getMessage() !== 'Missing native scoped closure hook evidence') throw $error;
+    echo "Missing scoped closure observer preserves native output and blocks publication.\n";
+    exit;
+}
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 foreach ($declarations as $declaration) {
     $kind = $declaration['layout']['kind'];

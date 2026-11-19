@@ -53,7 +53,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         if ($mode === 'missing-pre') $pre = null;
         if ($mode === 'missing-post') $post = null;
     }
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register template validation hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register template validation hook');
 }
 $nativeCalls = 0;
 $pathCalls = 0;

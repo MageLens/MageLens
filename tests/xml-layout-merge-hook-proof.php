@@ -66,7 +66,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
     $missing = ['missing-string' => 'asString', 'missing-document' => 'asSimplexml', 'missing-package' => 'getFileLayoutUpdatesXml'];
     if (($missing[$mode] ?? null) === $method && in_array($class,
         [\Magento\Framework\View\Model\Layout\Merge::class, \Magento\Framework\View\Layout\ProcessorInterface::class], true)) continue;
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register ownership proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register ownership proof hook');
 }
 $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');

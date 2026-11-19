@@ -26,7 +26,7 @@ foreach (glob(BP . '/app/code/MageLens/Compatibility/view/frontend/layout/*.xml'
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
 foreach ($callbacks as [$class, $method, $pre, $post]) {
     if ($mode === 'missing-reader' && $class === \Magento\Framework\View\Layout\ReaderInterface::class && $method === 'interpret') continue;
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register ownership proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register ownership proof hook');
 }
 $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');

@@ -19,7 +19,7 @@ $files = [['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256',
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $method, $pre, $post]) {
     $registered = class_exists(LayoutRuntimeHooks::class) ? LayoutRuntimeHooks::register($class, $method, $pre, $post)
-        : OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post);
+        : \MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post);
     if (!$registered) throw new RuntimeException('Cannot register argument storage proof');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();

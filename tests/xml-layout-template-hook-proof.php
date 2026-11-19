@@ -56,7 +56,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         if ($mode === 'missing-getter-pre') $pre = null;
         if ($mode === 'missing-getter-post') $post = null;
     }
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register template proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register template proof hook');
 }
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');

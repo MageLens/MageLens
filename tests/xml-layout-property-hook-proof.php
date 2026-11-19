@@ -32,7 +32,7 @@ foreach (['native', 'template_get', 'template_set', 'template_magic', 'template_
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets(array_values($files)));
 foreach ($callbacks as [$class, $method, $pre, $post]) {
     if (in_array('--without-collector', $argv, true)) continue;
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native property proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native property proof hook');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');

@@ -25,7 +25,7 @@ foreach (['first', 'second'] as $case) {
 }
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
 foreach ($callbacks as [$class, $method, $pre, $post]) {
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register shared block proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register shared block proof hook');
 }
 $scope = null;
 $replacements = 0;

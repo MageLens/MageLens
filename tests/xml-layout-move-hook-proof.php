@@ -57,7 +57,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
     if (in_array($mode, ['missing-schedule-pre', 'missing-schedule-post'], true) && [$class, $method] === [Move::class, 'scheduleMove']) {
         if ($mode === 'missing-schedule-pre') $pre = null; else $post = null;
     }
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native move proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native move proof hook');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');

@@ -47,7 +47,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         'missing-generator' => [BlockGenerator::class, 'evaluateArguments'],
         'missing-action' => [BlockGenerator::class, 'generateAction']][$mode] ?? null;
     if ($missing === [$class, $method]) continue;
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register argument proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register argument proof hook');
 }
 $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');

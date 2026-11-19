@@ -37,7 +37,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
             if (($arguments[1][0] ?? null) !== $missing) $observe(...$arguments);
         };
     }
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register metadata hook proof');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register metadata hook proof');
 }
 if ($mode === 'depth') {
     $metadata = (new ReflectionProperty(LayoutCoverage::class, 'handleMetadata'))->getValue($collector);

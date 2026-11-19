@@ -35,7 +35,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         $pre = MageLens\XmlCoverage\LayoutRuntimeHooks::wrap($pre);
         $post = MageLens\XmlCoverage\LayoutRuntimeHooks::wrap($post);
     }
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register callback health proof');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register callback health proof');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');

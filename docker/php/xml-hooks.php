@@ -75,6 +75,6 @@ function startXmlHooks(string $run): void
     $hooks = array_merge($hooks, Observers::hooks(Recorder::observerTargets()), Plugins::hooks(Recorder::pluginTargets()),
         Preferences::hooks(Recorder::preferenceTargets()), Recorder::layoutHooks());
     foreach ($hooks as [$class, $method, $pre, $post]) {
-        if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register XML runtime hook');
+        if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::registerWrapped($class, $method, $pre, $post)) throw new RuntimeException('Cannot register XML runtime hook');
     }
 }

@@ -150,6 +150,7 @@ final class LayoutCoverage
             Recorder::layoutArgumentNames(null);
             return [null, []];
         }
+        LayoutRuntimeHooks::primeInternals();
         $collector = new self($sources);
         return [$collector, $collector->hooks()];
     }
@@ -189,6 +190,8 @@ final class LayoutCoverage
     private function hooks(): array
     {
         return [
+            ...$this->templateFields->hooks(),
+            ...$this->dataFields->hooks(),
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
             ...$this->argumentOwnership->hooks(),

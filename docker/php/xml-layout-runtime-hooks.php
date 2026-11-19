@@ -12,6 +12,9 @@ final class LayoutRuntimeHooks
     private static bool $failed = false;
     private static int $depth = 0;
     private static string $failureLocation = '';
+    private static array $internal = [];
+    private static int $internalCallbacks = 0;
+    private static array $internalObserved = [];
 
     private function __construct(private readonly \Closure $callback) {}
 
@@ -22,7 +25,52 @@ final class LayoutRuntimeHooks
 
     public static function register(string $class, string $method, ?\Closure $pre, ?\Closure $post): bool
     {
-        return \OpenTelemetry\Instrumentation\hook($class, $method, self::wrap($pre), self::wrap($post));
+        return self::registerWrapped($class, $method, self::wrap($pre), self::wrap($post));
+    }
+
+    public static function registerWrapped(string $class, string $method, ?\Closure $pre, ?\Closure $post): bool
+    {
+        $key = $class . '::' . $method;
+        if (array_key_exists($key, self::$internal)) {
+            if (++self::$internalCallbacks > 1024) throw new \RuntimeException('Internal layout hook subscribers exceeded 1024 callbacks');
+            self::$internal[$key][] = [$pre, $post];
+            return true;
+        }
+        return \OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post);
+    }
+
+    /** Install before application bootstrap; subscribers may be attached later. */
+    public static function primeInternals(): void
+    {
+        foreach ([\Closure::class => ['bind', 'bindTo', 'call'],
+            \ReflectionProperty::class => ['setValue', 'setRawValue', 'setRawValueWithoutLazyInitialization']] as $class => $methods) {
+            foreach ($methods as $method) {
+                $key = $class . '::' . $method;
+                if (array_key_exists($key, self::$internal)) continue;
+                self::$internal[$key] = [];
+                if (!\OpenTelemetry\Instrumentation\hook($class, $method,
+                    static function (...$params) use ($key): void {
+                        self::$internalObserved[$key]['pre'] = true;
+                        foreach (self::$internal[$key] as [$pre]) if ($pre !== null) $pre(...$params);
+                    },
+                    static function (...$params) use ($key): void {
+                        self::$internalObserved[$key]['post'] = true;
+                        foreach (array_reverse(self::$internal[$key]) as [, $post]) if ($post !== null) $post(...$params);
+                    })) throw new \RuntimeException('Cannot initialize native internal layout hooks');
+            }
+        }
+        $receiver = new class { public int $value = 0; };
+        $closure = function (): void {};
+        \Closure::bind($closure, null, null);
+        $closure->bindTo(null, null);
+        $closure->call($receiver);
+        $property = new \ReflectionProperty($receiver, 'value');
+        foreach (['setValue', 'setRawValue', 'setRawValueWithoutLazyInitialization'] as $method) $property->$method($receiver, 0);
+        foreach (array_keys(self::$internal) as $key) {
+            if ((self::$internalObserved[$key] ?? []) !== ['pre' => true, 'post' => true]) {
+                throw new \RuntimeException('Missing native internal layout hook evidence; register before application bootstrap');
+            }
+        }
     }
 
     public function __invoke(...$params): void
@@ -65,7 +113,7 @@ final class LayoutRuntimeHooks
         $trace = debug_backtrace($options, $limit + self::$depth + 1);
         array_shift($trace);
         $trace = array_values(array_filter($trace, static fn(array $frame): bool =>
-            ($frame['class'] ?? null) !== self::class || ($frame['function'] ?? null) !== '__invoke'));
+            ($frame['class'] ?? null) !== self::class));
         return array_slice($trace, 0, $limit);
     }
 }

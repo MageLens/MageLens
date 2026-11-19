@@ -22,7 +22,7 @@ $declarations = LayoutManifest::declarations($path, $source);
 ]));
 foreach ($callbacks as [$class, $method, $pre, $post]) {
     if (in_array('--without-collector', $argv, true)) continue;
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native render proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native render proof hook');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');

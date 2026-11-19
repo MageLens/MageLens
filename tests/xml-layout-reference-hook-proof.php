@@ -57,7 +57,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         elseif (str_ends_with($mode, '-post')) $post = null;
         else continue;
     }
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native reference proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register native reference proof hook');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');

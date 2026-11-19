@@ -49,7 +49,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         elseif (str_ends_with($mode, '-post')) $post = null;
         else continue;
     }
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register action guard hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register action guard hook');
 }
 $decisions = [];
 $failedFlags = 0;

@@ -37,7 +37,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
     if (($mode === 'missing-factory' && $class === ConditionFactory::class && $method === 'create')
         || ($mode === 'missing-key' && $class === VisibilityConditionInterface::class && $method === 'getName')
         || ($mode === 'missing-decision' && $class === VisibilityConditionInterface::class && $method === 'isVisible')) continue;
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register UI proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register UI proof hook');
 }
 $manager = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');

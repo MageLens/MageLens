@@ -20,7 +20,7 @@ foreach (['base', 'overlay', 'containers', 'move'] as $handle) {
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
 foreach ($callbacks as [$class, $method, $pre, $post]) {
     if (in_array('--without-collector', $argv, true)) continue;
-    if (!OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register numeric name hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register numeric name hook');
 }
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');

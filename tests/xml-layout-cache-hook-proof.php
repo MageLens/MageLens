@@ -34,7 +34,7 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
         if ($mode === 'missing-pre') $pre = null;
         if ($mode === 'missing-post') $post = null;
     }
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register cache proof hook');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register cache proof hook');
 }
 if ($mode === 'depth') {
     (new ReflectionProperty(LayoutCoverage::class, 'loadingHtml'))->setValue($collector, array_fill(0, 256, []));

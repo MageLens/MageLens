@@ -19,9 +19,53 @@ final class LayoutFieldAccess
     private int $declared = 0;
     private int $accessCount = 0;
     private bool $external = false;
+    private bool $watching = false;
+    private ?\Closure $probe = null;
+    private array $observed = [];
 
     public function __construct(private readonly string $field = '_template',
         private readonly string $base = Template::class, private readonly string $description = 'Template') {}
+
+    public function hooks(): array
+    {
+        $this->watching = true;
+        return [
+            [\Closure::class, 'bind', null, $this->bound(...)],
+            [\Closure::class, 'bindTo', null, $this->bound(...)],
+            [\Closure::class, 'call', $this->called(...), null],
+        ];
+    }
+
+    private function bound($closure, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        if ($error || $class !== \Closure::class || !$result instanceof \Closure) return;
+        if ($this->probe !== null && (($params[0] ?? null) === $this->probe || $closure === $this->probe)) $this->observed[$method] = true;
+        $function = new \ReflectionFunction($result);
+        $this->scope($function->getClosureScopeClass());
+    }
+
+    private function called($closure, array $params, string $class): void
+    {
+        if ($class !== \Closure::class) return;
+        if ($this->probe !== null && $closure === $this->probe) $this->observed['call'] = true;
+        if (!($params[0] ?? null) instanceof DataObject) return;
+        $this->scope(new \ReflectionClass($params[0]));
+    }
+
+    private function scope(?\ReflectionClass $scope): void
+    {
+        while ($scope) {
+            if ($scope->getName() === DataObject::class) {
+                // Binding exposes protected storage on captured receivers too.
+                // Direct invocation has no native __invoke hook, so neither
+                // execution nor the eventual write target is established.
+                $this->external = true;
+                return;
+            }
+            // isSubclassOf() can autoload the application before bootstrap.
+            $scope = $scope->getParentClass();
+        }
+    }
 
     public function unconfirmed(AbstractBlock $block): bool
     {
@@ -103,6 +147,16 @@ final class LayoutFieldAccess
 
     public function finish(): void
     {
+        if ($this->watching) {
+            $this->probe = function (): void {};
+            \Closure::bind($this->probe, null, null);
+            $this->probe->bindTo(null, null);
+            $this->probe->call(new class {});
+            $this->probe = null;
+            foreach (['bind', 'bindTo', 'call'] as $method) {
+                if (empty($this->observed[$method])) throw new \RuntimeException('Missing native scoped closure hook evidence');
+            }
+        }
         foreach ($this->files as $file => $source) {
             if (!is_file($file) || !is_readable($file) || realpath($file) !== $file
                 || @hash_file('sha256', $file) !== $source['hash']) {
