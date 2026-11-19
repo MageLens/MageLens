@@ -418,7 +418,7 @@ final class LayoutStructureCoverage
     {
         if ($class !== Condition::class) return;
         $frame = array_pop($this->conditions);
-        if (!$error) {
+        if (!$error && $frame['ordered']) {
             foreach ($frame['ordered'] as $position => $entry) {
                 if (!$entry['ready']) continue;
                 if ($result === true && !isset($frame['keys'][$position])) $this->errors['Missing native visibility key hook evidence'] = true;

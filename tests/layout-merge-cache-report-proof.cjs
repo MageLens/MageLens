@@ -24,9 +24,10 @@ for (const item of target) {
     else assert.equal(item.hits, 0, item.node);
 }
 const components = report.files.find(file => file.path.endsWith('/coverageprobe_component_index.xml'));
-const rules = components.declarations.filter(item => item.layout.kind === 'visibility-condition');
+const rules = components.declarations.filter(item => item.layout.kind === 'visibility');
 assert.equal(rules.length, 7);
-assert.equal(rules.some(item => item.hits > 0), mode === 'cold', 'Warm cache must preserve the original rule inventory without fresh hits');
+assert.equal(rules.every(item => item.hits > 0), mode === 'cold', 'Cold decisions must retain original rule coverage');
+if (mode !== 'cold') assert.ok(rules.every(item => item.hits === 0), 'Warm cache cannot infer original rule coverage');
 if (mode !== 'cold') assert.ok(report.layout.limitations.length, 'Cache bypass lacks an explicit report limitation');
 assert.throws(() => merge({...manifest, run: 'stale'}, [{...evidence, manifest: manifest.id, run: manifest.run, request: 'layout-cache-proof', readHook: true}], sources), /Stale XML request/);
 console.log(`Verified native ${mode} cache evidence through report validation and complete zero-hit inventory.`);
