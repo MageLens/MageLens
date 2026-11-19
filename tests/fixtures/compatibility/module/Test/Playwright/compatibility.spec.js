@@ -170,6 +170,7 @@ test('starts the next test with fresh state', async ({page}) => {
     await expect(page.locator('[data-layout-grammar="configuredarray"]')).toHaveText('nested-interpreter-error');
     await expect(page.locator('[data-layout-grammar="constarray"]')).toHaveText('applied');
     await expect(page.locator('[data-layout-grammar="configureddata"], [data-layout-grammar="configuredvaluearray"]')).toHaveText(['applied', 'applied']);
+    await expect(page.locator('[data-layout-grammar="configuredurl"]')).toHaveText('applied');
     await expect(page.locator('[data-layout-grammar="constenum"]')).toHaveText('structure-serialization-error');
     for (const variant of ['typeprefix', 'typelocalprefix']) {
         await expect(page.locator(`[data-layout-grammar="${variant}"]`)).toHaveText('type-erased');

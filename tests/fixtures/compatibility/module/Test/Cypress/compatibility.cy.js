@@ -183,6 +183,7 @@ describe('Magento storefront coverage compatibility', () => {
         for (const entry of ['configureddata', 'configuredvaluearray']) {
             cy.get(`[data-layout-grammar="${entry}"]`).should('have.text', 'applied');
         }
+        cy.get('[data-layout-grammar="configuredurl"]').should('have.text', 'applied');
         cy.get('[data-layout-grammar="constenum"]').should('have.text', 'structure-serialization-error');
         for (const variant of ['typeprefix', 'typelocalprefix']) {
             cy.get(`[data-layout-grammar="${variant}"]`).should('have.text', 'type-erased');

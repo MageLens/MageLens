@@ -25,7 +25,7 @@ class Index implements HttpGetActionInterface
     {
         $output = '';
         foreach (['serviceurl', 'const', 'configurable', 'configuredarray', 'constarray', 'updaterenabled', 'updaterorder',
-            'configureddata', 'configuredvaluearray', 'constenum', 'typeprefix', 'typelocalprefix'] as $case) {
+            'configureddata', 'configuredvaluearray', 'configuredurl', 'constenum', 'typeprefix', 'typelocalprefix'] as $case) {
             $page = $this->pages->create(true, ['isIsolated' => true]);
             $page->addHandle('coverageprobe_grammar_' . $case);
             $outcome = 'unexpected';
@@ -36,6 +36,10 @@ class Index implements HttpGetActionInterface
                 if ($case === 'constarray' && $value === \MageLens\Compatibility\Model\LayoutArgumentSource::MATRIX) $outcome = 'applied';
                 if ($case === 'configureddata' && $value instanceof \MageLens\Compatibility\Model\LayoutConfiguredData
                     && $value->getData('tag') === 'configured-data') $outcome = 'applied';
+                if ($case === 'configuredurl' && $value instanceof \MageLens\Compatibility\Model\LayoutConfiguredData
+                    && is_string($value->getData('generated'))
+                    && str_contains((string) parse_url($value->getData('generated'), PHP_URL_PATH),
+                        '/coverageprobe/fragment/index/first/alpha/second/beta/')) $outcome = 'applied';
                 if ($case === 'configuredvaluearray'
                     && $block->getDataByPath('value/source') instanceof \MageLens\Compatibility\Model\LayoutArgumentSource) $outcome = 'applied';
                 if ($case === 'serviceurl' && is_string($value)

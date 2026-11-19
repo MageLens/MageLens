@@ -15,6 +15,7 @@ use Magento\Framework\ObjectManager\ObjectManager;
 use Magento\Framework\ObjectManagerInterface;
 use Magento\Framework\View\Element\UiComponent\Argument\Interpreter\ConfigurableObject;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
+use Magento\Ui\Config\Argument\Parser\Url as UiUrl;
 
 /** Attribute values only across an observed native interpreter chain. */
 final class LayoutArgumentOwnership
@@ -27,7 +28,7 @@ final class LayoutArgumentOwnership
         LayoutInterpreter\Decorator\Updater::class, LayoutInterpreter\DataObject::class,
         LayoutInterpreter\Options::class, LayoutInterpreter\Passthrough::class,
         LayoutInterpreter\Url::class, LayoutInterpreter\HelperMethod::class, LayoutInterpreter\NamedParams::class,
-        ConfigurableObject::class,
+        ConfigurableObject::class, UiUrl::class,
         'Magento\\Store\\Model\\Argument\\Interpreter\\ServiceUrl',
     ];
     private array $batches = [];
@@ -385,8 +386,9 @@ final class LayoutArgumentOwnership
         foreach ($frame['type']['fields'] ?? [] as $attribute => $field) {
             $deferred = $interpreter instanceof LayoutInterpreter\Passthrough;
             $consumer = self::modifierConsumer($attribute);
-            $serviceUrl = $attribute === 'path' && $interpreter instanceof \Magento\Store\Model\Argument\Interpreter\ServiceUrl;
-            if (!$deferred && !$interpreter instanceof $consumer && !$serviceUrl) continue;
+            $otherUrl = $attribute === 'path' && ($interpreter instanceof UiUrl
+                || $interpreter instanceof \Magento\Store\Model\Argument\Interpreter\ServiceUrl);
+            if (!$deferred && !$interpreter instanceof $consumer && !$otherUrl) continue;
             $effect = empty($frame['modifierInputs'][$attribute]) ? 'layout-argument-modifier-origin-unconfirmed'
                 : ($error ? 'layout-argument-modifier-failed' : ($deferred
                     ? 'layout-argument-modifier-deferred' : 'layout-argument-modifier-evaluated'));
@@ -445,7 +447,8 @@ final class LayoutArgumentOwnership
 
     private static function isParameterConsumer(object $interpreter): bool
     {
-        return $interpreter instanceof LayoutInterpreter\Url || $interpreter instanceof LayoutInterpreter\HelperMethod;
+        return $interpreter instanceof LayoutInterpreter\Url || $interpreter instanceof LayoutInterpreter\HelperMethod
+            || $interpreter instanceof UiUrl;
     }
 
     private function unconfirmedParameter(array $origin, ?array $context): void

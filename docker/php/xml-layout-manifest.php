@@ -87,7 +87,9 @@ final class LayoutManifest
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::blockArgument($node) => 'argument',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'param'
                     && (self::blockArgument($node->parentNode) || self::actionArrayItem($node->parentNode)
-                        || $node->parentNode->parentNode->nodeName === 'action')
+                        || $node->parentNode->parentNode->nodeName === 'action'
+                        || ($node->parentNode->tagName === 'item' && $node->parentNode->getAttribute('xsi:type') === 'url'
+                            && self::configuredOperand($node->parentNode)))
                     && in_array($node->parentNode->getAttribute('xsi:type'), ['helper', 'url'], true) => 'parameter',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'updater'
                     && self::blockArgument($node->parentNode) => 'argument-updater',
@@ -299,6 +301,15 @@ final class LayoutManifest
         if ($node === 'param' && $element?->parentNode instanceof \DOMElement
             && $element->parentNode->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'type') === 'serviceUrl') {
             return 'The installed ServiceUrl interpreter reads path and ignores all param children. This parameter has no native application effect';
+        }
+        if ($node === 'param' && $element?->parentNode instanceof \DOMElement && self::configuredOperand($element->parentNode)) {
+            $parent = $element->parentNode;
+            if ($parent->getAttribute('xsi:type') === 'helper') {
+                return 'The native configurable object interpreter uses the base Composite, which has no helper interpreter. No named parameter is evaluated';
+            }
+            if ($parent->tagName === 'argument' && $parent->getAttribute('xsi:type') === 'url') {
+                return 'The native layout parser flattens a single parameter under a direct configurable URL argument and rejects repeated parameters. The URL interpreter requires a keyed parameter map';
+            }
         }
         if ($node === 'updater' && in_array($attribute, ['enabled', 'sortOrder'], true)) {
             return 'Native parsing turns an attributed updater into an array class descriptor. The decorator passes it to ObjectManager::get and raises TypeError before flag or ordering effects can occur';
