@@ -21,6 +21,7 @@ class Index implements HttpGetActionInterface
     {
         $fragment = $this->layouts->create();
         $fragment->addHandle('coverageprobe_nestedarguments');
+        $fragment->addHandle('coverageprobe_named_parameter_overlay');
         $block = $fragment->getLayout()->getBlock('magelens.nested.arguments');
         $values = $block?->getData('values');
         if (!is_array($values) || $block->hasData('ignored')) throw new \RuntimeException('Native nested group selection changed');
@@ -38,6 +39,14 @@ class Index implements HttpGetActionInterface
             if (!$passed) throw new \RuntimeException('Native nested argument effect changed: ' . $case);
             $html .= '<span data-layout-nested-argument="' . $case . '">verified</span>';
         }
-        return $this->raw->create()->setContents($html);
+        $named = $fragment->getLayout()->getBlock('magelens.named.parameters');
+        if ($named->getData('retained') !== 'equal:retained' || $named->getData('duplicate') !== 'winner:') {
+            throw new \RuntimeException('Native equal, retained, numeric, empty or duplicate parameter effect changed');
+        }
+        if ($named->getData('named_action') !== ['helper' => 'action:parameter', 'number' => '27', 'text' => 'fixture']
+            || $named->hasData('named_denied')) {
+            throw new \RuntimeException('Native named action evaluation or guard changed');
+        }
+        return $this->raw->create()->setContents($html . '<span data-layout-named-overlay>verified</span>');
     }
 }

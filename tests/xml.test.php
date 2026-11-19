@@ -239,20 +239,20 @@ $bindingCollector = (new ReflectionClass(\MageLens\XmlCoverage\LayoutCoverage::c
 $bindLeaves = new ReflectionMethod($bindingCollector, 'bindArgumentLeaves');
 $digest = new ReflectionMethod($bindingCollector, 'digest');
 $oldLeaf = ['id' => 'old-leaf', 'digest' => $digest->invoke(null, ['same'])];
-$replacedLeaf = $bindLeaves->invoke($bindingCollector, ['value' => []], ['value' => 'same'], ['value' => $oldLeaf], ['value' => true]);
+$replacedLeaf = $bindLeaves->invoke($bindingCollector, ['value' => []], ['value' => 'same'], ['value' => $oldLeaf], ['value' => true], null);
 checkXml(($replacedLeaf['value']['overridden'] ?? []) === ['old-leaf'] && !isset($replacedLeaf['value']['id']),
     'Equal-valued programmatic scalar updates retain the displaced XML origin without application credit');
 $oldArray = ['pending' => ['id' => 'old-parent', 'input' => $fingerprint->invoke(null, ['changed' => 'same', 'surviving' => 'same'])],
     'children' => ['changed' => $oldLeaf, 'surviving' => ['id' => 'surviving-leaf', 'digest' => $oldLeaf['digest']]]];
 $mixedArray = $bindLeaves->invoke($bindingCollector, ['value' => ['children' => ['changed' => []]]],
-    ['value' => ['changed' => 'same', 'surviving' => 'same']], ['value' => $oldArray], ['value' => true]);
+    ['value' => ['changed' => 'same', 'surviving' => 'same']], ['value' => $oldArray], ['value' => true], null);
 checkXml(($mixedArray['value']['mixed'] ?? []) === ['old-parent']
     && ($mixedArray['value']['children']['changed']['overridden'] ?? []) === ['old-leaf']
     && ($mixedArray['value']['children']['surviving']['id'] ?? null) === 'surviving-leaf',
     'Mixed programmatic arrays retain the parent limitation, displaced leaf and independent surviving leaf');
 foreach ([[], ['id' => 'new-scalar']] as $newOrigin) {
     $replacedArray = $bindLeaves->invoke($bindingCollector, ['value' => $newOrigin], ['value' => 'same'],
-        ['value' => $oldArray], ['value' => true]);
+        ['value' => $oldArray], ['value' => true], null);
     checkXml(($replacedArray['value']['overridden'] ?? []) === ['old-parent', 'old-leaf', 'surviving-leaf']
         && !isset($replacedArray['value']['children']), 'Scalar replacement accounts for every displaced original array declaration');
 }

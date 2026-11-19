@@ -1236,20 +1236,30 @@ final class LayoutCoverage
         foreach (self::argumentRootIds($origin) as $id) $this->event($id, $effect, $context);
         if (isset($origin['type']['id'])) $this->event($origin['type']['id'], 'layout-argument-type-origin-unconfirmed', $context);
         foreach ($origin['type']['fields'] ?? [] as $field) $this->event($field['id'], 'layout-argument-modifier-origin-unconfirmed', $context);
+        foreach ($origin['type']['parameters'] ?? $origin['pending']['type']['parameters'] ?? [] as $parameter) {
+            foreach (['id', 'name'] as $key) $this->event($parameter[$key], 'layout-parameter-origin-unconfirmed', $context);
+        }
         foreach ($origin['children'] ?? [] as $child) $this->unconfirmedArgument($child, $context, $effect);
     }
 
     private function argumentOrigins($node): array
     {
-        [$origin] = $this->origin($node);
+        [$origin, $context] = $this->origin($node);
         $result = isset($origin['argument']) ? ['id' => $origin['argument']] : [];
         if (isset($origin['argument-type'])) $result['type'] = ['id' => $origin['argument-type'],
             'value' => self::valueFingerprint((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type)];
+        if (isset($origin['action-item'], $origin['action-item-name'], $result['type'])) {
+            $result['type']['actionItem'] = ['id' => $origin['action-item'], 'name' => $origin['action-item-name']];
+        }
         foreach (['translate', 'shared', 'model', 'helper', 'path'] as $attribute) {
             if (isset($origin['argument-' . $attribute], $result['type'])) {
                 $result['type']['fields'][$attribute] = ['id' => $origin['argument-' . $attribute],
                     'value' => self::valueFingerprint((string) $node[$attribute])];
             }
+        }
+        if (isset($result['type'])) {
+            $parameters = $this->parameterOrigins($node, $context);
+            if ($parameters) $result['type']['parameters'] = $parameters;
         }
         if ((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'array'
             || isset($node->updater)) return $result;
@@ -1258,22 +1268,98 @@ final class LayoutCoverage
         return [...$result, 'children' => $children];
     }
 
+    private function parameterOrigins($node, ?array $context): array
+    {
+        $parameters = [];
+        foreach (dom_import_simplexml($node)->childNodes as $child) {
+            // Flat conversion stops at the first nonblank text or CDATA node.
+            if ($child->nodeType === XML_CDATA_SECTION_NODE
+                || ($child->nodeType === XML_TEXT_NODE && trim($child->nodeValue) !== '')) break;
+            if (!$child instanceof \DOMElement || $child->tagName !== 'param') continue;
+            [$ids] = $this->origin(simplexml_import_dom($child));
+            if (!isset($ids['parameter'], $ids['parameter-name'])) continue;
+            $key = $child->getAttribute('name');
+            if (isset($parameters[$key])) $this->recordParameterOverride($parameters[$key], $context);
+            $value = null;
+            foreach ($child->childNodes as $content) {
+                if ($content->nodeType === XML_CDATA_SECTION_NODE
+                    || ($content->nodeType === XML_TEXT_NODE && trim($content->nodeValue) !== '')) {
+                    $value = trim($content->nodeValue);
+                    break;
+                }
+            }
+            $keyInput = self::valueFingerprint($key);
+            $valueInput = self::valueFingerprint($value);
+            if ($keyInput === null || $valueInput === null) {
+                unset($parameters[$key]);
+                foreach (['parameter', 'parameter-name'] as $operand) $this->event($ids[$operand], 'layout-parameter-origin-unconfirmed', $context);
+                continue;
+            }
+            $parameters[$key] = [
+                'id' => $ids['parameter'], 'name' => $ids['parameter-name'],
+                'keyInput' => $keyInput, 'valueInput' => $valueInput,
+            ];
+        }
+        return $parameters;
+    }
+
+    private function recordParameterOverride(array $parameter, ?array $context): void
+    {
+        foreach (['id', 'name'] as $operand) $this->event($parameter[$operand], 'layout-parameter-overridden', $context);
+    }
+
+    private function bindParameterFields(array $origin, array $before, $merged, bool $hadPrevious, ?array $context): array
+    {
+        if (!is_array($merged) || !is_array($merged['param'] ?? null)) return [];
+        $incoming = $origin['type']['parameters'] ?? [];
+        if (!$incoming && !isset($origin['id'])) return [];
+        $kept = $hadPrevious ? ($before['parameterFields'] ?? []) : [];
+        foreach ($incoming as $key => $parameter) {
+            if (isset($kept[$key])) {
+                $previous = $kept[$key];
+                $this->event($previous['name'], 'layout-parameter-overridden', $context);
+                if (self::matchesFingerprint($parameter['valueInput'], null)
+                    && !self::matchesFingerprint($previous['valueInput'], null)) {
+                    $this->event($parameter['id'], 'layout-parameter-value-inherited', $context);
+                    $parameter['id'] = $previous['id'];
+                    $parameter['valueInput'] = $previous['valueInput'];
+                } else {
+                    $this->event($previous['id'], 'layout-parameter-overridden', $context);
+                }
+            }
+            $kept[$key] = $parameter;
+        }
+        return self::matchingParameterFields($kept, $merged);
+    }
+
+    private static function matchingParameterFields(array $origins, $data): array
+    {
+        if (!is_array($data) || !in_array($data['xsi:type'] ?? null, [null, 'url', 'helper'], true)
+            || !is_array($data['param'] ?? null)) return [];
+        return array_filter($origins, static function (array $entry, $key) use ($data): bool {
+            $parameter = $data['param'][$key] ?? null;
+            return is_array($parameter) && self::matchesFingerprint($entry['keyInput'], $parameter['name'] ?? null)
+                && self::matchesFingerprint($entry['valueInput'], $parameter['value'] ?? null);
+        }, ARRAY_FILTER_USE_BOTH);
+    }
+
     private function bindArguments($xml, array $values, array $previous, array $existing): array
     {
         $read = $this->argumentReads[$xml] ?? null;
         unset($this->argumentReads[$xml]);
         if ($read === null) return [];
-        return $this->bindArgumentLeaves($read, $values, $previous, $existing);
+        [, $context] = $this->origin($xml);
+        return $this->bindArgumentLeaves($read, $values, $previous, $existing, $context);
     }
 
-    private function bindArgumentLeaves(array $read, array $values, array $previous, array $existing): array
+    private function bindArgumentLeaves(array $read, array $values, array $previous, array $existing, ?array $context): array
     {
         foreach ($read as $name => $origin) {
             $before = $previous[$name] ?? [];
             $entry = ['overridden' => $before['overridden'] ?? [], 'mixed' => $before['mixed'] ?? []];
             if (isset($origin['children']) && isset($values[$name]) && is_array($values[$name])) {
                 $nested = isset($existing[$name]) ? array_fill_keys(array_keys($values[$name]), true) : [];
-                $entry['children'] = $this->bindArgumentLeaves($origin['children'], $values[$name], $before['children'] ?? [], $nested);
+                $entry['children'] = $this->bindArgumentLeaves($origin['children'], $values[$name], $before['children'] ?? [], $nested, $context);
             }
             if (!isset($origin['id']) && array_key_exists($name, $values)) {
                 if (isset($entry['children'])) {
@@ -1292,12 +1378,13 @@ final class LayoutCoverage
                 } elseif (!isset($existing[$name])) {
                     $identity = self::valueFingerprint($values[$name]);
                     if ($identity) $entry['pending'] = ['id' => $origin['id'], 'input' => $identity,
-                        'updaters' => $origin['updaters'] ?? [], 'type' => $origin['type'] ?? null];
+                        'updaters' => $origin['updaters'] ?? [], 'type' => isset($origin['type']) ? array_diff_key($origin['type'], ['parameters' => true]) : null];
                     else $entry['limited'] = [$origin['id']];
                 } else {
                     $entry['mixed'] = [...$entry['mixed'], ...self::argumentRootIds($before), $origin['id']];
                 }
             }
+            $entry['parameterFields'] = $this->bindParameterFields($origin, $before, $values[$name] ?? null, isset($existing[$name]), $context);
             $entry['overridden'] = array_values(array_unique(array_diff($entry['overridden'], [$origin['id'] ?? null])));
             $entry['mixed'] = array_values(array_unique($entry['mixed']));
             $previous[$name] = array_filter($entry, static fn($value) => $value !== []);
@@ -1322,6 +1409,7 @@ final class LayoutCoverage
             if (isset($origin['value']) && self::matchesFingerprint($origin['value'], $value)) {
                 $entry += array_intersect_key($origin, array_flip(['id', 'value']));
             }
+            $entry['parameterFields'] = self::matchingParameterFields($origin['parameterFields'] ?? [], $value);
             if (isset($origin['pending']) && self::matchesFingerprint($origin['pending']['input'], $value)) {
                 $entry['pending'] = $origin['pending'];
             }
@@ -2127,6 +2215,11 @@ final class LayoutCoverage
         foreach ($arguments as $argument) {
             $this->event($argument['type']['id'] ?? null, 'layout-argument-type-' . $outcome, $context);
             foreach ($argument['type']['fields'] ?? [] as $field) $this->event($field['id'], 'layout-argument-modifier-' . $outcome, $context);
+            foreach ($argument['type']['parameters'] ?? [] as $parameter) {
+                foreach (['id', 'name'] as $key) $this->event($parameter[$key], 'layout-parameter-origin-unconfirmed', $context);
+            }
+            foreach ($argument['type']['actionItem'] ?? [] as $id) $this->event($id, 'layout-action-item-origin-unconfirmed', $context);
+
             $this->unconfirmedActionTypes($argument['children'] ?? [], $context, $ambiguous);
         }
     }

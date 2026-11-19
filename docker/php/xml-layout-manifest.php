@@ -76,10 +76,16 @@ final class LayoutManifest
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'argument' && $element !== ''
                     && $node->parentNode->nodeName === 'action' => 'action-argument',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'item'
+                    && self::actionArrayItem($node) => 'action-item',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'arguments'
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'argument-group',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::blockArgument($node) => 'argument',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'param'
+                    && (self::blockArgument($node->parentNode) || self::actionArrayItem($node->parentNode)
+                        || $node->parentNode->parentNode->nodeName === 'action')
+                    && in_array($node->parentNode->getAttribute('xsi:type'), ['helper', 'url'], true) => 'parameter',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'updater'
                     && self::blockArgument($node->parentNode) => 'argument-updater',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'move' && $element !== '' => 'move',
@@ -97,9 +103,11 @@ final class LayoutManifest
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
                     $valueKind === 'action' && $attribute->nodeName === 'ifconfig' => 'action-ifconfig',
-                    in_array($valueKind, ['argument', 'action-argument'], true) && $attribute->nodeName === 'xsi:type' => 'argument-type',
-                    in_array($valueKind, ['argument', 'action-argument'], true) && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
+                    in_array($valueKind, ['argument', 'action-argument', 'action-item'], true) && $attribute->nodeName === 'xsi:type' => 'argument-type',
+                    in_array($valueKind, ['argument', 'action-argument', 'action-item'], true) && in_array($attribute->nodeName, ['translate', 'shared', 'model', 'helper', 'path'], true) => 'argument-' . $attribute->nodeName,
                     $valueKind === 'argument' && $attribute->nodeName === 'name' => 'argument-name',
+                    $valueKind === 'action-item' && $attribute->nodeName === 'name' => 'action-item-name',
+                    $valueKind === 'parameter' && $attribute->nodeName === 'name' => 'parameter-name',
                     $valueKind === 'action-argument' && $attribute->nodeName === 'name' => 'action-argument-name',
                     $valueKind === 'reference' && $attribute->nodeName === 'name' => 'reference-name',
                     $valueKind === 'move' && in_array($attribute->nodeName, ['element', 'destination', 'as', 'before', 'after'], true) => 'move-' . $attribute->nodeName,
@@ -150,7 +158,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'action-item', 'action-item-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'parameter', 'parameter-name', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -218,6 +226,17 @@ final class LayoutManifest
         while ($node->tagName === 'item' && $node->parentNode instanceof \DOMElement) $node = $node->parentNode;
         return $node->tagName === 'argument' && $node->parentNode->nodeName === 'arguments'
             && $node->parentNode->parentNode->nodeName === 'visibilityCondition';
+    }
+
+    private static function actionArrayItem(\DOMElement $node): bool
+    {
+        if ($node->tagName !== 'item' || !$node->hasAttribute('name')) return false;
+        do {
+            $node = $node->parentNode;
+            if (!$node instanceof \DOMElement || $node->getAttribute('xsi:type') !== 'array'
+                || $node->getElementsByTagName('updater')->length) return false;
+        } while ($node->tagName === 'item');
+        return $node->tagName === 'argument' && $node->parentNode->nodeName === 'action';
     }
 
     private static function blockArgument(\DOMElement $node): bool

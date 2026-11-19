@@ -469,6 +469,14 @@ fi
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --action-types "$action_type_missing"
     done
+    for named_parameter_option in --without-collector '' --custom-parameter-string; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php --parameters "$named_parameter_option"
+    done
+    for named_parameter_missing in --missing-parameter-pre --missing-parameter-post --missing-parameter-both --missing-parameter-string-pre --missing-parameter-string-post --missing-parameter-string-both --missing-parameter-map-pre --missing-parameter-map-post --missing-parameter-map-both; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php --parameters "$named_parameter_missing"
+    done
     for nested_modifier_option in --without-collector ''; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
             php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php "$nested_modifier_option"

@@ -26,6 +26,10 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'action-item': ['layout-action-item-evaluated', 'layout-action-item-origin-unconfirmed'],
+    'action-item-name': ['layout-action-item-name-applied', 'layout-action-item-origin-unconfirmed'],
+    parameter: ['layout-parameter-evaluated', 'layout-parameter-value-inherited', 'layout-parameter-origin-unconfirmed', 'layout-parameter-overridden', 'layout-argument-group-ignored'],
+    'parameter-name': ['layout-parameter-name-applied', 'layout-parameter-origin-unconfirmed', 'layout-parameter-overridden', 'layout-argument-group-ignored'],
     'argument-group': ['layout-argument-group-selected', 'layout-argument-group-ignored', 'layout-argument-group-failed', 'layout-argument-group-origin-unconfirmed'],
     'argument-translate': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
     'argument-shared': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
@@ -135,6 +139,10 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-action-item-origin-unconfirmed': 'The nested action array operand has no uniquely verified native evaluation.',
+    'layout-parameter-overridden': 'A later parameter replaced this operand in Magento’s named parameter map.',
+    'layout-parameter-value-inherited': 'This empty overlay supplied the name while Magento retained the earlier parameter value.',
+    'layout-parameter-origin-unconfirmed': 'The native parameter input or evaluator has no uniquely verified original source.',
     'layout-argument-group-ignored': 'The native block reader selects only its first arguments group. This later group and its descendants supplied no values through that read.',
     'layout-argument-group-failed': 'The native argument group read failed before returning its parsed argument map.',
     'layout-argument-group-origin-unconfirmed': 'A custom group selector, parser or XML handoff did not establish the original group consumed by the reader.',

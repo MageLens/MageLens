@@ -274,6 +274,7 @@ describe('Magento storefront coverage compatibility', () => {
         for (const effect of ['shared', 'fresh', 'translate', 'options', 'helper', 'url']) {
             cy.get(`[data-layout-nested-argument="${effect}"]`).should('have.text', 'verified');
         }
+        cy.get('[data-layout-named-overlay]').should('have.text', 'verified');
         cy.visit('/coverageprobe/opaqueaction/');
         cy.get('[data-layout-opaque-action]').should('have.text', 'verified');
         cy.visit('/coverageprobe/argumentgroups/');
