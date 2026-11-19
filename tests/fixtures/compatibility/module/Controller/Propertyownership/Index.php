@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageLens\Compatibility\Controller\Propertyownership;
 
 use MageLens\Compatibility\Block;
+use MageLens\Compatibility\Model\LayoutScopedWriter;
 use Magento\Framework\App\Action\HttpGetActionInterface;
 use Magento\Framework\Controller\Result\Raw;
 use Magento\Framework\Controller\Result\RawFactory;
@@ -77,6 +78,24 @@ class Index implements HttpGetActionInterface
             if ($writes !== null && $writes < 1) throw new \RuntimeException('Native property write hook was bypassed');
             $output .= '<span data-layout-property="' . $case . '">verified</span>';
         }
+        $fragment = $this->layouts->create();
+        $layout = $fragment->getLayout();
+        if ($instances->contains($layout)) throw new \LogicException('Scoped fixtures require an independent native layout');
+        $instances->attach($layout);
+        $fragment->addHandle('coverageprobe_propertyownership_scoped');
+        $before = LayoutScopedWriter::$writes;
+        foreach (['template', 'data'] as $field) {
+            foreach (['bind', 'bindTo', 'call'] as $method) {
+                $case = $field . '.' . $method;
+                $block = $layout->getBlock('magelens.scope.' . $case);
+                LayoutScopedWriter::write($block, $field === 'template' ? '_template' : '_data', $method);
+                if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')) {
+                    throw new \RuntimeException('Native scoped field write changed output');
+                }
+                $output .= '<span data-layout-scoped-field="' . $case . '">verified</span>';
+            }
+        }
+        if (LayoutScopedWriter::$writes - $before !== 6) throw new \RuntimeException('Expected six native scoped writes');
         return $this->raw->create()->setContents($output);
     }
 }
