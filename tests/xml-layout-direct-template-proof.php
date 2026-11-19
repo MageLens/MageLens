@@ -90,7 +90,8 @@ $collector->finish();
 $template = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === 'template'))[0];
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $effects = array_column(array_filter($events, static fn($event) => $event['id'] === $template['id']), 'type');
-if (!in_array('layout-template-field-access-unconfirmed', $effects, true)
+$ownershipOutcome = in_array('--reflection', $argv, true) ? 'layout-template-replaced' : 'layout-template-field-access-unconfirmed';
+if (!in_array($ownershipOutcome, $effects, true)
     || in_array('layout-template-executed', $effects, true)) {
     throw new RuntimeException('Direct PHP template write retained original XML execution credit');
 }

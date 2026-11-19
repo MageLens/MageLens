@@ -276,6 +276,9 @@ final class LayoutCoverage
             [Template::class, '_construct', $this->beginConstructorTemplate(...), $this->endConstructorTemplate(...)],
             [\Magento\Framework\Interception\PluginListInterface::class, 'getNext', null, $this->constructorTemplateQuery(...)],
             [Template::class, 'setTemplate', null, $this->assignTemplate(...)],
+            [\ReflectionProperty::class, 'setValue', null, $this->replaceReflectedBlockData(...)],
+            [\ReflectionProperty::class, 'setRawValue', null, $this->replaceReflectedBlockData(...)],
+            [\ReflectionProperty::class, 'setRawValueWithoutLazyInitialization', null, $this->replaceReflectedBlockData(...)],
             [\Magento\Framework\App\PageCache\Kernel::class, 'load', $this->beginPageCache(...), $this->loadedPageCache(...)],
             [AbstractBlock::class, '_loadCache', $this->beginBlockHtml(...), $this->loadBlockHtml(...)],
             [\Magento\Framework\App\CacheInterface::class, 'load', null, $this->loadedBlockCache(...)],
@@ -2710,6 +2713,35 @@ final class LayoutCoverage
             $this->blocks[$block] = $evidence;
             $this->actionEvaluations[$action]['templateSelectionObserved'] = true;
             $this->event($selection['id'], 'layout-template-selected', $selection['context']);
+        }
+    }
+
+    private function replaceReflectedBlockData($property, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($error || $class !== \ReflectionProperty::class || !($params[0] ?? null) instanceof AbstractBlock) return;
+        static $getName;
+        $getName ??= new \ReflectionMethod(\ReflectionProperty::class, 'getName');
+        $name = $getName->invoke($property);
+        $block = $params[0];
+        if ($name === '_data') $this->invalidateArgumentData($block, null);
+        if ($name !== '_template' || !$block instanceof Template) return;
+        $generation = array_key_last($this->generating);
+        if ($generation !== null) {
+            if ($this->generating[$generation]['selected'] === $block) {
+                $source = $this->generating[$generation]['source'];
+                $this->event($source['template'] ?? null, 'layout-template-selected', $source['context']);
+                $this->event($source['template'] ?? null, 'layout-template-replaced', $source['context']);
+                $this->generating[$generation]['selected'] = null;
+            }
+            if (($this->generating[$generation]['constructorTemplate']['block'] ?? null) === $block) {
+                $this->generating[$generation]['constructorTemplate']['replaced'] = true;
+            }
+        }
+        $evidence = $this->blocks[$block] ?? null;
+        if (isset($evidence['template'])) {
+            $this->event($evidence['template'], 'layout-template-replaced', $evidence['context']);
+            $evidence['template'] = null;
+            $this->blocks[$block] = $evidence;
         }
     }
 

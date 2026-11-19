@@ -524,18 +524,21 @@ final class LayoutRegistryCoverage
     private function replaced($property, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== \ReflectionProperty::class || !isset($params[0])) return;
-        if ($params[0] instanceof \Magento\Framework\DataObject && $property->getName() === '_data') {
+        static $getName;
+        $getName ??= new \ReflectionMethod(\ReflectionProperty::class, 'getName');
+        $name = $getName->invoke($property);
+        if ($params[0] instanceof \Magento\Framework\DataObject && $name === '_data') {
             unset($this->typeObjects[$params[0]]);
         }
-        if ($params[0] instanceof ConfigData && $property->getName() === '_data') {
+        if ($params[0] instanceof ConfigData && $name === '_data') {
             unset($this->typeStorage[$params[0]]);
             $this->typeStorageLimits[$params[0]] = 'layout-registry-data-replaced';
         }
-        if ($params[0] instanceof PageTypes && $property->getName() === '_pageTypes') {
+        if ($params[0] instanceof PageTypes && $name === '_pageTypes') {
             $this->limitations['layout-registry-data-replaced'] = true;
         }
-        if ($params[0] instanceof Builder && $property->getName() === 'configFiles') unset($this->builderReads[$params[0]]);
-        if ($params[0] instanceof Config && in_array($property->getName(), ['_data', '_domConfig'], true)) {
+        if ($params[0] instanceof Builder && $name === 'configFiles') unset($this->builderReads[$params[0]]);
+        if ($params[0] instanceof Config && in_array($name, ['_data', '_domConfig'], true)) {
             unset($this->configs[$params[0]]);
             $this->limitations['layout-registry-data-replaced'] = true;
         }
