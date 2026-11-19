@@ -231,8 +231,9 @@ test('local web report stages only presentation files and never follows input sy
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const coverage = path.join(root, 'coverage');
     const expected = ['index.html', 'summary.json', 'php/clover.xml', 'php/_js/source-view.js',
-        'js/base.css', 'js-application/index.html', 'templates/files/view.html', 'xml/coverage.json', 'badges/php.svg'];
-    const privateFiles = ['raw/php/private.json', 'raw/templates/private.html', 'project-fixtures.json',
+        'js/base.css', 'js-application/index.html', 'templates/files/view.html', 'xml/coverage.json', 'badges/php.svg',
+        'html-validation/index.html', 'html-validation/results.json'];
+    const privateFiles = ['raw/php/private.json', 'raw/templates/private.html', 'raw/html-validation/private.json', 'project-fixtures.json',
         'php/coverage-summary.json', 'playwright-artifacts/trace.zip', 'share-with-source.html'];
     for (const file of [...expected, ...privateFiles]) {
         const fullPath = path.join(coverage, file);

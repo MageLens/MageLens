@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -29,6 +29,13 @@ module.exports = defineConfig({
                 });
             } else {
                 require('@cypress/code-coverage/task')(on, config);
+                const {captureHtml} = require('./bin/html-validation.cjs');
+                // A capture problem must not fail the test that requested the audit.
+                on('task', {mageLensValidateHtml(capture) {
+                    try { captureHtml({runner: 'cypress', ...capture}); }
+                    catch (error) { console.error('HTML validation capture failed:', error.message); }
+                    return null;
+                }});
             }
             return config;
         }

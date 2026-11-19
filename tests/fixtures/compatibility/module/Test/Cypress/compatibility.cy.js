@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -50,5 +50,10 @@ describe('Magento storefront coverage compatibility', () => {
         cy.window().its('magelensChildScript').should('equal', 'child-ready');
         cy.get('[data-cy="probe-count"]').should('have.text', '0');
         cy.get('[data-cy="probe-name"]').should('have.value', 'initial');
+        cy.setCookie('magelens_markup_session', 'signed-in');
+        for (const markup of ['valid', 'invalid']) {
+            cy.visit(`/coverageprobe/index/markup/case/${markup}`);
+            cy.mageLensValidateHtml();
+        }
     });
 });

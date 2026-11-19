@@ -133,6 +133,8 @@ To share coverage, run `./bin/export-coverage` and send only **`coverage/share.h
 
 Coverage includes PHP executable lines, whole JavaScript files, and HTML/PHTML templates with their bindings and inline scripts under `src/app/code/`, plus selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. JavaScript badges measure statements in whole `.js` files, with separate application/library reports. Inline scripts belong to template coverage, which also lists unsupported and PHP-generated script fragments. See [JavaScript coverage configuration](docs/coverage.md#javascript-coverage).
 
+Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](docs/coverage.md#html-validation).
+
 Read the [coverage guide](docs/coverage.md) for report semantics, collection details, and adding tests and fixtures.
 
 ## Magento environment
@@ -170,6 +172,7 @@ This is the single place to choose the main dependency versions:
 | Cypress JavaScript coverage adapter | `CYPRESS_CODE_COVERAGE_VERSION` |
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |
 | Istanbul report CLI (nyc) | `NYC_VERSION` |
+| [HTML validation](docs/coverage.md#html-validation) engine (html-validate) | `HTML_VALIDATE_VERSION` |
 | [Magento template coverage](https://github.com/VitaliyBoyko/magento-template-coverage) | `TEMPLATE_COVERAGE_VERSION` |
 | Cypress runner's Node and browser system dependencies | `RUNNER_IMAGE` |
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
