@@ -50,9 +50,13 @@ $method = $methodIndex === false ? 'setRawValue' : $argv[$methodIndex + 1];
 if (!in_array($method, ['setValue', 'setRawValue', 'setRawValueWithoutLazyInitialization'], true)) throw new RuntimeException('Unknown native reflection method');
 $failed = in_array('--failed', $argv, true);
 $duringGeneration = in_array('--during-generation', $argv, true);
-$path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_packagemutation_native.xml';
+$unmapped = in_array('--unmapped', $argv, true);
+$path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_packagemutation_' . ($unmapped ? 'unused' : 'native') . '.xml';
 $source = file_get_contents(BP . '/' . $path);
 $declarations = LayoutManifest::declarations($path, $source);
+if ($unmapped) set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets([
     ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source), 'declarations' => $declarations],
 ]));
@@ -84,10 +88,16 @@ if (!str_contains($html, 'data-layout-mutation>xml-value</span>') || MageLensExt
 echo 'Verified native external reflection ', $failed ? 'rejection' : 'write', ', unchanged output and zero application metadata getter calls.', "\n";
 if (in_array('--without-collector', $argv, true)) exit;
 $state = $collector->finish();
+$events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
+if ($unmapped) {
+    if ($events) throw new RuntimeException('Reflection on an unmapped block inferred original source hits');
+    echo "Verified healthy zero-hit original inventory for an unmapped reflected block.\n";
+    exit;
+}
+
 $kind = $mode === 'template' ? 'template' : 'argument';
 $declaration = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === $kind
     && ($kind === 'template' || $item['layout']['element'] === 'value')))[0];
-$events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $effects = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
 $consumed = $mode === 'template' ? 'layout-template-executed' : 'layout-argument-read';
 $replaced = $mode === 'template' ? 'layout-template-replaced' : 'layout-argument-replaced';

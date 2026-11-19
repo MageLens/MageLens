@@ -408,6 +408,14 @@ fi
         done
     done
     for reflection_field in template data; do
+        for reflection_stage in '' --during-generation; do
+            for reflection_collection in --without-collector ''; do
+                ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+                    php /application/docker/php/e2e/xml-layout-reflection-write-proof.php "$reflection_field" "$reflection_stage" "$reflection_collection" --unmapped
+            done
+        done
+    done
+    for reflection_field in template data; do
         for reflection_outcome in success failed; do
             reflection_options=()
             [[ "$reflection_outcome" != failed ]] || reflection_options+=(--failed)
