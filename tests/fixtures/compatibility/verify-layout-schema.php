@@ -69,6 +69,7 @@ $namespace = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 $pageSchema = 'urn:magento:framework:View/Layout/etc/page_configuration.xsd';
 $genericSchema = 'urn:magento:framework:View/Layout/etc/layout_generic.xsd';
 $rejected = [
+    ['missing action method', $genericSchema, '<layout><block name="fixture"><action/></block></layout>'],
     ['spaced block TTL', $genericSchema, '<layout><block name="fixture" ttl=" 0 "/></layout>'],
     ['zero container ID', $genericSchema, '<layout><container name="fixture" htmlId="0"/></layout>'],
     ['block display attribute', $genericSchema, '<layout><block name="fixture" display="0"/></layout>'],

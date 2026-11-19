@@ -232,6 +232,13 @@ test('starts the next test with fresh state', async ({page}) => {
             else await expect(page.locator('[data-layout-name-case="moved"]')).toHaveCount(0);
         }
     }
+    await page.goto('/coverageprobe/magicactions/');
+    await expect(page.locator('[data-layout-magic-action-proof]')).toHaveText('verified');
+    await expect(page.locator('[data-layout-magic-action]')).toHaveCount(3);
+    for (const [name, marker] of Object.entries({empty: 'empty', zero: 'zero', denied: ''})) {
+        await expect(page.locator(`[data-layout-magic-action="magelens.magic.action.${name}"]`)).toHaveText(marker);
+    }
+    await expect(page.locator('[data-layout-magic-action="magelens.magic.action.unrendered"]')).toHaveCount(0);
     await page.goto('/coverageprobe/actionguards/');
     await expect(page.locator('[data-layout-action-guard-proof]')).toHaveText('verified');
     await expect(page.locator('[data-layout-action-case]')).toHaveCount(6);

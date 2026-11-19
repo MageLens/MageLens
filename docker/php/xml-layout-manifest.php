@@ -72,7 +72,7 @@ final class LayoutManifest
                 $fileType === 'page' && $node->parentNode->nodeName === 'head'
                     && in_array($node->tagName, ['css', 'script', 'link', 'font'], true)
                     && $node->getAttribute('src') !== '' => 'asset-reference',
-                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'action' && $element !== ''
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'action' && $node->hasAttribute('method')
                     && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'action',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'argument' && $element !== ''
                     && $node->parentNode->nodeName === 'action' => 'action-argument',

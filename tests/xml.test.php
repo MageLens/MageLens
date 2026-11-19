@@ -305,3 +305,14 @@ try {
     checkXml(str_contains($error->getMessage(), 'defaulted name inventory exceeded 32768'), 'Defaulted name inventory is bounded');
 }
 echo "Defaulted native element name inventory is bounded.\n";
+
+$magicMethods = LayoutManifest::declarations('app/code/Acme/Blog/view/frontend/layout/magic.xml',
+    '<layout><block name="fixture"><action method="" ifconfig="fixture/guard"/><action method="0"/><action/></block></layout>');
+foreach (['action' => 2, 'action-method' => 2, 'action-ifconfig' => 1] as $kind => $expected) {
+    $matches = array_filter($magicMethods, static fn($item) => $item['layout']['kind'] === $kind && $item['supported']);
+    checkXml(count($matches) === $expected, 'Native empty/zero magic action methods retain independent original operands');
+}
+echo "Empty and zero native magic action methods retain source identities.\n";
+checkXml(count(array_filter($magicMethods, static fn($item) => $item['layout']['instruction'] === 'action'
+    && $item['layout']['kind'] === 'instruction' && !$item['supported'])) === 1,
+    'An absent required method remains outside the supported action grammar');

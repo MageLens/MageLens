@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.magic.action.root" output="1">
+        <block class="MageLens\Compatibility\Block\LayoutMagicAction" name="magelens.magic.action.empty">
+            <action method="" ifconfig="magelens_layout_fixture/actions/allowed"><argument name="marker" xsi:type="string">fixture</argument></action>
+        </block>
+        <block class="MageLens\Compatibility\Block\LayoutMagicAction" name="magelens.magic.action.zero">
+            <action method="0"><argument name="marker" xsi:type="string">fixture</argument></action>
+        </block>
+        <block class="MageLens\Compatibility\Block\LayoutMagicAction" name="magelens.magic.action.denied">
+            <action method="" ifconfig="magelens_layout_fixture/actions/denied"><argument name="marker" xsi:type="string">fixture</argument></action>
+        </block>
+    </container>
+    <block class="MageLens\Compatibility\Block\LayoutMagicAction" name="magelens.magic.action.unrendered">
+        <action method=""><argument name="marker" xsi:type="string">fixture</argument></action>
+    </block>
+</layout>
