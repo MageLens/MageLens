@@ -270,6 +270,10 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...nodes].map(node => node.getAttribute('data-layout-template-value')))
                 .to.deep.equal(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'default', 'case', 'interceptor', 'direct.attribute', 'direct.argument', 'direct.action'].map(name => 'magelens.template.values.' + name));
         });
+        cy.visit('/coverageprobe/nestedarguments/');
+        for (const effect of ['shared', 'fresh', 'translate', 'options', 'helper', 'url']) {
+            cy.get(`[data-layout-nested-argument="${effect}"]`).should('have.text', 'verified');
+        }
         cy.visit('/coverageprobe/argumentgroups/');
         cy.get('[data-layout-argument-group="block"]').should('have.text', 'first-group');
         cy.get('[data-layout-argument-group="reference"]').should('have.text', 'first-reference-group');
