@@ -16,6 +16,7 @@ $mode = $argv[1] ?? 'literal';
 $bodies = [
     'clean' => 'public function fixture() { return $this->getTemplate(); }',
     'literal' => 'public function fixture() { $this->_template = "same"; }',
+    'record-limit' => 'public function fixture() { $this->_template = "same"; }',
     'variable' => 'public function fixture() { $field = "_template"; $this->$field = "same"; }',
     'braced' => 'public function fixture() { $this->{"_template"} = "same"; }',
     'foreign' => 'public function fixture($block) { $block->_template = "same"; }',
@@ -39,12 +40,14 @@ try {
         require $file;
     }
     $guard = new LayoutFieldAccess($field, $field === '_data' ? Magento\Framework\View\Element\AbstractBlock::class : Template::class, $field === '_data' ? 'Block data' : 'Template');
+    if ($mode === 'record-limit') (new ReflectionProperty($guard, 'accessCount'))->setValue($guard, 32768);
     if (in_array($mode, ['class-limit', 'file-limit'], true)) {
         $property = new ReflectionProperty($guard, $mode === 'class-limit' ? 'classes' : 'files');
         $property->setValue($guard, array_fill_keys(array_map(static fn($index) => 'fixture.' . $index, range(1, 1024)), false));
     }
     $expectedError = match ($mode) {
         'class-limit' => '1024 classes', 'file-limit' => '1024 files', 'access-limit' => '4096 field accesses',
+        'record-limit' => '32768 field accesses',
         'edit', 'symlink', 'missing' => 'source changed', default => null,
     };
     try {

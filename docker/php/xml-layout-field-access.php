@@ -17,6 +17,7 @@ final class LayoutFieldAccess
     private array $classes = [];
     private array $files = [];
     private int $declared = 0;
+    private int $accessCount = 0;
     private bool $external = false;
 
     public function __construct(private readonly string $field = '_template',
@@ -94,6 +95,8 @@ final class LayoutFieldAccess
             if (count($accesses) >= 4096) throw new \RuntimeException($this->description . ' implementation inventory exceeded 4096 field accesses');
             $accesses[] = ['line' => $token['line'], 'self' => ($tokens[$index - 1]['text'] ?? null) === '$this'];
         }
+        $this->accessCount += count($accesses);
+        if ($this->accessCount > 32768) throw new \RuntimeException($this->description . ' implementation inventory exceeded 32768 field accesses');
         $this->files[$file] = ['hash' => hash('sha256', $source), 'accesses' => $accesses];
         return $accesses;
     }

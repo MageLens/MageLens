@@ -398,7 +398,7 @@ fi
             php /application/docker/php/e2e/xml-layout-direct-data-proof.php "$direct_data_option"
     done
     for implementation_field in '' --data; do
-        for template_field in clean literal variable braced foreign public hook reflection opaque edit symlink missing class-limit file-limit access-limit; do
+        for template_field in clean literal variable braced foreign public hook reflection opaque edit symlink missing class-limit file-limit access-limit record-limit; do
             ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
                 php /application/docker/php/e2e/xml-layout-template-field-proof.php "$template_field" "$implementation_field"
         done
