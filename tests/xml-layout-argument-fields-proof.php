@@ -111,9 +111,19 @@ if ($customItems) {
         });
 }
 $selected = [];
+$actionTypes = [];
+$actionTypeProof = in_array('--action-types', $argv, true);
 OpenTelemetry\Instrumentation\hook(Composite::class, 'getInterpreter', null,
-    static function ($composite, array $params, $interpreter, ?Throwable $error) use (&$selected, &$inForeignLookup, &$foreignObserved): void {
+    static function ($composite, array $params, $interpreter, ?Throwable $error) use (&$selected, &$inForeignLookup, &$foreignObserved, &$actionTypes, $actionTypeProof): void {
         if (!$error && $interpreter instanceof InterpreterInterface) $selected[$params[0]] = true;
+        if ($actionTypeProof && !$error && $interpreter instanceof InterpreterInterface) {
+            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 6);
+            if (($trace[3]['class'] ?? null) === Magento\Framework\View\Layout\Argument\Interpreter\Decorator\Updater::class
+                && ($trace[3]['function'] ?? null) === 'evaluate'
+                && ($trace[4]['class'] ?? null) === Magento\Framework\View\Layout\Generator\Block::class
+                && ($trace[4]['function'] ?? null) === 'evaluateArguments'
+                && ($trace[5]['function'] ?? null) === 'generateAction') $actionTypes[] = $params[0];
+        }
         if ($inForeignLookup) $foreignObserved++;
     });
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
@@ -256,6 +266,9 @@ foreach (['string', 'number', 'boolean', 'null', 'array', 'object', 'options', '
 if (in_array('--nested-types', $argv, true) && $block->getData('indexed') !== [
     'visited' => 'indexed-read', 'unread' => 'indexed-unread', 'nullable' => null,
     'nested' => ['leaf' => 'indexed-path']]) throw new RuntimeException('Native nested typed-value inventory changed');
+if ($actionTypeProof && $actionTypes !== ['string', 'configurableObject', 'string', 'string']) {
+    throw new RuntimeException('Native root action interpreter dispatch changed: ' . implode(', ', $actionTypes));
+}
 echo "Verified native typed values, nested overlays, shared/fresh identities, translation, options, helper/URL parameters and action dispatch.\n";
 if ($forwarder && MageLensArgumentFieldForwarder::$calls === 0) throw new RuntimeException('Custom interpreter forwarding was bypassed');
 if ($custom && MageLensArgumentFieldDispatch::$calls === 0) throw new RuntimeException('Custom type selector was bypassed');
@@ -274,6 +287,22 @@ foreach (range(1, 25) as $position) {
         || ($replaced && !in_array('layout-argument-type-origin-unconfirmed', $types, true))) {
         throw new RuntimeException('Original type operand differs from its native consumer boundary at position ' . $position);
     }
+}
+if (in_array('--action-types', $argv, true)) {
+    $count = 0;
+    foreach ($files as $fileIndex => $file) foreach ($file['declarations'] as $declaration) {
+        if ($declaration['layout']['attribute'] !== 'xsi:type'
+            || !preg_match('~/action\\[(\\d+)\\]/argument/@xsi:type$~', $declaration['node'], $match)) continue;
+        $count++;
+        $position = (int)$match[1];
+        $effects = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
+        $evaluated = $fileIndex === 0 ? in_array($position, [1, 3], true) : $position === 1;
+        if (in_array('layout-argument-type-evaluated', $effects, true) !== $evaluated) {
+            throw new RuntimeException('Original action type operand differs from its native interpretation: ' . $declaration['node']);
+        }
+    }
+    if ($count !== 6) throw new RuntimeException('Original action type operand inventory changed');
+    echo "Verified original action type evaluation, denied and ambiguous operands independently.\n";
 }
 if (in_array('--nested-types', $argv, true)) {
     $count = 0;
