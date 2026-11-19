@@ -75,6 +75,16 @@ test(`${runner}: README flag reaches preparation and finalization only when requ
     assert.match(optedIn.calls, /finalize\.cjs "\$@".* sh --update-readme/);
 });
 
+test(`${runner}: the coverage database is requested from finalization only with its flag`, t => {
+    const defaultRun = workflow(t, [], '', false, runner);
+    assert.equal(defaultRun.status, 0, defaultRun.stderr);
+    assert.doesNotMatch(defaultRun.calls, /--include-machine-report/);
+    const optedIn = workflow(t, ['--include-machine-report', '--update-readme'], '', false, runner);
+    assert.equal(optedIn.status, 0, optedIn.stderr);
+    assert.match(optedIn.calls, /finalize\.cjs "\$@".* sh --update-readme --include-machine-report/);
+    assert.doesNotMatch(optedIn.calls, /prepare\.cjs.*--include-machine-report/);
+});
+
 test(`${runner}: publishes complete reports after cleanup`, t => {
     const result = workflow(t, [], '', false, runner);
     assert.equal(result.status, 0, result.stderr);
@@ -203,6 +213,7 @@ test('help and invalid options do not touch the environment', t => {
     const help = workflow(t, ['--help']);
     assert.equal(help.calls, '');
     assert.match(help.stdout, /--update-readme/);
+    assert.match(help.stdout, /--include-machine-report/);
     const result = workflow(t, ['--unknown']);
     assert.equal(result.status, 1);
     assert.equal(result.calls, '');

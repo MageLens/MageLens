@@ -9,6 +9,7 @@ refresh_cache=0
 refresh_assets=0
 restart_php=0
 readme_options=()
+report_options=()
 runner=${MAGELENS_RUNNER:-cypress}
 for option in "$@"; do
     case "$option" in
@@ -17,6 +18,7 @@ for option in "$@"; do
         --refresh-assets) refresh_assets=1 ;;
         --restart-php) restart_php=1 ;;
         --update-readme) readme_options=(--update-readme) ;;
+        --include-machine-report) report_options=(--include-machine-report) ;;
         --runner=cypress) runner=cypress ;;
         --runner=playwright) runner=playwright ;;
         --help|-h)
@@ -30,6 +32,7 @@ Run the selected browser suite and shared CLI tests, then create fresh coverage 
   --refresh-assets  Clear published static assets and Magento caches
   --restart-php     Restart PHP-FPM before the run
   --update-readme   Mark README badges pending, then update them after successful validation
+  --include-machine-report Also write the SQLite coverage database (coverage/report.sqlite)
   --runner=cypress|playwright Assert the installed runner (defaults to saved selection)
   --help            Show this help
 
@@ -146,5 +149,5 @@ say 'Running shared Magento CLI tests'
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
 dc exec -T phpfpm php /application/docker/php/xml-manifest.php check
-dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/report-xml.cjs && node bin/report-attribution.cjs && node bin/finalize.cjs "$@"' sh ${readme_options[@]+"${readme_options[@]}"}
+dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/report-xml.cjs && node bin/report-attribution.cjs && node bin/finalize.cjs "$@"' sh ${readme_options[@]+"${readme_options[@]}"} ${report_options[@]+"${report_options[@]}"}
 report_ready=1

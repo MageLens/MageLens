@@ -11,7 +11,7 @@ License: see LICENSE in the repository root.
 
 # Coverage Database
 
-`./bin/run-coverage` writes `coverage/report.sqlite` after a successful run. It holds every eligible unit of PHP, JavaScript, template and XML coverage, with or without a hit. The schema is `coverage/schema.sql`; field meanings are in [docs/coverage.md](../../../docs/coverage.md#coverage-database).
+`./bin/run-coverage --include-machine-report` writes `coverage/report.sqlite` after a successful run; without the flag the file does not exist, so rerun coverage with it. It holds every eligible unit of PHP, JavaScript, template and XML coverage, with or without a hit. The schema is `coverage/schema.sql`; field meanings are in [docs/coverage.md](../../../docs/coverage.md#coverage-database).
 
 ## Rules
 

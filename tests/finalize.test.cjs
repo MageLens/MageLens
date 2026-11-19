@@ -213,6 +213,14 @@ test('validation records from another run block publication', t => {
     assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
 });
 
+test('the coverage database is written only when the run asks for it', t => {
+    const fixture = reports(t, 1);
+    assert.equal(fixture.run().status, 0);
+    assert.deepEqual(fs.readdirSync(`${fixture.root}/coverage`).filter(file => /sqlite|schema/.test(file)), []);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
+    assert.deepEqual(fs.readdirSync(`${fixture.root}/coverage`).filter(file => /sqlite|schema/.test(file)), ['report.sqlite', 'schema.sql']);
+});
+
 function database(t, fixture) {
     const connection = new DatabaseSync(`${fixture.root}/coverage/report.sqlite`, {readOnly: true});
     t.after(() => connection.close());
@@ -221,7 +229,7 @@ function database(t, fixture) {
 
 test('the coverage database stores every eligible unit once and only positive observations', t => {
     const fixture = reports(t, 1);
-    assert.equal(fixture.run().status, 0);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     assert.deepEqual(query('SELECT record_type, source_type, metric, record_key, file_path, module_name, start_line, end_line, hit_count FROM records LEFT JOIN hits USING (record_id) ORDER BY source_type, metric, record_key'), [
         ['branch', 'js', 'branches', '0:0', 'app/code/Acme/Shop/view/frontend/web/js/cart.js', 'Acme_Shop', 2, 3, 1],
@@ -248,7 +256,7 @@ test('the coverage database stores every eligible unit once and only positive ob
 
 test('uncovered units stay in the coverage database as records without hits', t => {
     const fixture = reports(t, 0);
-    assert.equal(fixture.run().status, 0);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     assert.deepEqual(query('SELECT COUNT(*) AS records FROM records UNION ALL SELECT COUNT(*) FROM hits UNION ALL SELECT COUNT(*) FROM uncovered_records'),
         [{records: 16}, {records: 0}, {records: 16}]);
@@ -266,7 +274,7 @@ test('the manifest table tells collected data from data that is not collected', 
     templates.templates.push({path: 'app/design/frontend/Acme/theme/Magento_Catalog/templates/image.phtml', kind: 'browser-phtml', instrumented: false,
         unsupportedDirectives: ['first', 'second']});
     fs.writeFileSync(file, JSON.stringify(templates));
-    assert.equal(fixture.run().status, 0);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     const summary = JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`));
     const rows = query('SELECT * FROM manifest ORDER BY collector');
@@ -292,7 +300,7 @@ test('views total files and modules from counts and keep metrics apart', t => {
         'app/design/frontend/Acme/theme/Magento_Theme/templates/header.phtml': {3: 1, 4: 0},
         'vendor/acme/payments/Model/Gateway.php': {8: 0}});
     fixture.json('coverage/php/coverage-summary.json', {run: 'fixture', covered: 11, total: 103, percent: 10.68, requests: [{uri: '/', method: 'GET'}], commands: []});
-    assert.equal(fixture.run().status, 0);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     assert.deepEqual(query("SELECT module_name, files, total, covered, percent FROM module_totals WHERE source_type = 'php' ORDER BY module_name"), [
         {module_name: 'Acme_Shop', files: 2, total: 100, covered: 10, percent: 10},
@@ -309,7 +317,7 @@ test('views total files and modules from counts and keep metrics apart', t => {
 test('a coverage database that disagrees with a report blocks publication', t => {
     const fixture = reports(t, 1);
     fixture.json('coverage/php/line-coverage.json', {'app/code/Acme/Shop/Model/Cart.php': {12: 1, 13: 0}});
-    const result = fixture.run();
+    const result = fixture.run(['--include-machine-report']);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Coverage database differs from the php lines report/);
     assert.deepEqual(fs.readdirSync(`${fixture.root}/coverage`).filter(file => /sqlite|schema|index\.html|summary/.test(file)), []);
@@ -317,7 +325,7 @@ test('a coverage database that disagrees with a report blocks publication', t =>
 
 test('the published schema matches the database and pins version 1', t => {
     const fixture = reports(t, 1);
-    assert.equal(fixture.run().status, 0);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     const schema = fs.readFileSync(`${fixture.root}/coverage/schema.sql`, 'utf8');
     assert.equal(schema, fs.readFileSync(path.join(__dirname, '../bin/report-schema.sql'), 'utf8'));
@@ -378,7 +386,7 @@ test('a JavaScript branch without its own location is placed at its branch state
         branchMap: {0: {loc: condition, type: 'if', locations: [condition, {start: {}, end: {}}]}}, b: {0: [1, 0]}}});
     fixture.json('coverage/js/coverage-summary.json', {total: {statements: {covered: 1, total: 1, pct: 100}, functions: {covered: 1, total: 1, pct: 100},
         branches: {covered: 1, total: 2, pct: 50}, lines: {covered: 1, total: 1, pct: 100}}});
-    const result = fixture.run();
+    const result = fixture.run(['--include-machine-report']);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(database(t, fixture)("SELECT record_key, start_line, end_line FROM uncovered_records WHERE source_type = 'js'"),
         [{record_key: '0:1', start_line: 9, end_line: 11}]);
