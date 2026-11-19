@@ -180,6 +180,15 @@ foreach ($leaves as $leaf) {
     checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),
         'Array leaf evidence uses the layout argument application boundary');
 }
+$groupSource = file_get_contents($layoutDirectory . 'coverageprobe_argumentgroups.xml');
+$groupItems = LayoutManifest::declarations(dirname($originFile) . '/coverageprobe_argumentgroups.xml', $groupSource);
+$groups = array_values(array_filter($groupItems, static fn($item) => $item['layout']['kind'] === 'argument-group'));
+checkXml(count($groups) === 4 && count(array_filter($groups, static fn($item) => !$item['supported'])) === 0,
+    'Repeated argument groups retain independent original carrier identities');
+$emptyGroups = LayoutManifest::declarations($originFile, '<layout><block><arguments/></block></layout>');
+$emptyGroup = array_values(array_filter($emptyGroups, static fn($item) => $item['layout']['kind'] === 'argument-group'))[0];
+checkXml(!$emptyGroup['supported'] && str_contains($emptyGroup['reason'], 'requires at least one argument'),
+    'Schema-invalid empty argument groups remain explicitly unmeasured');
 $typeFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-type'));
 checkXml(count($typeFields) === 25 && count(array_filter($typeFields, static fn($item) => !$item['supported'])) === 0,
     'Top-level argument type operands preserve independent supported source identities');

@@ -75,7 +75,7 @@ if ($mode === 'custom-block-reader') {
         }
     }
     $customReader = MageLensReferenceBlockReader::class;
-    $objects->configure(['preferences' => [Magento\Framework\View\Layout\Reader\Block::class => $customReader]]);
+    $baseReader = Magento\Framework\View\Layout\Reader\Block::class;
 } elseif ($mode === 'custom-container-reader') {
     class MageLensReferenceContainerReader extends Magento\Framework\View\Layout\Reader\Container
     {
@@ -88,7 +88,19 @@ if ($mode === 'custom-block-reader') {
         }
     }
     $customReader = MageLensReferenceContainerReader::class;
-    $objects->configure(['preferences' => [Magento\Framework\View\Layout\Reader\Container::class => $customReader]]);
+    $baseReader = Magento\Framework\View\Layout\Reader\Container::class;
+}
+if (isset($customReader)) {
+    $configuration = $objects->get(Magento\Framework\ObjectManager\ConfigInterface::class);
+    if ($configuration instanceof Magento\Framework\ObjectManager\Config\Compiled) {
+        $native = $configuration->getInstanceType($configuration->getPreference($baseReader));
+        $arguments = $configuration->getArguments($native);
+        if (!is_array($arguments) || !$arguments) throw new RuntimeException('Native compiled reader constructor is unavailable');
+        $names = array_fill_keys(array_map(static fn($parameter) => $parameter->getName(),
+            (new ReflectionMethod($customReader, '__construct'))->getParameters()), true);
+        $configuration->extend(['arguments' => [$customReader => array_intersect_key($arguments, $names)]]);
+    }
+    $objects->configure(['preferences' => [$baseReader => $customReader]]);
 }
 if ($mode === 'equal-schedule') $objects->get(MageLens\Compatibility\Model\LayoutMoveMutation::class)->replaceReferenceChild = true;
 foreach (['layout', 'block_html', 'full_page'] as $type) $objects->get(Magento\Framework\App\Cache\StateInterface::class)->setEnabled($type, false);

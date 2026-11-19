@@ -718,6 +718,36 @@ test('empty layout operands remain zero-hit decisions while zero class interpola
     }
 });
 
+test('argument group selection and ignored descendants retain separate native outcomes', () => {
+    for (const kind of ['argument-group', 'argument', 'argument-name', 'argument-type', 'argument-updater']) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/groups.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [{id: 'group-field', family: 'layout',
+            path: '/layout/block/arguments', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: 'frontend', code: ''}, layout: {kind, ordinal: 2, element: 'value',
+                handle: 'groups', fileType: 'generic', instruction: 'arguments'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {[kind]: 'group-field'}}}}};
+        const event = type => ({id: 'group-field', type, hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'});
+        const ignored = merge(manifest, [{...record, layoutHook: true, events: [event('layout-argument-group-ignored')]}], sources).files[1].declarations[0];
+        assert.equal(ignored.hits, 0);
+        assert.equal(ignored.state, 'unmeasured');
+        const selected = event('layout-argument-group-selected');
+        if (kind !== 'argument-group') {
+            assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [selected]}], sources), /Unexpected layout effect/);
+            continue;
+        }
+        assert.equal(merge(manifest, [{...record, layoutHook: true, events: [selected]}], sources).files[1].declarations[0].hits, 1);
+        for (const type of ['layout-argument-group-failed', 'layout-argument-group-origin-unconfirmed']) {
+            assert.equal(merge(manifest, [{...record, layoutHook: true, events: [event(type)]}], sources).files[1].declarations[0].hits, 0);
+        }
+        assert.throws(() => merge(manifest, [{...record, events: [selected]}], sources), /layout.*hook/i);
+        assert.throws(() => merge(manifest, [{...record, layoutHook: true, events: [event('layout-argument-applied')]}], sources), /Unexpected layout effect/);
+    }
+});
+
 test('layout argument type operands require their own native dispatch evidence', () => {
     const {manifest, record, sources} = fixture();
     const path = 'app/code/Acme/Blog/view/frontend/layout/types.xml';

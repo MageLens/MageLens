@@ -53,6 +53,7 @@ final class LayoutCoverage
     private LayoutXmlOwnership $ownership;
     private LayoutPackageEvents $packageEvents;
     private LayoutArgumentOwnership $argumentOwnership;
+    private LayoutArgumentGroups $argumentGroups;
     private LayoutActionGuards $actionGuards;
     private LayoutTemplateOwnership $templateOwnership;
     private LayoutBlockRendering $blockRendering;
@@ -125,6 +126,7 @@ final class LayoutCoverage
             'label' => 'template engine', 'pluginLabel' => 'template engine before-plugin',
         ]);
         $this->actionGuards = new LayoutActionGuards($this->event(...));
+        $this->argumentGroups = new LayoutArgumentGroups($this->origin(...), $this->event(...));
         $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...), $this->event(...));
         $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
             fn($xml) => $this->observeXmlReceiver($xml, false, false));
@@ -168,6 +170,7 @@ final class LayoutCoverage
         if ($this->loadingHtml || $this->loadingHtmlOverflow) $this->errors['Unbalanced block HTML cache hook evidence'] = true;
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
+        $this->argumentGroups->finish();
         $guardHealthy = $this->actionGuards->finish();
         if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
         if ($this->actionEvaluations) $this->errors['Unbalanced native layout action hook evidence'] = true;
@@ -183,6 +186,7 @@ final class LayoutCoverage
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
             ...$this->argumentOwnership->hooks(),
+            ...$this->argumentGroups->hooks(),
             ...$this->actionGuards->hooks(),
             ...$this->blockRendering->hooks(),
             ...$this->handleMetadata->hooks(),

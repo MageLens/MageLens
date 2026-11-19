@@ -327,6 +327,14 @@ fi
         php /application/docker/php/e2e/xml-layout-magic-action-proof.php
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-argument-groups-proof.php --without-collector
+    argument_group_selector_calls=6
+    [[ "$platform" != mageos ]] || argument_group_selector_calls=12
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php /application/docker/php/e2e/xml-layout-argument-groups-proof.php --custom-selector --without-collector --selector-calls "$argument_group_selector_calls"
+    for argument_group_mode in '' --custom-selector --missing-group-pre --missing-group-post --missing-parser --group-depth --group-node-limit; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-argument-groups-proof.php "$argument_group_mode" --selector-calls "$argument_group_selector_calls"
+    done
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout --without-collector
     for first_layout_mode in '' --missing-dispatch-pre --missing-dispatch-post --missing-first-dispatch-pre --missing-first-dispatch-post; do

@@ -26,6 +26,7 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'argument-group': ['layout-argument-group-selected', 'layout-argument-group-ignored', 'layout-argument-group-failed', 'layout-argument-group-origin-unconfirmed'],
     'argument-type': ['layout-argument-type-evaluated', 'layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed'],
     'ui-group': ['layout-ui-group-applied'],
     'visibility': ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-unconfirmed', 'layout-condition-failed'],
@@ -115,6 +116,7 @@ for (const [kind, type] of [
     ['block-ttl', 'layout-block-ttl-empty-ignored'], ['block-display', 'layout-display-empty-ignored'],
     ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
 ]) layoutEvents[kind].push(type);
+for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater']) layoutEvents[kind].push('layout-argument-group-ignored');
 for (const kind of ['argument', 'action-argument']) layoutEvents[kind].push(...layoutEvents.template.filter(type => type !== 'layout-template-empty-ignored'));
 layoutEvents.argument.push('layout-template-constructor-origin-unconfirmed');
 layoutEvents['action-argument'].push('layout-template-assignment-origin-unconfirmed');
@@ -127,6 +129,9 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-argument-group-ignored': 'The native block reader selects only its first arguments group. This later group and its descendants supplied no values through that read.',
+    'layout-argument-group-failed': 'The native argument group read failed before returning its parsed argument map.',
+    'layout-argument-group-origin-unconfirmed': 'A custom group selector, parser or XML handoff did not establish the original group consumed by the reader.',
     'layout-argument-type-deferred': 'The native reader selected its pass-through interpreter for this original type. Concrete value interpretation is deferred; selection alone earns zero evaluation hits.',
     'layout-argument-type-failed': 'Native interpretation selected this type but failed before completing evaluation.',
     'layout-argument-type-origin-unconfirmed': 'The type dispatch used an unverified selector or native input handoff. No original type evaluation is credited.',

@@ -39,7 +39,10 @@ assert.equal(enumTypes.length, 1);
 assert.equal(enumTypes[0].hits, 1, 'Native constant interpretation completes before structure serialization fails');
 assert.deepEqual([...new Set(enumTypes[0].evidence.map(event => event.type))], ['layout-argument-type-evaluated']);
 for (const item of enumSource?.declarations || []) {
-    if (item.layout.kind !== 'argument-type') assert.equal(item.hits, 0, 'Native structure serialization fails before generation');
+    if (item.layout.kind === 'argument-group') {
+        assert.equal(item.hits, 2, 'Both native group reads complete before structure serialization fails');
+        assert.deepEqual([...new Set(item.evidence.map(event => event.type))], ['layout-argument-group-selected']);
+    } else if (item.layout.kind !== 'argument-type') assert.equal(item.hits, 0, 'Native structure serialization fails before generation');
 }
 assert.ok(enumSource);
 const failure = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_configuredarray.xml'));

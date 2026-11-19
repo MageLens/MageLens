@@ -28,7 +28,11 @@ for (const variant of ['typeprefix', 'typelocalprefix']) {
     assert.equal(type.hits, 0);
     assert.deepEqual(type.evidence, []);
     assert.match(type.reason, /literal xsi prefix.*discarded before argument interpretation/);
-    for (const declaration of source.declarations) assert.equal(declaration.hits, 0, variant);
+    for (const declaration of source.declarations) {
+        const groupRead = mode === 'production' && declaration.layout.kind === 'argument-group';
+        assert.equal(declaration.hits, groupRead ? 2 : 0, variant);
+        if (groupRead) assert.deepEqual([...new Set(declaration.evidence.map(event => event.type))], ['layout-argument-group-selected']);
+    }
     const failed = source.declarations.find(item => item.layout.kind === 'block');
     assert.equal(failed.state, 'unmeasured');
     assert.deepEqual([...new Set(failed.evidence.map(event => event.type))],

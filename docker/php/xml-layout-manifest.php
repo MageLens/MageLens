@@ -77,6 +77,8 @@ final class LayoutManifest
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'argument' && $element !== ''
                     && $node->parentNode->nodeName === 'action' => 'action-argument',
                 $fileType === 'page' && $node->tagName === 'title' && $node->parentNode->nodeName === 'head' => 'page-title',
+                in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'arguments'
+                    && in_array($node->parentNode->nodeName, ['block', 'referenceBlock'], true) => 'argument-group',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::blockArgument($node) => 'argument',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'updater'
                     && self::blockArgument($node->parentNode) => 'argument-updater',
@@ -147,7 +149,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-type', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-type', 'argument-updater', 'argument-group', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',
@@ -160,6 +162,11 @@ final class LayoutManifest
                 $supported = $supported || str_starts_with($kind, 'asset-attribute-')
                     || in_array($kind, ['asset-reference', 'asset-src', 'asset-src-type', 'asset-order', 'asset-condition',
                         'body-class', 'body-class-name', 'body-class-value'], true);
+                $emptyGroup = $kind === 'argument-group';
+                if ($emptyGroup) foreach ($node->childNodes as $child) {
+                    if ($child instanceof \DOMElement && $child->tagName === 'argument') $emptyGroup = false;
+                }
+                if ($emptyGroup) $supported = false;
                 $ignoredWrapper = $fileType === 'wireframe' && self::wireframeWrapper($node);
                 if ($ignoredWrapper || $kind === 'file-selection') $supported = false;
                 $typeAttribute = $attribute === null ? null : $node->getAttributeNode($attribute);
@@ -181,7 +188,7 @@ final class LayoutManifest
                         ...($kind === 'wireframe-selection' ? ['selection' => $node->getAttribute('layout')] : []),
                         ...($kind === 'move' ? ['destination' => $node->getAttribute('destination')] : [])],
                     'supported' => $supported,
-                    'reason' => $kind === 'schema-hint'
+                    'reason' => $emptyGroup ? 'The native layout schema requires at least one argument in this group. Empty groups are outside the valid layout grammar' : ($kind === 'schema-hint'
                         ? 'Native file packaging omits this namespaced schema hint. Layout validation uses the engine\'s configured schema'
                         : ($kind === 'file-selection'
                         ? 'This root records native file selection at the merged-XML stage. Coverage requires an attributable instruction effect'
@@ -189,7 +196,7 @@ final class LayoutManifest
                         ? 'The installed wireframe root reader pool ignores head and body branches, including their descendants'
                         : ($discardedType
                         ? 'The reviewed native layout serializer preserves type attributes only under the literal xsi prefix. This namespace-equivalent attribute is discarded before argument interpretation'
-                        : self::limitation($fileType, $node->tagName, $attribute))))),
+                        : self::limitation($fileType, $node->tagName, $attribute)))))),
                 ];
             }
         }
