@@ -217,6 +217,12 @@ test('starts the next test with fresh state', async ({page}) => {
         await expect(page.locator(`[data-layout-renderfailure="${effect}"]`)).toHaveText('verified');
     }
     await expect(page.locator('[data-layout-renderfailure-output="after"]')).toHaveCount(0);
+    await page.goto('/coverageprobe/actionguards/');
+    await expect(page.locator('[data-layout-action-guard-proof]')).toHaveText('verified');
+    await expect(page.locator('[data-layout-action-case]')).toHaveCount(6);
+    for (const [name, markers] of Object.entries({allowed: 'allowed', denied: '', duplicate: 'first,second', empty: 'empty', zero: 'zero', same: 'same'})) {
+        await expect(page.locator(`[data-layout-action-case="magelens.action.guard.${name}"]`)).toHaveText(markers);
+    }
     await page.goto('/coverageprobe/falsy/');
     await expect(page.locator('[data-layout-falsy-proof]')).toHaveText('verified');
     expect(await page.locator('[data-layout-falsy]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-layout-falsy'))))

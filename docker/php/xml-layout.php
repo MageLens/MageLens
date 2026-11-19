@@ -53,6 +53,7 @@ final class LayoutCoverage
     private LayoutXmlOwnership $ownership;
     private LayoutPackageEvents $packageEvents;
     private LayoutArgumentOwnership $argumentOwnership;
+    private LayoutActionGuards $actionGuards;
     private LayoutTemplateOwnership $templateOwnership;
     private LayoutBlockRendering $blockRendering;
     private LayoutHandleMetadata $handleMetadata;
@@ -122,6 +123,7 @@ final class LayoutCoverage
             'plugin' => 'Hyva\\Theme\\Plugin\\TemplateEngine\\PhpPlugin', 'callback' => 'beforeRender',
             'label' => 'template engine', 'pluginLabel' => 'template engine before-plugin',
         ]);
+        $this->actionGuards = new LayoutActionGuards($this->event(...));
         $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...));
         $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
             fn($xml) => $this->observeXmlReceiver($xml, false, false));
@@ -164,12 +166,13 @@ final class LayoutCoverage
         if ($this->loadingHtml || $this->loadingHtmlOverflow) $this->errors['Unbalanced block HTML cache hook evidence'] = true;
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
+        $guardHealthy = $this->actionGuards->finish();
         if ($this->blockObjectCreations || $this->blockObjectOverflow) $this->errors['Unbalanced block object creation hook evidence'] = true;
         if ($this->actionEvaluations) $this->errors['Unbalanced native layout action hook evidence'] = true;
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
-        return [$this->healthy || $registryHealthy || $structureHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits, ...$blockLimits, ...$metadataLimits]))];
+        return [$this->healthy || $registryHealthy || $structureHealthy || $guardHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits, ...$blockLimits, ...$metadataLimits]))];
     }
 
     private function hooks(): array
@@ -178,6 +181,7 @@ final class LayoutCoverage
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
             ...$this->argumentOwnership->hooks(),
+            ...$this->actionGuards->hooks(),
             ...$this->blockRendering->hooks(),
             ...$this->handleMetadata->hooks(),
             ...$this->selectionOwnership->hooks(),
@@ -1108,7 +1112,13 @@ final class LayoutCoverage
                 [$argumentOrigin] = $this->origin($argument);
                 if (isset($argumentOrigin['action-argument'])) $arguments[] = $argumentOrigin['action-argument'];
             }
-            $origins[] = ['id' => $origin['action'] ?? null, 'methodId' => $origin['action-method'] ?? null, 'arguments' => $arguments];
+            $action = $actions[count($origins)] ?? null;
+            $origins[] = ['id' => $origin['action'] ?? null, 'methodId' => $origin['action-method'] ?? null, 'arguments' => $arguments,
+                'guardSignature' => is_array($action) ? Xml::scalarTreeSignature($action) : null,
+                'guard' => isset($origin['action-ifconfig'])
+                    ? ['id' => $origin['action-ifconfig'], 'empty' => empty($action[2]),
+                        'key' => is_string($action[2] ?? null) && is_string($action[3] ?? null)
+                            ? LayoutActionGuards::key($action[2], $action[3]) : null] : null];
         }
         if (count($origins) !== count($actions)) return;
         $this->actionReads[$xml] = array_map(
@@ -1366,6 +1376,7 @@ final class LayoutCoverage
             || (($caller['class'] ?? null) === SchedulingHelper::class && $caller['function'] === 'scheduleElement')) {
             return;
         }
+        $this->actionGuards->revoked($state[$name]['actions'] ?? [], $state[$name]['context'] ?? null);
         unset($state[$name]);
         $this->structures[$schedule] = $state;
     }
@@ -2260,6 +2271,9 @@ final class LayoutCoverage
             $this->blockRendering->expectRegistration($generator, $params[2]);
             $this->blockRendering->generated($block, $params[2], null, []);
         }
+        if (!$error && $block instanceof AbstractBlock) {
+            $this->actionGuards->supplied($generator, $params[0], $params[2], $frame['source']['actions'] ?? [], $frame['source']['context'] ?? null);
+        }
         if (empty($frame['source']['context'])) return;
         if ($error) {
             $this->event($frame['source']['block'] ?? null, 'layout-block-generation-failed', $frame['source']['context']);
@@ -2328,7 +2342,7 @@ final class LayoutCoverage
             if (self::digest($action) !== $origins[$index]['digest']) return [];
             $calls[self::digest([$action[0], $action[1]])][] = [
                 'id' => $origins[$index]['id'], 'methodId' => $origins[$index]['methodId'] ?? null,
-                'arguments' => $origins[$index]['arguments'] ?? []];
+                'arguments' => $origins[$index]['arguments'] ?? [], 'guard' => $origins[$index]['guard'] ?? null];
         }
         return $calls;
     }
@@ -2363,6 +2377,7 @@ final class LayoutCoverage
         if ($origins && empty($evaluation['observed'])) $this->errors['Missing native action argument evaluation hook evidence'] = true;
         $effect = count($origins) === 1 ? 'layout-action-executed' : 'layout-action-ambiguous';
         foreach ($origins as $origin) {
+            $this->actionGuards->ignored($generator, $origin, $state['context'], count($origins) === 1);
             $this->event($origin['id'], $effect, $state['context']);
             $this->event($origin['methodId'] ?? null, $effect, $state['context']);
             foreach ($origin['arguments'] as $position => $id) {

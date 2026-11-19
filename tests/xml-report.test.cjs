@@ -716,3 +716,34 @@ test('empty layout operands remain zero-hit decisions while zero class interpola
         assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /Unexpected layout effect/);
     }
 });
+
+test('native action scope decisions remain independent of action calls and skipped guards', () => {
+    for (const effect of ['allowed', 'denied', 'ambiguous', 'empty-ignored', 'unobserved', 'origin-unconfirmed', 'failed']) {
+        const {manifest, record, sources} = fixture();
+        const path = 'app/code/Acme/Blog/view/frontend/layout/guards.xml';
+        const source = Buffer.from('<layout/>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+            {id: 'guard', family: 'layout', path: '/layout/block/action/@ifconfig', startLine: 1, endLine: 1,
+                supported: true, declaredScope: {type: 'frontend', code: ''}, layout: {kind: 'action-ifconfig',
+                    ordinal: 2, element: 'mark', handle: 'guards', fileType: 'generic', instruction: 'action'}}]});
+        manifest.layoutSources = {[path]: {hash: sourceHash, targets: {2: {ids: {'action-ifconfig': 'guard'}}}}};
+        const healthy = {...record, layoutHook: true};
+        assert.equal(merge(manifest, [healthy], sources).files[1].declarations[0].state, 'uncovered');
+        const unselected = merge(manifest, [{...healthy, layoutSourceTrace: false,
+            layoutLimitations: ['missing-layout-origins'], events: []}], sources);
+        assert.equal(unselected.files[1].declarations[0].state, 'unmeasured');
+        assert.equal(unselected.files[1].declarations[0].hits, 0);
+        assert.deepEqual(unselected.files[1].declarations[0].evidence, []);
+
+        const event = {id: 'guard', type: `layout-action-condition-${effect}`, hits: 2,
+            area: 'frontend', theme: 'frontend/Acme/theme'};
+        const item = merge(manifest, [{...healthy, events: [event]}], sources).files[1].declarations[0];
+        const covered = ['allowed', 'denied'].includes(effect);
+        assert.equal(item.state, covered ? 'covered' : 'unmeasured');
+        assert.equal(item.hits, covered ? 2 : 0);
+        manifest.files[1].declarations[0].layout.kind = 'action';
+        assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /Unexpected layout effect/);
+    }
+});

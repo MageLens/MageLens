@@ -94,6 +94,7 @@ final class LayoutManifest
                         && $attribute->namespaceURI === 'http://www.w3.org/2001/XMLSchema-instance'
                         && $attribute->localName === 'noNamespaceSchemaLocation' => 'schema-hint',
                     $valueKind === 'action' && $attribute->nodeName === 'method' => 'action-method',
+                    $valueKind === 'action' && $attribute->nodeName === 'ifconfig' => 'action-ifconfig',
                     $valueKind === 'argument' && $attribute->nodeName === 'name' => 'argument-name',
                     $valueKind === 'action-argument' && $attribute->nodeName === 'name' => 'action-argument-name',
                     $valueKind === 'reference' && $attribute->nodeName === 'name' => 'reference-name',
@@ -145,7 +146,7 @@ final class LayoutManifest
                 $instructions[] = [$attribute->nodeName, $kind];
             }
             foreach ($instructions as [$attribute, $kind]) {
-                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
+                $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'argument', 'argument-name', 'argument-updater', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'container',
                     'container-htmlTag', 'container-htmlId', 'container-htmlClass', 'container-label', 'container-display', 'block-display', 'ui-placement',
                     'page-attribute', 'page-attribute-name', 'page-attribute-value', 'metadata', 'metadata-name', 'metadata-content',

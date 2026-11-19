@@ -285,3 +285,10 @@ foreach (['', '0'] as $emptyTemplate) {
         'Empty and zero template attributes retain original template identities');
 }
 echo "Native empty template operands retain original inventory identities.\n";
+
+$guardDeclarations = LayoutManifest::declarations('app/code/Fixture/view/frontend/layout/guards.xml',
+    '<layout><block name="fixture"><action method="mark" ifconfig="fixture/guard"/></block></layout>');
+$guard = array_values(array_filter($guardDeclarations, static fn($item) => $item['layout']['attribute'] === 'ifconfig'))[0];
+checkXml($guard['supported'] && $guard['layout']['kind'] === 'action-ifconfig',
+    'Action scope guards have an independent original operand identity');
+echo "Action guards retain independent original inventory identities.\n";
