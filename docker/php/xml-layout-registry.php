@@ -98,7 +98,7 @@ final class LayoutRegistryCoverage
 
     private static function caller(): array
     {
-        return debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4)[3] ?? [];
+        return LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 4)[3] ?? [];
     }
 
     private function beginBuilder($builder, array $params, string $class): void

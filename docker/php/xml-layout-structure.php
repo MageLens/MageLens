@@ -115,7 +115,7 @@ final class LayoutStructureCoverage
 
     private static function caller(object $object, string $method): array
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
         $caller = $trace[3] ?? [];
         $wrapper = get_class($object);
         if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
@@ -190,7 +190,7 @@ final class LayoutStructureCoverage
     private function replaceSchedule($schedule, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== ScheduledStructure::class) return;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
         $caller = self::caller($schedule, $trace[1]['function']);
         if (in_array([$caller['class'] ?? '', $caller['function'] ?? ''], [
             [ContainerReader::class, 'mergeContainerAttributes'],
@@ -373,7 +373,7 @@ final class LayoutStructureCoverage
             }
             $this->conditionHooks[$class] ??= [];
             if (isset($this->conditionHooks[$class][$target])) continue;
-            if (!\OpenTelemetry\Instrumentation\hook($class, $target, null, $this->conditionDynamic(...))) {
+            if (!LayoutRuntimeHooks::register($class, $target, null, $this->conditionDynamic(...))) {
                 $this->errors['Cannot register native visibility rule hook'] = true;
                 return false;
             }
@@ -438,7 +438,7 @@ final class LayoutStructureCoverage
 
     private function conditionName($condition, array $params, $name, ?\Throwable $error, string $class): void
     {
-        $caller = is_object($condition) ? self::caller($condition, 'getName') : (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
+        $caller = is_object($condition) ? self::caller($condition, 'getName') : (LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
         $this->recordConditionName($condition, $name, $error, $class, $caller);
     }
 
@@ -476,14 +476,14 @@ final class LayoutStructureCoverage
 
     private function conditionDecision($condition, array $params, $visible, ?\Throwable $error, string $class): void
     {
-        $caller = is_object($condition) ? self::caller($condition, 'isVisible') : (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
+        $caller = is_object($condition) ? self::caller($condition, 'isVisible') : (LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
         $this->recordConditionDecision($condition, $params, $visible, $error, $class, $caller);
     }
 
     private function conditionDynamic($condition, array $params, $result, ?\Throwable $error, string $class, string $method): void
     {
         if ($condition instanceof VisibilityConditionInterface) return;
-        $caller = is_object($condition) ? self::caller($condition, $method) : (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
+        $caller = is_object($condition) ? self::caller($condition, $method) : (LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? []);
         $method = strtolower($method);
         if ($method === '__call') {
             $method = strtolower($params[0] ?? '');

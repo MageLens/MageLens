@@ -10,6 +10,7 @@ declare(strict_types=1);
 require '/var/www/html/app/bootstrap.php';
 $hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
 require $hooks . '/xml-data.php';
+require $hooks . '/xml-layout-runtime-hooks.php';
 require $hooks . '/xml-layout-manifest.php';
 require $hooks . '/xml-layout-registry.php';
 
@@ -43,7 +44,7 @@ foreach ($collector->hooks() as [$class, $method, $pre, $post]) {
     if (($mode === 'missing-import' && $class === DOMDocument::class && $method === 'importNode')
         || ($mode === 'missing-attribute' && $class === DOMElement::class && $method === 'setAttribute')
         || ($mode === 'missing-cdata' && $class === \Magento\Framework\Config\Dom::class && $method === 'replaceCdataNode')) continue;
-    if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Hook registration failed');
+    if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Hook registration failed');
 }
 $manager = Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $manager->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');
@@ -56,6 +57,7 @@ $options = array_column($config->toOptionArray(), 'label', 'value');
 if ($options['magelens_registry_override'] !== 'Registry overlay' || $options['magelens_registry_empty'] !== 'Registry retained'
     || $options['magelens_registry_cdata'] !== ''
     || $options['magelens_registry_mixed'] !== 'Base prefixoverlay middle base suffix') throw new RuntimeException('Native registry fixture mismatch');
+\MageLens\XmlCoverage\LayoutRuntimeHooks::assertHealthy();
 if ($mode === 'limit') {
     [$healthy, $limits] = $collector->finish();
     if ($events || !$healthy || !in_array('layout-registry-limit', $limits, true)) throw new RuntimeException('Registry bounds leaked source credit');

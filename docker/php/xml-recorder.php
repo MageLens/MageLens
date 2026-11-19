@@ -65,7 +65,8 @@ final class Recorder
     public static function layoutHooks(): array
     {
         [self::$layout, $hooks] = LayoutCoverage::register(self::$manifest['layoutSources'] ?? []);
-        return $hooks;
+        return array_map(static fn(array $hook): array => [$hook[0], $hook[1],
+            LayoutRuntimeHooks::wrap($hook[2]), LayoutRuntimeHooks::wrap($hook[3])], $hooks);
     }
 
     public static function layout(string $id, string $type, array $context): void

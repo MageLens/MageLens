@@ -75,7 +75,7 @@ final class LayoutPageValuesCoverage
 
     private static function caller(object $subject, string $method): array
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
         $caller = $trace[3] ?? [];
         $wrapper = get_class($subject);
         if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper

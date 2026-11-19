@@ -149,6 +149,7 @@ final class LayoutCoverage
 
     public function finish(): array
     {
+        LayoutRuntimeHooks::assertHealthy();
         $this->references->finish();
         $this->ownership->finish();
         $this->templateOwnership->finish();
@@ -348,7 +349,7 @@ final class LayoutCoverage
     private function readFile($reader, array $params, $bytes, ?\Throwable $error, string $class): void
     {
         if (!$this->packages || $error || $class !== Read::class || !is_string($bytes)) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== Merge::class || ($caller['function'] ?? null) !== '_loadFileLayoutUpdatesXml') return;
         static $pathProperty;
         $pathProperty ??= new \ReflectionProperty(Read::class, 'path');
@@ -396,7 +397,7 @@ final class LayoutCoverage
         }
         $state = $this->merges[$merge] ?? [];
         if ($this->ownership->producerDepth($merge, 'getFileLayoutUpdatesXml') === 0) {
-            foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
+            foreach (LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
                 if (($frame['class'] ?? null) === Merge::class && ($frame['function'] ?? null) === 'getFileLayoutUpdatesXml') {
                     $this->errors['Missing native layout package getter hook evidence'] = true;
                 }
@@ -411,7 +412,7 @@ final class LayoutCoverage
     {
         if ($class !== Merge::class) return;
         $handle = array_key_last($this->handles);
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if ($handle !== null && $this->handles[$handle]['merge'] === $merge
             && ($caller['class'] ?? null) === Merge::class && ($caller['function'] ?? null) === '_fetchPackageLayoutUpdates') {
             $this->handles[$handle]['found'] = true;
@@ -460,7 +461,7 @@ final class LayoutCoverage
         $source = null;
         $handleSource = null;
         $entry = array_key_last($this->entries);
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if ($entry !== null && $this->entries[$entry]['merge'] === $merge
             && ($caller['class'] ?? null) === Merge::class && ($caller['function'] ?? null) === '_fetchRecursiveUpdates') {
             $index = $this->entries[$entry]['next']++;
@@ -563,7 +564,7 @@ final class LayoutCoverage
     private function cachedUpdate($merge, array $params, $value, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== Merge::class || !$value) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== Merge::class) return;
         $reason = match ($caller['function'] ?? null) {
             'load' => 'layout-merge-cache',
@@ -579,7 +580,7 @@ final class LayoutCoverage
         unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
         $this->structureCoverage->reset($structure);
         $this->positions->reset($structure);
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'generateElements') {
             $this->limitations['scheduled-layout-cache'] = true;
         }
@@ -1100,7 +1101,7 @@ final class LayoutCoverage
     private function readActions($reader, array $params, $actions, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== BlockReader::class) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'updateScheduledData') return;
         if ((new \ReflectionMethod($reader, 'getActions'))->getDeclaringClass()->getName() !== BlockReader::class) return;
         $xml = $params[0];
@@ -1148,7 +1149,7 @@ final class LayoutCoverage
     private function readArguments($reader, array $params, $arguments, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== BlockReader::class) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
         if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
         if ((new \ReflectionMethod($reader, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
@@ -1364,7 +1365,7 @@ final class LayoutCoverage
         $name = $params[0];
         $state = $this->structures[$schedule] ?? [];
         if (!isset($state[$name])) return;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
         $caller = $trace[2] ?? [];
         $wrapper = get_class($schedule);
         if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
@@ -1454,7 +1455,7 @@ final class LayoutCoverage
     private static function moveCaller(string $method): array
     {
         $seen = false;
-        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
+        foreach (LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
             if (($frame['function'] ?? null) === $method) {
                 $seen = true;
                 continue;
@@ -1705,7 +1706,7 @@ final class LayoutCoverage
         if ($error || $queued === $before) return;
 
         // Associate only the two native reference readers with an XML source.
-        $caller = debug_backtrace(0, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(0, 3)[2] ?? [];
         $method = [$caller['class'] ?? null, $caller['function'] ?? null];
         $reference = in_array($method, [[BlockReader::class, 'scheduleReference'], [ContainerReader::class, 'containerReference']], true);
         $xml = $reference ? ($caller['args'][1] ?? null) : null;
@@ -2134,7 +2135,7 @@ final class LayoutCoverage
         $index = array_key_last($this->generating);
         if ($error || $class !== DataObject::class || $index === null || ($params[0] ?? null) !== 'ttl') return;
         $origin = $this->generating[$index]['source']['attributes']['ttl'] ?? null;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
         if ($origin && (int) $origin['value'] === ($params[1] ?? null)
             && ($trace[2]['class'] ?? null) === DataObject::class && ($trace[2]['function'] ?? null) === '__call'
             && ($trace[3]['class'] ?? null) === BlockGenerator::class && ($trace[3]['function'] ?? null) === 'generateBlock') {
@@ -2160,7 +2161,7 @@ final class LayoutCoverage
             [BlockGenerator::class, 'createBlock', $frame['generator']],
             [BlockGenerator::class, 'generateBlock', ''],
         ];
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
         $depth = 1;
         foreach ($expected as [$native, $method, $wrapper]) {
             $call = $trace[$depth++] ?? [];
@@ -2369,7 +2370,7 @@ final class LayoutCoverage
         if ($error) return;
         [$block, $method, $arguments] = $params;
         if (empty($this->blocks[$block]['actions'])) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== BlockGenerator::class || ($caller['function'] ?? null) !== 'process') return;
         if ((new \ReflectionMethod($generator, 'generateAction'))->getDeclaringClass()->getName() !== BlockGenerator::class) return;
         $state = $this->blocks[$block];
@@ -2469,7 +2470,7 @@ final class LayoutCoverage
             $this->event($state['block'], 'layout-block-cache-unconfirmed', $state['context']);
             $this->event($state['template'], 'layout-template-cache-unconfirmed', $state['context']);
         }
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) === AbstractBlock::class && ($caller['function'] ?? null) === 'toHtml') {
             $state = $this->blocks[$block];
             $state['html'] = true;
@@ -2710,7 +2711,7 @@ final class LayoutCoverage
 
     private function registryContext(): ?array
     {
-        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 32) as $frame) {
+        foreach (LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 32) as $frame) {
             if (isset($frame['object'], $this->blocks[$frame['object']])) return $this->blocks[$frame['object']]['context'];
         }
         $generation = $this->generating[array_key_last($this->generating)] ?? null;

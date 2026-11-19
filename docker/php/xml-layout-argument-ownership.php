@@ -78,6 +78,9 @@ final class LayoutArgumentOwnership
         $reader = $this->batches[$index]['reader'];
         $queue = [];
         foreach ($arguments as $name => $data) {
+            // A reader can already have returned an object. Do not perform an
+            // application ArrayAccess probe or duplicate the generator's error.
+            if (!is_array($data)) continue;
             if ($reader ? isset($data['updater']) : !isset($data['xsi:type'])) continue;
             $queue[] = ['name' => $name, 'input' => ($this->fingerprint)($data)];
         }
@@ -122,7 +125,7 @@ final class LayoutArgumentOwnership
         }
         $index = array_key_last($this->batches);
         $batch = $this->batches[$index];
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         $native = $batch['reader'] ? BlockReader::class : BlockGenerator::class;
         $root = ($caller['class'] ?? null) === $native && ($caller['function'] ?? null) === 'evaluateArguments';
         $name = null;

@@ -109,7 +109,7 @@ final class LayoutXmlOwnership
             return;
         }
         $this->watched[$key] = true;
-        if (!\OpenTelemetry\Instrumentation\hook($class, $method,
+        if (!LayoutRuntimeHooks::register($class, $method,
             static function ($object, array $params, string $scope, string $method) use ($class, $pre): void {
                 if ($scope === $class) $pre($object, $params, $scope, $method);
             },
@@ -160,7 +160,7 @@ final class LayoutXmlOwnership
         $key = $class . '::' . $method;
         if (isset($this->watched[$key])) return;
         $this->watched[$key] = true;
-        if (!\OpenTelemetry\Instrumentation\hook($class, $method,
+        if (!LayoutRuntimeHooks::register($class, $method,
             function ($object, array $params, string $scope, string $method) use ($class): void {
                 if ($scope === $class) $this->read($object, $params, $scope, $method);
             },
@@ -216,7 +216,7 @@ final class LayoutXmlOwnership
 
     public static function caller(object $object, string $method, bool $unwrap = true): array
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 24);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 24);
         foreach ($trace as $index => $frame) {
             if (($frame['function'] ?? null) !== $method || !isset($frame['class']) || !is_a($object, $frame['class'])) continue;
             $caller = $trace[$index + 1] ?? [];
@@ -372,7 +372,7 @@ final class LayoutXmlOwnership
         if ($index === null || $this->wrapperOverflow) return;
         $frame = $this->wrappers[$index];
         if (!$frame['wrapper']) return;
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) !== get_class($frame['object']) || ($caller['function'] ?? null) !== $frame['method']
             || ($params[0] ?? null) !== get_parent_class($frame['object']) || ($params[1] ?? null) !== $frame['method']) return;
         $this->wrappers[$index]['query'] = !$error && !$result;

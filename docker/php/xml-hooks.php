@@ -13,6 +13,7 @@ require_once __DIR__ . '/xml-plugins.php';
 require_once __DIR__ . '/xml-preference-manifest.php';
 require_once __DIR__ . '/xml-preferences.php';
 require_once __DIR__ . '/xml-di-usage.php';
+require_once __DIR__ . '/xml-layout-runtime-hooks.php';
 require_once __DIR__ . '/xml-layout.php';
 require_once __DIR__ . '/xml-layout-ownership.php';
 require_once __DIR__ . '/xml-layout-package-events.php';

@@ -85,7 +85,7 @@ final class LayoutPackageEvents
     private function observers($config, array $params, $result, ?\Throwable $error): void
     {
         $index = array_key_last($this->dispatching);
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if ($index === null || !$this->dispatching[$index] || !$this->dispatching[$index]['native']
             || ($caller['class'] ?? null) !== Manager::class || ($caller['function'] ?? null) !== 'dispatch') return;
         if ($error || !is_array($result) || !self::native($config, Config::class, 'getObservers')) {
@@ -102,7 +102,7 @@ final class LayoutPackageEvents
             return;
         }
         $index = array_key_last($this->dispatching);
-        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if ($index === null || !$this->dispatching[$index] || !$this->dispatching[$index]['native']
             || ($caller['class'] ?? null) !== Manager::class || ($caller['function'] ?? null) !== 'dispatch') {
             $this->invoking[] = null;

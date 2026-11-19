@@ -64,7 +64,7 @@ final class LayoutActionGuards
 
     private static function caller(string $method): ?object
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 7);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 7);
         foreach ($trace as $index => $frame) {
             if ($frame['function'] !== $method) continue;
             $caller = $trace[$index + 1] ?? [];

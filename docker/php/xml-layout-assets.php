@@ -80,7 +80,7 @@ final class LayoutAssetsCoverage
 
     private static function caller(object $object, string $method): array
     {
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
         $caller = $trace[3] ?? [];
         $invocation = $trace[2] ?? [];
         $wrapper = get_class($object);
