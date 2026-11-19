@@ -34,8 +34,12 @@ for (const handle of ['constarray', 'configureddata', 'configuredvaluearray']) {
     assert.ok(source, handle);
 }
 const enumSource = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_constenum.xml'));
+const enumTypes = enumSource?.declarations.filter(item => item.layout.kind === 'argument-type') || [];
+assert.equal(enumTypes.length, 1);
+assert.equal(enumTypes[0].hits, 1, 'Native constant interpretation completes before structure serialization fails');
+assert.deepEqual([...new Set(enumTypes[0].evidence.map(event => event.type))], ['layout-argument-type-evaluated']);
 for (const item of enumSource?.declarations || []) {
-    assert.equal(item.hits, 0, 'Native structure serialization fails before generation');
+    if (item.layout.kind !== 'argument-type') assert.equal(item.hits, 0, 'Native structure serialization fails before generation');
 }
 assert.ok(enumSource);
 const failure = report.files.find(file => file.path.endsWith('/layout/coverageprobe_grammar_configuredarray.xml'));

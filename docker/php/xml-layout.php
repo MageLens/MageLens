@@ -125,7 +125,7 @@ final class LayoutCoverage
             'label' => 'template engine', 'pluginLabel' => 'template engine before-plugin',
         ]);
         $this->actionGuards = new LayoutActionGuards($this->event(...));
-        $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...));
+        $this->argumentOwnership = new LayoutArgumentOwnership(self::valueFingerprint(...), self::matchesFingerprint(...), $this->event(...));
         $this->packageEvents = new LayoutPackageEvents($this->packageEventKnown(...),
             fn($xml) => $this->observeXmlReceiver($xml, false, false));
         $this->structures = new \WeakMap();
@@ -1157,7 +1157,6 @@ final class LayoutCoverage
         if (($caller['class'] ?? null) !== BlockReader::class || ($caller['function'] ?? null) !== 'evaluateArguments') return;
         if ((new \ReflectionMethod($reader, 'getArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
         if ((new \ReflectionMethod($reader, 'evaluateArguments'))->getDeclaringClass()->getName() !== BlockReader::class) return;
-        $this->argumentOwnership->supply($arguments, $reader);
         $xml = $params[0];
         $origins = [];
         foreach ($xml->arguments[0]->argument ?? [] as $node) {
@@ -1178,6 +1177,8 @@ final class LayoutCoverage
                 );
             }
         }
+        [, $context] = $this->origin($xml);
+        $this->argumentOwnership->supply($arguments, $reader, $origins, $context);
         if (array_keys($origins) === array_keys($arguments)) $this->argumentReads[$xml] = $origins;
     }
 
@@ -1204,6 +1205,7 @@ final class LayoutCoverage
     private function unconfirmedArgument(array $origin, array $context, string $effect = 'layout-argument-origin-unconfirmed'): void
     {
         foreach (self::argumentRootIds($origin) as $id) $this->event($id, $effect, $context);
+        if (isset($origin['type']['id'])) $this->event($origin['type']['id'], 'layout-argument-type-origin-unconfirmed', $context);
         foreach ($origin['children'] ?? [] as $child) $this->unconfirmedArgument($child, $context, $effect);
     }
 
@@ -1211,6 +1213,8 @@ final class LayoutCoverage
     {
         [$origin] = $this->origin($node);
         $result = isset($origin['argument']) ? ['id' => $origin['argument']] : [];
+        if (isset($origin['argument-type'])) $result['type'] = ['id' => $origin['argument-type'],
+            'value' => self::valueFingerprint((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type)];
         if ((string) $node->attributes('http://www.w3.org/2001/XMLSchema-instance')->type !== 'array'
             || isset($node->updater)) return $result;
         $children = [];
@@ -1252,7 +1256,7 @@ final class LayoutCoverage
                 } elseif (!isset($existing[$name])) {
                     $identity = self::valueFingerprint($values[$name]);
                     if ($identity) $entry['pending'] = ['id' => $origin['id'], 'input' => $identity,
-                        'updaters' => $origin['updaters'] ?? []];
+                        'updaters' => $origin['updaters'] ?? [], 'type' => $origin['type'] ?? null];
                     else $entry['limited'] = [$origin['id']];
                 } else {
                     $entry['mixed'] = [...$entry['mixed'], ...self::argumentRootIds($before), $origin['id']];
@@ -2031,7 +2035,12 @@ final class LayoutCoverage
 
     private function beginGeneratorArguments($generator, array $params, string $class): void
     {
-        if ($class === BlockGenerator::class) $this->argumentOwnership->beginBatch($generator, false, $params[0]);
+        if ($class !== BlockGenerator::class) return;
+        $index = array_key_last($this->generating);
+        $caller = self::nativeCaller($generator, 'evaluateArguments');
+        $source = $index !== null && ($caller['class'] ?? null) === BlockGenerator::class
+            && ($caller['function'] ?? null) === 'generateBlock' ? $this->generating[$index]['source'] : [];
+        $this->argumentOwnership->beginBatch($generator, false, $params[0], $source['arguments'] ?? [], $source['context'] ?? null);
     }
 
     private function evaluatedArguments($generator, array $params, $values, ?\Throwable $error, string $class): void

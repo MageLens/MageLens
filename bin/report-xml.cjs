@@ -26,6 +26,7 @@ const diFamilies = {
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
 const layoutEvents = {
+    'argument-type': ['layout-argument-type-evaluated', 'layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed'],
     'ui-group': ['layout-ui-group-applied'],
     'visibility': ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-unconfirmed', 'layout-condition-failed'],
     'visibility-name': ['layout-condition-name-applied', 'layout-condition-name-unused', 'layout-condition-unconfirmed'],
@@ -126,6 +127,9 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
 for (const events of Object.values(layoutEvents)) events.push('layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
 const layoutDecisions = {
+    'layout-argument-type-deferred': 'The native reader selected its pass-through interpreter for this original type. Concrete value interpretation is deferred; selection alone earns zero evaluation hits.',
+    'layout-argument-type-failed': 'Native interpretation selected this type but failed before completing evaluation.',
+    'layout-argument-type-origin-unconfirmed': 'The type dispatch used an unverified selector or native input handoff. No original type evaluation is credited.',
     'layout-position-name-defaulted': 'Native scheduling ignores the empty or zero name and generates an anonymous identifier. The original name operand did not assign that identifier; the declaration retains independent creation and rendering evidence.',
     'layout-template-assignment-origin-unconfirmed': 'The action call did not establish a unique native template assignment from this original argument. Custom setters, plugins, storage and ambiguous calls retain no template execution credit.',
     'layout-template-constructor-origin-unconfirmed': 'The native constructor data, value getter or template setter did not establish this original argument as the template selection. Argument application and reads remain independent.',

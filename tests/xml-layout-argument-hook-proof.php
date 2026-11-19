@@ -31,6 +31,13 @@ if (in_array($mode, ['batch-depth', 'interpreter-depth'], true)) {
     (new ReflectionProperty(\MageLens\XmlCoverage\LayoutArgumentOwnership::class,
         $mode === 'batch-depth' ? 'batches' : 'evaluating'))->setValue($ownership, array_fill(0, 256, $frame));
 }
+$warnings = 0;
+if ($mode === 'interpreter-depth') {
+    set_error_handler(static function (int $severity) use (&$warnings): bool {
+        if (error_reporting() & $severity) $warnings++;
+        return false;
+    });
+}
 if ($mode === 'action-depth') {
     (new ReflectionProperty(LayoutCoverage::class, 'actionEvaluations'))->setValue($collector, array_fill(0, 256, null));
 }
@@ -90,6 +97,7 @@ if (!str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')
 if (in_array($mode, ['reader', 'generator'], true) && \MageLens\Compatibility\Model\LayoutValueInterpreter::$calls < 2) {
     throw new RuntimeException('Native custom interpreter path was bypassed');
 }
+if ($warnings) throw new RuntimeException('Argument observation emitted warnings at its depth bound');
 try {
     $collector->finish();
     if (str_starts_with($mode, 'missing-')) throw new LogicException('Missing argument observation was accepted');

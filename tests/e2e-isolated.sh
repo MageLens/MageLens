@@ -327,6 +327,10 @@ fi
         php /application/docker/php/e2e/xml-layout-magic-action-proof.php
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --without-collector
+    for argument_field_mode in '' --missing-dispatch-pre --missing-dispatch-post --custom-dispatch --alternate-discriminator --custom-forwarder; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-argument-fields-proof.php "$argument_field_mode"
+    done
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-template-value-proof.php --without-collector
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \

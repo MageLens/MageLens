@@ -180,6 +180,13 @@ foreach ($leaves as $leaf) {
     checkXml($leaf['layout']['kind'] === 'argument' && str_contains($leaf['path'], '/item'),
         'Array leaf evidence uses the layout argument application boundary');
 }
+$typeFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-type'));
+checkXml(count($typeFields) === 25 && count(array_filter($typeFields, static fn($item) => !$item['supported'])) === 0,
+    'Top-level argument type operands preserve independent supported source identities');
+foreach ($typeFields as $field) {
+    checkXml(str_ends_with($field['node'], '/@xsi:type') && !str_contains($field['node'], '/item'),
+        'Nested type dispatch has a separate attribution boundary');
+}
 $nameFields = array_values(array_filter($arrayItems, static fn($item) => $item['layout']['kind'] === 'argument-name'));
 checkXml(count($nameFields) > count($leaves) && count(array_filter($nameFields, static fn($item) => !$item['supported'])) === 0,
     'Argument and item names preserve independent supported source identities');

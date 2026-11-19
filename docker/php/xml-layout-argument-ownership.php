@@ -33,13 +33,15 @@ final class LayoutArgumentOwnership
     private int $batchOverflow = 0;
     private int $evaluationOverflow = 0;
 
-    public function __construct(private readonly \Closure $fingerprint, private readonly \Closure $matches)
+    public function __construct(private readonly \Closure $fingerprint, private readonly \Closure $matches,
+        private readonly ?\Closure $emit = null)
     {
     }
 
     public function hooks(): array
     {
-        return [[InterpreterInterface::class, 'evaluate', $this->begin(...), $this->end(...)]];
+        return [[InterpreterInterface::class, 'evaluate', $this->begin(...), $this->end(...)],
+            [Interpreter\Composite::class, 'getInterpreter', $this->beginTypeLookup(...), $this->selectedType(...)]];
     }
 
     public function finish(): void
@@ -50,7 +52,7 @@ final class LayoutArgumentOwnership
         if ($this->errors) throw new \RuntimeException(implode(', ', array_keys($this->errors)));
     }
 
-    public function beginBatch(object $owner, bool $reader, array $arguments = []): void
+    public function beginBatch(object $owner, bool $reader, array $arguments = [], array $origins = [], ?array $context = null): void
     {
         if ($this->batchOverflow || count($this->batches) >= 256) {
             $this->batchOverflow++;
@@ -58,11 +60,11 @@ final class LayoutArgumentOwnership
             return;
         }
         $this->batches[] = ['owner' => $owner, 'reader' => $reader, 'queue' => [], 'next' => 0,
-            'unconfirmed' => [], 'completed' => [], 'depth' => count($this->evaluating)];
-        if (!$reader) $this->supply($arguments);
+            'unconfirmed' => [], 'completed' => [], 'typeAttempts' => [], 'typeObserved' => [], 'context' => $context, 'depth' => count($this->evaluating)];
+        if (!$reader) $this->supply($arguments, null, $origins);
     }
 
-    public function supply(array $arguments, ?object $reader = null): void
+    public function supply(array $arguments, ?object $reader = null, array $origins = [], ?array $context = null): void
     {
         $index = array_key_last($this->batches);
         if ($this->batchOverflow) return;
@@ -82,9 +84,11 @@ final class LayoutArgumentOwnership
             // application ArrayAccess probe or duplicate the generator's error.
             if (!is_array($data)) continue;
             if ($reader ? isset($data['updater']) : !isset($data['xsi:type'])) continue;
-            $queue[] = ['name' => $name, 'input' => ($this->fingerprint)($data)];
+            $queue[] = ['name' => $name, 'input' => ($this->fingerprint)($data),
+                'type' => $origins[$name]['type'] ?? $origins[$name]['pending']['type'] ?? null];
         }
         $this->batches[$index]['queue'] = $queue;
+        if ($context !== null) $this->batches[$index]['context'] = $context;
     }
 
     public function endBatch(?\Throwable $error, ?array &$completed = null): array
@@ -101,6 +105,11 @@ final class LayoutArgumentOwnership
         }
         if ((!$error && $batch['next'] !== count($batch['queue'])) || $batch['depth'] !== count($this->evaluating)) {
             $this->errors['Missing native layout argument interpreter hook evidence'] = true;
+        }
+        if ($this->emit !== null && ($batch['context'] ?? null) !== null) {
+            foreach (array_diff_key($batch['typeAttempts'] ?? [], $batch['typeObserved'] ?? []) as $id => $_) {
+                ($this->emit)($id, 'layout-argument-type-origin-unconfirmed', $batch['context']);
+            }
         }
         $completed = array_keys(array_diff_key($batch['completed'], $batch['unconfirmed']));
         return array_keys($batch['unconfirmed']);
@@ -127,10 +136,12 @@ final class LayoutArgumentOwnership
         }
         $index = array_key_last($this->batches);
         $batch = $this->batches[$index];
-        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 3)[2] ?? [];
         $native = $batch['reader'] ? BlockReader::class : BlockGenerator::class;
         $root = ($caller['class'] ?? null) === $native && ($caller['function'] ?? null) === 'evaluateArguments';
         $name = null;
+        $type = null;
+        $input = null;
         if ($root) {
             $expected = $batch['queue'][$batch['next']] ?? null;
             $this->batches[$index]['next']++;
@@ -138,17 +149,72 @@ final class LayoutArgumentOwnership
                 $this->errors['Unexpected native layout argument interpreter call'] = true;
             } else {
                 $name = $expected['name'];
+                $input = $expected['input'];
+                $type = $expected['type'];
                 if ($expected['input'] === null || !($this->matches)($expected['input'], $params[0])) {
                     $this->batches[$index]['unconfirmed'][$name] = true;
+                    $type = null;
                 }
             }
         } else {
             $parent = $this->evaluating[array_key_last($this->evaluating)] ?? null;
             if ($parent !== null && $parent['batch'] === $index && ($caller['function'] ?? null) === 'evaluate'
-                && is_a($caller['class'] ?? '', InterpreterInterface::class, true)) $name = $parent['name'];
+                && is_a($caller['class'] ?? '', InterpreterInterface::class, true)) {
+                $name = $parent['name'];
+                if (($caller['object'] ?? null) === $parent['object'] && self::native($parent['object'])
+                    && (($parent['input'] !== null && ($this->matches)($parent['input'], $params[0]))
+                    || ($parent['forwarded'] !== null && ($this->matches)($parent['forwarded'], $params[0])))) {
+                    $type = $parent['type']; $input = ($this->fingerprint)($params[0]);
+                }
+            }
         }
+        if ($root && isset($type['id'])) $this->batches[$index]['typeAttempts'][$type['id']] = true;
         if ($name !== null && !self::native($interpreter)) $this->batches[$index]['unconfirmed'][$name] = true;
-        $this->evaluating[] = ['batch' => $index, 'name' => $name, 'root' => $root];
+        $expected = false;
+        if (isset($type['value']) && $interpreter instanceof Interpreter\Composite
+            && (new \ReflectionMethod($interpreter, 'evaluate'))->getDeclaringClass()->getName() === Interpreter\Composite::class
+            && !(new \ReflectionClass($interpreter))->isUninitializedLazyObject($interpreter)) {
+            $property = new \ReflectionProperty(Interpreter\Composite::class, 'discriminator');
+            $expected = !$property->getHooks() && $property->isInitialized($interpreter)
+                && $property->getRawValue($interpreter) === 'xsi:type'
+                && isset($params[0]['xsi:type']) && ($this->matches)($type['value'], $params[0]['xsi:type']);
+        }
+        $forwarded = null;
+        if ($type !== null && $interpreter instanceof LayoutInterpreter\Decorator\Updater
+            && LayoutXmlOwnership::nativeMethod($interpreter, LayoutInterpreter\Decorator\Updater::class, 'evaluate')) {
+            $data = $params[0];
+            unset($data['updater']);
+            $forwarded = ($this->fingerprint)($data);
+        }
+        $this->evaluating[] = ['batch' => $index, 'name' => $name, 'root' => $root,
+            'object' => $interpreter, 'type' => $type, 'input' => $input, 'forwarded' => $forwarded, 'expectedType' => $expected,
+            'lookupEntered' => false, 'lookup' => false, 'trustedLookup' => false, 'deferred' => false];
+    }
+
+    private function beginTypeLookup($composite): void
+    {
+        if ($this->evaluationOverflow) return;
+        $index = array_key_last($this->evaluating);
+        if ($index !== null && is_array($this->evaluating[$index]) && $this->evaluating[$index]['object'] === $composite
+            && $this->evaluating[$index]['expectedType']) $this->evaluating[$index]['lookupEntered'] = true;
+    }
+
+    private function selectedType($composite, array $params, $result, ?\Throwable $error): void
+    {
+        if ($this->evaluationOverflow) return;
+        $index = array_key_last($this->evaluating);
+        if ($index === null || !is_array($this->evaluating[$index]) || $this->evaluating[$index]['object'] !== $composite
+            || !$this->evaluating[$index]['expectedType']) return;
+        $frame = $this->evaluating[$index];
+        $this->evaluating[$index]['lookup'] = true;
+        $caller = LayoutXmlOwnership::caller($composite, 'getInterpreter');
+        $this->evaluating[$index]['trustedLookup'] = !$error
+            && $result instanceof InterpreterInterface
+            && LayoutXmlOwnership::nativeMethod($composite, Interpreter\Composite::class, 'getInterpreter')
+            && ($caller['class'] ?? null) === Interpreter\Composite::class
+            && ($caller['function'] ?? null) === 'evaluate'
+            && ($this->matches)($frame['type']['value'], $params[0] ?? null);
+        $this->evaluating[$index]['deferred'] = $result instanceof LayoutInterpreter\Passthrough;
     }
 
     private function end($interpreter, array $params, $result, ?\Throwable $error): void
@@ -162,6 +228,21 @@ final class LayoutArgumentOwnership
         if ($frame === null) {
             $this->errors['Missing native layout argument interpreter entry hook evidence'] = true;
             return;
+        }
+        if ($frame['type'] !== null && $interpreter instanceof Interpreter\Composite) {
+            if ($frame['expectedType'] && LayoutXmlOwnership::nativeMethod($interpreter, Interpreter\Composite::class, 'getInterpreter')
+                && (!$frame['lookupEntered'] || !$frame['lookup'])) {
+                $this->errors['Missing native layout argument type dispatch hook evidence'] = true;
+            }
+            $context = $this->batches[$frame['batch']]['context'] ?? null;
+            if ($this->emit !== null && $context !== null) {
+                $this->batches[$frame['batch']]['typeObserved'][$frame['type']['id']] = true;
+                $effect = !$frame['expectedType'] ? 'layout-argument-type-origin-unconfirmed'
+                    : ($error ? 'layout-argument-type-failed' : (!$frame['trustedLookup']
+                    ? 'layout-argument-type-origin-unconfirmed' : ($frame['deferred']
+                        ? 'layout-argument-type-deferred' : 'layout-argument-type-evaluated')));
+                ($this->emit)($frame['type']['id'], $effect, $context);
+            }
         }
         if (!$error && $frame['root'] && $frame['name'] !== null && isset($this->batches[$frame['batch']])) {
             $this->batches[$frame['batch']]['completed'][$frame['name']] = true;
