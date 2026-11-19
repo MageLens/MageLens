@@ -326,6 +326,16 @@ fi
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-magic-action-proof.php
     ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+        php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout --without-collector
+    for first_layout_mode in '' --missing-dispatch-pre --missing-dispatch-post --missing-first-dispatch-pre --missing-first-dispatch-post; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout "$first_layout_mode"
+    done
+    for first_foreign_mode in --without-collector '' --missing-native-first-pre --missing-native-first-post; do
+        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
+            php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout --foreign-lookup "$first_foreign_mode"
+    done
+    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
         php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --without-collector
     for argument_field_mode in '' --missing-dispatch-pre --missing-dispatch-post --custom-dispatch --alternate-discriminator --custom-forwarder; do
         ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \

@@ -170,15 +170,7 @@ final class LayoutArgumentOwnership
         }
         if ($root && isset($type['id'])) $this->batches[$index]['typeAttempts'][$type['id']] = true;
         if ($name !== null && !self::native($interpreter)) $this->batches[$index]['unconfirmed'][$name] = true;
-        $expected = false;
-        if (isset($type['value']) && $interpreter instanceof Interpreter\Composite
-            && (new \ReflectionMethod($interpreter, 'evaluate'))->getDeclaringClass()->getName() === Interpreter\Composite::class
-            && !(new \ReflectionClass($interpreter))->isUninitializedLazyObject($interpreter)) {
-            $property = new \ReflectionProperty(Interpreter\Composite::class, 'discriminator');
-            $expected = !$property->getHooks() && $property->isInitialized($interpreter)
-                && $property->getRawValue($interpreter) === 'xsi:type'
-                && isset($params[0]['xsi:type']) && ($this->matches)($type['value'], $params[0]['xsi:type']);
-        }
+        $expected = $this->typeInput($interpreter, $type, $params[0]['xsi:type'] ?? null);
         $forwarded = null;
         if ($type !== null && $interpreter instanceof LayoutInterpreter\Decorator\Updater
             && LayoutXmlOwnership::nativeMethod($interpreter, LayoutInterpreter\Decorator\Updater::class, 'evaluate')) {
@@ -191,12 +183,34 @@ final class LayoutArgumentOwnership
             'lookupEntered' => false, 'lookup' => false, 'trustedLookup' => false, 'deferred' => false];
     }
 
-    private function beginTypeLookup($composite): void
+    private function typeInput(object $composite, ?array $type, $value): bool
+    {
+        if (!isset($type['value']) || !$composite instanceof Interpreter\Composite
+            || !LayoutXmlOwnership::nativeMethod($composite, Interpreter\Composite::class, 'evaluate')
+            || (new \ReflectionClass($composite))->isUninitializedLazyObject($composite)) return false;
+        $property = new \ReflectionProperty(Interpreter\Composite::class, 'discriminator');
+        return !$property->getHooks() && $property->isInitialized($composite)
+            && $property->getRawValue($composite) === 'xsi:type' && ($this->matches)($type['value'], $value);
+    }
+
+    private static function nativeTypeLookup(object $composite): bool
+    {
+        $caller = LayoutXmlOwnership::caller($composite, 'getInterpreter');
+        return ($caller['class'] ?? null) === Interpreter\Composite::class
+            && ($caller['function'] ?? null) === 'evaluate' && ($caller['object'] ?? null) === $composite;
+    }
+
+    private function beginTypeLookup($composite, array $params): void
     {
         if ($this->evaluationOverflow) return;
         $index = array_key_last($this->evaluating);
-        if ($index !== null && is_array($this->evaluating[$index]) && $this->evaluating[$index]['object'] === $composite
-            && $this->evaluating[$index]['expectedType']) $this->evaluating[$index]['lookupEntered'] = true;
+        if ($index === null || !is_array($this->evaluating[$index]) || $this->evaluating[$index]['object'] !== $composite
+            || $this->evaluating[$index]['type'] === null || !self::nativeTypeLookup($composite)) return;
+        $this->evaluating[$index]['lookupEntered'] = true;
+        // A lazy Composite initializes at its own discriminator read. Observe
+        // the subsequent native lookup rather than initializing it ourselves.
+        $this->evaluating[$index]['expectedType'] = $this->typeInput(
+            $composite, $this->evaluating[$index]['type'], $params[0] ?? null);
     }
 
     private function selectedType($composite, array $params, $result, ?\Throwable $error): void
@@ -204,15 +218,12 @@ final class LayoutArgumentOwnership
         if ($this->evaluationOverflow) return;
         $index = array_key_last($this->evaluating);
         if ($index === null || !is_array($this->evaluating[$index]) || $this->evaluating[$index]['object'] !== $composite
-            || !$this->evaluating[$index]['expectedType']) return;
+            || $this->evaluating[$index]['type'] === null || !self::nativeTypeLookup($composite)) return;
         $frame = $this->evaluating[$index];
         $this->evaluating[$index]['lookup'] = true;
-        $caller = LayoutXmlOwnership::caller($composite, 'getInterpreter');
-        $this->evaluating[$index]['trustedLookup'] = !$error
+        $this->evaluating[$index]['trustedLookup'] = $frame['expectedType'] && !$error
             && $result instanceof InterpreterInterface
             && LayoutXmlOwnership::nativeMethod($composite, Interpreter\Composite::class, 'getInterpreter')
-            && ($caller['class'] ?? null) === Interpreter\Composite::class
-            && ($caller['function'] ?? null) === 'evaluate'
             && ($this->matches)($frame['type']['value'], $params[0] ?? null);
         $this->evaluating[$index]['deferred'] = $result instanceof LayoutInterpreter\Passthrough;
     }
@@ -230,7 +241,9 @@ final class LayoutArgumentOwnership
             return;
         }
         if ($frame['type'] !== null && $interpreter instanceof Interpreter\Composite) {
-            if ($frame['expectedType'] && LayoutXmlOwnership::nativeMethod($interpreter, Interpreter\Composite::class, 'getInterpreter')
+            if ((!$error || $frame['lookupEntered'] || $frame['lookup'])
+                && LayoutXmlOwnership::nativeMethod($interpreter, Interpreter\Composite::class, 'evaluate')
+                && LayoutXmlOwnership::nativeMethod($interpreter, Interpreter\Composite::class, 'getInterpreter')
                 && (!$frame['lookupEntered'] || !$frame['lookup'])) {
                 $this->errors['Missing native layout argument type dispatch hook evidence'] = true;
             }

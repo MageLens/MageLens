@@ -15,25 +15,63 @@ use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, LayoutRuntimeHooks, Re
 use Magento\Framework\Data\Argument\Interpreter\Composite;
 use Magento\Framework\Data\Argument\InterpreterInterface;
 
+function finishArgumentFields(LayoutCoverage $collector, array $arguments): array
+{
+    $missing = (bool) array_intersect($arguments, ['--missing-dispatch-pre', '--missing-dispatch-post',
+        '--missing-first-dispatch-pre', '--missing-first-dispatch-post',
+        '--missing-native-first-pre', '--missing-native-first-post']);
+    try { $state = $collector->finish(); }
+    catch (RuntimeException $error) {
+        if (!$missing || !str_contains($error->getMessage(), 'Missing native layout argument type dispatch hook evidence')) throw $error;
+        echo "Verified missing type dispatch evidence rejects publication after unchanged native values.\n";
+        exit;
+    }
+    if ($missing) throw new RuntimeException('Missing original type dispatch observation was accepted');
+    return $state;
+}
+$firstLayout = in_array('--first-layout', $argv, true);
+if (!$firstLayout && array_intersect($argv, ['--foreign-lookup', '--missing-first-dispatch-pre',
+    '--missing-first-dispatch-post', '--missing-native-first-pre', '--missing-native-first-post'])) {
+    throw new InvalidArgumentException('First-layout controls require --first-layout');
+}
 $files = [];
-foreach (['coverageprobe_layout_arguments.xml', 'coverageprobe_layout_arguments_overlay.xml'] as $name) {
+foreach ($firstLayout ? ['coverageprobe_argumentownership_native.xml']
+    : ['coverageprobe_layout_arguments.xml', 'coverageprobe_layout_arguments_overlay.xml'] as $name) {
     $path = 'app/code/MageLens/Compatibility/view/frontend/layout/' . $name;
     $source = file_get_contents(BP . '/' . $path);
     $files[] = ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source),
         'declarations' => LayoutManifest::declarations($path, $source)];
 }
 [$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets($files));
+$inForeignLookup = false;
+$foreignObserved = 0;
 if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $method, $pre, $post]) {
     if ($class === Composite::class && $method === 'getInterpreter') {
         if (in_array('--missing-dispatch-pre', $argv, true)) $pre = null;
         if (in_array('--missing-dispatch-post', $argv, true)) $post = null;
+        foreach (['pre', 'post'] as $half) {
+            $nativeOnly = in_array('--missing-native-first-' . $half, $argv, true);
+            if (!$nativeOnly && !in_array('--missing-first-dispatch-' . $half, $argv, true)) continue;
+            $observe = ${$half};
+            $id = array_values(array_filter($files[0]['declarations'], static fn($item) =>
+                $item['node'] === '/page/body/block/arguments/argument[1]/@xsi:type'))[0]['id'];
+            ${$half} = static function (...$arguments) use ($collector, $id, $observe, $nativeOnly, &$inForeignLookup): void {
+                $ownership = (new ReflectionProperty($collector, 'argumentOwnership'))->getValue($collector);
+                $frames = (new ReflectionProperty($ownership, 'evaluating'))->getValue($ownership);
+                $frame = $frames[array_key_last($frames)] ?? [];
+                $batches = (new ReflectionProperty($ownership, 'batches'))->getValue($ownership);
+                $reader = $batches[$frame['batch'] ?? -1]['reader'] ?? false;
+                if (($frame['type']['id'] ?? null) !== $id || ($nativeOnly && (!$reader || $inForeignLookup))) $observe(...$arguments);
+            };
+        }
     }
     if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register argument field proof');
 }
 $selected = [];
 OpenTelemetry\Instrumentation\hook(Composite::class, 'getInterpreter', null,
-    static function ($composite, array $params, $interpreter, ?Throwable $error) use (&$selected): void {
+    static function ($composite, array $params, $interpreter, ?Throwable $error) use (&$selected, &$inForeignLookup, &$foreignObserved): void {
         if (!$error && $interpreter instanceof InterpreterInterface) $selected[$params[0]] = true;
+        if ($inForeignLookup) $foreignObserved++;
     });
 $objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');
@@ -42,6 +80,60 @@ foreach ([Magento\Framework\App\Area::PART_CONFIG, Magento\Framework\App\Area::P
     Magento\Framework\App\Area::PART_TRANSLATE] as $part) $area->load($part);
 foreach (['layout', 'block_html', 'full_page'] as $type) $objects->get(Magento\Framework\App\Cache\StateInterface::class)->setEnabled($type, false);
 $objects->get(Magento\Framework\App\ViewInterface::class);
+$initializations = 0;
+$nativeInitialization = false;
+$foreignLookup = in_array('--foreign-lookup', $argv, true);
+if ($firstLayout && $foreignLookup) {
+    $original = $objects->get('layoutArgumentReaderInterpreter');
+    $reflection = new ReflectionClass(Composite::class);
+    $reflection->initializeLazyObject($original);
+    $interpreters = (new ReflectionProperty(Composite::class, 'interpreters'))->getRawValue($original);
+    $selector = new ReflectionMethod(Composite::class, 'getInterpreter');
+    $replacement = $reflection->newLazyGhost(static function ($composite) use ($interpreters, $selector, &$initializations, &$nativeInitialization, &$inForeignLookup): void {
+        $initializations++;
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2)[1] ?? [];
+        $nativeInitialization = ($caller['class'] ?? null) === Composite::class && ($caller['function'] ?? null) === 'evaluate';
+        $composite->__construct($interpreters, 'xsi:type');
+        $inForeignLookup = true;
+        try { $selector->invoke($composite, 'helper'); } finally { $inForeignLookup = false; }
+    });
+    $property = new ReflectionProperty(Magento\Framework\View\Layout\Reader\Block::class, 'argumentInterpreter');
+    $saved = [];
+    OpenTelemetry\Instrumentation\hook(Magento\Framework\View\Layout\Reader\Block::class, 'evaluateArguments',
+        static function ($reader, array $params) use ($replacement, $property, &$saved): void {
+            $replace = $params[0]->getAttribute('name') === 'magelens.layout.argument.native';
+            $saved[] = $replace ? $property->getValue($reader) : null;
+            if ($replace) $property->setValue($reader, $replacement);
+        }, static function ($reader) use ($property, &$saved): void {
+            $original = array_pop($saved);
+            if ($original !== null) $property->setValue($reader, $original);
+        });
+}
+if ($firstLayout) {
+    $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
+    $page->addHandle('coverageprobe_argumentownership_native');
+    $block = $page->getLayout()->getBlock('magelens.layout.argument.native');
+    if (!$block || $block->getData('value') !== 'xml-value' || $block->getData('late') !== 'xml-value'
+        || $block->getData('action_value') !== 'xml-value'
+        || $block->getData('nested') !== ['changed' => 'xml-value', 'surviving' => 'xml-value']
+        || !str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')) {
+        throw new RuntimeException('Native first-layout deferred interpretation changed');
+    }
+    if ($foreignLookup && ($initializations !== 1 || !$nativeInitialization || $foreignObserved !== 1)) throw new RuntimeException('Type attribution changed native lazy initialization count');
+    echo "Verified native deferred values in the first isolated layout without default-handle initialization.\n";
+    if (in_array('--without-collector', $argv, true)) exit;
+    finishArgumentFields($collector, $argv);
+    $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
+    foreach ($files[0]['declarations'] as $declaration) {
+        if ($declaration['layout']['kind'] !== 'argument-type') continue;
+        $types = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
+        if (!in_array('layout-argument-type-evaluated', $types, true)) {
+            throw new RuntimeException('First-layout type origin lacks native consumer evidence at ' . $declaration['node']);
+        }
+    }
+    echo "Verified original first-layout type dispatch before interpreter initialization is reused.\n";
+    exit;
+}
 $forwarder = in_array('--custom-forwarder', $argv, true);
 $custom = in_array('--custom-dispatch', $argv, true);
 $alternate = in_array('--alternate-discriminator', $argv, true);
@@ -100,18 +192,14 @@ if (substr_count($html, '>verified</span>') !== 23 || str_contains($html, '>unex
 foreach (['string', 'number', 'boolean', 'null', 'array', 'object', 'options', 'helper', 'url', 'configurableObject'] as $type) {
     if (!isset($selected[$type])) throw new RuntimeException('Native type dispatch was not observed');
 }
+if (in_array('--nested-types', $argv, true) && $block->getData('indexed') !== [
+    'visited' => 'indexed-read', 'unread' => 'indexed-unread', 'nullable' => null,
+    'nested' => ['leaf' => 'indexed-path']]) throw new RuntimeException('Native nested typed-value inventory changed');
 echo "Verified native typed values, nested overlays, shared/fresh identities, translation, options, helper/URL parameters and action dispatch.\n";
 if ($forwarder && MageLensArgumentFieldForwarder::$calls === 0) throw new RuntimeException('Custom interpreter forwarding was bypassed');
 if ($custom && MageLensArgumentFieldDispatch::$calls === 0) throw new RuntimeException('Custom type selector was bypassed');
 if (in_array('--without-collector', $argv, true)) exit;
-$missing = in_array('--missing-dispatch-pre', $argv, true) || in_array('--missing-dispatch-post', $argv, true);
-try { $state = $collector->finish(); }
-catch (RuntimeException $error) {
-    if (!$missing || !str_contains($error->getMessage(), 'Missing native layout argument type dispatch hook evidence')) throw $error;
-    echo "Verified missing type dispatch evidence rejects publication after unchanged native values.\n";
-    exit;
-}
-if ($missing) throw new RuntimeException('Missing original type dispatch observation was accepted');
+$state = finishArgumentFields($collector, $argv);
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 foreach (range(1, 25) as $position) {
     $node = '/page/body/referenceContainer/block/arguments/argument[' . $position . ']/@xsi:type';
@@ -124,6 +212,18 @@ foreach (range(1, 25) as $position) {
         || ($replaced && !in_array('layout-argument-type-origin-unconfirmed', $types, true))) {
         throw new RuntimeException('Original type operand differs from its native consumer boundary at position ' . $position);
     }
+}
+if (in_array('--nested-types', $argv, true)) {
+    $count = 0;
+    foreach ($files as $file) foreach ($file['declarations'] as $declaration) {
+        if ($declaration['layout']['instruction'] !== 'item' || $declaration['layout']['attribute'] !== 'xsi:type') continue;
+        $count++;
+        $types = array_column(array_filter($events, static fn($event) => $event['id'] === $declaration['id']), 'type');
+        if (!in_array('layout-argument-type-evaluated', $types, true)) {
+            throw new RuntimeException('Original nested type operand lacks native consumer evidence at ' . $declaration['node']);
+        }
+    }
+    if ($count !== 12) throw new RuntimeException('Native nested type inventory changed');
 }
 echo "Verified original type operands at their native interpretation boundary.\n";
 $evidencePath = array_search('--evidence-file', $argv, true);
