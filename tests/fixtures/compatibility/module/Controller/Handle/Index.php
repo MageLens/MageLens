@@ -30,6 +30,7 @@ class Index implements HttpGetActionInterface
         $handles = match ($variant) {
             'page-values' => ['coverageprobe_page_values_base', 'coverageprobe_page_values_falsy'],
             'page-metadata' => ['coverageprobe_page_metadata'],
+            'controller-asset' => ['coverageprobe_page_controller_asset'],
             default => [],
         };
         if ($handles) {
