@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -131,7 +131,7 @@ test.describe('Blog Admin and publishing', () => {
         await expect(get(page, 'admin-row')).toHaveCount(0);
     });
 
-    test('requires Admin authentication and the Blog ACL permission', async ({page}) => {
+    test('requires Admin authentication and the Blog ACL permission', async ({page, recordXmlBrowserEvidence}) => {
         const f = fixtures();
         await page.goto('/admin/application_blog/manage/index/section/posts');
         await expect(page.locator('#username')).toBeVisible();
@@ -143,5 +143,37 @@ test.describe('Blog Admin and publishing', () => {
             headers: headers(), form: {form_key: formKey, name: 'Forbidden', slug: f.prefix + 'forbidden', is_active: '1'}
         });
         expect(response.status()).toBe(403);
+        if (f.navigation) {
+            const entry = name => page.locator(`[data-ui-id="menu-magelens-adminnavigation-${name}"]`);
+            await expect(entry('inherited-posts')).toHaveCount(0);
+            await page.context().clearCookies({name: 'admin'});
+            const responses = new Map();
+            page.on('response', response => {
+                const request = response.request();
+                if (request.isNavigationRequest() && request.frame() === page.mainFrame() && response.status() === 200) {
+                    responses.set(response.url(), response.headers()['x-magelens-response']);
+                }
+            });
+            await login(page, f.navigation.user, f.navigation.password);
+            const posts = entry('inherited-posts').locator('a');
+            const categories = entry('inherited-categories').locator('a');
+            await expect(posts).toHaveCount(1);
+            await expect(categories).toHaveCount(1);
+            await expect(entry('removed')).toHaveCount(0);
+            const source = responses.get(page.url());
+            await expect(page.locator('.admin__menu-overlay')).toBeAttached();
+            await page.locator('#menu-application-blog-manage > a').click();
+            const clicked = await posts.evaluate(link => link.href);
+            await posts.click();
+            await expect(get(page, 'admin-new')).toContainText('Add post');
+            expect(page.url() === clicked, 'navigation matches the clicked menu entry').toBe(true);
+            const destination = responses.get(page.url());
+            if (source || destination) {
+                await recordXmlBrowserEvidence({type: 'menu-followed', identity: 'MageLens_AdminNavigation::inherited_posts', response: source, destination});
+            }
+            // Open the sibling directly. It must not inherit the preceding click.
+            await page.goto(await categories.evaluate(link => link.href));
+            await expect(get(page, 'admin-new')).toContainText('Add category');
+        }
     });
 });
