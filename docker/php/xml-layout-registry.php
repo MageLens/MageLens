@@ -84,6 +84,8 @@ final class LayoutRegistryCoverage
             [\Magento\Framework\DataObject::class, 'getData', null, $this->typeValueRead(...)],
             [\Magento\Framework\DataObject::class, 'setData', null, $this->typeObjectChanged(...)],
             [\Magento\Framework\DataObject::class, 'unsetData', null, $this->typeObjectChanged(...)],
+            [\Magento\Framework\DataObject::class, 'offsetSet', null, $this->typeObjectChanged(...)],
+            [\Magento\Framework\DataObject::class, 'offsetUnset', null, $this->typeObjectChanged(...)],
             [\ReflectionProperty::class, 'setValue', null, $this->replaced(...)],
             [\ReflectionProperty::class, 'setRawValue', null, $this->replaced(...)],
             [\ReflectionProperty::class, 'setRawValueWithoutLazyInitialization', null, $this->replaced(...)],
