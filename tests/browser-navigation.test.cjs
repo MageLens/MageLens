@@ -5,7 +5,8 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const {adminScriptDependencies, installCypressAdminDependencies, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
+const {adminScriptDependencies, installCypressAdminDependencies, installPlaywrightAdminDependencies,
+    observeAdminMenuNavigation} = require('../bin/browser-navigation.cjs');
 
 const script = `require(['jquery', 'Magento_Ui/js/modal/alert', 'mage/translate', 'domReady!'], function ($, alert, $t) {
     var locations = ['cart', 'checkout'];
@@ -82,4 +83,56 @@ test('both browser response hooks use the same dependency fix and preserve HTTP 
     await paused(request);
     assert.equal(commands.at(-1).method, 'Fetch.failRequest');
     assert.throws(check, /response hook failed/);
+});
+
+test('Admin menu observation consumes a committed navigation once and discards canceled or stale attempts', () => {
+    const storage = new Map(), observations = [];
+    const source = 'a'.repeat(32), destination = 'b'.repeat(32);
+    const origin = 'https://shop.test';
+    const target = origin + '/admin/catalog/product/index/key/example/';
+    const win = ({url, id, from, response, status = 200, scope = 'test'}) => {
+        const page = new EventTarget();
+        const navigation = new EventTarget();
+        navigation.currentEntry = {id};
+        navigation.activation = {from: {id: from}, navigationType: 'push'};
+        Object.assign(page, {
+            navigation, location: new URL(url),
+            sessionStorage: {getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value),
+                removeItem: key => storage.delete(key)},
+            performance: {getEntriesByType: () => [{responseStatus: status, transferSize: 100, redirectCount: 0,
+                serverTiming: [{name: 'magelens-response', description: response}]}]}
+        });
+        observeAdminMenuNavigation(page, () => scope, event => observations.push(event));
+        page.dispatchEvent(new Event('DOMContentLoaded'));
+        return page;
+    };
+    const link = {href: target, parentElement: {dataset: {uiId: 'menu-catalog-products'}}, matches: () => true, closest: () => true};
+    const click = (page, anchor = link) => {
+        const controller = new AbortController();
+        page.navigation.dispatchEvent(Object.assign(new Event('navigate'), {
+            sourceElement: anchor, destination: {url: target, sameDocument: false},
+            navigationType: 'push', downloadRequest: null, signal: controller.signal
+        }));
+        return controller;
+    };
+    const start = () => win({url: origin, id: 'initial-entry', response: source});
+    const commit = options => win({url: target, id: 'new-entry', from: 'initial-entry', response: destination, ...options});
+    click(start());
+    commit();
+    commit();
+    assert.deepEqual(observations, [{type: 'menu-followed', selector: 'menu-catalog-products', response: source, destination}]);
+    click(start()).abort();
+    commit();
+    const competing = start();
+    click(competing);
+    click(competing, null);
+    commit();
+    click(start());
+    commit({status: 403});
+    commit();
+    click(start());
+    commit({url: origin + '/admin/another/destination/'});
+    click(start());
+    commit({scope: 'next-test'});
+    assert.equal(observations.length, 1);
 });

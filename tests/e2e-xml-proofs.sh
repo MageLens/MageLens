@@ -40,6 +40,9 @@ prove_blog_controllers() {
 run_xml_proofs() {
     local theme=$1 platform=$2 mode=$3
     mkdir -p coverage
+    xml_proof xml-admin-navigation.test.php /var/www/html/vendor /source
+    xml_proof xml-admin-navigation-acl-proof.php --without-collector
+    xml_proof xml-admin-navigation-acl-proof.php
     xml_proof xml-layout-scope-bootstrap-proof.php
     local assets_without assets_with renderer
     for renderer in '' --custom-emission; do
