@@ -44,6 +44,7 @@ run_xml_proofs() {
     done
     printf 'Verified identical native asset output and getter calls with collection off and on.\n'
     layout_cases equal-mutation block offset-set offset-unset-restore
+    xml_proof xml-layout-cache-scope.test.php
 
     for internal_bridge_mode in early late-closure late-property limit callback-error; do
         xml_proof xml-layout-internal-bridge.test.php "$internal_bridge_mode"

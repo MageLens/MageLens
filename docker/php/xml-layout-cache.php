@@ -51,7 +51,7 @@ final class LayoutCacheCoverage
         $this->sourceTrace = true;
     }
 
-    public function completedHandle(Merge $merge, string $handle): void
+    public function completedHandle(Merge $merge, string|int $handle): void
     {
         if (isset($this->cachedPackages[$merge])) $this->limitHandles('layout-package-cache', $merge, [$handle]);
     }
@@ -98,6 +98,7 @@ final class LayoutCacheCoverage
             $selected = array_keys($storage);
         }
         foreach ($selected as $handle) {
+            if (is_int($handle)) $handle = (string) $handle;
             // Request logs retain only handles present in the original source inventory.
             if (!is_string($handle) || !isset($this->measuredHandles[$handle])) continue;
             $key = $reason . "\0" . $area;
