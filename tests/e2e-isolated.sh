@@ -213,6 +213,8 @@ fi
     fi
     # Prepare the pinned cache through the interactive entry point before coverage.
     ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
+    # Run from the same host as Compose (WSL on Windows), before collection starts.
+    node tests/verify-cron-native.cjs
     ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/MageLens/UiProbe/Test/MageLens/hooks.php before
     ./bin/runner node tests/verify-ui-browser-native.cjs "$runner"
     if [[ "$mode" == production ]]; then
@@ -233,6 +235,7 @@ fi
     ./bin/runner node tests/verify-xml-admin-navigation.cjs
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-cli-coverage.cjs
+    ./bin/runner node tests/verify-xml-cron.cjs
     ./bin/runner node tests/verify-ui-browser-coverage.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"

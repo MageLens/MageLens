@@ -10,7 +10,7 @@ namespace MageLens\XmlCoverage;
 use Magento\Cron\Model\Config\Reader\Xml as CronReader;
 use Magento\Framework\Config\FileResolverInterface;
 use Magento\Framework\Config\Reader\Filesystem;
-use Magento\Framework\ObjectManager\Config\Config as ObjectConfig;
+use Magento\Framework\ObjectManager\ConfigInterface;
 use Magento\Framework\ObjectManager\ConfigLoaderInterface;
 
 require_once __DIR__ . '/xml-cron-runtime.php';
@@ -90,7 +90,7 @@ final class CronFamily
             }
         }
 
-        $data = clone $om->get(ObjectConfig::class);
+        $data = clone $om->get(ConfigInterface::class);
         $data->extend($om->get(ConfigLoaderInterface::class)->load('crontab'));
         $jobs = [];
         foreach ($files as $path => &$file) foreach ($file['declarations'] as &$item) {
@@ -130,7 +130,7 @@ final class CronFamily
                 continue;
             }
             $jobs[$group][$code]['handler'] = ['id' => $item['id'], 'instance' => $instance, 'method' => $method,
-                'receiver' => $receiver, 'declaring' => $callback->class];
+                'receiver' => $receiver, 'declaring' => $callback->class, 'callback' => $callback->getName()];
         }
         unset($item, $file);
         return [['jobs' => $jobs, 'providers' => $providers, 'config' => self::fingerprint($native)], $providers];

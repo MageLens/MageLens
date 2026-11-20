@@ -23,5 +23,15 @@ License: see LICENSE in the repository root.
     </group>
     <group id="magelens_magerun_probe">
         <job name="magelens_magerun_probe" instance="MageLens\Compatibility\Cli\Jobs" method="runNamed"/>
+        <job name="456" instance="MageLens\Compatibility\Cli\CronWorker" method="Execute"/>
+    </group>
+    <group id="123">
+        <job name="123" instance="MageLens\Compatibility\Cli\CronWorker" method="Execute">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="0123" instance="MageLens\Compatibility\Cli\VirtualCronWorker" method="execute">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="magelens_scoped_probe" instance="MageLens\Compatibility\Cli\ScopedCronWorker" method="execute"/>
     </group>
 </config>
