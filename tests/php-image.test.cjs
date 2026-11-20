@@ -31,7 +31,7 @@ function workspace(t, buildExit = 0) {
     const series = pins.match(/^PHP_IMAGE: "php:(\d+\.\d+)\./m)[1];
     const recipe = path.join(directory, '.runtime/docker-magento/images/php', series, 'Dockerfile');
     fs.mkdirSync(path.dirname(recipe), {recursive: true});
-    fs.writeFileSync(recipe, `FROM php:${series}-fpm-bookworm AS base\n\nRUN pecl channel-update pecl.php.net && pecl install \\\n${packages.map(name => `    ${name} \\`).join('\n')}\n  && pecl clear-cache\n\n${upstreamProbe}\n\n${composerInstall}\n\nFROM base AS xdebug\n`);
+    fs.writeFileSync(recipe, `FROM php:${series}-fpm-bookworm AS base\n\nRUN pecl channel-update pecl.php.net && pecl install \\\n${packages.map(name => `    ${name} \\`).join('\n')}\n  && pecl clear-cache\n\n${upstreamProbe}\n\n${composerInstall}\n\nCOPY conf/php.ini $PHP_INI_DIR\nCOPY conf/php-fpm.conf /usr/local/etc/\nCOPY conf/blackfire.ini $PHP_INI_DIR/conf.d/blackfire.ini\nCOPY conf/www.conf /usr/local/etc/php-fpm.d/\nCOPY conf/msmtprc /etc/msmtprc\n\nFROM base AS xdebug\n`);
     const commands = path.join(directory, 'commands');
     fs.mkdirSync(commands);
     fs.mkdirSync(path.join(directory, 'extensions'));
@@ -68,6 +68,15 @@ test('PHP base replaces the Blackfire release endpoint with verified native Debi
     for (const arch of ['amd64', 'arm64']) assert.match(generated, new RegExp(arch + '\\) sha=[a-f0-9]{64}'));
     assert.match(generated, /sha256sum -c -/);
     assert.match(generated, /php -d extension=blackfire.so --ri blackfire/);
+});
+
+test('PHP base makes pinned PHP and FPM configuration readable under restrictive checkout modes', t => {
+    const {build, generated} = workspace(t);
+    assert.equal(build.status, 0, build.stderr);
+    for (const name of ['php.ini', 'php-fpm.conf', 'blackfire.ini', 'www.conf']) {
+        assert.ok(generated.includes('COPY --chmod=0644 conf/' + name + ' '), name);
+    }
+    assert.ok(generated.includes('COPY conf/msmtprc /etc/msmtprc'));
 });
 
 test('PHP base installs every pinned extension before caching its layer', t => {
