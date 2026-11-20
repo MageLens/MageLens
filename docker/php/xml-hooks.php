@@ -17,6 +17,7 @@ require_once __DIR__ . '/xml-layout-runtime-hooks.php';
 require_once __DIR__ . '/xml-layout.php';
 require_once __DIR__ . '/xml-layout-ownership.php';
 require_once __DIR__ . '/xml-layout-package-events.php';
+require_once __DIR__ . '/xml-layout-argument-evaluation.php';
 require_once __DIR__ . '/xml-layout-argument-ownership.php';
 require_once __DIR__ . '/xml-layout-argument-groups.php';
 require_once __DIR__ . '/xml-layout-action-guards.php';

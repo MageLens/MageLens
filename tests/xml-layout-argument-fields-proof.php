@@ -65,9 +65,9 @@ if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$clas
             ${$half} = static function (...$arguments) use ($observe, $collector): void {
                 $ownership = (new ReflectionProperty($collector, 'argumentOwnership'))->getValue($collector);
                 $frames = (new ReflectionProperty($ownership, 'evaluating'))->getValue($ownership);
-                $frame = $frames[array_key_last($frames)] ?? [];
+                $frame = $frames[array_key_last($frames)] ?? null;
                 $omit = $arguments[0] instanceof Magento\Framework\Data\Argument\Interpreter\StringUtils
-                    && isset($frame['type']['fields']['translate']);
+                    && isset($frame?->type['fields']['translate']);
                 if (!$omit) $observe(...$arguments);
             };
         }
@@ -84,8 +84,8 @@ if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$clas
             ${$half} = static function (...$arguments) use ($collector, $actionTypeIds, $observe): void {
                 $ownership = (new ReflectionProperty($collector, 'argumentOwnership'))->getValue($collector);
                 $frames = (new ReflectionProperty($ownership, 'evaluating'))->getValue($ownership);
-                $frame = $frames[array_key_last($frames)] ?? [];
-                if (!isset($actionTypeIds[$frame['type']['id'] ?? ''])) $observe(...$arguments);
+                $frame = $frames[array_key_last($frames)] ?? null;
+                if (!isset($actionTypeIds[$frame?->type['id'] ?? ''])) $observe(...$arguments);
             };
         }
         if (in_array('--missing-dispatch-pre', $argv, true)) $pre = null;
@@ -99,10 +99,10 @@ if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$clas
             ${$half} = static function (...$arguments) use ($collector, $id, $observe, $nativeOnly, &$inForeignLookup): void {
                 $ownership = (new ReflectionProperty($collector, 'argumentOwnership'))->getValue($collector);
                 $frames = (new ReflectionProperty($ownership, 'evaluating'))->getValue($ownership);
-                $frame = $frames[array_key_last($frames)] ?? [];
+                $frame = $frames[array_key_last($frames)] ?? null;
                 $batches = (new ReflectionProperty($ownership, 'batches'))->getValue($ownership);
-                $reader = $batches[$frame['batch'] ?? -1]['reader'] ?? false;
-                if (($frame['type']['id'] ?? null) !== $id || ($nativeOnly && (!$reader || $inForeignLookup))) $observe(...$arguments);
+                $reader = $batches[$frame?->batch ?? -1]['reader'] ?? false;
+                if (($frame?->type['id'] ?? null) !== $id || ($nativeOnly && (!$reader || $inForeignLookup))) $observe(...$arguments);
             };
         }
     }
