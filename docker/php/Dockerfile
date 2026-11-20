@@ -20,7 +20,7 @@ RUN pecl install "opentelemetry-${OPENTELEMETRY_VERSION}" \
     && docker-php-ext-enable opentelemetry \
     && php -r 'if (phpversion("opentelemetry") !== getenv("OPENTELEMETRY_VERSION") || !function_exists("OpenTelemetry\\Instrumentation\\hook")) exit(1);'
 RUN mkdir /opt/pcov-tools \
-    && curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://codeload.github.com/MageLens/pcov/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
+    && curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://codeload.github.com/MageLens/PCOV/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
     && tar xzf /tmp/pcov.tar.gz --strip-components=2 -C /opt/pcov-tools --wildcards '*/tools/*' \
     && rm /tmp/pcov.tar.gz
 # Magento is installed with upstream's Composer workflow at runtime. Marketplace
