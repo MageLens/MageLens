@@ -113,10 +113,12 @@ const attributionUnits = {
     },
     // Template ids are unique across statements, functions and branches of one template.
     templates: unit => ['statements', 'functions', 'branches'].map(metric => ['template', metric, unit]),
-    // Area-specific declarations are records of their own; config reads and field renders count on their line.
-    xml: (unit, declarations) => unit.includes('@')
-        ? Object.values(xmlMetrics).map(metric => ['xml', metric, unit]) : [['xml', 'lines', String(declarations.get(unit))]]
+    // Area-specific declarations are records of their own; config reads and field renders count on the lines they span.
+    xml: (unit, declarations) => unit.includes('@') ? Object.values(xmlMetrics).map(metric => ['xml', metric, unit]) : declarationLines(declarations.get(unit))
 };
+// The XML report also counts area-specific declarations on the lines they span, except in plugin files.
+const attributionLines = {xml: (unit, declarations) => unit.includes('@') ? declarationLines(declarations.get(unit.split('@')[0])) : []};
+const declarationLines = ({start, end}) => Array.from({length: end - start + 1}, (_, offset) => ['xml', 'lines', String(start + offset)]);
 
 function writeAttribution(database, directory) {
     const file = name => path.join(directory, 'attribution', name);
@@ -135,19 +137,26 @@ function writeAttribution(database, directory) {
     const addUnattributed = database.prepare('INSERT INTO unattributed_hits VALUES (?, ?) ON CONFLICT DO UPDATE SET hit_count = hit_count + excluded.hit_count');
     const xmlLines = new Map();
     for (const xmlFile of JSON.parse(fs.readFileSync(path.join(directory, 'xml/coverage.json'), 'utf8')).files) {
-        for (const item of xmlFile.declarations) xmlLines.set(item.id, item.startLine);
+        for (const item of xmlFile.declarations) xmlLines.set(item.id, {start: item.startLine, end: item.endLine});
     }
     for (const collector of ['php', 'javascript', 'templates', 'xml']) {
         for (const [sourceFile, units] of Object.entries(JSON.parse(fs.readFileSync(file(`${collector}.json`), 'utf8')).files)) {
             for (const [unit, owners] of Object.entries(units)) {
-                const matches = attributionUnits[collector](unit, xmlLines).map(([source, metric, key]) => findRecord.get(sourceFile, source, metric, key)).filter(Boolean);
-                assert.equal(matches.length, 1, `Attributed ${collector} unit without one record: ${sourceFile} ${unit}`);
-                assert.ok(matches[0].covered, `Attributed ${collector} unit that the report shows as uncovered: ${sourceFile} ${unit}`);
-                for (const [owner, hits] of Object.entries(owners)) {
-                    // PHP records whether a line ran, not how often.
-                    const count = collector === 'php' ? null : hits;
-                    if (owner === 'unattributed') addUnattributed.run(matches[0].record_id, count);
-                    else addAttemptHit.run(Number(owner), matches[0].record_id, count);
+                const find = keys => keys.map(([source, metric, key]) => findRecord.get(sourceFile, source, metric, key)).filter(Boolean);
+                let matches = find(attributionUnits[collector](unit, xmlLines));
+                // A config read or field render owns every measured line of its declaration.
+                if (collector === 'xml' && !unit.includes('@')) matches = matches.filter(record => record.covered);
+                else assert.ok(matches.length <= 1, `Attributed ${collector} unit with several records: ${sourceFile} ${unit}`);
+                assert.ok(matches.length, `Attributed ${collector} unit without a covered record: ${sourceFile} ${unit}`);
+                for (const record of matches) assert.ok(record.covered, `Attributed ${collector} unit that the report shows as uncovered: ${sourceFile} ${unit}`);
+                const lines = find(attributionLines[collector]?.(unit, xmlLines) || []).filter(record => record.covered);
+                for (const record of [...matches, ...lines]) {
+                    for (const [owner, hits] of Object.entries(owners)) {
+                        // PHP records whether a line ran, not how often.
+                        const count = collector === 'php' ? null : hits;
+                        if (owner === 'unattributed') addUnattributed.run(record.record_id, count);
+                        else addAttemptHit.run(Number(owner), record.record_id, count);
+                    }
                 }
             }
         }
