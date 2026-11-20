@@ -202,7 +202,7 @@ The collector files map each file and unit to its owners: the position of an att
 
 - Every attributed unit is checked against the aggregate report of its collector, and every covered unit has an owner. A difference stops the run before reports are published.
 - PHP lines are expanded per attempt exactly as in the PHP report. A request that starts after its attempt finished keeps the attempt and is counted as `lateRecords`.
-- Template records that carry their attempt ID are attributed to it; Cypress passes the ID through the template package's record `metadata` where the installed package supports it. Other records are matched by spec, title path, retry and project. Two attempts with the same identity, such as Cypress tests with duplicate titles, cannot be told apart that way: their records are counted as `ambiguousRecords` and stay unattributed.
+- Template records that carry their attempt ID are attributed to it; Cypress and Playwright pass the ID as the template package's record `metadata` where the installed package keeps it. The ID must belong to an attempt of the same spec, title path, retry and project. Other records are matched by spec, title path, retry and project. Two attempts with the same identity, such as Cypress tests with duplicate titles, cannot be told apart that way: their records are counted as `ambiguousRecords` and stay unattributed.
 - XML observations belong to the attempt of the PHP request or command that recorded them.
 - Attribution shows which code ran during a test attempt. It does not show that the test checked the result of that code.
 

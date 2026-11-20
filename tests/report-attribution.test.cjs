@@ -120,3 +120,8 @@ test('a template record of an unknown attempt blocks the run', t => {
     workspace(t, data => { data['coverage/raw/templates/1.mtc'].attempt = 'd'.repeat(32); });
     assert.throws(() => writeAttribution(), /Template record of an unknown attempt/);
 });
+
+test('a template record whose attempt ID belongs to another test blocks the run', t => {
+    workspace(t, data => { data['coverage/raw/templates/1.mtc'].attempt = first; });
+    assert.throws(() => writeAttribution(), /another test's attempt/);
+});

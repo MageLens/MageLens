@@ -112,9 +112,13 @@ function templates(attempts, index) {
         // Playwright stores the absolute spec path and starts the title path with the spec file.
         const spec = path.isAbsolute(record.spec) ? path.relative(process.cwd(), record.spec) : record.spec;
         const test = record.test[0] === spec ? record.test.slice(1) : record.test;
-        // Records that carry their attempt ID need no matching by test identity.
-        if (record.attempt) assert.ok(index.has(record.attempt), `Template record of an unknown attempt: ${file}`);
-        const matches = record.attempt ? [index.get(record.attempt)] : owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
+        const identity = owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
+        // Records that carry their attempt ID need no matching by test identity, but must not contradict it.
+        if (record.attempt) {
+            assert.ok(index.has(record.attempt), `Template record of an unknown attempt: ${file}`);
+            assert.ok(identity.includes(index.get(record.attempt)), `Template record of another test's attempt: ${file}`);
+        }
+        const matches = record.attempt ? [index.get(record.attempt)] : identity;
         const owner = matches.length === 1 ? matches[0] : unattributed;
         stats.records++;
         if (owner === unattributed) stats.unattributedRecords++;

@@ -60,6 +60,8 @@ function withCoverage(base = playwright.test) {
             try { await use(id); }
             finally { finishAttempt({id, outcome: testInfo.status}); }
         }, {auto: true}],
+        // Template records carry the attempt ID where the package keeps fixture metadata.
+        templateCoverageOptions: async ({coverageAttempt}, use) => use({outputDir: 'coverage/raw/templates', metadata: {attempt: coverageAttempt}}),
         context: async ({context, baseURL, coverageAttempt}, use) => {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
