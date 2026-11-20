@@ -33,7 +33,8 @@ $register = static function () use ($file, $mode): LayoutCoverage {
         if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register page cache proof hook');
     }
     if ($mode === 'depth') {
-        (new ReflectionProperty(LayoutCoverage::class, 'loadingPages'))->setValue($collector, array_fill(0, 256, []));
+        $cacheHooks = (new ReflectionProperty(LayoutCoverage::class, 'cache'))->getValue($collector);
+        (new ReflectionProperty($cacheHooks, 'loadingPages'))->setValue($cacheHooks, array_fill(0, 256, []));
     }
     return $collector;
 };

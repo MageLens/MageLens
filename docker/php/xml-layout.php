@@ -95,27 +95,21 @@ final class LayoutCoverage
     private array $blockObjectCreations = [];
     private int $blockObjectOverflow = 0;
     private \WeakMap $blocks;
-    private array $loadingPages = [];
-    private int $loadingPagesOverflow = 0;
-    private array $loadingHtml = [];
-    private int $loadingHtmlOverflow = 0;
     private array $fetching = [];
     private int $fetchingOverflow = 0;
     private bool $healthy = false;
-    private bool $sourceTrace = false;
-    private array $scopedLimitations = [];
-    private array $measuredHandles = [];
-    private \WeakMap $cachedPackages;
     private array $limitations = [];
     private array $errors = [];
     private array $validating = [];
     private LayoutReferenceCoverage $references;
     private LayoutFieldAccess $templateFields;
     private LayoutFieldAccess $dataFields;
+    private LayoutCacheCoverage $cache;
 
     private function __construct(private readonly array $sources)
     {
-        foreach (array_keys($sources) as $path) $this->measuredHandles[basename($path, '.xml')] = true;
+        $this->cache = new LayoutCacheCoverage(array_keys($sources), $this->observedThemeContext(...),
+            self::layoutUpdate(...), $this->resetCachedSchedule(...), $this->completeCachedBlock(...));
         $this->merges = new \WeakMap();
         $this->themeContexts = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
@@ -146,7 +140,6 @@ final class LayoutCoverage
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
         $this->argumentBindings = new \WeakMap();
-        $this->cachedPackages = new \WeakMap();
         $this->moves = new \WeakMap();
         $this->removals = new \WeakMap();
         $this->blocks = new \WeakMap();
@@ -183,8 +176,6 @@ final class LayoutCoverage
         if ($this->blockRenders || $this->blockRenderOverflow) $this->errors['Unbalanced block render hook evidence'] = true;
         $this->engineBeforePlugin->finish();
         if ($this->fetching || $this->fetchingOverflow) $this->errors['Unbalanced template rendering hook evidence'] = true;
-        if ($this->loadingPages || $this->loadingPagesOverflow) $this->errors['Unbalanced full-page cache hook evidence'] = true;
-        if ($this->loadingHtml || $this->loadingHtmlOverflow) $this->errors['Unbalanced block HTML cache hook evidence'] = true;
         $this->packageEvents->finish();
         $this->argumentOwnership->finish();
         $this->argumentGroups->finish();
@@ -195,12 +186,17 @@ final class LayoutCoverage
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
-        return [$this->healthy || $registryHealthy || $structureHealthy || $guardHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits, ...$blockLimits, ...$metadataLimits])), array_values($this->scopedLimitations)];
+        [$cacheHealthy, $sourceTrace, $cacheLimits, $scopedLimits] = $this->cache->finish();
+        $limitations = array_values(array_unique([...array_keys($this->limitations), ...$registryLimits,
+            ...$structureLimits, ...$blockLimits, ...$metadataLimits, ...$cacheLimits]));
+        return [$this->healthy || $registryHealthy || $structureHealthy || $guardHealthy || $cacheHealthy,
+            $sourceTrace, $limitations, $scopedLimits];
     }
 
     private function hooks(): array
     {
         return [
+            ...$this->cache->hooks(),
             ...$this->templateFields->hooks(),
             ...$this->dataFields->hooks(),
             ...$this->ownership->hooks(),
@@ -232,8 +228,6 @@ final class LayoutCoverage
             [Merge::class, '_validateMergedLayout', $this->beginValidation(...), $this->completeValidation(...)],
             [\Magento\Framework\View\Model\Layout\Update\Validator::class, 'isValid', null, $this->validationResult(...)],
             [Merge::class, 'load', $this->resetPageSelection(...), null],
-            [Merge::class, '_loadCache', null, $this->cachedUpdate(...)],
-            [ScheduledStructure::class, 'populateWithArray', null, $this->cachedStructure(...)],
             [ScheduledStructure::class, 'setStructureElementData', null, $this->checkScheduledWrite(...)],
             [ScheduledStructure::class, 'setElement', null, $this->checkScheduledWrite(...)],
             [PageBuilder::class, 'readPageLayout', $this->beginPageRead(...), $this->completePageRead(...)],
@@ -297,10 +291,6 @@ final class LayoutCoverage
             [\ReflectionProperty::class, 'setValue', null, $this->replaceReflectedBlockData(...)],
             [\ReflectionProperty::class, 'setRawValue', null, $this->replaceReflectedBlockData(...)],
             [\ReflectionProperty::class, 'setRawValueWithoutLazyInitialization', null, $this->replaceReflectedBlockData(...)],
-            [\Magento\Framework\App\PageCache\Kernel::class, 'load', $this->beginPageCache(...), $this->loadedPageCache(...)],
-            [AbstractBlock::class, '_loadCache', $this->beginBlockHtml(...), $this->loadBlockHtml(...)],
-            [\Magento\Framework\App\CacheInterface::class, 'load', null, $this->loadedBlockCache(...)],
-            [\Magento\Framework\Cache\LockGuardedCacheLoader::class, 'lockedLoadData', $this->beginBlockCacheLoader(...), null],
             [AbstractBlock::class, 'toHtml', $this->beginRender(...), $this->completeRender(...)],
             [Template::class, 'fetchView', $this->beginTemplate(...), $this->completeTemplate(...)],
             [Template\File\Validator::class, 'isValid', $this->beginTemplateValidation(...), $this->completeTemplateValidation(...)],
@@ -601,7 +591,7 @@ final class LayoutCoverage
         if ($class !== Merge::class) return;
         $handle = array_pop($this->handles);
         if ($error || !$handle) return;
-        if (isset($this->cachedPackages[$merge])) $this->limitHandles('layout-package-cache', $merge, [$handle['name']]);
+        $this->cache->completedHandle($merge, $handle['name']);
         if ($handle['id'] === null) return;
         $effect = $handle['effect'] ?? ($handle['found'] ? 'traversed' : 'missing');
         $context = $this->themeContext($merge);
@@ -665,69 +655,18 @@ final class LayoutCoverage
         $updates = self::updates($merge);
         foreach ($this->merges[$merge]['updates'] ?? [] as $index => $source) {
             if (!isset($updates[$index]) || $source['hash'] !== hash('sha256', $updates[$index])) continue;
-            $this->sourceTrace = true;
+            $this->cache->traced();
             foreach ($source['targets'] as $target) {
                 foreach ($target['ids'] as $id) $this->event($id, 'layout-validation-failed', $context);
             }
         }
     }
 
-    private function cachedUpdate($merge, array $params, $value, ?\Throwable $error, string $class): void
+    private function resetCachedSchedule(ScheduledStructure $structure): void
     {
-        if ($error || $class !== Merge::class || !$value) return;
-        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
-        if (($caller['class'] ?? null) !== Merge::class) return;
-        $reason = match ($caller['function'] ?? null) {
-            'load' => 'layout-merge-cache',
-            'getFileLayoutUpdatesXml' => 'layout-package-cache',
-            default => null,
-        };
-        if ($reason === 'layout-package-cache') {
-            $this->cachedPackages[$merge] = true;
-            $this->limitations[$reason] = true;
-        } elseif ($reason === 'layout-merge-cache') {
-            $this->limitHandles($reason, $merge);
-        }
-    }
-
-    private function limitHandles(string $reason, $merge, ?array $selected = null): void
-    {
-        $this->limitations[$reason] = true;
-        if (!$merge instanceof Merge) return;
-        $theme = self::mergeTheme($merge);
-        $context = is_object($theme) ? ($this->themeContexts[$theme] ?? []) : [];
-        $area = $context['area'] ?? null;
-        if (!in_array($area, ['frontend', 'adminhtml'], true)) return;
-        if ($selected === null) {
-            $property = LayoutXmlOwnership::unhookedProperty($merge, 'handles');
-            if ($property?->getDeclaringClass()->getName() !== Merge::class
-                || (new \ReflectionMethod($merge, 'getHandles'))->getDeclaringClass()->getName() !== Merge::class) return;
-            $storage = $property->getRawValue($merge);
-            if (!is_array($storage)) return;
-            $selected = array_keys($storage);
-        }
-        foreach ($selected as $handle) {
-            // Request logs retain only handles present in the original source inventory.
-            if (!is_string($handle) || !isset($this->measuredHandles[$handle])) continue;
-            $key = $reason . "\0" . $area;
-            $this->scopedLimitations[$key]['reason'] = $reason;
-            $this->scopedLimitations[$key]['area'] = $area;
-            if (!in_array($handle, $this->scopedLimitations[$key]['handles'] ?? [], true)) {
-                $this->scopedLimitations[$key]['handles'][] = $handle;
-            }
-        }
-    }
-
-    private function cachedStructure($structure, array $params, $result, ?\Throwable $error, string $class): void
-    {
-        if ($error || $class !== ScheduledStructure::class) return;
         unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
         $this->structureCoverage->reset($structure);
         $this->positions->reset($structure);
-        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_PROVIDE_OBJECT | DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
-        if (($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'generateElements') {
-            $this->limitHandles('scheduled-layout-cache', self::layoutUpdate($caller['object']));
-        }
     }
 
     private function beginPageRead($builder, array $params, string $class): void
@@ -879,10 +818,15 @@ final class LayoutCoverage
         $this->themeContexts[$theme] = $context;
     }
 
-    private function themeContext(Merge $merge): ?array
+    private function observedThemeContext(Merge $merge): array
     {
         $theme = self::mergeTheme($merge);
-        $context = is_object($theme) ? ($this->themeContexts[$theme] ?? []) : [];
+        return is_object($theme) ? ($this->themeContexts[$theme] ?? []) : [];
+    }
+
+    private function themeContext(Merge $merge): ?array
+    {
+        $context = $this->observedThemeContext($merge);
         foreach (['area', 'theme'] as $key) {
             if (!empty($context[$key . 'Expected']) && empty($context[$key . 'Observed'])) {
                 $this->errors['Missing native layout theme context hook evidence'] = true;
@@ -2083,11 +2027,11 @@ final class LayoutCoverage
                 || $this->page->snapshot($context->getPageConfigStructure())
                 || $this->structureCoverage->snapshot($context->getScheduledStructure())
                 || $this->references->snapshot($context->getScheduledStructure()))) {
-                $this->sourceTrace = true;
+                $this->cache->traced();
                 return;
             }
         }
-        $this->limitHandles('missing-layout-origins', self::layoutUpdate($layout));
+        $this->cache->limitHandles('missing-layout-origins', self::layoutUpdate($layout));
     }
 
     private function snapshotContext($layout, array $params, string $class): void
@@ -3008,111 +2952,18 @@ final class LayoutCoverage
         }
     }
 
-    private function beginPageCache($kernel, array $params, string $class): void
+    private function completeCachedBlock(AbstractBlock $block, bool $cached, bool $fromRender): void
     {
-        if ($class !== \Magento\Framework\App\PageCache\Kernel::class) return;
-        if (count($this->loadingPages) >= 256 || $this->loadingPagesOverflow) {
-            $this->loadingPagesOverflow++;
-            $this->errors['Layout full-page cache nesting exceeded 256 calls'] = true;
-            return;
-        }
-        $this->loadingPages[] = $kernel;
-    }
-
-    private function loadedPageCache($kernel, array $params, $result, ?\Throwable $error, string $class): void
-    {
-        if ($class !== \Magento\Framework\App\PageCache\Kernel::class) return;
-        if ($this->loadingPagesOverflow) { $this->loadingPagesOverflow--; return; }
-        if (array_pop($this->loadingPages) !== $kernel) {
-            $this->errors['Unbalanced full-page cache hook evidence'] = true;
-            return;
-        }
-        if ($error) return;
-        $this->healthy = true;
-        if ($result instanceof \Magento\Framework\App\Response\Http) {
-            $this->limitations['full-page-cache-origin'] = true;
-        }
-    }
-
-    private function loadBlockHtml($block, array $params, $result, ?\Throwable $error, string $class): void
-    {
-        if ($class !== AbstractBlock::class) return;
-        if ($this->loadingHtmlOverflow) { $this->loadingHtmlOverflow--; return; }
-        $frame = array_pop($this->loadingHtml);
-        if (!$frame || $frame['block'] !== $block) {
-            $this->errors['Unbalanced block HTML cache hook evidence'] = true;
-            return;
-        }
-        if ($error) return;
-        if ($frame['readExpected'] && !$frame['readObserved']) $this->errors['Missing native block HTML cache read hook evidence'] = true;
-        if ($frame['readObserved'] && $frame['loaderExpected'] && !$frame['loaderObserved']) {
-            $this->errors['Missing native block HTML cache loader hook evidence'] = true;
-        }
-        if ($frame['cacheData']) $this->limitations['block-html-cache-origin'] = true;
-        if (!isset($this->blocks[$block])) return;
-        $state = $this->blocks[$block];
-        if ($frame['cacheData'] && empty($state['executed'])) {
+        $state = $this->blocks[$block] ?? null;
+        if ($state === null) return;
+        if ($cached && empty($state['executed'])) {
             $this->event($state['block'], 'layout-block-cache-unconfirmed', $state['context']);
             $this->event($state['template'], 'layout-template-cache-unconfirmed', $state['context']);
         }
-        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
-        if (($caller['class'] ?? null) === AbstractBlock::class && ($caller['function'] ?? null) === 'toHtml') {
-            $state = $this->blocks[$block];
+        if ($fromRender) {
             $state['html'] = true;
             $this->blocks[$block] = $state;
         }
-    }
-
-    private function beginBlockHtml($block, array $params, string $class): void
-    {
-        if ($class !== AbstractBlock::class) return;
-        if ($this->loadingHtmlOverflow || count($this->loadingHtml) >= 256) {
-            $this->loadingHtmlOverflow++;
-            $this->errors['Layout block HTML cache nesting exceeded 256 calls'] = true;
-            return;
-        }
-        static $property;
-        $property ??= new \ReflectionProperty(AbstractBlock::class, 'lockQuery');
-        // This native private slot is distinct from any same-named subclass
-        // property. An unset slot must not invoke application magic access.
-        $loader = !(new \ReflectionClass($block))->isUninitializedLazyObject($block) && $property->isInitialized($block)
-            ? $property->getRawValue($block) : null;
-        $this->loadingHtml[] = ['block' => $block, 'cacheData' => false, 'readObserved' => false,
-            'readExpected' => false, 'readClosure' => null, 'loaderObserved' => false, 'loaderExpected' => is_object($loader)
-                && method_exists($loader, 'lockedLoadData')
-                && (new \ReflectionMethod($loader, 'lockedLoadData'))->getDeclaringClass()->getName()
-                    === \Magento\Framework\Cache\LockGuardedCacheLoader::class];
-    }
-
-    private function beginBlockCacheLoader($loader, array $params, string $class): void
-    {
-        $index = array_key_last($this->loadingHtml);
-        if ($index === null || $this->loadingHtmlOverflow || $class !== \Magento\Framework\Cache\LockGuardedCacheLoader::class) return;
-        $caller = self::nativeCaller($loader, 'lockedLoadData');
-        if (($caller['class'] ?? null) !== AbstractBlock::class || ($caller['function'] ?? null) !== '_loadCache'
-            || ($caller['object'] ?? null) !== $this->loadingHtml[$index]['block']) return;
-        $this->loadingHtml[$index]['loaderObserved'] = true;
-        $callback = $params[1] ?? null;
-        if (!$callback instanceof \Closure) return;
-        $function = new \ReflectionFunction($callback);
-        $this->loadingHtml[$index]['readExpected'] = $function->getClosureThis() === $this->loadingHtml[$index]['block']
-            && $function->getClosureScopeClass()?->getName() === AbstractBlock::class
-            && $function->getFileName() === (new \ReflectionMethod(AbstractBlock::class, '_loadCache'))->getFileName()
-            && LayoutXmlOwnership::bodyMatches($function, '{ return $this->_cache->load($this->getCacheKey()); }');
-        if ($this->loadingHtml[$index]['readExpected']) $this->loadingHtml[$index]['readClosure'] = $function->getName();
-    }
-
-    private function loadedBlockCache($cache, array $params, $result, ?\Throwable $error): void
-    {
-        $index = array_key_last($this->loadingHtml);
-        if ($error || $index === null || $this->loadingHtmlOverflow) return;
-        $caller = LayoutXmlOwnership::caller($cache, 'load', false);
-        if (($caller['class'] ?? null) !== AbstractBlock::class
-            || !str_starts_with($caller['function'] ?? '', '{closure:' . AbstractBlock::class . '::_loadCache')
-            || ($caller['object'] ?? null) !== $this->loadingHtml[$index]['block']) return;
-        if ($this->loadingHtml[$index]['readClosure'] !== null && $caller['function'] !== $this->loadingHtml[$index]['readClosure']) return;
-        $this->loadingHtml[$index]['readObserved'] = true;
-        if (is_string($result)) $this->loadingHtml[$index]['cacheData'] = true;
     }
 
     private function completeRender($block, array $params, $result, ?\Throwable $error, string $class): void

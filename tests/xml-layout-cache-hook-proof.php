@@ -37,7 +37,8 @@ foreach ($callbacks as [$class, $method, $pre, $post]) {
     if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot register cache proof hook');
 }
 if ($mode === 'depth') {
-    (new ReflectionProperty(LayoutCoverage::class, 'loadingHtml'))->setValue($collector, array_fill(0, 256, []));
+    $cacheHooks = (new ReflectionProperty(LayoutCoverage::class, 'cache'))->getValue($collector);
+    (new ReflectionProperty($cacheHooks, 'loadingHtml'))->setValue($cacheHooks, array_fill(0, 256, []));
 }
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objects->get(\Magento\Framework\App\State::class)->setAreaCode('frontend');

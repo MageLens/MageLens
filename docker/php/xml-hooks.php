@@ -34,6 +34,7 @@ require_once __DIR__ . '/xml-layout-references.php';
 require_once __DIR__ . '/xml-layout-argument-names.php';
 require_once __DIR__ . '/xml-layout-registry.php';
 require_once __DIR__ . '/xml-layout-assets.php';
+require_once __DIR__ . '/xml-layout-cache.php';
 use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences};
 
 function startXmlHooks(string $run): void
