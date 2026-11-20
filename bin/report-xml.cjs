@@ -293,6 +293,9 @@ function page(title, body, stylesheetPrefix = '') {
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${stylesheetPrefix}${stylesheet}"></head><body><h1>${escape(title)}</h1>${body}</body></html>`;
 }
 
+function sourceHref(file, line, prefix = '') {
+    return prefix + file.split('/').map(encodeURIComponent).join('/') + '.html#L' + line;
+}
 function lineLabel({startLine, endLine}) {
     return startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
 }
