@@ -35,6 +35,24 @@ class Jobs
         $schedule->setMessages($this->config->getValue('magelens_probe/cron/magerun_message'));
     }
 
+    public function runGenerated(Schedule $schedule): void
+    {
+        $schedule->setMessages('generated-handler-ran');
+    }
+
+    public function fail(Schedule $schedule): void
+    {
+        $calls = $schedule->getData('magelens_nested_calls');
+        if ($calls !== null) {
+            $schedule->setData('magelens_nested_calls', $calls + 1);
+            return;
+        }
+        $schedule->setData('magelens_nested_calls', 0);
+        $this->fail($schedule);
+        (clone $this)->fail($schedule);
+        throw new \RuntimeException('Cron probe failed after ' . $schedule->getData('magelens_nested_calls') . ' ordinary calls');
+    }
+
     public function consume(string $token): void
     {
         if (file_put_contents(self::marker($token), $token) === false) {
