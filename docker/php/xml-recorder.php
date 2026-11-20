@@ -27,6 +27,35 @@ final class Recorder
         self::$manifest = json_decode(file_get_contents('/coverage/xml-collector.json'), true, flags: JSON_THROW_ON_ERROR);
         if (self::$manifest['run'] !== $run) throw new \RuntimeException('Stale XML manifest');
     }
+    public static function familyTargets(): array
+    {
+        return self::$manifest['familyTargets'] ?? [];
+    }
+
+    public static function familyFailure(): void
+    {
+        self::$errors[] = 'Cannot attribute native XML family effect';
+    }
+
+    public static function familyEvidence(
+        string $id,
+        string $type,
+        string $area,
+        string $outcome = 'observed',
+        ?string $reason = null
+    ): void {
+        $limited = in_array($outcome, FamilyEvidence::LIMITATIONS, true);
+        if (!in_array($type, self::$manifest['familyContracts'][$id] ?? [], true)
+            || !in_array($area, Xml::AREAS, true)
+            || ($limited ? $reason === null || trim($reason) === '' : $reason !== null)
+            || !$limited && !in_array($outcome, FamilyEvidence::OBSERVATIONS, true)) {
+            throw new \RuntimeException('Invalid XML family evidence');
+        }
+        $key = implode("\0", [$id, $type, $area, $outcome, $reason]);
+        self::$events[$key] ??= compact('id', 'type', 'area', 'outcome', 'reason') + ['hits' => 0];
+        self::$events[$key]['hits']++;
+    }
+
     public static function observerTargets(): array
     {
         return self::$manifest['observers'] ?? [];

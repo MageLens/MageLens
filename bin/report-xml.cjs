@@ -5,6 +5,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const {startFamilyDeclaration, observeFamilyEffect, familyWarnings, familyOutcomes} = require('./xml-family-report.cjs');
+const {correlateBrowserEvidence, readXmlBrowserEvidence, browserEffects} = require('./xml-browser-evidence.cjs');
 const {createHash} = require('node:crypto');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const escape = text => String(text).replace(/[&<>"']/g, value => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[value]));
@@ -340,7 +342,7 @@ const layoutLimitations = {
     'scheduled-layout-cache': 'Magento populated the layout schedule from cache without running the layout readers.',
     'missing-layout-origins': 'A generated layout had no confirmed trace from original files to its schedule.',
 };
-function merge(manifest, records, sources) {
+function merge(manifest, records, sources, browserObservations = []) {
     const declarations = new Map(), files = structuredClone(manifest.files);
     for (const file of files) {
         assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
@@ -352,8 +354,10 @@ function merge(manifest, records, sources) {
             assert.ok(!declarations.has(item.id), 'Duplicate XML declaration');
             declarations.set(item.id, {item, source: file.path});
             item.hits = 0; item.evidence = [];
+            if (item.effects) startFamilyDeclaration(item);
         }
     }
+    const browser = correlateBrowserEvidence(manifest.run, records, new Map([...declarations].map(([id, {item}]) => [id, item])), browserObservations);
     assert.ok(records.length && records.some(record => record.readHook), 'No functioning XML config-read hook observed');
     const observerMeasurement = Object.keys(manifest.observers || {}).length > 0;
     const observerHook = records.some(record => record.observerHook === true);
@@ -406,12 +410,17 @@ function merge(manifest, records, sources) {
                 pluginCallback(declarations.get(id)?.item, area, key).callback.ambiguousEntry = true;
             }
         }
-        for (const event of record.events) {
+        const observations = [...record.events.map(event => ({event})), ...(browser.get(record) || [])];
+        for (const {event, evidence: browserEvidence} of observations) {
+            assert.ok(Boolean(browserEvidence) === browserEffects.has(event.type), 'Unexpected browser XML observation origin');
             const {item, source} = declarations.get(event.id) || {};
             assert.ok(item?.supported || (item?.family === 'layout' && item.layout.kind === 'file-selection'), 'Unknown or unmeasured XML evidence');
             assert.ok(Number.isSafeInteger(event.hits) && event.hits > 0);
-            const evidence = {run: record.run, request: record.request, type: event.type};
-            if (item.family === 'events') {
+            const evidence = {run: record.run, request: record.request, type: event.type, ...browserEvidence};
+            let covers = true;
+            if (item.effects) {
+                covers = observeFamilyEffect(item, event, evidence);
+            } else if (item.family === 'events') {
                 assert.ok(record.observerHook === true, 'Observer evidence without a functioning request hook');
                 assert.equal(event.type, 'observer-execute');
                 assert.deepEqual(event.registration, item.registration);
@@ -495,7 +504,7 @@ function merge(manifest, records, sources) {
                 assert.equal(typeof event.requestedScope.code, 'string');
                 evidence.requestedScope = event.requestedScope;
             }
-            if (item.family !== 'layout' || countsAsLayoutCoverage(event.type)) item.hits += event.hits;
+            if (covers && (item.family !== 'layout' || countsAsLayoutCoverage(event.type))) item.hits += event.hits;
             const sameEvidence = previous => item.family === 'layout'
                 ? previous.type === evidence.type && previous.area === evidence.area && previous.theme === evidence.theme
                 : JSON.stringify(previous) === JSON.stringify(evidence);
@@ -526,6 +535,7 @@ function merge(manifest, records, sources) {
         if (file.reason) warnings.push({path: file.path, reason: file.reason});
         for (const item of file.declarations) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
+            if (item.effects) warnings.push(...familyWarnings(item, file.path));
             if (item.family === 'layout') {
                 const decisions = [...new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean))].sort();
                 if (item.supported && decisions.length) item.reason = decisions.join('. ');
@@ -675,6 +685,13 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         }).join('');
         const prefix = '../'.repeat(file.path.split('/').length - 1);
         const details = file.declarations.map(item => {
+            if (item.effects) {
+                const effects = familyOutcomes(item).map(({type, state, outcomes}) =>
+                    `<small>${escape(type)} · ${escape(state)}${outcomes.map(({area, outcome, reason}) =>
+                        ` · ${escape(area)} · ${escape(outcome)}${reason ? ' · ' + escape(reason) : ''}`).join('')}</small>`).join('');
+                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>Original ${lineLabel(item)}</small></td>
+                    <td>${escape(item.state)}${item.outcome ? ' · ' + escape(item.outcome) : ''}${item.reason ? '<small>' + escape(item.reason) + '</small>' : ''}${effects}</td></tr>`;
+            }
             if (item.family === 'preferences' || Object.hasOwn(diFamilies, item.family)) {
                 return `<tr><td>${bindingLabel(item, label => `<a href="#L${item.startLine}">${label}</a>`)}
                     <small>Original ${lineLabel(item)}</small></td><td>${preferenceAreas(item, files, prefix)}</td></tr>`;
@@ -741,10 +758,10 @@ function report() {
             assert.equal(request.commandId, file.split('.')[0], 'Mismatched CLI XML record');
             assert.ok(['magento', 'magerun'].includes(request.tool), 'Invalid CLI XML tool');
         }
-        return {...request.xml, uri: request.uri, tool: request.commandId ? request.tool : undefined, request: request.commandId ?? file.slice(0, -5)};
+        return {...request.xml, uri: request.uri, method: request.method, status: request.status, tool: request.commandId ? request.tool : undefined, request: request.commandId ?? file.slice(0, -5)};
     });
     const sources = readSources(manifest.files);
-    const result = merge(manifest, records, sources);
+    const result = merge(manifest, records, sources, readXmlBrowserEvidence(run.id));
     writeReport(result, sources);
     return result;
 }

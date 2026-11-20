@@ -45,7 +45,27 @@ details{margin:1.25rem 0}summary{cursor:pointer}pre{overflow:auto;padding:.75rem
             }
             write(`<tr><th scope="row">${label}</th><td>${file.covered}</td><td>${file.total}</td><td>${percentage(file.covered, file.total)}</td></tr>`);
         }
-        write('</tbody></table></details>');
+        write('</tbody></table>');
+        for (const file of section.files.filter(entry => entry.declarations)) {
+            write(`<details><summary>XML effects in ${escapeHtml(file.path)}</summary><p>Source fingerprint ${escapeHtml(file.fingerprint)}</p><ul>`);
+            for (const declaration of file.declarations) {
+                const {family, identity, start, end, state, outcome, reason, effects} = declaration;
+                const span = start === end ? `line ${start}` : `lines ${start}–${end}`;
+                write(`<li>${escapeHtml(family)} · ${escapeHtml(identity)} · ${escapeHtml(span)} · ${escapeHtml(state)}
+                    ${outcome ? ' · ' + escapeHtml(outcome) : ''}${reason ? ' · ' + escapeHtml(reason) : ''}<ul>`);
+                for (const effect of effects) {
+                    write(`<li>${escapeHtml(effect.type)} · ${escapeHtml(effect.state)}`);
+                    for (const observation of effect.outcomes) {
+                        write(` · ${escapeHtml(observation.area)} · ${escapeHtml(observation.outcome)}
+                            ${observation.reason ? ' · ' + escapeHtml(observation.reason) : ''}`);
+                    }
+                    write('</li>');
+                }
+                write('</ul></li>');
+            }
+            write('</ul></details>');
+        }
+        write('</details>');
     }
     if (readSource) {
         write('<h2>Original source</h2>');
