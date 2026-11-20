@@ -54,7 +54,7 @@ test('attribution lists the attempts that executed each unit and keeps shared wo
     assert.deepEqual(summary.attempts.map(attempt => [attempt.id, attempt.retry, attempt.outcome]), [[first, 0, 'failed'], [retry, 1, 'passed'], [other, 0, 'passed']]);
     assert.deepEqual(fixture.read('php').files, {'app/code/Acme/Shop/Model/Cart.php': {12: {0: 1, 1: 1}, 13: {1: 1}, 14: {unattributed: 1}}});
     assert.deepEqual(summary.collectors.php, {status: 'collected', unit: 'line', records: 4, unattributedRecords: 1, lateRecords: 1,
-        unknownAttemptLines: 0, attributedUnits: 2, unattributedOnlyUnits: 1});
+        attributedUnits: 2, unattributedOnlyUnits: 1});
     assert.deepEqual(fixture.read('javascript').files, {'app/code/Acme/Shop/view/frontend/web/js/cart.js': {
         'b:0:0': {1: 2}, 'f:0': {1: 1}, 's:0': {1: 3, unattributed: 1}}});
     assert.deepEqual(fixture.read('templates').files, {'app/code/Acme/Shop/view/frontend/templates/cart.phtml': {'binding:1': {1: 2, unattributed: 1}}});
@@ -73,6 +73,7 @@ test('attribution that disagrees with the aggregate reports blocks the run', t =
     const cases = [
         [data => { data['coverage/php/attribution.json']['app/code/Acme/Shop/Model/Cart.php'][15] = [first]; }, /PHP attribution outside the report/],
         [data => { delete data['coverage/php/attribution.json']['app/code/Acme/Shop/Model/Cart.php'][14]; }, /Covered PHP line without attribution/],
+        [data => { data['coverage/php/attribution.json']['app/code/Acme/Shop/Model/Cart.php'][13] = [1]; }, /unknown attempt/],
         [data => { Object.values(data[`coverage/raw/javascript-attempts/${retry}.json`])[0].s[0] = 5; }, /exceeds the aggregate/],
         [data => { data['coverage/raw/templates/2.mtc'].hits.t1['binding:1'] = 2; }, /Template attribution differs/],
         [data => { data[`coverage/raw/attempts/${other}.json`].run = 'previous'; }, /another run/]

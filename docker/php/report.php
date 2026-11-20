@@ -41,12 +41,12 @@ foreach ($records as $path) {
     if ($record['php_version_id'] !== PHP_VERSION_ID || $record['environment_id'] !== $state['identity']['id']) {
         throw new RuntimeException('Record runtime/deployment identity mismatch');
     }
+    $owner = $metadata['attempt'] ?? 'unattributed';
     foreach ($record['records'] as $file => $lines) {
         foreach ($lines as $line => $hit) {
             $merged[$file][$line] = max($merged[$file][$line] ?? -1, $hit);
-            $attemptLines = &$byAttempt[$metadata['attempt'] ?? 'unattributed'][$file];
-            $attemptLines[$line] = max($attemptLines[$line] ?? -1, $hit);
-            unset($attemptLines);
+            // Only executed lines matter for attribution; expansion spreads executed lines only.
+            if ($hit > 0) $byAttempt[$owner][$file][$line] = 1;
         }
     }
     unset($metadata['xml']);
@@ -105,10 +105,12 @@ file_put_contents('/coverage/php/coverage-summary.json', json_encode([
 if (glob('/coverage/raw/attempts/*.json')) {
     // The attempts that executed each covered line, for coverage/attribution/ (bin/report-attribution.cjs).
     $attribution = [];
-    $byTest = applicationPhpReportDataByTest($state['scope'], $byAttempt, $runData['sources']);
-    foreach ($byTest->getData()->lineCoverage() as $file => $hits) {
+    $byTest = applicationPhpReportDataByTest($state['scope'], $byAttempt, $runData['sources'])->getData();
+    // Line data is keyed by test index; testIds() maps the indexes back to attempt IDs.
+    $ids = $byTest->testIds();
+    foreach ($byTest->lineCoverage() as $file => $hits) {
         foreach ($hits as $line => $tests) {
-            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_values(array_unique($tests));
+            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_map(static fn(int $index): string => $ids[$index], array_keys($tests));
         }
     }
     file_put_contents('/coverage/php/attribution.json', json_encode((object) $attribution, JSON_THROW_ON_ERROR) . "\n");
