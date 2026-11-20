@@ -76,7 +76,6 @@ final class LayoutCoverage
     private \WeakMap $structures;
     private \WeakMap $actionReads;
     private \WeakMap $argumentReads;
-    private \WeakMap $argumentBindings;
     private array $argumentSchedules = [];
     private array $updatingArguments = [];
     private \WeakMap $moves;
@@ -103,7 +102,7 @@ final class LayoutCoverage
     private array $validating = [];
     private LayoutReferenceCoverage $references;
     private LayoutFieldAccess $templateFields;
-    private LayoutFieldAccess $dataFields;
+    private LayoutBlockArguments $blockArguments;
     private LayoutCacheCoverage $cache;
 
     private function __construct(private readonly array $sources)
@@ -122,7 +121,8 @@ final class LayoutCoverage
         Recorder::layoutArgumentNames(new LayoutArgumentNames($sources));
         $this->templateOwnership = new LayoutTemplateOwnership($this->ownership);
         $this->templateFields = new LayoutFieldAccess();
-        $this->dataFields = new LayoutFieldAccess('_data', AbstractBlock::class, 'Block data');
+        $this->blockArguments = new LayoutBlockArguments($this->event(...), $this->unconfirmedArgument(...),
+            self::digest(...), self::matchesFingerprint(...));
         $this->blockRendering = new LayoutBlockRendering($this->ownership);
         $this->handleMetadata = new LayoutHandleMetadata($this->ownership, $this->packageOrigin(...));
         $this->selectionOwnership = new LayoutSelectionOwnership($this->ownership, $this->readSelection(...));
@@ -139,7 +139,6 @@ final class LayoutCoverage
         $this->structures = new \WeakMap();
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
-        $this->argumentBindings = new \WeakMap();
         $this->moves = new \WeakMap();
         $this->removals = new \WeakMap();
         $this->blocks = new \WeakMap();
@@ -164,7 +163,7 @@ final class LayoutCoverage
         $this->ownership->finish();
         $this->templateOwnership->finish();
         $this->templateFields->finish();
-        $this->dataFields->finish();
+        $this->blockArguments->finish();
         $this->selectionOwnership->finish();
         $this->page->finish();
         if ($this->moveReads || $this->moveReadOverflow || $this->moving || $this->movingOverflow
@@ -198,7 +197,7 @@ final class LayoutCoverage
         return [
             ...$this->cache->hooks(),
             ...$this->templateFields->hooks(),
-            ...$this->dataFields->hooks(),
+            ...$this->blockArguments->hooks(),
             ...$this->ownership->hooks(),
             ...$this->packageEvents->hooks(),
             ...$this->argumentOwnership->hooks(),
@@ -1573,16 +1572,6 @@ final class LayoutCoverage
             && self::digest([$value]) === $identity['digest'];
     }
 
-    private function appliedArgumentIds(array $origins): array
-    {
-        $ids = [];
-        foreach ($origins as $origin) {
-            if (isset($origin['id'])) $ids[] = $origin['id'];
-            if (isset($origin['children'])) array_push($ids, ...$this->appliedArgumentIds($origin['children']));
-        }
-        return $ids;
-    }
-
     private function checkScheduledWrite($schedule, array $params, $result, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== ScheduledStructure::class) return;
@@ -2491,15 +2480,10 @@ final class LayoutCoverage
             }
             return;
         }
-        foreach ($this->appliedArgumentIds($matched) as $id) {
+        foreach (LayoutBlockArguments::ids($matched) as $id) {
             $this->generating[$index]['applied'][$id] = $block;
         }
-        if ($matched) {
-            $binding = $this->argumentBindings[$block] ?? ['origins' => []];
-            $binding['origins'] = array_replace($binding['origins'], $matched);
-            $binding['context'] = $frame['source']['context'];
-            $this->argumentBindings[$block] = $binding;
-        }
+        $this->blockArguments->applied($block, $matched, $frame['source']['context']);
     }
 
     private function invalidateArgumentData(AbstractBlock $block, ?array $keys): void
@@ -2509,18 +2493,7 @@ final class LayoutCoverage
             && ($keys === null || in_array('template', $keys, true))) {
             $this->generating[$generation]['constructorTemplate']['dataRevoked'] = true;
         }
-        $binding = $this->argumentBindings[$block] ?? null;
-        if (!$binding) return;
-        if ($keys !== null) $keys = array_map(self::dataKey(...), $keys);
-        $removed = $keys === null ? $binding['origins'] : array_intersect_key($binding['origins'], array_fill_keys($keys, true));
-        foreach ($this->appliedArgumentIds($removed) as $id) $this->event($id, 'layout-argument-replaced', $binding['context']);
-        $binding['origins'] = array_diff_key($binding['origins'], $removed);
-        $this->argumentBindings[$block] = $binding;
-    }
-
-    private static function dataKey($key): string|int
-    {
-        return is_bool($key) || is_float($key) || is_resource($key) ? (int) $key : ($key ?? '');
+        $this->blockArguments->invalidate($block, $keys);
     }
 
     private function removeArgumentData($block, array $params, $result, ?\Throwable $error, string $class, string $function): void
@@ -2533,56 +2506,14 @@ final class LayoutCoverage
             $this->invalidateArgumentData($block, $key === null ? null : [$key]);
             return;
         }
-        $this->invalidateArgumentData($block, [self::dataKey($key)]);
+        $this->invalidateArgumentData($block, [$key]);
     }
 
     private function consumeArgument($block, array $params, $value, ?\Throwable $error, string $class, string $function): void
     {
         $this->consumeConstructorTemplate($block, $params, $value, $error, $class, $function);
-        if ($error || $class !== DataObject::class || !isset($this->blocks[$block], $this->argumentBindings[$block])) return;
-        $key = $params[0] ?? null;
-        if (!is_scalar($key) && $key !== null) return;
-        if ($function === 'getData' && ($key === null || $key === '')) return;
-        $binding = $this->argumentBindings[$block];
-        $origins = $binding['origins'];
-        $data = LayoutXmlOwnership::unhookedProperty($block, '_data');
-        if ($data === null) {
-            foreach ($origins as $origin) $this->unconfirmedArgument($origin, $binding['context'], 'layout-argument-storage-unconfirmed');
-            unset($this->argumentBindings[$block]);
-            return;
-        }
-        $values = $data->getRawValue($block);
-        $path = $function === 'getDataByPath'
-            || ($function === 'getData' && !isset($values[$key]) && str_contains((string) $key, '/'));
-        if ($path && $value === null) return;
-        $keys = $path ? explode('/', (string) $key) : [self::dataKey($key)];
-        $origin = null;
-        foreach ($keys as $part) {
-            if (!is_array($values) || !array_key_exists($part, $values)) return;
-            $values = $values[$part];
-            $origin = $origins[$part] ?? null;
-            $origins = $origin['children'] ?? [];
-        }
-        if ($function === 'getData' && ($params[1] ?? null) !== null) {
-            // Native array projections consume one existing non-null member.
-            // String projections split the original value at native EOLs.
-            if ($value === null) return;
-            if (is_array($values)) {
-                $origin = $origins[self::dataKey($params[1])] ?? null;
-            } elseif (is_string($values)) {
-                $value = $values;
-            } else return;
-        }
-        if ($origin !== null && $this->dataFields->unconfirmed($block)) {
-            foreach ($this->appliedArgumentIds($binding['origins']) as $id) $this->event($id, 'layout-argument-field-access-unconfirmed', $binding['context']);
-            unset($this->argumentBindings[$block]);
-            return;
-        }
-        $matched = isset($origin['digest']) && (is_scalar($value) || $value === null)
-            && self::digest([$value]) === $origin['digest'];
-        $matched = $matched || (isset($origin['value']) && self::matchesFingerprint($origin['value'], $value));
-        if (isset($origin['id']) && $matched) {
-            $this->event($origin['id'], 'layout-argument-read', $binding['context']);
+        if (!$error && $class === DataObject::class && $block instanceof AbstractBlock && isset($this->blocks[$block])) {
+            $this->blockArguments->read($block, $params, $value, $function);
         }
     }
 
