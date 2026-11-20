@@ -8,6 +8,7 @@ License: see LICENSE in the repository root.
 
 ## 1.10.0 - Unreleased
 
+- Update PHP to 8.4.28 with a verified multi-platform base image for FPM request-smuggling and memory-safety security fixes.
 - Add a separate XML configuration coverage report in `coverage/xml/` for scoped `config.xml` reads and rendered `system.xml` fields, preserving source directories and identifying measurement limitations.
 - Report executed HTTP `events.xml` observer registrations by area, with original source links and explicit override and measurement statuses.
 - Report HTTP `di.xml` plugin callback execution by phase and configuration area, with links to the original registrations.
