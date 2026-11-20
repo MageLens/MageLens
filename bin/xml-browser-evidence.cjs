@@ -19,6 +19,7 @@ const anchors = new Map([
 function validate(entry, withRun) {
     const expected = ['identity', 'response', 'type'];
     if (entry?.type === 'menu-followed') expected.push('destination');
+    if (entry?.candidate === true && entry.type.startsWith('ui-')) expected.push('candidate');
     if (withRun) expected.push('run');
     assert.ok(entry && Object.keys(entry).sort().join() === expected.sort().join(), 'Invalid browser XML observation shape');
     assert.ok(anchors.has(entry.type) && token.test(entry.response) && identity.test(entry.identity), 'Invalid browser XML observation');
@@ -69,6 +70,7 @@ function correlateBrowserEvidence(run, records, declarations, observations) {
         validate(observation, true);
         assert.equal(observation.run, run, 'Stale browser XML observation');
         const source = http.get(observation.response);
+        assert.ok(source, 'Browser XML observation has no active HTTP response');
         const matches = new Set();
         if (source?.status === 200) for (const event of source.events) {
             const item = declarations.get(event.id);
@@ -76,6 +78,7 @@ function correlateBrowserEvidence(run, records, declarations, observations) {
                 || item?.path !== observation.identity || !item.effects?.includes(observation.type)) continue;
             matches.add(event.id);
         }
+        if (observation.candidate && matches.size === 0) continue;
         assert.equal(matches.size, 1, 'Browser XML observation has no unique native delivery');
         const [id] = matches;
         if (observation.destination) {

@@ -1142,4 +1142,8 @@ test('browser XML effects require delivery from the same active HTTP response', 
     assert.throws(() => merge(manifest, [record, native], sources, [{...browser, run: 'stale'}]), /stale/i);
     assert.throws(() => merge(manifest, [record, native], sources, [{...browser, identity: 'another.field'}]), /delivery/i);
     assert.throws(() => merge(manifest, [record, native], sources, [{...browser, values: {customer: 'private'}}]), /browser XML/i);
+    const candidate = {...browser, identity: 'outside.measured.scope', candidate: true};
+    const skipped = merge(manifest, [record, native], sources, [candidate]);
+    assert.equal(skipped.files.find(entry => entry.path === file).declarations[0].effectStates['ui-rendered'], 'uncovered');
+    assert.throws(() => merge(manifest, [record], sources, [candidate]), /response/i);
 });

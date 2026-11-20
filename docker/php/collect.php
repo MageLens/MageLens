@@ -47,7 +47,10 @@ try {
     file_put_contents($record . '.error', 'Cannot initialize XML runtime hooks');
     return;
 }
-if ($commandId === null) header('X-MageLens-Response: ' . $requestId);
+if ($commandId === null) {
+    header('X-MageLens-Response: ' . $requestId);
+    header('Server-Timing: magelens-response;desc="' . $requestId . '"', false);
+}
 pcov\start();
 // Retain the shared lock until process shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
