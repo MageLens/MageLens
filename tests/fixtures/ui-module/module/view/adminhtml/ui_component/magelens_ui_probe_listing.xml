@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<listing xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Ui:etc/ui_configuration.xsd">
+    <argument name="data" xsi:type="array">
+        <item name="js_config" xsi:type="array">
+            <item name="provider" xsi:type="string">magelens_ui_probe_listing.probe_data_source</item>
+        </item>
+    </argument>
+    <settings>
+        <spinner>probe_columns</spinner>
+        <deps>
+            <dep>magelens_ui_probe_listing.probe_data_source</dep>
+        </deps>
+    </settings>
+    <dataSource name="probe_data_source" component="Magento_Ui/js/grid/provider">
+        <settings>
+            <storageConfig>
+                <param name="indexField" xsi:type="string">id</param>
+            </storageConfig>
+            <updateUrl path="mui/index/render"/>
+        </settings>
+        <aclResource>Magento_Backend::admin</aclResource>
+        <dataProvider class="MageLens\UiProbe\Model\Provider" name="probe_data_source">
+            <settings>
+                <requestFieldName>id</requestFieldName>
+                <primaryFieldName>id</primaryFieldName>
+            </settings>
+        </dataProvider>
+    </dataSource>
+    <listingToolbar name="listing_top">
+        <paging name="listing_paging"/>
+    </listingToolbar>
+    <columns name="probe_columns">
+        <column name="untouched" sortOrder="10">
+            <settings>
+                <label>Untouched column</label>
+            </settings>
+        </column>
+        <column name="equal" sortOrder="20">
+            <settings>
+                <label>Equal column</label>
+            </settings>
+        </column>
+        <column name="replaced" sortOrder="30">
+            <settings>
+                <label>Replaced XML column</label>
+            </settings>
+        </column>
+        <column name="disabled" sortOrder="40">
+            <argument name="data" xsi:type="array">
+                <item name="disabled" xsi:type="boolean">true</item>
+            </argument>
+            <settings>
+                <label>Disabled column</label>
+            </settings>
+        </column>
+    </columns>
+</listing>

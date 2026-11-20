@@ -429,3 +429,19 @@ run_xml_proofs() {
         done
     )
 }
+
+run_ui_component_proofs() {
+    local proof=xml-ui-native-proof.php app=/var/www/html run baseline collected warmed cache_only
+    run=$(./bin/application-compose exec -T phpfpm php -r 'echo bin2hex(random_bytes(16));')
+    xml_proof "$proof" "$app" --clear-fixture-cache
+    baseline=$(xml_proof "$proof" "$app") || { printf "%s\n" "$baseline" >&2; return 1; }
+    cache_only=$(xml_proof "$proof" "$app" --expect-cache-only "$run") || { printf "%s\n" "$cache_only" >&2; return 1; }
+    xml_proof "$proof" "$app" --clear-fixture-cache
+    collected=$(xml_proof "$proof" "$app" --collect "$run") || { printf "%s\n" "$collected" >&2; return 1; }
+    warmed=$(xml_proof "$proof" "$app" --collect "$run") || { printf "%s\n" "$warmed" >&2; return 1; }
+    xml_proof "$proof" "$app" --clear-fixture-cache
+    rm -rf "coverage/raw/xml-ui/$run"
+    [[ "$baseline" == "$cache_only" && "$baseline" == "$collected" && "$baseline" == "$warmed" ]] \
+        || fail 'Collection changed native UI output or provider calls.'
+    printf 'Verified native Admin UI output, provider calls, original lines and cache ownership.\n'
+}

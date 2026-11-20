@@ -119,6 +119,8 @@ if [[ -z "$focus" ]]; then
     cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
     cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
     cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
+    cp -a tests/fixtures/ui-module/module "$scratch/src/app/code/MageLens/UiProbe"
+    cp -a tests/fixtures/ui-module/overlay "$scratch/src/app/code/MageLens/UiProbeOverlay"
     mkdir -p "$scratch/src/app/design/frontend/MageLens"
     cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
 fi
@@ -196,6 +198,7 @@ fi
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
     ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/Application/Blog/Test/Configuration/merge.test.php
     run_xml_proofs "$theme" "$platform" "$mode"
+    run_ui_component_proofs
     # Original-source fixture assertions need fresh native layout interpretation.
     # Registry proofs separately verify warm cache zero-hit provenance boundaries.
     ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
