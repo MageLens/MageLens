@@ -54,7 +54,9 @@ async function search(page, query, category = '') {
     await waitForBlog(page);
 }
 async function login(page, username = 'application', password = 'ApplicationOnly123456!') {
-    await page.goto('/admin/');
+    // Unrelated subresources can continue loading after the login controls work.
+    const response = await page.goto('/admin/', {waitUntil: 'domcontentloaded'});
+    expect(response?.ok(), 'Admin login document returned a successful response').toBe(true);
     await page.locator('#username').fill(username);
     await page.locator('#login').fill(password);
     await page.locator('.action-login').click();

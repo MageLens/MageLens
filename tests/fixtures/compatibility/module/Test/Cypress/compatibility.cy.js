@@ -4,7 +4,9 @@
 
 const {verifyScriptPolicy} = require('../csp-proof');
 const admin = require('../../../../Application/Blog/Test/Cypress/support');
-describe('Magento storefront coverage compatibility', () => {
+const {openGrid, openForm, resetForm} = require('../../../UiProbe/Test/Browser/cypress.cjs');
+describe('Magento storefront coverage compatibility', {testIsolation: false}, () => {
+    let formNavigation;
     it('collects real PHP, JavaScript and template execution', () => {
         cy.log('Verify source replacement, CSP and interactive template output');
         cy.visit('/coverageprobe/');
@@ -49,9 +51,18 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.visit('/customer/account/login/');
         cy.get('#email').should('be.visible');
+        admin.login();
+        openForm(admin, true).then(response => { formNavigation = response; });
     });
     it('starts the next test with fresh state', () => {
+        resetForm(formNavigation, true);
         cy.log('Restore pristine session state and validate rendered HTML');
+        cy.clearLocalStorage();
+        cy.window({log: false}).then(win => win.sessionStorage.clear());
+        cy.clearCookies({log: false});
+        cy.setCookie('application_coverage', Cypress.expose('coverageRun'), {
+            domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true, log: false
+        });
         cy.visit('/coverageprobe/');
         cy.get('[data-cy="inline-probe"]').should('have.text', 'inline-ready');
         cy.window().its('magelensChildScript').should('equal', 'child-ready');
@@ -388,6 +399,8 @@ describe('Magento storefront coverage compatibility', () => {
         for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias', 'ui-acl-dashboard', 'ui-acl-blog']) {
             cy.get(`[data-layout-structure="${entry}"]`).should('have.text', entry);
         }
+        cy.log('Verify native grid loading and sorting');
+        openGrid(admin, true);
         cy.visit('/');
         cy.clearCookies();
         const fixture = admin.fixtures();

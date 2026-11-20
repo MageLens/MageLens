@@ -143,11 +143,12 @@ function exercise(UiComponentFactory $factory): array
         verify($column['config']['label'] === $expectedLabels[$name], 'Serialized label differs for ' . $name);
     }
     $fields = $formConfig['magelens_ui_probe_form']['children']['probe_fields']['children'];
+    verify($fields['readonly']['config']['elementTmpl'] === 'ui/form/element/text', 'Native read-only field template differs');
     verify(($fields['uninstantiated']['config']['componentDisabled'] ?? null) === true, 'Client-disabled component not delivered');
     $listingData = $listingConfig['probe_data_source']['config']['data'];
     $formData = $formConfig['probe_form_data_source']['config']['data'];
     verify(array_column($listingData['items'], 'id') === [1, 2], 'Listing output differs');
-    verify($formData === ['untouched' => 'Fixture value'], 'Form output differs');
+    verify($formData === ['untouched' => 'Fixture value', 'readonly' => 'Read-only fixture value'], 'Form output differs');
     verify($listingProvider->calls() === ['meta', 'page', 'data'], 'Unexpected listing provider calls: ' . implode(', ', $listingProvider->calls()));
     verify($formProvider->calls() === ['meta', 'filter', 'data'], 'Unexpected form provider calls: ' . implode(', ', $formProvider->calls()));
     $recording = function_exists('MageLens\\XmlCoverage\\uiProofEvents');

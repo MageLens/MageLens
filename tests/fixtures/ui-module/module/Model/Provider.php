@@ -43,7 +43,7 @@ class Provider extends AbstractDataProvider
             throw new \RuntimeException('Parent provider failed');
         }
         if ($this->getName() === 'probe_form_data_source') {
-            return ['' => ['untouched' => 'Fixture value']];
+            return ['' => ['untouched' => 'Fixture value', 'readonly' => 'Read-only fixture value']];
         }
         $items = [
             ['id' => 1, 'untouched' => 'First row', 'equal' => 'First value', 'replaced' => 'First replacement'],

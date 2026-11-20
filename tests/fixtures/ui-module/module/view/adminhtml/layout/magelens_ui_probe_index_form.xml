@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceContainer name="content">
-            <uiComponent name="magelens_ui_probe_form"/>
+            <uiComponent name="magelens_ui_probe_host"/>
         </referenceContainer>
     </body>
 </page>

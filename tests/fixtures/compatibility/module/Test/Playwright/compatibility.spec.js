@@ -5,6 +5,7 @@
 const {verifyScriptPolicy} = require('../csp-proof');
 const {test, expect} = require('../../../../../../../playwright/support.cjs');
 const admin = require('../../../../Application/Blog/Test/Playwright/support');
+const {runUiJourney} = require('../../../UiProbe/Test/Browser/playwright.cjs');
 test('collects real PHP, JavaScript and template execution', async ({page}) => {
     await test.step('Verify source replacement, CSP and interactive template output', async () => {
         const response = await page.goto('/coverageprobe/');
@@ -366,6 +367,7 @@ test('starts the next test with fresh state', async ({page, context, baseURL, ma
         await expect(page.locator('[data-layout-structure="acl-alias"]')).toHaveText('acl-alias');
         await expect(page.locator('[data-layout-structure="ui-acl-dashboard"]')).toHaveText('ui-acl-dashboard');
         await expect(page.locator('[data-layout-structure="ui-acl-blog"]')).toHaveText('ui-acl-blog');
+        await runUiJourney(page, admin, true);
         await page.goto('/');
         await page.context().clearCookies();
         const fixture = admin.fixtures();
