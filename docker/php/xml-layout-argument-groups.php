@@ -10,6 +10,8 @@ namespace MageLens\XmlCoverage;
 use Magento\Framework\View\Layout\Reader\Block;
 use Magento\Framework\View\Layout\Reader\Visibility\Condition;
 
+require_once __DIR__ . '/xml-layout-kind-config.php';
+
 /** Group selection is separate from interpretation and application of its values. */
 final class LayoutArgumentGroups
 {
@@ -66,10 +68,7 @@ final class LayoutArgumentGroups
         }
         foreach ($children as $child) {
             [$ids] = ($this->origin)(simplexml_import_dom($child));
-            foreach (['argument', 'argument-name', 'argument-type', 'argument-updater',
-                'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
-                'parameter', 'parameter-name', 'configured-argument', 'configured-argument-name',
-                'configured-item', 'configured-item-name', 'visibility-argument', 'visibility-argument-name'] as $kind) {
+            foreach (LayoutDeclarationKinds::IGNORED_ARGUMENT_DESCENDANTS as $kind) {
                 if (isset($ids[$kind])) ($this->emit)($ids[$kind], 'layout-argument-group-ignored', $context);
             }
         }
