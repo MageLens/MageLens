@@ -7,13 +7,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {cases} = require('./ci/cases.cjs');
 const {verifyCase} = require('./ci/gate.cjs');
 const {sanitizedCoverage} = require('./ci/evidence.cjs');
 const {writeCoverage} = require('./ci-coverage-fixture.cjs');
 const {provenance} = require('../docker/runner/cypress-source/provenance.cjs');
-const {snapshot} = require('./ci/report-equivalence.cjs');
+const {snapshot, validateSnapshot, compareThemes} = require('./ci/report-equivalence.cjs');
 const {snapshotFile, xmlFile, readProjection, writeProjection} = require('./ci/report-artifact.cjs');
 const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
 const {browserTitles, cliTitles} = require('./verify-scenarios.cjs');
@@ -193,6 +194,63 @@ test('complete qualification uses the Windows report for the eighth mode and sti
     assert.equal(missing.status, 1);
     assert.match(missing.stdout, /Matrix comparison incomplete: 7\/8/);
 });
+test('layout qualification compares static declarations across storefronts', t => {
+    const {directory} = fixture(t);
+    const complete = snapshot(directory);
+    const source = 'app/code/Application/Blog/view/frontend/layout/shared.xml';
+    const fingerprint = 'a'.repeat(64);
+    complete.xml.files[source] = {source: fingerprint, lines: {1: 'uncovered'}, declarations: [{
+        id: fingerprint, supported: true, state: 'uncovered', range: [1, 1],
+        layout: ['template', 'page', 1, ...Array(6).fill(fingerprint)], evidence: [],
+    }]};
+    complete.xml.layout.total = 1;
+    const reports = cases.map(entry => ({...entry, snapshot: structuredClone(complete)}));
+    assert.equal(compareThemes(reports, cases).passed, true);
+    for (const change of [
+        xml => { delete xml.files[source]; xml.layout.total--; },
+        xml => { xml.files[source].source = 'b'.repeat(64); },
+        xml => { xml.files[source].declarations[0].range = [2, 3]; },
+    ]) {
+        const changed = structuredClone(reports);
+        for (const report of changed.filter(entry => entry.theme === 'hyva')) change(report.snapshot.xml);
+        assert.equal(compareThemes(changed, cases).passed, false, 'Storefront-wide change to shared layout passed qualification');
+    }
+});
+
+test('layout qualification requires the summary even when every declaration is unmeasured', t => {
+    const {directory} = fixture(t);
+    const complete = snapshot(directory);
+    const fingerprint = 'a'.repeat(64);
+    complete.xml.files['app/code/Application/Blog/view/frontend/layout/shared.xml'] = {
+        source: fingerprint, lines: {1: 'unmeasured'}, declarations: [{
+            id: fingerprint, supported: false, state: 'unmeasured',
+            layout: ['instruction', 'page', 0, ...Array(6).fill(fingerprint)], evidence: [],
+        }],
+    };
+    delete complete.xml.layout;
+    const summary = JSON.parse(fs.readFileSync(path.join(directory, 'summary.json')));
+    assert.throws(() => validateSnapshot(complete, complete.run, summary), /Missing layout coverage summary/);
+});
+
+test('layout qualification sorts native and custom Admin evidence after normalizing native themes', () => {
+    const hash = value => createHash('sha256').update(value).digest('hex');
+    const custom = 'adminhtml/Custom/theme-4';
+    const entries = ['Magento/backend', 'MageOS/m137-admin-theme'].map((native, index) => ({
+        id: native, theme: 'luma', platform: index ? 'mageos' : 'magento',
+        snapshot: {xml: {files: {'app/code/Application/Blog/view/adminhtml/layout/shared.xml': {
+            declarations: [{layout: ['template'], evidence: [hash('adminhtml/' + native), hash(custom)].sort()
+                .map(theme => ['layout-template-executed', 'adminhtml', theme])}],
+        }}}},
+    }));
+    assert.notEqual(entries[0].snapshot.xml.files[Object.keys(entries[0].snapshot.xml.files)[0]].declarations[0].evidence[0][2] === hash(custom),
+        entries[1].snapshot.xml.files[Object.keys(entries[1].snapshot.xml.files)[0]].declarations[0].evidence[0][2] === hash(custom),
+        'The fixture must put custom evidence on opposite sides of native evidence');
+    assert.equal(compareThemes(entries, entries).passed, true);
+    const declaration = Object.values(entries[1].snapshot.xml.files)[0].declarations[0];
+    declaration.evidence.find(row => row[2] === hash(custom))[2] = hash('adminhtml/Custom/different');
+    assert.equal(compareThemes(entries, entries).passed, false);
+});
+
 test('case gate rejects missing or incomplete runner regressions and stale source builds', t => {
     const {directory, entry, evidence, context} = fixture(t);
     const file = path.join(directory, 'cypress-runner-results.json');

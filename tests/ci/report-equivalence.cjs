@@ -111,6 +111,8 @@ function snapshot(directory) {
     });
     const javascript = read(directory, 'js/coverage-final.json');
     assert.deepEqual(Object.keys(groups).sort(), Object.keys(files(Object.entries(javascript), () => true)).sort(), 'Incomplete JavaScript source inventory');
+    assert.ok(xml.layout || !array(xml.files).some(file => file.declarations.some(item => item.family === 'layout')),
+        'Missing layout coverage summary');
     const result = {
         schema: 1, run: run.id,
         metrics: Object.fromEntries(['php', 'js', 'templates', 'xml'].map(key => [key, summary.metrics[key].percent])),
@@ -126,6 +128,8 @@ function snapshot(directory) {
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
+                ...(/^(?:app\/design\/frontend\/|vendor\/[^/]+\/(?:theme-frontend-[^/]+|magento2-default-theme-csp)\/)/.test(file.path)
+                    && file.declarations.some(item => item.family === 'layout') ? {storefrontLayout: true} : {}),
                 lines: Object.fromEntries(Object.entries(object(file.lines)).map(([line, value]) => [line, value.state])),
                 declarations: sort(array(file.declarations).map(item => ({
                     id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],
@@ -216,11 +220,13 @@ function validateSnapshot(value, run, summary) {
     const argumentTotals = {total: 0, covered: 0};
     const lifecycleTotals = {total: 0, covered: 0};
     const layoutTotals = {total: 0, covered: 0};
+    let hasLayout = false;
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
         object(file.lines);
         for (const item of array(file.declarations)) {
             if (item.layout) {
+                hasLayout = true;
                 const [kind, fileType, ordinal, ...identity] = array(item.layout);
                 assert.ok(Object.hasOwn(layoutEvents, kind) || ['instruction', 'attribute', 'schema-hint'].includes(kind));
                 if (kind === 'schema-hint') {
@@ -323,6 +329,7 @@ function validateSnapshot(value, run, summary) {
     assert.deepEqual(value.xml.virtualTypes ?? {total: 0, covered: 0}, virtualTotals, 'Incomplete virtual type coverage inventory');
     assert.deepEqual(value.xml.arguments ?? {total: 0, covered: 0}, argumentTotals, 'Incomplete constructor argument coverage inventory');
     assert.deepEqual(value.xml.lifecycles ?? {total: 0, covered: 0}, lifecycleTotals, 'Incomplete object lifetime coverage inventory');
+    assert.ok(value.xml.layout || !hasLayout, 'Missing layout coverage summary');
     const {limitations: layoutLimitations, ...layoutSummary} = value.xml.layout ?? {...layoutTotals, limitations: []};
     assert.deepEqual(layoutSummary, layoutTotals, 'Incomplete layout coverage inventory');
     for (const reason of array(layoutLimitations)) assert.match(reason, /^[a-f0-9]{64}$/);
@@ -361,14 +368,40 @@ function comparableXml(xml, platform) {
             for (const evidence of item.evidence) {
                 if (evidence[1] === 'adminhtml' && evidence[2] === expected) evidence[2] = normalized;
             }
+            sort(item.evidence);
         }
     }
     return result;
 }
+function sharedLayout(xml) {
+    const result = {};
+    for (const [path, file] of Object.entries(xml.files)) {
+        if (file.storefrontLayout || path.startsWith('app/design/frontend/')
+            || path.startsWith('vendor/hyva-themes/magento2-default-theme-csp/')) continue;
+        const declarations = file.declarations.filter(item => item.layout)
+            .map(({id, path, scope, range, supported, layout}) => ({id, path, scope, range, supported, layout}));
+        if (declarations.length) result[path] = {source: file.source, declarations: sort(declarations)};
+    }
+    return result;
+}
+
 function compareThemes(reports, expected) {
     const errors = [];
     const expectedIds = expected.map(entry => entry.id).sort();
     if (!isDeepStrictEqual(reports.map(report => report.id).sort(), expectedIds)) errors.push('Missing, unexpected or duplicate matrix reports');
+    const sharedLayoutDifferences = [];
+    if (reports.length) {
+        const baseline = sharedLayout(reports[0].snapshot.xml);
+        for (const report of reports.slice(1)) {
+            const actual = sharedLayout(report.snapshot.xml);
+            for (const file of [...new Set([...Object.keys(baseline), ...Object.keys(actual)])].sort()) {
+                if (!isDeepStrictEqual(baseline[file], actual[file])) {
+                    sharedLayoutDifferences.push({case: report.id, file, ...details(baseline[file], actual[file])});
+                }
+            }
+        }
+    }
+    if (sharedLayoutDifferences.length) errors.push(`Shared layout: ${sharedLayoutDifferences.length} source or declaration differences`);
     const themes = {};
     for (const theme of ['luma', 'hyva']) {
         const entries = reports.filter(report => report.theme === theme);
@@ -393,7 +426,7 @@ function compareThemes(reports, expected) {
         themes[theme] = {baseline: baseline?.id, expectedCases: required.length, completedCases: entries.length, differences};
         if (entries.length !== required.length || differences.length) errors.push(`${theme}: ${entries.length}/${required.length} reports, ${differences.length} coverage differences`);
     }
-    return {passed: errors.length === 0, errors, themes};
+    return {passed: errors.length === 0, errors, themes, sharedLayoutDifferences};
 }
 function details(left, right) {
     let total = 0;
