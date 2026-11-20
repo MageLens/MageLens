@@ -29,6 +29,7 @@ WORKDIR /opt/report
 COPY docker/php/composer.json docker/php/composer.lock ./
 RUN composer install --no-dev --prefer-dist --no-interaction --no-progress
 COPY --chmod=0644 docker/php/coverage.ini /usr/local/etc/php/conf.d/zz-application-coverage.ini
+RUN install -d -m 0755 /opt/application
 COPY --chmod=0644 docker/php/collect.php /opt/application/collect.php
 COPY --chmod=0644 docker/php/collection.php /opt/application/collection.php
 COPY docker/php/configure-user.sh /opt/application/configure-user.sh
@@ -37,7 +38,7 @@ COPY docker/php/configure-user.sh /opt/application/configure-user.sh
 RUN printf '\nphp_admin_value[auto_prepend_file] = /opt/application/collect.php\npm = static\npm.max_children = 1\nlisten.mode = 0666\n' >> /usr/local/etc/php-fpm.conf
 WORKDIR /var/www/html
 USER app:app
-RUN php-fpm -tt
+RUN test -r /opt/application/collect.php && test -r /opt/application/collection.php && php-fpm -tt
 
 FROM portable AS local
 USER root
