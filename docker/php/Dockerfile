@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -16,7 +16,7 @@ RUN curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60
     && pie install "vitaliyboyko/pcov:${PCOV_VERSION}" --no-interaction \
     && php -r 'if (phpversion("pcov") !== getenv("PCOV_VERSION") || !function_exists("pcov\\export") || extension_loaded("xdebug")) exit(1);'
 RUN mkdir /opt/pcov-tools \
-    && curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://codeload.github.com/VitaliyBoyko/pcov/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
+    && curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://codeload.github.com/MageLens/PCOV/tar.gz/refs/tags/v${PCOV_VERSION}" -o /tmp/pcov.tar.gz \
     && tar xzf /tmp/pcov.tar.gz --strip-components=2 -C /opt/pcov-tools --wildcards '*/tools/*' \
     && rm /tmp/pcov.tar.gz
 # Magento is installed with upstream's Composer workflow at runtime. Marketplace

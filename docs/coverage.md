@@ -62,7 +62,7 @@ Both runners fail tests on uncaught application errors. Cypress disables cross-d
 
 ## PHP coverage
 
-[PCOV](https://github.com/VitaliyBoyko/pcov) collects PHP execution from Magento HTTP requests made during the current browser run. CLI execution is outside the collection scope.
+[PCOV](https://github.com/MageLens/PCOV) collects PHP execution from Magento HTTP requests made during the current browser run. CLI execution is outside the collection scope.
 
 The PHP report measures executable lines. Unvisited files are included through static analysis with zero hits. `phpunit/php-code-coverage` generates HTML and Clover reports.
 
@@ -100,7 +100,7 @@ Files that are never loaded retain zero-hit counters from instrumentation. The r
 
 ## HTML template coverage
 
-[@vitaliiboiko/magento-template-coverage](https://github.com/VitaliyBoyko/magento-template-coverage) measures HTML/PHTML template bindings, engine expressions and inline scripts. This includes Knockout, jQuery templates, Magento literals and regular Hyvä/Alpine directives. The report contains directory totals and per-file source views.
+[@vitaliiboiko/magento-template-coverage](https://github.com/MageLens/MagentoTemplateCoverage) measures HTML/PHTML template bindings, engine expressions and inline scripts. This includes Knockout, jQuery templates, Magento literals and regular Hyvä/Alpine directives. The report contains directory totals and per-file source views.
 
 Hyvä template coverage supports both CSP and regular Alpine 3 evaluators, including listeners with PHP-generated event names. Modifier-only listeners such as `@submit.prevent` preserve their behavior without adding an expression to the coverage total. Directives generated entirely by PHP remain outside template execution coverage. Keep the theme’s nonce or hash registration enabled for inline scripts. Inline JavaScript bodies are measured in the same template source report, including scripts executed after a template fragment is inserted. Cached and unused templates retain zero execution hits.
 

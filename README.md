@@ -160,14 +160,14 @@ This is the single place to choose the main dependency versions:
 | Mark Shust Docker Magento PHP recipe and service images | `MARKSHUST_DOCKER_MAGENTO_VERSION` |
 | Official PHP base image | `PHP_IMAGE` |
 | Composer in the PHP image | `COMPOSER_VERSION` |
-| [PCOV fork](https://github.com/VitaliyBoyko/pcov) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
+| [PCOV fork](https://github.com/MageLens/PCOV) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |
 | Hyvä CSP theme | `HYVA_VERSION` |
 | Cypress JavaScript coverage adapter | `CYPRESS_CODE_COVERAGE_VERSION` |
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |
 | Istanbul report CLI (nyc) | `NYC_VERSION` |
-| [Magento template coverage](https://github.com/VitaliyBoyko/magento-template-coverage) | `TEMPLATE_COVERAGE_VERSION` |
+| [Magento template coverage](https://github.com/MageLens/MagentoTemplateCoverage) | `TEMPLATE_COVERAGE_VERSION` |
 | Cypress runner's Node and browser system dependencies | `RUNNER_IMAGE` |
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
 
@@ -290,8 +290,8 @@ No. MageLens installs a local developer environment with coverage instrumentatio
 
 Thank you to [Mark Shust](https://github.com/markshust) for creating and maintaining [Docker Magento](https://github.com/markshust/docker-magento), the Docker foundation that MageLens builds on.
 
-- [Magento template coverage](https://github.com/VitaliyBoyko/magento-template-coverage): the standalone Cypress/Playwright template collector used here.
-- [PCOV fork](https://github.com/VitaliyBoyko/pcov): PHP line coverage with native export and manifest reuse, selected in `dependencies.yaml`.
+- [Magento template coverage](https://github.com/MageLens/MagentoTemplateCoverage): the standalone Cypress/Playwright template collector used here.
+- [PCOV fork](https://github.com/MageLens/PCOV): PHP line coverage with native export and manifest reuse, selected in `dependencies.yaml`.
 - [Magento 2 and Adobe Commerce PhpStorm plugin](https://github.com/VitaliyBoyko/magento2-phpstorm-plugin): code navigation, inspections, generators and Magento MCP tools for working with the source.
 
 For reproducible setup or reporting problems, [open an issue](https://github.com/MageLens/MageLens/issues) with the MageLens version, platform, theme, runner and relevant diagnostics. See [releases](https://github.com/MageLens/MageLens/releases) and the [changelog](CHANGELOG.md) for version changes.

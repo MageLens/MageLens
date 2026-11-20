@@ -107,7 +107,7 @@ Omitting these settings selects Magento Open Source/Luma/Cypress. The full matri
 
 ### Dependent library PRs
 
-Dependent MageLens drafts can include `.github/dependency-previews.json` with schema `1` and `templateCoverage` and/or `pcov` entries. Each entry contains the fixed upstream `repository`, source `pullRequest`, full 40-character `sha`, and planned stable `version` matching `dependencies.yaml`. Only `VitaliyBoyko/magento-template-coverage` and `VitaliyBoyko/pcov` are accepted.
+Dependent MageLens drafts can include `.github/dependency-previews.json` with schema `1` and `templateCoverage` and/or `pcov` entries. Each entry contains the fixed upstream `repository`, source `pullRequest`, full 40-character `sha`, and planned stable `version` matching `dependencies.yaml`. Use `MageLens/MagentoTemplateCoverage` and `MageLens/PCOV`. Existing manifests using the previous repository names resolve to these canonical names.
 
 When requested with `run-ci`, draft PRs run the existing complete CI matrix. In disposable Actions workspaces, template previews are packed from the exact source commit without package scripts and installed through the existing local-tarball path. PCOV previews compile that exact extension source in the normal PHP image and use report tools from the same tree. Windows prepares previews inside its own WSL2 checkout. The nine cases retain their existing acceptance checks, source preservation, report comparisons and required gate. Source commits, trees and archive digests are recorded and must match across all cases; missing or stale preview evidence fails the gate.
 
