@@ -47,7 +47,7 @@ if (!$seed && $mode !== 'cold') {
 
 $handles = ['coverageprobe_packagemutation_native', 'coverageprobe_component_index'];
 $files = [];
-foreach ($handles as $handle) {
+foreach ([...$handles, 'coverageprobe_packagemutation_unused'] as $handle) {
     $path = 'app/code/MageLens/Compatibility/view/frontend/layout/' . $handle . '.xml';
     $source = file_get_contents(BP . '/' . $path);
     $files[] = ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source),
