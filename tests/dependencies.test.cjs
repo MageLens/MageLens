@@ -27,7 +27,7 @@ const browserPackages = {
     ISTANBUL_LIB_REPORT_VERSION: 'istanbul-lib-report',
     ISTANBUL_REPORTS_VERSION: 'istanbul-reports',
     PLAYWRIGHT_VERSION: '@playwright/test',
-    CYPRESS_VERSION: 'cypress', TEMPLATE_COVERAGE_VERSION: '@vitaliiboiko/magento-template-coverage',
+    CYPRESS_VERSION: 'cypress', TEMPLATE_COVERAGE_VERSION: '@magelens/magento-template-coverage',
     CYPRESS_CODE_COVERAGE_VERSION: '@cypress/code-coverage', ISTANBUL_LIB_COVERAGE_VERSION: 'istanbul-lib-coverage',
     ISTANBUL_LIB_INSTRUMENT_VERSION: 'istanbul-lib-instrument', NYC_VERSION: 'nyc', HTML_VALIDATE_VERSION: 'html-validate'
 };

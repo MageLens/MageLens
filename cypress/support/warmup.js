@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 // Keep instrumented templates functional without recording coverage or a PHP token.
-const {observeExecution} = require('@vitaliiboiko/magento-template-coverage/browser');
+const {observeExecution} = require('@magelens/magento-template-coverage/browser');
 const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
 let win;
 let lastActivity = Date.now();

@@ -37,7 +37,7 @@ function prepare({plain = false, runtimeOnly = false, updateReadme = false, them
     const signature = digest(JSON.stringify({roots: project.roots, config: readCoverageConfig(),
         sources: selectedBrowser.map(file => [file, inputs[file]]),
         tools: [__filename, require.resolve('./project.cjs'), require.resolve('./javascript-scope.cjs'), 'package-lock.json',
-            ...files(path.dirname(require.resolve('@vitaliiboiko/magento-template-coverage'))).filter(file => file.endsWith('.js'))
+            ...files(path.dirname(require.resolve('@magelens/magento-template-coverage'))).filter(file => file.endsWith('.js'))
         ].map(file => digest(fs.readFileSync(file)))}));
     const reuse = !plain && cache?.signature === signature
         && fs.existsSync('.runtime/template-manifest.json') && fs.existsSync('.runtime/js-baseline.json') && fs.existsSync('.runtime/javascript-scope.json')
@@ -66,7 +66,7 @@ function prepare({plain = false, runtimeOnly = false, updateReadme = false, them
     if (!project.roots.length) throw new Error('No source found in src/app/code or selected themes');
     if (!reuse) {
         const {createInstrumenter} = require('istanbul-lib-instrument');
-        const {createManifest, instrument} = require('@vitaliiboiko/magento-template-coverage');
+        const {createManifest, instrument} = require('@magelens/magento-template-coverage');
         const manifest = createManifest({source: 'src', roots: project.roots});
         manifest.templates = manifest.templates.filter(entry => !isCoverageExcluded(entry.path));
         instrument({source: 'src', manifest, mappings: Object.fromEntries(project.roots.map(root => [root, `.runtime/${root}`]))});

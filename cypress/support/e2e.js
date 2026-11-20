@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 require('./javascript-coverage');
-const {registerTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/cypress');
+const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/cypress');
 registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 
 const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');

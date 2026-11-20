@@ -97,7 +97,7 @@ Both runners supply the missing Prototype dependency in Braintree 4.8's Admin se
 
 ## PHP coverage
 
-[PCOV](https://github.com/VitaliyBoyko/pcov) collects PHP execution from Magento HTTP requests and CLI test commands in the current run.
+[PCOV](https://github.com/MageLens/pcov) collects PHP execution from Magento HTTP requests and CLI test commands in the current run.
 
 The PHP report measures executable lines. Unvisited files are included through static analysis with zero hits. `phpunit/php-code-coverage` generates HTML and Clover reports.
 
@@ -135,7 +135,7 @@ Files that are never loaded retain zero-hit counters from instrumentation. The r
 
 ## HTML template coverage
 
-[@vitaliiboiko/magento-template-coverage](https://github.com/VitaliyBoyko/magento-template-coverage) measures HTML/PHTML template bindings, engine expressions and inline scripts. This includes Knockout, jQuery templates, Magento literals and regular Hyvä/Alpine directives. The report contains directory totals and per-file source views.
+[@magelens/magento-template-coverage](https://github.com/MageLens/magento-template-coverage) measures HTML/PHTML template bindings, engine expressions and inline scripts. This includes Knockout, jQuery templates, Magento literals and regular Hyvä/Alpine directives. The report contains directory totals and per-file source views.
 
 Hyvä template coverage supports both CSP and regular Alpine 3 evaluators, including listeners with PHP-generated event names. Modifier-only listeners such as `@submit.prevent` preserve their behavior without adding an expression to the coverage total. Directives generated entirely by PHP remain outside template execution coverage. Keep the theme’s nonce or hash registration enabled for inline scripts. Inline JavaScript bodies are measured in the same template source report, including scripts executed after a template fragment is inserted. Cached and unused templates retain zero execution hits.
 
