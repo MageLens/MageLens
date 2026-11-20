@@ -13,10 +13,14 @@ theme=${MAGELENS_E2E_THEME:-luma}
 runner=${MAGELENS_E2E_RUNNER:-cypress}
 platform=${MAGELENS_E2E_PLATFORM:-magento}
 mode=${MAGELENS_E2E_MODE:-developer}
+focus=${MAGELENS_E2E_FOCUS:-}
 [[ "$theme" == luma || "$theme" == hyva ]] || fail 'MAGELENS_E2E_THEME must be luma or hyva (Hyva CSP).'
 [[ "$runner" == cypress || "$runner" == playwright ]] || fail 'MAGELENS_E2E_RUNNER must be cypress or playwright.'
 [[ "$platform" == magento || "$platform" == mageos ]] || fail 'MAGELENS_E2E_PLATFORM must be magento or mageos.'
 [[ "$mode" == developer || "$mode" == production ]] || fail 'MAGELENS_E2E_MODE must be developer or production.'
+if [[ -n "$focus" && ( "$focus" != default-coverage || "$platform/$theme/$runner/$mode" != magento/luma/cypress/developer ) ]]; then
+    fail 'The default-coverage focus requires the default Magento Open Source, Luma and Cypress installation.'
+fi
 install_options=()
 [[ "${MAGELENS_BUILD_FROM_SOURCE:-0}" != 1 ]] || install_options+=(--build-from-source)
 [[ "$platform" != mageos ]] || install_options+=(--mageos)
@@ -103,19 +107,21 @@ stage_xml_proofs "$scratch/docker/php/e2e"
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
 cp -a src/app/code/Application "$scratch/src/app/code/"
-# XML acceptance declarations/routes exist only in this disposable demo checkout.
-cp -a src/app/code/Application/Blog/Test/Configuration/fixtures/. "$scratch/src/app/code/Application/Blog/"
-touch "$scratch/src/app/code/Application/Blog/Test/Configuration/.enabled"
-cp src/app/code/Application/Blog/Test/Configuration/Cypress/settings.cy.js "$scratch/src/app/code/Application/Blog/Test/Cypress/"
-cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js "$scratch/src/app/code/Application/Blog/Test/Playwright/"
-
 cp -a src/app/design/frontend/Application "$scratch/src/app/design/frontend/"
-mkdir -p "$scratch/src/app/code/MageLens"
-cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
-cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
-cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
-mkdir -p "$scratch/src/app/design/frontend/MageLens"
-cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
+if [[ -z "$focus" ]]; then
+    # XML acceptance declarations/routes exist only in this disposable demo checkout.
+    cp -a src/app/code/Application/Blog/Test/Configuration/fixtures/. "$scratch/src/app/code/Application/Blog/"
+    touch "$scratch/src/app/code/Application/Blog/Test/Configuration/.enabled"
+    cp src/app/code/Application/Blog/Test/Configuration/Cypress/settings.cy.js "$scratch/src/app/code/Application/Blog/Test/Cypress/"
+    cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js "$scratch/src/app/code/Application/Blog/Test/Playwright/"
+
+    mkdir -p "$scratch/src/app/code/MageLens"
+    cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
+    cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
+    cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
+    mkdir -p "$scratch/src/app/design/frontend/MageLens"
+    cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
+fi
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
     mkdir -p "$scratch/.runtime"
     cp "$MAGELENS_TEMPLATE_COVERAGE_PACKAGE" "$scratch/.runtime/template-coverage.tgz"
@@ -153,8 +159,7 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
-    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
-    if [[ "$platform/$theme/$runner/$mode" == magento/luma/cypress/developer ]]; then
+    if [[ "$focus" == default-coverage ]]; then
         ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
         mkdir -p coverage
         for action in index view; do
@@ -166,11 +171,13 @@ fi
             if [[ "$pass" == warm ]]; then cp coverage/xml/coverage.json .runtime/default-xml.json; fi
             printf 'obsolete report content\n' > coverage/obsolete-publication.txt
             MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage | tee .runtime/coverage-run.log
+            cp .runtime/coverage-run.log "$artifacts/coverage-$pass.log"
             ./bin/runner node tests/verify-report-publication.cjs
-            ./bin/runner node tests/verify-scenarios.cjs
+            ./bin/runner node tests/verify-scenarios.cjs coverage bundled-blog
         done
         ./bin/runner node tests/verify-layout-warm-repeat.cjs .runtime/default-xml.json
-        if [[ "${MAGELENS_E2E_FOCUS:-}" == default-coverage ]]; then exit; fi
+        printf 'PASS: default installation coverage and warm repeat.\n'
+        exit
     fi
     bash tests/runner-container.sh "$(./bin/application-compose images -q runner)"
     # Verify HTTPS routing through nginx, including the read-only viewer redirect.
@@ -182,6 +189,7 @@ fi
         [[ "$html" == *noVNC* ]]
     '
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     if [[ "$platform" == mageos ]]; then
         ./bin/application-compose exec -T phpfpm test ! -f /var/www/.composer/auth.json
