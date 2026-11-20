@@ -114,13 +114,17 @@ const attributionUnits = {
     // Template ids are unique across statements, functions and branches of one template.
     templates: unit => ['statements', 'functions', 'branches'].map(metric => ['template', metric, unit]),
     // Area-specific declarations are records of their own; config reads and field renders count on the lines they span.
-    xml: (unit, declarations) => unit.includes('@') ? Object.values(xmlMetrics).map(metric => ['xml', metric, unit]) : declarationLines(declarations.get(unit))
+    xml: (unit, declarations) => unit.includes('@') ? Object.values(xmlMetrics).map(metric => ['xml', metric, unit]) : declarationLines(declarations, unit)
 };
 // The XML report also counts area-specific declarations on the lines they span, except in plugin files.
-const attributionLines = {xml: (unit, declarations) => unit.includes('@') ? declarationLines(declarations.get(unit.split('@')[0])) : []};
-const declarationLines = ({start, end}) => Array.from({length: end - start + 1}, (_, offset) => ['xml', 'lines', String(start + offset)]);
+const attributionLines = {xml: (unit, declarations) => unit.includes('@') ? declarationLines(declarations, unit.split('@')[0]) : []};
+function declarationLines(declarations, id) {
+    assert.ok(declarations.has(id), `Attributed XML declaration missing from the XML report: ${id}`);
+    const {start, end} = declarations.get(id);
+    return Array.from({length: end - start + 1}, (_, offset) => ['xml', 'lines', String(start + offset)]);
+}
 
-function writeAttribution(database, directory) {
+function writeAttribution(database, directory, run, xml) {
     const file = name => path.join(directory, 'attribution', name);
     const addManifest = database.prepare('INSERT INTO manifest SELECT ?, schema_version, run_id, generated_at, commit_sha, ?, ?, ?, ? FROM manifest LIMIT 1');
     const scope = 'Which test attempt reached which record (tables attempts, attempt_hits and unattributed_hits).';
@@ -129,18 +133,19 @@ function writeAttribution(database, directory) {
         return;
     }
     const index = JSON.parse(fs.readFileSync(file('index.json'), 'utf8'));
+    assert.equal(index.run, run.id, 'Test attribution belongs to another run');
     const addAttempt = database.prepare('INSERT INTO attempts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     index.attempts.forEach((attempt, position) => addAttempt.run(position, attempt.id, attempt.runner, attempt.spec, JSON.stringify(attempt.test),
         attempt.test.join(' › '), attempt.retry, attempt.project ?? null, attempt.startedAt, attempt.finishedAt, attempt.outcome));
     const findRecord = database.prepare('SELECT r.record_id, h.record_id IS NOT NULL AS covered FROM records r LEFT JOIN hits h USING (record_id) WHERE file_path = ? AND source_type = ? AND metric = ? AND record_key = ?');
     const addAttemptHit = database.prepare('INSERT INTO attempt_hits VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET hit_count = hit_count + excluded.hit_count');
     const addUnattributed = database.prepare('INSERT INTO unattributed_hits VALUES (?, ?) ON CONFLICT DO UPDATE SET hit_count = hit_count + excluded.hit_count');
-    const xmlLines = new Map();
-    for (const xmlFile of JSON.parse(fs.readFileSync(path.join(directory, 'xml/coverage.json'), 'utf8')).files) {
-        for (const item of xmlFile.declarations) xmlLines.set(item.id, {start: item.startLine, end: item.endLine});
-    }
+    // Lines as the XML report paints them (bin/report-xml.cjs).
+    const xmlLines = new Map(xml.files.flatMap(xmlFile => xmlFile.declarations.map(item => [item.id, {start: item.startLine, end: item.highlightEndLine ?? item.endLine}])));
     for (const collector of ['php', 'javascript', 'templates', 'xml']) {
-        for (const [sourceFile, units] of Object.entries(JSON.parse(fs.readFileSync(file(`${collector}.json`), 'utf8')).files)) {
+        const attribution = JSON.parse(fs.readFileSync(file(`${collector}.json`), 'utf8'));
+        assert.equal(attribution.run, run.id, `The ${collector} attribution belongs to another run`);
+        for (const [sourceFile, units] of Object.entries(attribution.files)) {
             for (const [unit, owners] of Object.entries(units)) {
                 const find = keys => keys.map(([source, metric, key]) => findRecord.get(sourceFile, source, metric, key)).filter(Boolean);
                 let matches = find(attributionUnits[collector](unit, xmlLines));
@@ -207,7 +212,7 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
         manifest('xml', 'collected', 'Runtime config value consumption and Admin field rendering (metric lines); observer registrations and DI declarations per configuration area (metrics observers, plugins, preferences, virtual-types, arguments, lifecycles).', [
             {id: 'measurement-warnings', count: xml.warnings.length, description: 'Unsupported or ambiguous XML is unmeasured and has no records; see warnings in xml/coverage.json.'}
         ], ['xml/coverage.json']);
-        writeAttribution(database, directory);
+        writeAttribution(database, directory, run, xml);
         database.exec('COMMIT');
 
         // The database must agree with the reports people read for the same run.

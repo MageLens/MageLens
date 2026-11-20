@@ -261,6 +261,48 @@ test('the coverage database loads test attribution with each collector\'s hit se
         ({metric, record_key: metric === 'lines' ? '5' : `declaration-${['observers', 'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles'].indexOf(metric)}@frontend`})));
 });
 
+test('XML attribution owns every line a declaration spans and adds counts of declarations sharing a line', t => {
+    const fixture = reports(t, 1);
+    const xmlFile = `${fixture.root}/coverage/xml/coverage.json`;
+    const xml = JSON.parse(fs.readFileSync(xmlFile, 'utf8'));
+    // config.xml line 5 is shared by two config declarations; events.xml has an observer spanning lines 9-10.
+    xml.files[0].declarations.push({id: 'config-2', family: 'config', startLine: 5, endLine: 5});
+    xml.files.push({path: 'app/code/Acme/Shop/etc/events.xml', family: 'events', lines: {9: {hits: 3, state: 'covered'}, 10: {hits: 3, state: 'covered'}},
+        declarations: [{id: 'observer-1', family: 'events', startLine: 9, endLine: 10, areas: {frontend: {status: 'eligible', hits: 3}}}]});
+    Object.assign(xml, {covered: 3, total: 3, observers: {covered: 2, total: 2}});
+    fs.writeFileSync(xmlFile, JSON.stringify(xml));
+    fs.mkdirSync(`${fixture.root}/coverage/attribution`);
+    attribution(fixture, files => {
+        files.xml['app/code/Acme/Shop/etc/config.xml'] = {'config-1': {0: 1}, 'config-2': {0: 2, unattributed: 1}};
+        files.xml['app/code/Acme/Shop/etc/events.xml'] = {'observer-1@frontend': {1: 2, unattributed: 1}};
+        return files;
+    });
+    const result = fixture.run(['--include-machine-report']);
+    assert.equal(result.status, 0, result.stderr);
+    const query = database(t, fixture);
+    assert.deepEqual(query(`SELECT r.file_path, r.metric, r.record_key, a.attempt_id, a.hit_count FROM attempt_hits a JOIN records r USING (record_id)
+        WHERE r.file_path NOT LIKE '%di.xml' AND r.source_type = 'xml' ORDER BY 1, 2, 3`), [
+        {file_path: 'app/code/Acme/Shop/etc/config.xml', metric: 'lines', record_key: '5', attempt_id: 0, hit_count: 3},
+        {file_path: 'app/code/Acme/Shop/etc/events.xml', metric: 'lines', record_key: '10', attempt_id: 1, hit_count: 2},
+        {file_path: 'app/code/Acme/Shop/etc/events.xml', metric: 'lines', record_key: '9', attempt_id: 1, hit_count: 2},
+        {file_path: 'app/code/Acme/Shop/etc/events.xml', metric: 'observers', record_key: 'observer-1@frontend', attempt_id: 1, hit_count: 2}]);
+    assert.deepEqual(query(`SELECT r.file_path, r.record_key, u.hit_count FROM unattributed_hits u JOIN records r USING (record_id)
+        WHERE r.source_type = 'xml' ORDER BY 1, 2`).map(row => [row.file_path.split('/').at(-1), row.record_key, row.hit_count]),
+        [['config.xml', '5', 1], ['events.xml', '10', 1], ['events.xml', '9', 1], ['events.xml', 'observer-1@frontend', 1]]);
+});
+
+test('attribution of another run cannot be loaded', t => {
+    const fixture = reports(t, 1);
+    fs.mkdirSync(`${fixture.root}/coverage/attribution`);
+    attribution(fixture);
+    const index = JSON.parse(fs.readFileSync(`${fixture.root}/coverage/attribution/index.json`, 'utf8'));
+    fixture.json('coverage/attribution/index.json', {...index, run: 'previous'});
+    assert.match(fixture.run(['--include-machine-report']).stderr, /Test attribution belongs to another run/);
+    fixture.json('coverage/attribution/index.json', index);
+    fixture.json('coverage/attribution/xml.json', {schemaVersion: 1, run: 'previous', files: {}});
+    assert.match(fixture.run(['--include-machine-report']).stderr, /xml attribution belongs to another run/);
+});
+
 test('attribution that does not match the database records blocks publication', t => {
     for (const [change, error] of [
         [files => { files.php['app/code/Acme/Shop/Model/Cart.php'][13] = {0: 1}; return files; }, /php unit without a covered record/],
