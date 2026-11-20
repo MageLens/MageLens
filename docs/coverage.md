@@ -196,13 +196,14 @@ After the reports, `bin/report-attribution.cjs` combines the attempt records int
 | `php.json` | Covered PHP lines from `coverage/php/line-coverage.json` |
 | `javascript.json` | Statement (`s:<id>`), function (`f:<id>`) and branch path (`b:<id>:<path>`) counters of the JavaScript report, by file below `src/` |
 | `templates.json` | Template statement, function and branch counters of the template report |
+| `xml.json` | XML declarations by runtime observations, from the requests and commands of the XML report |
 
 The collector files map each file and unit to its owners: the position of an attempt in `index.json`, or `unattributed`, with hit counts. PHP lines count 1 per owner, because PCOV records whether a line ran, not how often. A unit can belong to several attempts and to unattributed work at the same time. Uncovered units are not listed.
 
 - Every attributed unit is checked against the aggregate report of its collector, and every covered unit has an owner. A difference stops the run before reports are published.
 - PHP lines are expanded per attempt exactly as in the PHP report. A request that starts after its attempt finished keeps the attempt and is counted as `lateRecords`.
 - Template records that carry their attempt ID are attributed to it; Cypress passes the ID through the template package's record `metadata` where the installed package supports it. Other records are matched by spec, title path, retry and project. Two attempts with the same identity, such as Cypress tests with duplicate titles, cannot be told apart that way: their records are counted as `ambiguousRecords` and stay unattributed.
-- XML configuration records carry the attempt ID but are not attributed yet; `index.json` lists XML as `not_collected`.
+- XML observations belong to the attempt of the PHP request or command that recorded them.
 - Attribution shows which code ran during a test attempt. It does not show that the test checked the result of that code.
 
 

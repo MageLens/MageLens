@@ -75,8 +75,7 @@ assert.ok(statements > 0, 'No JavaScript statements were attributed');
 const attribution = read('attribution/index.json');
 assert.equal(attribution.run, run);
 assert.deepEqual(attribution.attempts.map(attempt => attempt.id).sort(), [...attempts.keys()].sort());
-assert.equal(attribution.collectors.xml.status, 'not_collected');
-for (const name of ['php', 'javascript', 'templates']) assert.ok(attribution.collectors[name].attributedUnits > 0, `No attributed ${name} units`);
+for (const name of ['php', 'javascript', 'templates', 'xml']) assert.ok(attribution.collectors[name].attributedUnits > 0, `No attributed ${name} units`);
 const owners = new Set(Object.values(read('attribution/php.json').files).flatMap(byLine => Object.values(byLine).flatMap(Object.keys)));
 attribution.attempts.forEach((attempt, index) => assert.ok(owners.has(String(index)), `No attributed PHP line for ${attempt.test.join(' › ')}`));
 assert.equal(attribution.collectors.templates.ambiguousRecords, 0);
@@ -95,4 +94,4 @@ for (const [file, fragment, title] of [
     const owners = Object.keys(php[`${fixture}/${file}`]?.[line] || {}).map(owner => attribution.attempts[owner]?.test.at(-1) ?? owner);
     assert.deepEqual(owners, [title], `${file}:${line} must belong to "${title}" only`);
 }
-console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed; per-attempt JavaScript counters match ${statements} covered statements; attribution: ${['php', 'javascript', 'templates'].map(name => `${attribution.collectors[name].attributedUnits} ${name}`).join(', ')} units.`);
+console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed; per-attempt JavaScript counters match ${statements} covered statements; attribution: ${['php', 'javascript', 'templates', 'xml'].map(name => `${attribution.collectors[name].attributedUnits} ${name}`).join(', ')} units.`);

@@ -133,6 +133,33 @@ function templates(attempts, index) {
     return {result, stats};
 }
 
+function xml(index, run) {
+    const report = read('coverage/xml/coverage.json');
+    // The XML report names each request after its PHP record: the record file for HTTP, the command ID for CLI.
+    const owners = new Map();
+    for (const file of files(`coverage/raw/php/${run}`, '.json')) {
+        const record = read(`coverage/raw/php/${run}/${file}`);
+        const attempt = record.attempt ?? null;
+        assert.ok(attempt === null || index.has(attempt), `XML record of an unknown attempt: ${file}`);
+        owners.set(record.commandId ?? path.basename(file, '.json'), attempt === null ? unattributed : index.get(attempt));
+    }
+    const declarations = new Map(report.files.flatMap(file => file.declarations.map(item => [item.id, {file: file.path, item}])));
+    const result = units();
+    const stats = {unit: 'XML declaration, counted per runtime observation', records: report.requests.length, unattributedRecords: 0};
+    for (const request of report.requests) {
+        assert.ok(owners.has(request.id), `XML request without a PHP record: ${request.id}`);
+        const owner = owners.get(request.id);
+        if (owner === unattributed) stats.unattributedRecords++;
+        for (const event of request.events) result.add(declarations.get(event.id).file, event.id, owner, event.hits);
+    }
+    const json = result.toJSON();
+    for (const {file, item} of declarations.values()) {
+        const total = Object.values(json[file]?.[item.id] || {}).reduce((sum, hits) => sum + hits, 0);
+        assert.equal(total, item.hits || 0, `XML attribution differs from the report: ${file} ${item.id}`);
+    }
+    return {result, stats};
+}
+
 function writeAttribution() {
     const run = read('coverage/run.json').id;
     const attempts = files('coverage/raw/attempts', '.json').map(file => read(`coverage/raw/attempts/${file}`))
@@ -140,7 +167,7 @@ function writeAttribution() {
     if (!attempts.length) return null;
     for (const attempt of attempts) assert.equal(attempt.run, run, 'Test attempt from another run');
     const index = new Map(attempts.map((attempt, position) => [attempt.id, position]));
-    const collectors = {php: php(index, attempts), javascript: javascript(index), templates: templates(attempts, index)};
+    const collectors = {php: php(index, attempts), javascript: javascript(index), templates: templates(attempts, index), xml: xml(index, run)};
     fs.rmSync('coverage/attribution', {recursive: true, force: true});
     fs.mkdirSync('coverage/attribution');
     const summary = {schemaVersion: 1, run, attempts, collectors: {}};
@@ -148,7 +175,6 @@ function writeAttribution() {
         fs.writeFileSync(`coverage/attribution/${name}.json`, JSON.stringify({schemaVersion: 1, run, files: result}));
         summary.collectors[name] = {status: 'collected', ...stats, attributedUnits: result.count(byAnAttempt), unattributedOnlyUnits: result.count(unattributedOnly)};
     }
-    summary.collectors.xml = {status: 'not_collected', reason: 'XML configuration records carry the attempt ID but are not attributed yet.'};
     fs.writeFileSync('coverage/attribution/index.json', JSON.stringify(summary, null, 2) + '\n');
     return summary;
 }
@@ -156,8 +182,8 @@ function writeAttribution() {
 if (require.main === module) {
     const summary = writeAttribution();
     if (summary) {
-        const {php, javascript, templates} = summary.collectors;
-        console.log(`Attributed ${summary.attempts.length} test attempts: ${php.attributedUnits} PHP lines, ${javascript.attributedUnits} JavaScript counters, ${templates.attributedUnits} template counters.`);
+        const {php, javascript, templates, xml} = summary.collectors;
+        console.log(`Attributed ${summary.attempts.length} test attempts: ${php.attributedUnits} PHP lines, ${javascript.attributedUnits} JavaScript counters, ${templates.attributedUnits} template counters, ${xml.attributedUnits} XML declarations.`);
     }
 }
 

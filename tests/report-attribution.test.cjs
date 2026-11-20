@@ -42,6 +42,11 @@ function workspace(t, change = () => {}) {
             statements: [{id: 'binding:1', hits: 3}, {id: 'binding:2', hits: 0}], functions: [], branches: []}]},
         // Playwright stores the absolute spec and starts the title path with the spec file.
         'coverage/raw/templates/1.mtc': {spec: path.resolve(spec), test: [spec, 'cart', 'adds'], retry: 1, project: '', hits: {t1: {'binding:1': 2}}},
+        // XML evidence of a browser request, a request without an attempt and a CLI command, named as in the XML report.
+        'coverage/raw/php/current/r1.json': {attempt: first}, 'coverage/raw/php/current/r2.json': {attempt: null},
+        'coverage/raw/php/current/0123.json': {attempt: retry, commandId: 'c1'},
+        'coverage/xml/coverage.json': {files: [{path: 'app/code/Acme/Shop/etc/config.xml', declarations: [{id: 'd1', hits: 4}, {id: 'd2', hits: 0}, {id: 'd3'}]}],
+            requests: [{id: 'r1', events: [{id: 'd1', hits: 2}]}, {id: 'r2', events: [{id: 'd1', hits: 1}]}, {id: 'c1', events: [{id: 'd1', hits: 1}]}]},
         'coverage/raw/templates/2.mtc': {spec: path.resolve(spec), test: [spec, 'cart', 'unknown'], retry: 0, project: '', hits: {t1: {'binding:1': 1}}}
     };
     change(data);
@@ -60,7 +65,8 @@ test('attribution lists the attempts that executed each unit and keeps shared wo
         'b:0:0': {1: 2}, 'f:0': {1: 1}, 's:0': {1: 3, unattributed: 1}}});
     assert.deepEqual(fixture.read('templates').files, {'app/code/Acme/Shop/view/frontend/templates/cart.phtml': {'binding:1': {1: 2, unattributed: 1}}});
     assert.deepEqual([summary.collectors.templates.records, summary.collectors.templates.unattributedRecords], [2, 1]);
-    assert.equal(summary.collectors.xml.status, 'not_collected');
+    assert.deepEqual(fixture.read('xml').files, {'app/code/Acme/Shop/etc/config.xml': {d1: {0: 2, 1: 1, unattributed: 1}}});
+    assert.deepEqual([summary.collectors.xml.records, summary.collectors.xml.unattributedRecords, summary.collectors.xml.attributedUnits], [3, 1, 1]);
     assert.deepEqual(JSON.parse(fs.readFileSync('coverage/attribution/index.json', 'utf8')), JSON.parse(JSON.stringify(summary)));
 });
 
@@ -77,7 +83,10 @@ test('attribution that disagrees with the aggregate reports blocks the run', t =
         [data => { data['coverage/php/attribution.json'].tests[3] = 'f'.repeat(32); data['coverage/php/attribution.json'].lines['app/code/Acme/Shop/Model/Cart.php'][13] = [3]; }, /unknown attempt/],
         [data => { Object.values(data[`coverage/raw/javascript-attempts/${retry}.json`])[0].s[0] = 5; }, /exceeds the aggregate/],
         [data => { data['coverage/raw/templates/2.mtc'].hits.t1['binding:1'] = 2; }, /Template attribution differs/],
-        [data => { data[`coverage/raw/attempts/${other}.json`].run = 'previous'; }, /another run/]
+        [data => { data[`coverage/raw/attempts/${other}.json`].run = 'previous'; }, /another run/],
+        [data => { data['coverage/xml/coverage.json'].requests[0].events[0].hits = 3; }, /XML attribution differs/],
+        [data => { data['coverage/raw/php/current/r2.json'].attempt = 'e'.repeat(32); }, /XML record of an unknown attempt/],
+        [data => { data['coverage/xml/coverage.json'].requests[1].id = 'r9'; }, /XML request without a PHP record/]
     ];
     for (const [change, error] of cases) {
         workspace(t, change);
