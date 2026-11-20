@@ -144,7 +144,7 @@ try {
     $destination = array_search('--evidence-file', $argv, true);
     if ($destination !== false) {
         $json = json_encode(['files' => $files, 'layoutSources' => LayoutManifest::targets($files), 'layoutHook' => $evidence[0],
-            'layoutSourceTrace' => $evidence[1], 'layoutLimitations' => $limits, 'events' => $events], JSON_THROW_ON_ERROR);
+            'layoutSourceTrace' => $evidence[1], 'layoutLimitations' => $limits, 'layoutScopedLimitations' => $evidence[3], 'events' => $events], JSON_THROW_ON_ERROR);
         if (file_put_contents($argv[$destination + 1], $json) !== strlen($json)) throw new RuntimeException('Cannot save bounded native cache evidence');
     }
     echo 'Verified exact original-source layout cache boundary: ', $mode, ".\n";

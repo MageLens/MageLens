@@ -374,7 +374,7 @@ function merge(manifest, records, sources) {
         diTotals[family] = {total: 0, covered: 0, hook};
     }
     const layoutHook = records.some(record => record.layoutHook === true);
-    const layoutSourceTrace = records.some(record => record.layoutSourceTrace === true);
+    const limitedHandles = new Map();
     const layoutTotals = {total: 0, covered: 0, hook: layoutHook, limitations: []};
     const layoutMeasurement = [...declarations.values()].some(({item}) => item.family === 'layout' && item.supported);
     assert.ok(!layoutMeasurement || layoutHook, 'No functioning XML layout hook observed');
@@ -400,6 +400,18 @@ function merge(manifest, records, sources) {
         for (const limitation of record.layoutLimitations || []) {
             assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
             requestLimitations.add(limitation);
+        }
+        for (const {reason, area, handles} of record.layoutScopedLimitations || []) {
+            assert.ok(['layout-package-cache', 'layout-merge-cache', 'scheduled-layout-cache', 'missing-layout-origins'].includes(reason)
+                && record.layoutLimitations?.includes(reason), 'Unexpected scoped layout limitation');
+            assert.ok(['frontend', 'adminhtml'].includes(area));
+            assert.ok(Array.isArray(handles) && handles.length && new Set(handles).size === handles.length, 'Invalid limited layout handles');
+            for (const handle of handles) {
+                assert.ok(typeof handle === 'string' && handle, 'Invalid layout handle');
+                const key = JSON.stringify([area, handle]);
+                if (!limitedHandles.has(key)) limitedHandles.set(key, new Set());
+                limitedHandles.get(key).add(reason);
+            }
         }
         for (const [id, areas] of Object.entries(record.ambiguousPlugins || {})) {
             assert.equal(record.pluginHook, true);
@@ -529,18 +541,25 @@ function merge(manifest, records, sources) {
         for (const item of file.declarations) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
             if (item.family === 'layout') {
-                const decisions = [...new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean))].sort();
-                if (item.supported && decisions.length) item.reason = decisions.join('. ');
-                if (item.supported && !item.hits && decisions.length) {
-                    item.state = 'unmeasured';
-                } else if (item.state === 'uncovered' && !layoutSourceTrace
-                    && [...requestLimitations].some(key => key !== 'full-page-cache-origin')) {
-                    item.state = 'unmeasured';
-                    item.reason = 'No measured layout request supplied a source trace';
+                const decisions = new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean));
+                if (item.state === 'uncovered' && ['page', 'generic'].includes(item.layout.fileType)) {
+                    // Theme fallback and replacement cannot be inferred from a cache key.
+                    if (/^(?:app\/code\/|vendor\/[^/]+\/[^/]+\/.*view\/)/.test(file.path)) {
+                        const areas = item.declaredScope.type === 'base' ? ['frontend', 'adminhtml'] : [item.declaredScope.type];
+                        for (const area of areas) {
+                            for (const key of limitedHandles.get(JSON.stringify([area, item.layout.handle])) || []) {
+                                decisions.add(layoutLimitations[key]);
+                            }
+                        }
+                    }
+                }
+                if (item.supported && decisions.size) {
+                    item.reason = [...decisions].sort().map(reason => reason.replace(/\.$/, '')).join('. ');
+                    if (!item.hits) item.state = 'unmeasured';
                 }
                 if (item.state !== 'unmeasured') layoutTotals.total++;
                 if (item.state === 'covered') layoutTotals.covered++;
-                if (item.state === 'unmeasured' || decisions.length) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
+                if (item.state === 'unmeasured' || decisions.size) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
             } else if (item.areas) {
                 const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals, ...diTotals}[item.family];
                 for (const [area, outcome] of Object.entries(item.areas)) {

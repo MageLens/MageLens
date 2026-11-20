@@ -649,6 +649,45 @@ test('native file selection remains a zero-hit observation and cannot substitute
     assert.throws(() => merge(manifest, [request], sources), /No functioning XML layout hook/);
 });
 
+test('cached storefront handles and independent Admin evidence have order-independent outcomes', () => {
+    const {manifest, record, sources} = fixture();
+    manifest.layoutSources = {};
+    for (const [id, area, handle] of [
+        ['cached', 'frontend', 'shared'], ['admin', 'adminhtml', 'shared'],
+        ['unvisited', 'frontend', 'unvisited'],
+    ]) {
+        const path = `app/code/Acme/Blog/view/${area}/layout/${handle}.xml`;
+        const source = Buffer.from('<layout><container name="fixture"/></layout>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        const item = {id, family: 'layout', path: '/layout/container', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: area, code: ''}, layout: {kind: 'container', element: 'fixture', ordinal: 1,
+                handle, fileType: 'generic', instruction: 'container'}};
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [item]});
+        manifest.layoutSources[path] = {hash: sourceHash, targets: {1: {ids: {container: id}}}};
+    }
+    const reasons = ['layout-merge-cache', 'missing-layout-origins'];
+    const storefront = {...record, request: 'storefront', layoutHook: true, layoutSourceTrace: false, events: [],
+        layoutLimitations: reasons, layoutScopedLimitations: reasons.map(reason => ({reason, area: 'frontend', handles: ['shared']}))};
+    const admin = {...record, request: 'admin', layoutHook: true, layoutSourceTrace: true,
+        events: [{id: 'admin', type: 'layout-container-created', hits: 1, area: 'adminhtml', theme: 'adminhtml/Magento/backend'}]};
+    for (const requests of [[storefront, admin], [admin, storefront], [storefront]]) {
+        const report = merge(manifest, requests, sources);
+        const [cached, adminItem, unvisited] = report.files.slice(1).map(file => file.declarations[0]);
+        assert.equal(cached.state, 'unmeasured');
+        assert.match(cached.reason, /confirmed trace.*merged handle update/);
+        assert.equal(cached.hits, 0);
+        assert.equal(adminItem.state, requests.length === 2 ? 'covered' : 'uncovered');
+        assert.equal(adminItem.reason, undefined);
+        assert.equal(unvisited.state, 'uncovered');
+        assert.equal(unvisited.reason, undefined);
+        assert.equal(report.layout.total, 2);
+        assert.equal(report.layout.covered, requests.length === 2 ? 1 : 0);
+        assert.equal(report.requests.find(request => request.id === 'admin')?.layoutLimitations, undefined);
+        assert.equal(report.requests.find(request => request.id === 'storefront').layoutLimitations.length, 2);
+    }
+});
+
 test('cache and opaque file-list observations preserve a functioning zero-hit layout inventory', () => {
     const {manifest, record, sources} = fixture();
     const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
@@ -685,7 +724,7 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     const fileList = merge(manifest, [{...warm, layoutLimitations: ['layout-file-replacement-storage-unconfirmed']}], sources);
     assert.equal(fileList.layout.covered, 0);
     assert.equal(fileList.files[1].declarations.length, 1);
-    assert.equal(fileList.files[1].declarations[0].state, 'unmeasured');
+    assert.equal(fileList.files[1].declarations[0].state, 'uncovered');
     assert.deepEqual(fileList.files[1].declarations[0].evidence, []);
     assert.match(fileList.layout.limitations[0], /file-list backing storage/);
     assert.deepEqual(fileList.requests[0].layoutLimitations, fileList.layout.limitations);
@@ -698,7 +737,7 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     const opaque = merge(manifest, [{...warm, layoutLimitations: ['layout-opaque-action-data']}], sources);
     assert.equal(opaque.layout.covered, 0);
     assert.equal(opaque.files[1].declarations.length, 1);
-    assert.equal(opaque.files[1].declarations[0].state, 'unmeasured');
+    assert.equal(opaque.files[1].declarations[0].state, 'uncovered');
     assert.deepEqual(opaque.files[1].declarations[0].evidence, []);
     assert.match(opaque.layout.limitations[0], /could execute application serialization/);
     assert.deepEqual(opaque.requests[0].layoutLimitations, opaque.layout.limitations);
@@ -967,7 +1006,8 @@ test('native action scope decisions remain independent of action calls and skipp
         const healthy = {...record, layoutHook: true};
         assert.equal(merge(manifest, [healthy], sources).files[1].declarations[0].state, 'uncovered');
         const unselected = merge(manifest, [{...healthy, layoutSourceTrace: false,
-            layoutLimitations: ['missing-layout-origins'], events: []}], sources);
+            layoutLimitations: ['missing-layout-origins'],
+            layoutScopedLimitations: [{reason: 'missing-layout-origins', area: 'frontend', handles: ['guards']}], events: []}], sources);
         assert.equal(unselected.files[1].declarations[0].state, 'unmeasured');
         assert.equal(unselected.files[1].declarations[0].hits, 0);
         assert.deepEqual(unselected.files[1].declarations[0].evidence, []);

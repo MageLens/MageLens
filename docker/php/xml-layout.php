@@ -103,6 +103,9 @@ final class LayoutCoverage
     private int $fetchingOverflow = 0;
     private bool $healthy = false;
     private bool $sourceTrace = false;
+    private array $scopedLimitations = [];
+    private array $measuredHandles = [];
+    private \WeakMap $cachedPackages;
     private array $limitations = [];
     private array $errors = [];
     private array $validating = [];
@@ -112,6 +115,7 @@ final class LayoutCoverage
 
     private function __construct(private readonly array $sources)
     {
+        foreach (array_keys($sources) as $path) $this->measuredHandles[basename($path, '.xml')] = true;
         $this->merges = new \WeakMap();
         $this->themeContexts = new \WeakMap();
         $this->page = new LayoutPageCoverage($this->origin(...));
@@ -142,6 +146,7 @@ final class LayoutCoverage
         $this->actionReads = new \WeakMap();
         $this->argumentReads = new \WeakMap();
         $this->argumentBindings = new \WeakMap();
+        $this->cachedPackages = new \WeakMap();
         $this->moves = new \WeakMap();
         $this->removals = new \WeakMap();
         $this->blocks = new \WeakMap();
@@ -190,7 +195,7 @@ final class LayoutCoverage
         if ($this->errors) throw new \RuntimeException(implode('; ', array_keys($this->errors)));
         [$structureHealthy, $structureLimits] = $this->structureCoverage->finish();
         [$registryHealthy, $registryLimits] = $this->registry->finish();
-        return [$this->healthy || $registryHealthy || $structureHealthy || $guardHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits, ...$blockLimits, ...$metadataLimits]))];
+        return [$this->healthy || $registryHealthy || $structureHealthy || $guardHealthy, $this->sourceTrace, array_values(array_unique([...array_keys($this->limitations), ...$registryLimits, ...$structureLimits, ...$blockLimits, ...$metadataLimits])), array_values($this->scopedLimitations)];
     }
 
     private function hooks(): array
@@ -595,7 +600,9 @@ final class LayoutCoverage
     {
         if ($class !== Merge::class) return;
         $handle = array_pop($this->handles);
-        if ($error || !$handle || $handle['id'] === null) return;
+        if ($error || !$handle) return;
+        if (isset($this->cachedPackages[$merge])) $this->limitHandles('layout-package-cache', $merge, [$handle['name']]);
+        if ($handle['id'] === null) return;
         $effect = $handle['effect'] ?? ($handle['found'] ? 'traversed' : 'missing');
         $context = $this->themeContext($merge);
         $this->event($handle['id'], 'layout-include-' . $effect, $context);
@@ -675,7 +682,40 @@ final class LayoutCoverage
             'getFileLayoutUpdatesXml' => 'layout-package-cache',
             default => null,
         };
-        if ($reason !== null) $this->limitations[$reason] = true;
+        if ($reason === 'layout-package-cache') {
+            $this->cachedPackages[$merge] = true;
+            $this->limitations[$reason] = true;
+        } elseif ($reason === 'layout-merge-cache') {
+            $this->limitHandles($reason, $merge);
+        }
+    }
+
+    private function limitHandles(string $reason, $merge, ?array $selected = null): void
+    {
+        $this->limitations[$reason] = true;
+        if (!$merge instanceof Merge) return;
+        $theme = self::mergeTheme($merge);
+        $context = is_object($theme) ? ($this->themeContexts[$theme] ?? []) : [];
+        $area = $context['area'] ?? null;
+        if (!in_array($area, ['frontend', 'adminhtml'], true)) return;
+        if ($selected === null) {
+            $property = LayoutXmlOwnership::unhookedProperty($merge, 'handles');
+            if ($property?->getDeclaringClass()->getName() !== Merge::class
+                || (new \ReflectionMethod($merge, 'getHandles'))->getDeclaringClass()->getName() !== Merge::class) return;
+            $storage = $property->getRawValue($merge);
+            if (!is_array($storage)) return;
+            $selected = array_keys($storage);
+        }
+        foreach ($selected as $handle) {
+            // Request logs retain only handles present in the original source inventory.
+            if (!is_string($handle) || !isset($this->measuredHandles[$handle])) continue;
+            $key = $reason . "\0" . $area;
+            $this->scopedLimitations[$key]['reason'] = $reason;
+            $this->scopedLimitations[$key]['area'] = $area;
+            if (!in_array($handle, $this->scopedLimitations[$key]['handles'] ?? [], true)) {
+                $this->scopedLimitations[$key]['handles'][] = $handle;
+            }
+        }
     }
 
     private function cachedStructure($structure, array $params, $result, ?\Throwable $error, string $class): void
@@ -684,9 +724,9 @@ final class LayoutCoverage
         unset($this->structures[$structure], $this->moves[$structure], $this->removals[$structure]);
         $this->structureCoverage->reset($structure);
         $this->positions->reset($structure);
-        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
+        $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_PROVIDE_OBJECT | DEBUG_BACKTRACE_IGNORE_ARGS, 3)[2] ?? [];
         if (($caller['class'] ?? null) === Layout::class && ($caller['function'] ?? null) === 'generateElements') {
-            $this->limitations['scheduled-layout-cache'] = true;
+            $this->limitHandles('scheduled-layout-cache', self::layoutUpdate($caller['object']));
         }
     }
 
@@ -2047,7 +2087,7 @@ final class LayoutCoverage
                 return;
             }
         }
-        $this->limitations['missing-layout-origins'] = true;
+        $this->limitHandles('missing-layout-origins', self::layoutUpdate($layout));
     }
 
     private function snapshotContext($layout, array $params, string $class): void
