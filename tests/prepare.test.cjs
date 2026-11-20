@@ -137,7 +137,7 @@ test('preparing after an older release removes instrumented Setup copies and bas
     const {createInstrumenter} = require('istanbul-lib-instrument');
     const instrumenter = createInstrumenter();
     fs.writeFileSync(`.runtime/${base}/Setup/example.js`, instrumenter.instrumentSync(original, path.resolve(source)));
-    const {createManifest, instrument} = require('@vitaliiboiko/magento-template-coverage');
+    const {createManifest, instrument} = require('@magelens/magento-template-coverage');
     const oldManifest = createManifest({source: 'src', roots: ['app/code']});
     instrument({source: 'src', manifest: oldManifest, mappings: {'app/code': '.runtime/app/code'}});
     fs.writeFileSync('.runtime/template-manifest.json', JSON.stringify(oldManifest));

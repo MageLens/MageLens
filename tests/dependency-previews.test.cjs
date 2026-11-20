@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {configuration, verifyEvidence} = require('./ci/dependency-previews.cjs');
-const source = {repository: 'VitaliyBoyko/magento-template-coverage', pullRequest: 4, sha: 'a'.repeat(40), version: '1.5.5'};
+const source = {repository: 'MageLens/magento-template-coverage', pullRequest: 4, sha: 'a'.repeat(40), version: '1.5.5'};
 test('preview configuration rejects floating refs, arbitrary repositories and untracked source PRs', t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-preview-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));

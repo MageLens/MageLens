@@ -4,7 +4,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const {createManifest, merge} = require('@vitaliiboiko/magento-template-coverage');
+const {createManifest, merge} = require('@magelens/magento-template-coverage');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {snapshot} = require('./ci/report-equivalence.cjs');
 const loc = {start: {line: 1, column: 0}, end: {line: 1, column: 8}};

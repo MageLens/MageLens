@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -8,7 +8,7 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {syncDependencies} = require('../../bin/sync-dependencies.cjs');
-const repositories = {templateCoverage: 'VitaliyBoyko/magento-template-coverage', pcov: 'VitaliyBoyko/pcov'};
+const repositories = {templateCoverage: 'MageLens/magento-template-coverage', pcov: 'MageLens/pcov'};
 const configurationFile = '.github/dependency-previews.json';
 const evidenceFile = '.runtime/dependency-preview-evidence.json';
 function configuration(root = process.cwd()) {
@@ -66,7 +66,7 @@ function prepare(root = process.cwd()) {
         let archive;
         if (key === 'templateCoverage') {
             const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
-            assert.equal(manifest.name, '@vitaliiboiko/magento-template-coverage');
+            assert.equal(manifest.name, '@magelens/magento-template-coverage');
             assert.equal(manifest.version, entry.version);
             const [packed] = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json'], source));
             assert.equal(path.basename(packed.filename), packed.filename);

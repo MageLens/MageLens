@@ -164,7 +164,7 @@ This is the single place to choose the main dependency versions:
 | Mark Shust Docker Magento PHP recipe and service images | `MARKSHUST_DOCKER_MAGENTO_VERSION` |
 | Official PHP base image | `PHP_IMAGE` |
 | Composer in the PHP image | `COMPOSER_VERSION` |
-| [PCOV fork](https://github.com/VitaliyBoyko/pcov) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
+| [PCOV fork](https://github.com/MageLens/pcov) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |
 | n98-magerun2 for CLI tests | `MAGERUN_VERSION` / `MAGERUN_SHA256` |
@@ -173,13 +173,13 @@ This is the single place to choose the main dependency versions:
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |
 | Istanbul report CLI (nyc) | `NYC_VERSION` |
 | [HTML validation](docs/coverage.md#html-validation) engine (html-validate) | `HTML_VALIDATE_VERSION` |
-| [Magento template coverage](https://github.com/VitaliyBoyko/magento-template-coverage) | `TEMPLATE_COVERAGE_VERSION` |
+| [Magento template coverage](https://github.com/MageLens/magento-template-coverage) | `TEMPLATE_COVERAGE_VERSION` |
 | Cypress runner's Node and browser system dependencies | `RUNNER_IMAGE` |
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
 
 Use exact release versions and keep values quoted. `RUNNER_IMAGE` is an image with a version tag. `PHP_IMAGE` uses `php:X.Y.Z-fpm-bookworm`, optionally pinned with `@sha256:<digest>`. Choose a PHP version supported by both the selected Mark Shust release and your platform. The defaults pair Magento Open Source 2.4.9 and Mage-OS 4.0.0, which share the same Magento foundation.
 
-The PHP image uses PIE 1.5.5 to install PCOV 2.1.2, including the [PIE installer security fix](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67). After updating MageLens, rerun the installer with your existing platform, theme and runner flags to rebuild the PHP image.
+The PHP image uses PIE 1.5.5 to install PCOV 2.1.3, including the [PIE installer security fix](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67). After updating MageLens, rerun the installer with your existing platform, theme and runner flags to rebuild the PHP image.
 
 The installer updates `package.json` and `package-lock.json` for your selected runner and coverage tools. You do not need to install Cypress or Playwright separately. Hyvä upgrades also require a matching package list in `docker/php/hyva-packages.json` for the selected `HYVA_VERSION`.
 
@@ -296,8 +296,8 @@ No. MageLens installs a local developer environment with coverage instrumentatio
 
 Thank you to [Mark Shust](https://github.com/markshust) for creating and maintaining [Docker Magento](https://github.com/markshust/docker-magento), the Docker foundation that MageLens builds on.
 
-- [Magento template coverage](https://github.com/VitaliyBoyko/magento-template-coverage): the standalone Cypress/Playwright template collector used here.
-- [PCOV fork](https://github.com/VitaliyBoyko/pcov): PHP line coverage with native export and manifest reuse, selected in `dependencies.yaml`.
+- [Magento template coverage](https://github.com/MageLens/magento-template-coverage): the standalone Cypress/Playwright template collector used here.
+- [PCOV fork](https://github.com/MageLens/pcov): PHP line coverage with native export and manifest reuse, selected in `dependencies.yaml`.
 - [Magento 2 and Adobe Commerce PhpStorm plugin](https://github.com/VitaliyBoyko/magento2-phpstorm-plugin): code navigation, inspections, generators and Magento MCP tools for working with the source.
 
 For reproducible setup or reporting problems, [open an issue](https://github.com/MageLens/MageLens/issues) with the MageLens version, platform, theme, runner and relevant diagnostics. See [releases](https://github.com/MageLens/MageLens/releases) and the [changelog](CHANGELOG.md) for version changes.

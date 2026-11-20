@@ -18,7 +18,7 @@ function syncDependencies(root, env = process.env, execute = execFileSync) {
     const requested = {
         ...(runner === 'cypress' ? {cypress: env.CYPRESS_VERSION, '@cypress/code-coverage': env.CYPRESS_CODE_COVERAGE_VERSION}
             : {'@playwright/test': env.PLAYWRIGHT_VERSION}),
-        '@vitaliiboiko/magento-template-coverage': env.TEMPLATE_COVERAGE_VERSION,
+        '@magelens/magento-template-coverage': env.TEMPLATE_COVERAGE_VERSION,
         'istanbul-lib-coverage': env.ISTANBUL_LIB_COVERAGE_VERSION,
         'istanbul-lib-instrument': env.ISTANBUL_LIB_INSTRUMENT_VERSION,
         'istanbul-lib-report': env.ISTANBUL_LIB_REPORT_VERSION,
@@ -33,7 +33,7 @@ function syncDependencies(root, env = process.env, execute = execFileSync) {
     }
     const localPackage = env.TEMPLATE_COVERAGE_PACKAGE;
     if (localPackage && localPackage !== '.runtime/template-coverage.tgz') throw new Error('Unexpected local template package path');
-    const library = '@vitaliiboiko/magento-template-coverage';
+    const library = '@magelens/magento-template-coverage';
     const integrity = localPackage ? 'sha512-' + createHash('sha512').update(fs.readFileSync(path.join(root, localPackage))).digest('base64') : null;
     if (localPackage) requested[library] = `file:${localPackage}`;
     const manifestPath = path.join(root, 'package.json');
