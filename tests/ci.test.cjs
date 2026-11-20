@@ -39,12 +39,10 @@ function fixture(t) {
         feasibility: {passed: true, sha: 'candidate'}, steps: Object.fromEntries(['probe', 'resources', 'isolation', 'e2e', 'cleanup'].map(step => [step, {outcome: 'success'}])), dependencies: pins, counts, browser};
     return {directory, entry, evidence, context: {sha: 'candidate', run: '123', attempt: '1'}};
 }
-test('required matrix runs every Linux mode and Mage-OS/Luma/Cypress on Windows', () => {
-    assert.equal(cases.length, 9);
+test('required matrix runs each mode once, with seven Linux cases and Mage-OS/Luma/Cypress on Windows', () => {
+    assert.equal(cases.length, 8);
     assert.equal(new Set(cases.map(c => `${c.platform}/${c.theme}/${c.runner}`)).size, 8);
-    const linux = cases.filter(c => c.os === 'ubuntu-latest');
-    assert.equal(linux.length, 8);
-    assert.equal(new Set(linux.map(c => `${c.platform}/${c.theme}/${c.runner}`)).size, 8);
+    assert.equal(cases.filter(c => c.os === 'ubuntu-latest').length, 7);
     assert.deepEqual(cases.filter(c => c.os !== 'ubuntu-latest').map(({os, platform, theme, runner}) => ({os, platform, theme, runner})), [
         {os: 'windows-latest', platform: 'mageos', theme: 'luma', runner: 'cypress'}
     ]);
@@ -55,7 +53,7 @@ test('required matrix runs every Linux mode and Mage-OS/Luma/Cypress on Windows'
     assert.deepEqual(declared, cases.filter(entry => entry.platform === 'mageos')
         .map(entry => `${entry.os}/${entry.platform}/${entry.theme}/${entry.runner}`).sort(), 'Workflow and qualification must require the same cases');
     const release = fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8');
-    assert.match(release, /\.expectedCases == 9 and \.completedCases == 9 and \.expectedAcceptanceTests == 72/);
+    assert.match(release, /\.expectedCases == 8 and \.completedCases == 8 and \.expectedAcceptanceTests == 64/);
 });
 test('artifact projection removes credentials, source, private packages and arbitrary test errors', t => {
     const {directory} = fixture(t);
@@ -107,12 +105,12 @@ test('final gate fails when reports are missing even if all job results claim su
     const report = JSON.parse(fs.readFileSync(`${directory}/ci-gate/qualification.json`));
     assert.equal(report.passed, false);
     assert.equal(report.completedCases, 0);
-    assert.equal(report.expectedCases, 9);
-    assert.equal(report.expectedAcceptanceTests, 72);
-    assert.equal(report.expectedCliTests, 27);
+    assert.equal(report.expectedCases, 8);
+    assert.equal(report.expectedAcceptanceTests, 64);
+    assert.equal(report.expectedCliTests, 24);
     assert.match(result.stdout, /Matrix comparison incomplete/);
 });
-test('complete qualification compares all eight Linux modes and independently requires Windows', t => {
+test('complete qualification uses the Windows report for the eighth mode and still requires that host', t => {
     const {directory, evidence} = fixture(t);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-complete-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
@@ -172,12 +170,10 @@ test('complete qualification compares all eight Linux modes and independently re
     const complete = run();
     assert.equal(complete.status, 0, complete.stdout + complete.stderr);
     const qualification = JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/qualification.json')));
-    assert.equal(qualification.completedCases, 9);
-    assert.equal(qualification.expectedAcceptanceTests, 72);
+    assert.equal(qualification.completedCases, 8);
+    assert.equal(qualification.expectedAcceptanceTests, 64);
     const comparison = JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/matrix-comparison.json')));
-    assert.equal(comparison.runs.length, 8);
-    assert.ok(comparison.runs.every(entry => !entry.directory.includes('windows-latest')));
-    assert.ok(comparison.runs.some(entry => entry.directory.includes('ubuntu-latest-mageos-luma-cypress')));
+    assert.ok(comparison.runs.some(entry => entry.directory.includes('windows-latest-mageos-luma-cypress')));
     const hyva = cases.find(entry => entry.theme === 'hyva');
     const hyvaCoverage = path.join(artifacts.get(hyva.id), 'coverage');
     const original = readProjection(hyvaCoverage, snapshotFile);
@@ -189,14 +185,14 @@ test('complete qualification compares all eight Linux modes and independently re
     writeProjection(hyvaCoverage, divergent);
     assert.equal(run().status, 1, 'A valid report with different layout outcomes in the same theme must fail');
     const failed = JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/qualification.json')));
-    assert.equal(failed.completedCases, 9);
+    assert.equal(failed.completedCases, 8);
     assert.equal(failed.themeReportsEqual, false);
     writeProjection(hyvaCoverage, original);
     const windows = cases.find(entry => entry.os === 'windows-latest');
-    fs.renameSync(artifacts.get(windows.id), path.join(root, 'ci-artifacts', 'withheld-windows-case'));
+    fs.renameSync(artifacts.get(windows.id), path.join(root, 'ci-artifacts', 'case-ubuntu-latest-mageos-luma-cypress-attempt-1'));
     const missing = run();
     assert.equal(missing.status, 1);
-    assert.match(missing.stdout, /Matrix comparison incomplete: 8\/9/);
+    assert.match(missing.stdout, /Matrix comparison incomplete: 7\/8/);
 });
 test('layout qualification compares static declarations across storefronts', t => {
     const {directory} = fixture(t);

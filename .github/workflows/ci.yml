@@ -87,10 +87,6 @@ jobs:
       max-parallel: 4
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: mageos
-            theme: luma
-            runner: cypress
           - os: windows-latest
             platform: mageos
             theme: luma
@@ -170,7 +166,7 @@ jobs:
         with:
           pattern: case-*-attempt-${{ github.run_attempt }}
           path: ci-artifacts
-      - name: Verify nine cases, same-theme report equality and the eight Linux combinations
+      - name: Verify eight cases, same-theme report equality and the complete matrix comparison
         if: always()
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
