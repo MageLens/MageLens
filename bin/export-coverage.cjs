@@ -5,76 +5,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {randomUUID} = require('node:crypto');
-const {escapeHtml} = require('./report-index.cjs');
+const {writeReport} = require('./share-report-render.cjs');
 const {shareReportData} = require('./share-report-data.cjs');
 const {createSourceReader} = require('./share-report-source.cjs');
-
-function percentage(covered, total) {
-    return total ? (covered * 100 / total).toFixed(2) + '%' : 'N/A';
-}
-
-function writeReport(fd, sections, readSource) {
-    const write = value => fs.writeFileSync(fd, value);
-    const sourceLinks = new Map();
-    write(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<title>MageLens coverage report</title>
-<style>
-:root{color-scheme:light dark;font:1rem/1.55 system-ui,sans-serif}body{max-width:74rem;margin:2rem auto;padding:0 1rem}
-h1{margin-bottom:0}h2,summary{font-size:1.25rem}table{width:100%;border-collapse:collapse;margin:1rem 0}
-th,td{padding:.45rem;text-align:right;border-bottom:1px solid #8886;font-variant-numeric:tabular-nums}
-th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}th[scope=row]{font-weight:normal}
-details{margin:1.25rem 0}summary{cursor:pointer}pre{overflow:auto;padding:.75rem;border:1px solid #8886}
-</style></head><body><main><h1>MageLens coverage report</h1>
-<p>${readSource ? 'Includes original source for the measured files.' : 'Includes coverage metrics and project-relative file paths.'} N/A means there are no measurable items.</p>
-<table><caption>Coverage overview</caption><thead><tr><th>Metric</th><th>Covered</th><th>Total</th><th>Coverage</th></tr></thead><tbody>`);
-    for (const section of sections) {
-        write(`<tr><th scope="row">${escapeHtml(section.label)}</th><td>${section.covered}</td><td>${section.total}</td><td>${percentage(section.covered, section.total)}</td></tr>`);
-    }
-    write('</tbody></table>');
-    for (const section of sections) {
-        write(`<details><summary>${escapeHtml(section.label)} (${section.files.length} files)</summary>`);
-        if (section.warningCount) write(`<p>Measurement warnings: ${section.warningCount}. Coverage counts only measurable items.</p>`);
-        write('<table><thead><tr><th>File</th><th>Covered</th><th>Total</th><th>Coverage</th></tr></thead><tbody>');
-        for (const file of section.files) {
-            let label = escapeHtml(file.path);
-            if (readSource) {
-                if (!sourceLinks.has(file.path)) sourceLinks.set(file.path, 'source-' + sourceLinks.size);
-                label = `<a href="#${sourceLinks.get(file.path)}">${label}</a>`;
-            }
-            write(`<tr><th scope="row">${label}</th><td>${file.covered}</td><td>${file.total}</td><td>${percentage(file.covered, file.total)}</td></tr>`);
-        }
-        write('</tbody></table>');
-        for (const file of section.files.filter(entry => entry.declarations)) {
-            write(`<details><summary>XML effects in ${escapeHtml(file.path)}</summary><p>Source fingerprint ${escapeHtml(file.fingerprint)}</p><ul>`);
-            for (const declaration of file.declarations) {
-                const {family, identity, start, end, state, outcome, reason, effects} = declaration;
-                const span = start === end ? `line ${start}` : `lines ${start}–${end}`;
-                write(`<li>${escapeHtml(family)} · ${escapeHtml(identity)} · ${escapeHtml(span)} · ${escapeHtml(state)}
-                    ${outcome ? ' · ' + escapeHtml(outcome) : ''}${reason ? ' · ' + escapeHtml(reason) : ''}<ul>`);
-                for (const effect of effects) {
-                    write(`<li>${escapeHtml(effect.type)} · ${escapeHtml(effect.state)}`);
-                    for (const observation of effect.outcomes) {
-                        write(` · ${escapeHtml(observation.area)} · ${escapeHtml(observation.outcome)}
-                            ${observation.reason ? ' · ' + escapeHtml(observation.reason) : ''}`);
-                    }
-                    write('</li>');
-                }
-                write('</ul></li>');
-            }
-            write('</ul></details>');
-        }
-        write('</details>');
-    }
-    if (readSource) {
-        write('<h2>Original source</h2>');
-        for (const [file, id] of sourceLinks) {
-            write(`<details id="${id}"><summary>${escapeHtml(file)}</summary><pre><code>${escapeHtml(readSource(file))}</code></pre></details>`);
-        }
-    }
-    write('</main></body></html>\n');
-}
 
 function exportReport(includeSource) {
     const name = includeSource ? 'share-with-source.html' : 'share.html';
@@ -99,7 +32,7 @@ function exportReport(includeSource) {
         const fd = fs.openSync(temporary, 'wx', 0o600);
         try {
             try {
-                writeReport(fd, sections, readSource);
+                writeReport(value => fs.writeFileSync(fd, value), sections, readSource);
             } finally {
                 fs.closeSync(fd);
             }

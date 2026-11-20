@@ -1,0 +1,32 @@
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<details>
+  <summary>XML effects in {{path}}</summary>
+  <p>Source fingerprint {{fingerprint}}</p>
+  <ul>
+    {{#declarations}}
+    <li>
+      {{family}} · {{identity}} · {{span}} · {{state}}{{#outcome}} · {{outcome}}{{/outcome}}{{#reason}} · {{reason}}{{/reason}}
+      {{#effects.length}}
+      <ul>
+        {{#effects}}
+        <li>
+          {{type}} · {{state}}
+          {{#outcomes.length}}
+          <ul>
+            {{#outcomes}}
+            <li>{{area}} · {{outcome}}{{#reason}} · {{reason}}{{/reason}}</li>
+            {{/outcomes}}
+          </ul>
+          {{/outcomes.length}}
+        </li>
+        {{/effects}}
+      </ul>
+      {{/effects.length}}
+    </li>
+    {{/declarations}}
+  </ul>
+</details>

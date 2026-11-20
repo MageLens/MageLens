@@ -6,8 +6,15 @@
  */
 declare(strict_types=1);
 require __DIR__ . '/../docker/php/xml-manifest.php';
-use MageLens\XmlCoverage\{LayoutManifest, Xml};
+require_once __DIR__ . '/../docker/php/xml-routing-runtime.php';
+use MageLens\XmlCoverage\{LayoutManifest, RoutingRuntime, Xml};
 function checkXml(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
+foreach ([[123, '123'], ['123', '123'], ['0123', '0123'], ['catalogue', 'catalogue']] as [$input, $expected]) {
+    checkXml(RoutingRuntime::identifier($input) === $expected, 'Native route IDs preserve string identity');
+}
+foreach ([false, null, 123.0, [], new stdClass()] as $input) {
+    checkXml(RoutingRuntime::identifier($input) === null, 'Unrelated types cannot identify a native route');
+}
 $unsafe = new class {
     public function __serialize(): array { throw new LogicException('Application serialization executed'); }
 };

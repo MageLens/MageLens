@@ -79,4 +79,58 @@ async function installPlaywrightAdminDependencies(context) {
     };
 }
 
-module.exports = {disablePageTransitions, adminScriptDependencies, installCypressAdminDependencies, installPlaywrightAdminDependencies};
+// Runs in the application window in both runners. Keep this function
+// self-contained so Playwright can install it before the document scripts.
+function observeAdminMenuNavigation(win, currentScope, publish) {
+    if (!win.navigation || !/^https?:$/.test(win.location.protocol)) return;
+    const key = 'magelens.admin-menu-navigation';
+    let storage, pending;
+    try {
+        storage = win.sessionStorage;
+        const saved = storage.getItem(key);
+        storage.removeItem(key);
+        pending = JSON.parse(saved || 'null');
+    } catch { return; }
+    const response = (direct = false) => {
+        const timing = win.performance.getEntriesByType('navigation')[0];
+        if (timing?.responseStatus !== 200 || timing.transferSize === 0 || (direct && timing.redirectCount !== 0)) return;
+        const id = timing.serverTiming.find(entry => entry.name === 'magelens-response')?.description;
+        if (/^[a-f0-9]{32}$/.test(id)) return id;
+    };
+    const finish = () => {
+        const {activation} = win.navigation;
+        if (pending.scope !== currentScope() || pending.from !== activation?.from?.id
+            || pending.url !== win.location.href || activation.navigationType !== pending.navigationType) return;
+        const destination = response(true);
+        if (destination && destination !== pending.response) {
+            publish({type: 'menu-followed', selector: pending.selector, response: pending.response, destination});
+        }
+    };
+    if (pending && pending.scope === currentScope()) win.addEventListener('DOMContentLoaded', finish, {once: true});
+
+    // Chromium identifies the actual initiating anchor. A prevented click,
+    // location assignment, fetch, or submenu toggle cannot supply this link
+    // for a new document. Clear the attempt on competing navigations.
+    win.navigation.addEventListener('navigate', event => {
+        storage.removeItem(key);
+        const link = event.sourceElement;
+        if (!link?.matches('li[data-ui-id] > a[href]') || !link.closest('#nav')
+            || event.destination.sameDocument || !['push', 'replace'].includes(event.navigationType) || event.downloadRequest !== null
+            || (link.target && link.target.toLowerCase() !== '_self')) return;
+        const selector = link.parentElement.dataset.uiId;
+        const url = new URL(link.href);
+        const source = response();
+        const from = win.navigation.currentEntry?.id;
+        const scope = currentScope();
+        if (!scope || !source || !from || !/^[a-z0-9-]{1,240}$/.test(selector) || url.origin !== win.location.origin
+            || url.href !== event.destination.url || url.hash || event.signal.aborted) return;
+        const attempt = JSON.stringify({scope, from, selector, url: url.href, response: source, navigationType: event.navigationType});
+        try { storage.setItem(key, attempt); }
+        catch { return; }
+        event.signal.addEventListener('abort', () => {
+            if (storage.getItem(key) === attempt) storage.removeItem(key);
+        }, {once: true});
+    });
+}
+
+module.exports = {observeAdminMenuNavigation, disablePageTransitions, adminScriptDependencies, installCypressAdminDependencies, installPlaywrightAdminDependencies};

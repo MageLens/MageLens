@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 import {fixtures, headers, login, navigateAdminMenu} from './support';
-const {journeys, apiJourneys} = require('../Configuration/journeys.cjs');
+const {journeys, apiJourneys, routingJourneys} = require('../Configuration/journeys.cjs');
 
 describe('Blog configuration', () => {
     it('uses inherited journal settings and shows the selected Admin fields', () => {
@@ -22,6 +22,12 @@ describe('Blog configuration', () => {
             cy.request({url, headers: headers()}).then(response => {
                 expect(response.status).to.equal(200);
                 expect(response.body).to.deep.equal(body);
+            });
+        }
+        for (const [method, url, status, expected] of routingJourneys) {
+            cy.request({method, url, headers: headers(), failOnStatusCode: false}).then(response => {
+                expect(response.status).to.equal(status);
+                if (expected) expect(response.body).to.deep.equal(expected);
             });
         }
         login();

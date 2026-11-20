@@ -11,6 +11,7 @@ final class Recorder
 {
     private static ?array $manifest = null;
     private static array $events = [];
+    private static array $menuLinks = [];
     private static array $errors = [];
     private static array $fieldSources = [];
     private static array $accessors = [];
@@ -54,6 +55,14 @@ final class Recorder
         $key = implode("\0", [$id, $type, $area, $outcome, $reason]);
         self::$events[$key] ??= compact('id', 'type', 'area', 'outcome', 'reason') + ['hits' => 0];
         self::$events[$key]['hits']++;
+    }
+
+    public static function menuLink(string $id, string $selector, string $targetHash): void
+    {
+        $link = compact('selector', 'targetHash');
+        // A declaration with differing emissions in one response cannot be
+        // assigned a unique native destination by the browser observer.
+        self::$menuLinks[$id] = array_key_exists($id, self::$menuLinks) && self::$menuLinks[$id] !== $link ? null : $link;
     }
 
     public static function observerTargets(): array
@@ -280,6 +289,7 @@ final class Recorder
         }
         $data = ['run' => self::$manifest['run'], 'manifest' => self::$manifest['id'], 'readHook' => self::$readHook,
             'renderHook' => self::$renderHook, 'observerHook' => $checkDi && Observers::finish(), 'events' => array_values(self::$events)];
+        if (self::$menuLinks) $data['menuLinks'] = array_filter(self::$menuLinks);
         [$data['pluginHook'], $data['ambiguousPlugins']] = $checkDi && class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
         $data['preferenceHook'] = $checkDi && class_exists(Preferences::class, false) && Preferences::finish();
         $data['diUsageHooks'] = $checkDi && class_exists(DiUsage::class, false) ? DiUsage::finish() : [];

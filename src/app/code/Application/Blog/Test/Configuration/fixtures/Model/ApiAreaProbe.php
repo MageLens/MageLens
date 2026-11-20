@@ -23,4 +23,13 @@ class ApiAreaProbe
         $manager->get(ManagerInterface::class)->dispatch('magelens_api_probe', ['counter' => $counter]);
         return [$selected::class, $arguments->label, (string) $counter->getData('hits'), $manager->get(JournalPluginSubject::class)->warm()];
     }
+
+    /**
+     * @param string $scenario
+     * @return string[]
+     */
+    public function variant(string $scenario): array
+    {
+        return [...$this->read(), 'variable-route'];
+    }
 }
