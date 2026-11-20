@@ -43,6 +43,10 @@ assert.ok([...denied].some(request => {
 
 const posts = originalDeclaration(fixture + 'adminhtml/menu.xml', 'MageLens_AdminNavigation::inherited_posts', 9, 10, 'add');
 const categories = originalDeclaration(fixture + 'adminhtml/menu.xml', 'MageLens_AdminNavigation::inherited_categories', 11, 12, 'add');
+const interrupted = originalDeclaration(fixture + 'adminhtml/menu.xml', 'MageLens_AdminNavigation::interrupted', 16, 17, 'add');
+const products = originalDeclaration(fixture + 'adminhtml/menu.xml', 'MageLens_AdminNavigation::products', 18, 19, 'add');
+const parent = originalDeclaration(blog + 'adminhtml/menu.xml', 'Application_Blog::manage', 10, 10, 'add');
+assert.deepEqual(parent.effects, ['menu-emitted']);
 assert.equal(posts.effectStates['menu-emitted'], 'covered');
 assert.equal(posts.effectStates['menu-followed'], 'covered');
 assert.equal(categories.effectStates['menu-emitted'], 'covered');
@@ -54,6 +58,18 @@ assert.ok(posts.evidence.some(event => event.request === follow[0].request && ev
 assert.ok(categories.evidence.some(event => event.request === follow[0].request && event.type === 'menu-emitted' && event.outcome === 'observed'));
 assert.ok(inherit.evidence.some(event => event.request === follow[0].request && event.type === 'acl-check' && event.outcome === 'allowed'));
 assert.notEqual(follow[0].destination, follow[0].request);
+assert.equal(interrupted.effectStates['menu-emitted'], 'covered');
+assert.equal(interrupted.effectStates['menu-followed'], 'uncovered');
+assert.equal(products.binding.action, 'catalog/product/');
+assert.equal(products.effectStates['menu-followed'], 'covered');
+const productFollow = products.evidence.filter(event => event.type === 'menu-followed');
+assert.equal(productFollow.length, 1);
+assert.equal(productFollow[0].origin, 'browser');
+assert.ok(products.evidence.some(event => event.request === productFollow[0].request && event.type === 'menu-emitted' && event.outcome === 'observed'));
+assert.notEqual(productFollow[0].destination, productFollow[0].request);
+const catalog = JSON.parse(fs.readFileSync(raw + '/' + productFollow[0].destination + '.json'));
+assert.equal(catalog.status, 200);
+assert.ok(/\/catalog\/product\/index\/key\/[^/]+\//.test(catalog.uri), 'Destination used the native default action and an Admin secret key');
 
 const removed = originalDeclaration(fixture + 'adminhtml/menu.xml', 'MageLens_AdminNavigation::removed', 13, 14, 'add');
 assert.equal(removed.outcome, 'displaced');

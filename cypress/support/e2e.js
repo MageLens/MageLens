@@ -6,10 +6,18 @@ require('./javascript-coverage');
 const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/cypress');
 registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 
-const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
+const {disablePageTransitions, installCypressAdminDependencies, observeAdminMenuNavigation} = require('../../bin/browser-navigation.cjs');
 Cypress.on('window:before:load', disablePageTransitions);
 
+let menuTest;
+Cypress.on('window:before:load', win => {
+    if (win.location.origin === new URL(Cypress.config('baseUrl')).origin) {
+        observeAdminMenuNavigation(win, () => menuTest?.scope, evidence => menuTest.observations.push(evidence));
+    }
+});
+
 beforeEach(() => {
+    menuTest = {scope: crypto.randomUUID(), observations: []};
     installCypressAdminDependencies();
     const run = Cypress.expose('coverageRun');
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
@@ -17,6 +25,12 @@ beforeEach(() => {
     cy.setCookie('application_coverage', run, {
         domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
     });
+});
+
+afterEach(() => {
+    const observations = menuTest?.observations;
+    menuTest = null;
+    if (observations?.length) cy.task('recordAdminMenuNavigation', observations, {log: false});
 });
 
 // Captures the HTML source of the current page for the validation report; see docs/coverage.md#html-validation.

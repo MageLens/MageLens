@@ -4,10 +4,11 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {randomBytes} = require('node:crypto');
+const {createHash, randomBytes} = require('node:crypto');
 
 const token = /^[a-f0-9]{32}$/;
 const identity = /^[A-Za-z0-9_:#.\/-]{1,240}$/;
+const menuSelector = /^[a-z0-9-]{1,240}$/;
 const anchors = new Map([
     ['ui-constructed', 'ui-delivered'],
     ['ui-rendered', 'ui-delivered'],
@@ -17,13 +18,14 @@ const anchors = new Map([
 ]);
 
 function validate(entry, withRun) {
-    const expected = ['identity', 'response', 'type'];
-    if (entry?.type === 'menu-followed') expected.push('destination');
-    if (entry?.candidate === true && entry.type.startsWith('ui-')) expected.push('candidate');
+    const menu = entry?.type === 'menu-followed';
+    const expected = menu ? ['selector', 'response', 'type', 'destination'] : ['identity', 'response', 'type'];
+    if (entry?.candidate === true && entry.type?.startsWith('ui-')) expected.push('candidate');
     if (withRun) expected.push('run');
     assert.ok(entry && Object.keys(entry).sort().join() === expected.sort().join(), 'Invalid browser XML observation shape');
-    assert.ok(anchors.has(entry.type) && token.test(entry.response) && identity.test(entry.identity), 'Invalid browser XML observation');
-    if (entry.type === 'menu-followed') {
+    assert.ok(anchors.has(entry.type) && token.test(entry.response)
+        && (menu ? menuSelector.test(entry.selector) : identity.test(entry.identity)), 'Invalid browser XML observation');
+    if (menu) {
         assert.ok(token.test(entry.destination) && entry.destination !== entry.response, 'Invalid menu destination response');
     }
 }
@@ -51,14 +53,9 @@ function readXmlBrowserEvidence(run) {
     });
 }
 
-function matchMenuDestination(record, action) {
-    if (!record || record.method !== 'GET' || record.status !== 200 || !action) return false;
-    const parts = new URL(record.uri || '/', 'https://application.invalid').pathname.split('/').filter(Boolean);
-    if (parts[0] === 'index.php') parts.shift();
-    parts.shift(); // Admin front name
-    const key = parts.indexOf('key');
-    if (key !== -1) parts.splice(key, 2);
-    return parts.join('/') === action.replace(/\/$/, '');
+function matchMenuDestination(record, targetHash) {
+    if (record?.method !== 'GET' || record.status !== 200 || !record.uri?.startsWith('/')) return false;
+    return createHash('sha256').update(record.uri).digest('hex') === targetHash;
 }
 
 function correlateBrowserEvidence(run, records, declarations, observations) {
@@ -71,18 +68,22 @@ function correlateBrowserEvidence(run, records, declarations, observations) {
         assert.equal(observation.run, run, 'Stale browser XML observation');
         const source = http.get(observation.response);
         assert.ok(source, 'Browser XML observation has no active HTTP response');
+        const menu = observation.type === 'menu-followed';
         const matches = new Set();
-        if (source?.status === 200) for (const event of source.events) {
+        if (source.status === 200) for (const event of source.events) {
             const item = declarations.get(event.id);
             if (event.type !== anchors.get(observation.type) || event.area !== 'adminhtml' || event.outcome !== 'observed'
-                || item?.path !== observation.identity || !item.effects?.includes(observation.type)) continue;
+                || !item?.supported || !item.effects?.includes(observation.type)) continue;
+            if (menu ? source.menuLinks?.[event.id]?.selector !== observation.selector : item.path !== observation.identity) continue;
             matches.add(event.id);
         }
-        if (observation.candidate && matches.size === 0) continue;
+        // Menu candidates include unmeasured, cached and programmatic entries.
+        // Once anchored to a unique native render, both responses must agree.
+        if ((menu || observation.candidate) && matches.size === 0) continue;
         assert.equal(matches.size, 1, 'Browser XML observation has no unique native delivery');
         const [id] = matches;
-        if (observation.destination) {
-            assert.ok(matchMenuDestination(http.get(observation.destination), declarations.get(id).binding?.action),
+        if (menu) {
+            assert.ok(matchMenuDestination(http.get(observation.destination), source.menuLinks[id].targetHash),
                 'Browser menu observation has no matching native destination');
         }
         const event = {id, type: observation.type, area: 'adminhtml', outcome: 'observed', reason: null, hits: 1};

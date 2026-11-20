@@ -11,11 +11,12 @@ use Magento\Backend\Model\Menu\Config as MenuConfig;
 use Magento\Framework\Acl\AclResource\{Provider, ProviderInterface};
 
 require __DIR__ . '/xml-admin-navigation-native.test.php';
-require __DIR__ . '/../docker/php/xml-family-admin-navigation.php';
-require (getenv('MAGELENS_XML_EVIDENCE') ?: __DIR__ . '/../docker/php') . '/xml-data.php';
-require (getenv('MAGELENS_XML_EVIDENCE') ?: __DIR__ . '/../docker/php') . '/xml-family-evidence.php';
+$hooks = getenv('MAGELENS_XML_EVIDENCE') ?: dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+require $hooks . '/xml-family-admin-navigation.php';
+require $hooks . '/xml-data.php';
+require $hooks . '/xml-family-evidence.php';
 
-define('BP', realpath(__DIR__ . '/..'));
+define('BP', $root);
 $menu = (new ReflectionClass(MenuConfig::class))->newInstanceWithoutConstructor();
 (new ReflectionProperty(MenuConfig::class, '_configReader'))->setValue($menu, $menuReader);
 $provider = (new ReflectionClass(Provider::class))->newInstanceWithoutConstructor();

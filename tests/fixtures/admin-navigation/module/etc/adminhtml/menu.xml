@@ -13,5 +13,9 @@ License: see LICENSE in the repository root.
         <add id="MageLens_AdminNavigation::removed" title="Removed coverage link" module="MageLens_AdminNavigation" sortOrder="80"
              parent="Application_Blog::manage" action="application_blog/manage/index/section/comments" resource="MageLens_AdminNavigation::browse"/>
         <remove id="MageLens_AdminNavigation::removed"/>
+        <add id="MageLens_AdminNavigation::interrupted" title="Coverage interrupted" module="MageLens_AdminNavigation" sortOrder="90"
+             parent="Application_Blog::manage" action="application_blog/manage/index/section/comments" resource="MageLens_AdminNavigation::browse"/>
+        <add id="MageLens_AdminNavigation::products" title="Coverage products" module="MageLens_AdminNavigation" sortOrder="100"
+             parent="Application_Blog::manage" action="catalog/product/" resource="MageLens_AdminNavigation::browse"/>
     </menu>
 </config>

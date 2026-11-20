@@ -131,7 +131,7 @@ test.describe('Blog Admin and publishing', () => {
         await expect(get(page, 'admin-row')).toHaveCount(0);
     });
 
-    test('requires Admin authentication and the Blog ACL permission', async ({page, recordXmlBrowserEvidence}) => {
+    test('requires Admin authentication and the Blog ACL permission', async ({page}) => {
         const f = fixtures();
         await page.goto('/admin/application_blog/manage/index/section/posts');
         await expect(page.locator('#username')).toBeVisible();
@@ -147,33 +147,39 @@ test.describe('Blog Admin and publishing', () => {
             const entry = name => page.locator(`[data-ui-id="menu-magelens-adminnavigation-${name}"]`);
             await expect(entry('inherited-posts')).toHaveCount(0);
             await page.context().clearCookies({name: 'admin'});
-            const responses = new Map();
-            page.on('response', response => {
-                const request = response.request();
-                if (request.isNavigationRequest() && request.frame() === page.mainFrame() && response.status() === 200) {
-                    responses.set(response.url(), response.headers()['x-magelens-response']);
-                }
-            });
             await login(page, f.navigation.user, f.navigation.password);
+            const parent = page.locator('#menu-application-blog-manage > a');
             const posts = entry('inherited-posts').locator('a');
             const categories = entry('inherited-categories').locator('a');
             await expect(posts).toHaveCount(1);
             await expect(categories).toHaveCount(1);
             await expect(entry('removed')).toHaveCount(0);
-            const source = responses.get(page.url());
             await expect(page.locator('.admin__menu-overlay')).toBeAttached();
-            await page.locator('#menu-application-blog-manage > a').click();
+            await parent.click();
             const clicked = await posts.evaluate(link => link.href);
             await posts.click();
             await expect(get(page, 'admin-new')).toContainText('Add post');
             expect(page.url() === clicked, 'navigation matches the clicked menu entry').toBe(true);
-            const destination = responses.get(page.url());
-            if (source || destination) {
-                await recordXmlBrowserEvidence({type: 'menu-followed', identity: 'MageLens_AdminNavigation::inherited_posts', response: source, destination});
-            }
+            const interrupted = entry('interrupted').locator('a');
+            await interrupted.evaluate(link => link.addEventListener('click', event => event.preventDefault(), {once: true}));
+            await expect(page.locator('.admin__menu-overlay')).toBeAttached();
+            await parent.click();
+            await interrupted.click();
+            await expect(get(page, 'admin-new')).toContainText('Add post');
+            // Visiting the very URL of the canceled click still earns no follow.
+            await page.goto(await interrupted.evaluate(link => link.href));
+            expect(new URL(page.url()).pathname).toContain('/section/comments/');
             // Open the sibling directly. It must not inherit the preceding click.
             await page.goto(await categories.evaluate(link => link.href));
             await expect(get(page, 'admin-new')).toContainText('Add category');
+            const products = entry('products').locator('a');
+            await expect(page.locator('.admin__menu-overlay')).toBeAttached();
+            await parent.click();
+            const catalog = await products.evaluate(link => link.href);
+            expect(/\/catalog\/product\/index\/key\/[^/]+\//.test(new URL(catalog).pathname), 'native catalog URL includes its default action and secret key').toBe(true);
+            await products.click();
+            await expect(page.locator('h1.page-title')).toContainText('Products');
+            expect(page.url() === catalog, 'navigation matches the clicked catalog entry').toBe(true);
         }
     });
 });

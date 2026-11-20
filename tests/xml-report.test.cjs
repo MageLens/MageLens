@@ -1147,3 +1147,45 @@ test('browser XML effects require delivery from the same active HTTP response', 
     assert.equal(skipped.files.find(entry => entry.path === file).declarations[0].effectStates['ui-rendered'], 'uncovered');
     assert.throws(() => merge(manifest, [record], sources, [candidate]), /response/i);
 });
+
+test('menu follows match the exact native rendered route and its document response', () => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/adminhtml/menu.xml';
+    const hash = value => createHash('sha256').update(value).digest('hex');
+    const routes = [
+        ['products', 'catalog/product/', '/index.php/backend/catalog/product/index/key/example/'],
+        ['posts', 'blog/manage/index/section/posts', '/index.php/backend/blog/manage/index/section/posts/key/example/?sort=asc'],
+        ['categories', 'blog/manage/index/section/categories', '/index.php/backend/blog/manage/index/section/categories/key/example/?sort=asc'],
+    ];
+    sources[file] = Buffer.from('<config/>');
+    const items = routes.map(([name, action]) => ({
+        id: hash(name), path: 'Acme_Blog::' + name, family: 'menu', binding: {action},
+        effects: ['menu-emitted', 'menu-followed'], supported: true, effective: true,
+        declaredScope: {type: 'adminhtml', code: ''}, startLine: 1, endLine: 1
+    }));
+    manifest.files.push({path: file, family: 'menu', sourceHash: hash(sources[file]), declarations: items});
+    const source = {...record, request: 'a'.repeat(32), status: 200,
+        events: items.map(({id}) => ({id, type: 'menu-emitted', area: 'adminhtml', outcome: 'observed', reason: null, hits: 1})),
+        menuLinks: Object.fromEntries(items.map(({id}, index) => [id, {
+            selector: 'menu-acme-blog-' + routes[index][0], targetHash: hash(routes[index][2])
+        }]))
+    };
+    const destinations = routes.map(([, , uri], index) => ({...record, events: [], request: String(index + 1).repeat(32),
+        uri, status: 200, method: 'GET'}));
+    const [products, posts, categories] = destinations;
+    const follow = (name, destination) => ({type: 'menu-followed', selector: 'menu-acme-blog-' + name, run: record.run,
+        response: source.request, destination: destination.request});
+    const observations = [follow('products', products), follow('posts', posts)];
+    const states = (delivery, visited, browser) => merge(manifest, [record, delivery, ...visited], sources, browser)
+        .files.find(entry => entry.path === file).declarations.map(item => item.effectStates['menu-followed']);
+    assert.deepEqual(states(source, destinations, observations), ['covered', 'covered', 'uncovered']);
+    assert.deepEqual(states(source, destinations, []), ['uncovered', 'uncovered', 'uncovered']);
+    const cache = {...source, menuLinks: undefined, events: source.events.map(event =>
+        ({...event, outcome: 'cache-only', reason: 'Menu reused without a native render'}))};
+    assert.deepEqual(states(cache, destinations, observations), ['uncovered', 'uncovered', 'uncovered']);
+    assert.throws(() => states(source, destinations, [follow('posts', categories)]), /matching native destination/);
+    for (const change of [{uri: posts.uri.replace('sort=asc', 'sort=desc')}, {status: 403}, {method: 'POST'}]) {
+        assert.throws(() => states(source, [{...posts, ...change}], [follow('posts', posts)]), /matching native destination/);
+    }
+    assert.throws(() => states(source, destinations, [follow('posts', source)]), /Invalid menu destination/);
+});

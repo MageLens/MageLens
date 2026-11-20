@@ -166,31 +166,35 @@ describe('Blog Admin and publishing', () => {
             cy.setCookie('application_coverage', f.run, {
                 domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
             });
-            // The current browser document exposes the native response token.
-            // XHR and fetch timings cannot supply a document navigation entry.
-            const documentResponse = win => win.performance.getEntriesByType('navigation')[0]?.serverTiming
-                .find(entry => entry.name === 'magelens-response')?.description;
             login(f.navigation.user, f.navigation.password);
             cy.get(entry('inherited-posts') + ' > a').should('exist');
             cy.get(entry('inherited-categories') + ' > a').should('exist');
             cy.get(entry('removed')).should('not.exist');
-            let source, clicked;
-            cy.window({log: false}).then(win => { source = documentResponse(win); });
-            navigateAdminMenu('#menu-application-blog-manage > a', entry('inherited-posts') + ' > a', link => { clicked = link.href; });
+            const parent = '#menu-application-blog-manage > a';
+            let clicked;
+            navigateAdminMenu(parent, entry('inherited-posts') + ' > a', link => { clicked = link.href; });
             get('admin-new').should('contain', 'Add post');
             cy.window({log: false}).then(win => {
                 expect(win.location.href === clicked, 'navigation matches the clicked menu entry').to.equal(true);
-                const destination = documentResponse(win);
-                if (source === undefined && destination === undefined) return;
-                expect(source, 'menu document response ID').to.match(/^[a-f0-9]{32}$/);
-                expect(destination, 'clicked document response ID').to.match(/^[a-f0-9]{32}$/);
-                expect(destination, 'distinct navigation response').not.to.equal(source);
-                return cy.task('recordXmlBrowserEvidence',
-                    {type: 'menu-followed', identity: 'MageLens_AdminNavigation::inherited_posts', response: source, destination}, {log: false});
             });
+            navigateAdminMenu(parent, entry('interrupted') + ' > a', link => {
+                link.addEventListener('click', event => event.preventDefault(), {once: true});
+            });
+            get('admin-new').should('contain', 'Add post');
+            // Visiting the very URL of the canceled click still earns no follow.
+            cy.get(entry('interrupted') + ' > a', {log: false}).then(link => cy.visit(link[0].href, {log: false}));
+            cy.location('pathname').should('include', '/section/comments/');
             // Open the sibling directly. It must not inherit the preceding click.
             cy.get(entry('inherited-categories') + ' > a', {log: false}).then(link => cy.visit(link[0].href, {log: false}));
             get('admin-new').should('contain', 'Add category');
+            navigateAdminMenu(parent, entry('products') + ' > a', link => {
+                clicked = link.href;
+                expect(/\/catalog\/product\/index\/key\/[^/]+\//.test(new URL(clicked).pathname), 'native catalog URL includes its default action and secret key').to.equal(true);
+            });
+            cy.get('h1.page-title').should('contain', 'Products');
+            cy.window({log: false}).then(win => {
+                expect(win.location.href === clicked, 'navigation matches the clicked catalog entry').to.equal(true);
+            });
         }
     });
 });
