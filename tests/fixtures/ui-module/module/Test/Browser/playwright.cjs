@@ -2,65 +2,67 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const fs = require('node:fs');
 const {expect} = require('@playwright/test');
-const {parent, menu, listingEffects, formEffects, fields, provider, gridHead, columnLabels, rows,
-    input, button, responseId, documentResponse, sortingRequest, testValue} = require('./journey.cjs');
+const {parent, menu, gridHead, columnLabels, rows, input, readOnly, button, initialValue, readOnlyValue,
+    proofDirectory, responseId, documentResponse, uiRequest, testValue} = require('./journey.cjs');
 
-async function observe(page, expected, response, record) {
-    expect(response).toMatch(responseId);
-    const evidence = () => page.evaluate(() => window.__mageLensUiEffects.snapshot());
-    await expect.poll(async () => {
-        const observed = await evidence();
-        return expected.filter(({identity, type}) =>
-            observed.some(entry => entry.identity === identity && entry.type === type && entry.response === response));
-    }).toEqual(expected);
-    for (const effect of expected) record({...effect, response});
-    return evidence();
+function waitForUiResponse(page, purpose) {
+    return page.waitForResponse(response => response.request().method() === 'GET' && uiRequest(response.url()) === purpose);
 }
 
-async function runUiJourney(page, admin, record) {
-    const collect = Boolean(record);
+async function responseIdFor(pending, collect) {
+    const response = await pending;
+    expect(response.status()).toBe(200);
+    const id = await response.headerValue('x-magelens-response');
+    if (collect) expect(id).toMatch(responseId);
+    else expect(id).toBeNull();
+    return id;
+}
+
+async function pageResponse(page, collect) {
+    const id = await page.evaluate(documentResponse);
+    if (collect) expect(id).toMatch(responseId);
+    else expect(id).toBeUndefined();
+    return id;
+}
+
+function saveResponses(name, responses) {
+    fs.mkdirSync(proofDirectory, {recursive: true});
+    fs.writeFileSync(`${proofDirectory}/${name}.json`, JSON.stringify(responses));
+}
+
+async function runUiJourney(page, admin, collect = false) {
+    const initial = waitForUiResponse(page, 'initial');
     await admin.navigateAdminMenu(page, parent, menu('listing'));
     const heading = page.locator(gridHead).filter({hasText: 'Untouched column'});
     await expect(heading).toBeVisible();
     await expect(page.locator(gridHead)).toHaveText(columnLabels);
     await expect(page.locator(rows)).toHaveText(['First row', 'Second row']);
-    const listingResponse = await page.evaluate(documentResponse);
-    if (collect) await observe(page, listingEffects, listingResponse, record);
-    else expect(listingResponse).toBeUndefined();
-
+    const grid = {navigation: await pageResponse(page, collect), initial: await responseIdFor(initial, collect)};
     for (const direction of ['asc', 'desc']) {
-        const reload = page.waitForResponse(response => response.request().method() === 'GET' && sortingRequest(response.url()) === direction);
+        const reload = waitForUiResponse(page, direction);
         await heading.click();
-        const response = await reload;
-        expect(response.status()).toBe(200);
+        grid[direction] = await responseIdFor(reload, collect);
         await expect(page.locator(rows)).toHaveText(direction === 'asc' ? ['First row', 'Second row'] : ['Second row', 'First row']);
-        const reloadResponse = await response.headerValue('x-magelens-response');
-        if (collect && direction === 'desc') {
-            await observe(page, [{type: 'ui-reloaded', identity: provider}], reloadResponse, record);
-            expect(reloadResponse).not.toEqual(listingResponse);
-        } else if (!collect) expect(reloadResponse).toBeNull();
     }
+    if (collect) saveResponses('grid', grid);
 
+    const inserted = waitForUiResponse(page, 'form');
     await admin.navigateAdminMenu(page, parent, menu('form'));
-    await expect(page.locator(input)).toBeVisible();
+    const form = {navigation: await pageResponse(page, collect), delivery: await responseIdFor(inserted, collect)};
+    const untouched = page.locator(input);
+    await expect(untouched).toBeVisible();
+    await expect(untouched).toHaveValue(initialValue);
+    await expect(page.locator(readOnly)).toBeVisible();
+    await expect(page.locator(readOnly)).toHaveText(readOnlyValue);
     await expect(page.locator(button('uninvoked'))).toBeVisible();
     await expect(page.locator(button('uninstantiated'))).toHaveCount(0);
-    const formResponse = await page.evaluate(documentResponse);
-    if (collect) {
-        await observe(page, formEffects.filter(effect => effect.type !== 'ui-action-invoked'), formResponse, record);
-    } else expect(formResponse).toBeUndefined();
-    const untouched = page.locator(input);
-    const initial = await untouched.inputValue();
     await untouched.fill(testValue);
     await expect(untouched).toHaveValue(testValue);
     await page.locator(button('invoke')).click();
-    await expect(untouched).toHaveValue(initial);
-    if (collect) {
-        const observed = await observe(page, [{identity: fields + 'invoke', type: 'ui-action-invoked'}], formResponse, record);
-        expect(observed.filter(entry => entry.identity === fields + 'uninstantiated' ||
-            (entry.identity === fields + 'uninvoked' && entry.type === 'ui-action-invoked'))).toEqual([]);
-    }
+    await expect(untouched).toHaveValue(initialValue);
+    if (collect) saveResponses('form', form);
 }
 
 module.exports = {runUiJourney};

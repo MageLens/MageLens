@@ -21,6 +21,7 @@ License: see LICENSE in the repository root.
         </deps>
     </settings>
     <dataSource name="probe_form_data_source" component="Magento_Ui/js/form/provider">
+        <aclResource>Magento_Backend::admin</aclResource>
         <dataProvider class="MageLens\UiProbe\Model\Provider" name="probe_form_data_source">
             <settings>
                 <requestFieldName>id</requestFieldName>
@@ -37,6 +38,14 @@ License: see LICENSE in the repository root.
                 <dataType>text</dataType>
                 <label>Untouched field</label>
                 <dataScope>untouched</dataScope>
+            </settings>
+        </field>
+        <field name="readonly" formElement="input" sortOrder="15">
+            <settings>
+                <elementTmpl>ui/form/element/text</elementTmpl>
+                <dataType>text</dataType>
+                <label>Read-only field</label>
+                <dataScope>readonly</dataScope>
             </settings>
         </field>
         <button name="invoke" sortOrder="20">

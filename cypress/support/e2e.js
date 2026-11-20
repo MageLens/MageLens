@@ -8,7 +8,8 @@ registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 
 const {disablePageTransitions, installCypressAdminDependencies, observeAdminMenuNavigation} = require('../../bin/browser-navigation.cjs');
 const {installUiBrowserObserver} = require('../../bin/xml-ui-browser.cjs');
-let uiDocuments = new Set();
+const uiDocuments = new Set();
+const uiExported = new WeakMap();
 Cypress.on('window:before:load', win => {
     disablePageTransitions(win);
     installUiBrowserObserver(Cypress.expose('xmlUiScope') || {}, win);
@@ -16,7 +17,13 @@ Cypress.on('window:before:load', win => {
 });
 
 afterEach(() => {
-    const entries = [...uiDocuments].flatMap(document => document.snapshot());
+    const entries = [...uiDocuments].flatMap(observer => {
+        const snapshot = observer.snapshot();
+        const previous = uiExported.get(observer) ?? 0;
+        uiExported.set(observer, snapshot.length);
+        return snapshot.slice(previous);
+    });
+    uiDocuments.clear();
     if (entries.length) cy.task('recordXmlUiCandidates', entries, {log: false});
 });
 
@@ -28,7 +35,10 @@ Cypress.on('window:before:load', win => {
 });
 
 beforeEach(() => {
-    uiDocuments = new Set();
+    // With test isolation disabled, a surviving page emits no new load event.
+    cy.window({log: false}).then(win => {
+        if (win.__mageLensUiEffects) uiDocuments.add(win.__mageLensUiEffects);
+    });
     menuTest = {scope: crypto.randomUUID(), observations: []};
     installCypressAdminDependencies();
     const run = Cypress.expose('coverageRun');

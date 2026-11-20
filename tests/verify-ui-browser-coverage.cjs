@@ -4,13 +4,19 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {listingEffects, formEffects, fields, columns, provider, responseId} =
+const {listingEffects, formEffects, fields, columns, provider, proofDirectory, responseId} =
     require('./fixtures/ui-module/module/Test/Browser/journey.cjs');
 
 const result = JSON.parse(fs.readFileSync('coverage/xml/coverage.json'));
 assert.equal(result.complete, true);
 assert.equal(result.sourcesUnchanged, true);
 assert.deepEqual(result.collectorErrors, []);
+const readProof = name => JSON.parse(fs.readFileSync(`${proofDirectory}/${name}.json`));
+const grid = readProof('grid');
+const form = readProof('form');
+const responses = [grid.navigation, grid.initial, grid.asc, grid.desc, form.navigation, form.delivery];
+for (const response of responses) assert.match(response, responseId);
+assert.equal(new Set(responses).size, responses.length);
 
 const declarations = result.files
     .filter(file => /\/(UiProbe|UiProbeOverlay)\/view\/adminhtml\/ui_component\//.test(file.path))
@@ -37,8 +43,12 @@ function evidence(identity, type, overlay = false) {
     return matching;
 }
 
-for (const {identity, type} of listingEffects) evidence(identity, type, identity === columns + 'equal');
-for (const {identity, type} of formEffects) evidence(identity, type);
+for (const {identity, type} of listingEffects) {
+    assert.deepEqual(evidence(identity, type, identity === columns + 'equal').map(event => event.request), [grid.navigation]);
+}
+for (const {identity, type} of formEffects) {
+    assert.deepEqual(evidence(identity, type).map(event => event.request), [form.delivery]);
+}
 
 const neverInstantiated = declaration(fields + 'uninstantiated');
 assert.equal(neverInstantiated.effectStates['ui-delivered'], 'covered');
@@ -48,7 +58,8 @@ for (const effect of ['ui-constructed', 'ui-rendered', 'ui-action-invoked']) {
 assert.equal(declaration(fields + 'uninvoked').effectStates['ui-action-invoked'], 'uncovered');
 assert.equal(declaration(columns + 'disabled').effectStates['ui-delivered'], 'uncovered');
 
-const document = new Set(evidence(columns + 'untouched', 'ui-rendered').map(event => event.request));
-for (const reload of evidence(provider, 'ui-reloaded')) assert.ok(!document.has(reload.request));
-assert.doesNotMatch(JSON.stringify(declarations), /Browser fixture edit|Fixture value|First row|Second row/);
-console.log('PASS: distinct browser delivery, construction, rendering, action and AJAX reload outcomes.');
+const reloads = new Set(evidence(provider, 'ui-reloaded').map(event => event.request));
+for (const request of [grid.initial, grid.asc, grid.desc]) assert.ok(reloads.has(request), `Missing grid response ${request}`);
+assert.ok(!reloads.has(grid.navigation));
+assert.doesNotMatch(JSON.stringify(declarations), /Browser fixture edit|Fixture value|Read-only fixture value|First row|Second row/);
+console.log('PASS: automatic UI evidence includes the initial grid response and the inserted form delivery.');
