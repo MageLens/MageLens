@@ -28,9 +28,9 @@ RUN mkdir /opt/pcov-tools \
 WORKDIR /opt/report
 COPY docker/php/composer.json docker/php/composer.lock ./
 RUN composer install --no-dev --prefer-dist --no-interaction --no-progress
-COPY docker/php/coverage.ini /usr/local/etc/php/conf.d/zz-application-coverage.ini
-COPY docker/php/collect.php /opt/application/collect.php
-COPY docker/php/collection.php /opt/application/collection.php
+COPY --chmod=0644 docker/php/coverage.ini /usr/local/etc/php/conf.d/zz-application-coverage.ini
+COPY --chmod=0644 docker/php/collect.php /opt/application/collect.php
+COPY --chmod=0644 docker/php/collection.php /opt/application/collection.php
 COPY docker/php/configure-user.sh /opt/application/configure-user.sh
 # Upstream's main FPM config does not include php-fpm.d/*.conf.
 # The private socket volume is shared with nginx's upstream UID.

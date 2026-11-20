@@ -134,3 +134,10 @@ test('PHP artifact downloads retry HTTP 504 and fail immediately on HTTP 404', a
         assert.equal(calls, 1);
     }
 });
+
+test('the portable collector and its companion are readable by the FPM user', () => {
+    const recipe = fs.readFileSync(path.join(root, 'docker/php/Dockerfile'), 'utf8');
+    for (const name of ['collect.php', 'collection.php']) {
+        assert.ok(recipe.includes('COPY --chmod=0644 docker/php/' + name + ' /opt/application/' + name), name);
+    }
+});
