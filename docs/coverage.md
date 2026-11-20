@@ -184,7 +184,27 @@ Each attempt of a test, including every retry, gets a random 32-character attemp
 
 Browser tests send the ID in the `application_coverage_attempt` cookie next to `application_coverage`; custom HTTP clients can send the `X-Application-Coverage-Attempt` header instead. CLI tests pass it to their commands. Each PHP request or command record stores the ID as `attempt`, with its start time as `startedAt`. Requests without an ID, such as shared setup in another browser context, are stored with `attempt: null` and stay unattributed. The JavaScript counters of each attempt's pages are also written, with only the statements, functions and branches that ran, to `coverage/raw/javascript-attempts/<attempt ID>.json`, keyed by Istanbul file path and not filtered by the report exclusions. Aggregate coverage is unchanged: it does not read attempt IDs or these counters. The two fields also appear in the request and command lists of the private `coverage/php/coverage-summary.json`.
 
-The PHP collector is part of the PHP image: an existing installation writes these two fields only after rerunning installation with its saved platform, theme and runner flags. These records are private run data under `coverage/raw/` and are not published with the reports. Per-test reports are not generated yet ([#72](https://github.com/MageLens/MageLens/issues/72)).
+The PHP collector is part of the PHP image: an existing installation writes these two fields only after rerunning installation with its saved platform, theme and runner flags. These records are private run data under `coverage/raw/` and are not published with the reports.
+
+## Per-test attribution
+
+After the reports, `bin/report-attribution.cjs` combines the attempt records into `coverage/attribution/`. It is private run data like `coverage/raw/` and is not published.
+
+| File | Contents |
+| --- | --- |
+| `index.json` | The run's attempts in start order, and per collector: status, unit, record counts, attributed and unattributed units |
+| `php.json` | Covered PHP lines from `coverage/php/line-coverage.json` |
+| `javascript.json` | Statement (`s:<id>`), function (`f:<id>`) and branch path (`b:<id>:<path>`) counters of the JavaScript report, by file below `src/` |
+| `templates.json` | Template statement, function and branch counters of the template report |
+
+The collector files map each file and unit to its owners: the position of an attempt in `index.json`, or `unattributed`, with hit counts. PHP lines count 1 per owner, because PCOV records whether a line ran, not how often. A unit can belong to several attempts and to unattributed work at the same time. Uncovered units are not listed.
+
+- Every attributed unit is checked against the aggregate report of its collector, and every covered unit has an owner. A difference stops the run before reports are published.
+- PHP lines are expanded per attempt exactly as in the PHP report. A request that starts after its attempt finished keeps the attempt and is counted as `lateRecords`.
+- Template records identify their test by spec, title path, retry and project. Two attempts with the same identity, such as Cypress tests with duplicate titles, cannot be told apart: their records are counted as `ambiguousRecords` and stay unattributed.
+- XML configuration records carry the attempt ID but are not attributed yet; `index.json` lists XML as `not_collected`.
+- Attribution shows which code ran during a test attempt. It does not show that the test checked the result of that code.
+
 
 ## Use your project
 

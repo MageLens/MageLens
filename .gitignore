@@ -35,6 +35,7 @@
 !/bin/html-validation.cjs
 !/bin/test-attempts.cjs
 !/bin/javascript-attempts.cjs
+!/bin/report-attribution.cjs
 !/bin/install
 !/bin/image-inputs.cjs
 !/bin/prepare-images

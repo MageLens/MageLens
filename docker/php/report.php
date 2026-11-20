@@ -28,6 +28,8 @@ if (applicationIdentity()['identity']['id'] !== $state['identity']['id']) {
     throw new RuntimeException('Deployment changed during the suite. Rerun coverage against stable sources and configuration.');
 }
 $merged = [];
+// Hits per test attempt (docs/coverage.md#test-attempts); 'unattributed' collects records without an attempt.
+$byAttempt = [];
 $requests = [];
 $commands = [];
 foreach ($records as $path) {
@@ -42,6 +44,9 @@ foreach ($records as $path) {
     foreach ($record['records'] as $file => $lines) {
         foreach ($lines as $line => $hit) {
             $merged[$file][$line] = max($merged[$file][$line] ?? -1, $hit);
+            $attemptLines = &$byAttempt[$metadata['attempt'] ?? 'unattributed'][$file];
+            $attemptLines[$line] = max($attemptLines[$line] ?? -1, $hit);
+            unset($attemptLines);
         }
     }
     unset($metadata['xml']);
@@ -97,6 +102,17 @@ file_put_contents('/coverage/php/coverage-summary.json', json_encode([
     'cache' => array_count_values(array_column([...$requests, ...$commands], 'cache')),
     'undiscovered' => array_values(array_diff(array_keys($state['scope']), array_keys($merged))),
 ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");
+if (glob('/coverage/raw/attempts/*.json')) {
+    // The attempts that executed each covered line, for coverage/attribution/ (bin/report-attribution.cjs).
+    $attribution = [];
+    $byTest = applicationPhpReportDataByTest($state['scope'], $byAttempt, $runData['sources']);
+    foreach ($byTest->getData()->lineCoverage() as $file => $hits) {
+        foreach ($hits as $line => $tests) {
+            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_values(array_unique($tests));
+        }
+    }
+    file_put_contents('/coverage/php/attribution.json', json_encode((object) $attribution, JSON_THROW_ON_ERROR) . "\n");
+}
 file_put_contents('/coverage/php/merged-lines.json', json_encode($merged, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 $lines = [];
 foreach ($coverage->getData()->lineCoverage() as $file => $hits) {
