@@ -55,12 +55,25 @@ $sources[$storage] = ['hash' => Xml::scalarTreeSignature($data), 'rows' => [
     'control' => ['node' => 'c-node', 'id' => 'c-id', 'label' => 'c-label', 'parents' => [], 'fields' => []],
 ]];
 $types = (new Config($storage))->getPageTypes();
-if ($case === 'offset-unset-restore') unset($types['mutated']['label']);
-$types['mutated']['label'] = 'XML label';
-foreach ($types as $type) if ($type->getData('label') !== 'XML label') throw new RuntimeException('Native page type label changed');
+if ($case === 'offset-unset-restore') {
+    unset($types['mutated']['label']);
+    // Restore without a second observed accessor to exercise offsetUnset on its own.
+    $restore = new class extends DataObject {
+        public function label(DataObject $type): void { $type->_data['label'] = 'XML label'; }
+    };
+    $restore->label($types['mutated']);
+} else {
+    $types['mutated']['label'] = 'XML label';
+}
+foreach ($types as $id => $type) {
+    if ($type->getData('label') !== 'XML label' || $type->getData('id') !== $id) {
+        throw new RuntimeException('Native page type values changed');
+    }
+}
 LayoutRuntimeHooks::assertHealthy();
 $registry->finish();
 if (($events['m-label'] ?? []) !== ['layout-page-type-applied']
+    || ($events['m-id'] ?? []) !== ['layout-page-type-applied', 'layout-page-type-read']
     || ($events['c-label'] ?? []) !== ['layout-page-type-applied', 'layout-page-type-read']) {
     throw new RuntimeException("Page type mutation changed application evidence or retained read ownership ($case): " . json_encode($events));
 }

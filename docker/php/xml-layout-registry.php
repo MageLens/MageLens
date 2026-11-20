@@ -679,34 +679,49 @@ final class LayoutRegistryCoverage
         foreach ($property->getValue($config) as $id => $object) {
             $row = $frame['state']['rows'][$id] ?? null;
             if (!$row || get_class($object) !== \Magento\Framework\DataObject::class) continue;
-            $this->typeObjects[$object] = ['row' => $row, 'hash' => Xml::scalarTreeSignature($dataProperty->getValue($object))];
+            $data = $dataProperty->getRawValue($object);
+            $fields = [];
+            foreach (['id', 'label'] as $key) {
+                if (isset($row[$key]) && array_key_exists($key, $data)) {
+                    $fields[$key] = ['id' => $row[$key], 'hash' => Xml::scalarTreeSignature([$data[$key]])];
+                }
+            }
+            if ($fields) $this->typeObjects[$object] = $fields;
             $applied = array_unique(array_filter([$row['node'], $row['id'], $row['label'], ...$row['parents']]));
             foreach ($applied as $origin) $this->record($origin, 'layout-page-type-applied', $context);
             foreach (array_diff($row['fields'], $applied) as $origin) $this->record($origin, 'layout-registry-overridden', $context);
         }
     }
 
-    private function typeObjectChanged($object, array $params, $result, ?\Throwable $error, string $class): void
+    private function typeObjectChanged($object, array $params, $result, ?\Throwable $error, string $class, string $method): void
     {
-        if (!$error && $class === \Magento\Framework\DataObject::class) unset($this->typeObjects[$object]);
+        if ($error || $class !== \Magento\Framework\DataObject::class || !isset($this->typeObjects[$object])) return;
+        $key = $params[0] ?? null;
+        if (($method === 'setData' && is_array($key)) || ($method === 'unsetData' && $key === null)) {
+            unset($this->typeObjects[$object]);
+        } elseif ($key === 'id' || $key === 'label') {
+            $fields = $this->typeObjects[$object];
+            unset($fields[$key]);
+            $this->typeObjects[$object] = $fields;
+        }
     }
 
     private function typeValueRead($object, array $params, $value, ?\Throwable $error, string $class): void
     {
         if ($error || $class !== \Magento\Framework\DataObject::class || !isset($this->typeObjects[$object])) return;
-        $state = $this->typeObjects[$object];
-        static $property;
-        $property ??= new \ReflectionProperty(\Magento\Framework\DataObject::class, '_data');
-        $data = $property->getValue($object);
-        if ($state['hash'] === null || Xml::scalarTreeSignature($data) !== $state['hash']) {
-            unset($this->typeObjects[$object]);
+        $key = $params[0] ?? '';
+        if (($key !== 'id' && $key !== 'label') || ($params[1] ?? null) !== null) return;
+        $fields = $this->typeObjects[$object];
+        $field = $fields[$key] ?? null;
+        if (!$field) return;
+        if ($field['hash'] === null || Xml::scalarTreeSignature([$value]) !== $field['hash']) {
+            unset($fields[$key]);
+            $this->typeObjects[$object] = $fields;
             $this->limitations['layout-registry-data-replaced'] = true;
             return;
         }
-        $key = $params[0] ?? '';
-        if (!in_array($key, ['id', 'label'], true) || ($params[1] ?? null) !== null) return;
         $context = ($this->context)();
-        if ($context) $this->record($state['row'][$key], 'layout-page-type-read', $context);
+        if ($context) $this->record($field['id'], 'layout-page-type-read', $context);
     }
 
     private function record(?string $id, string $effect, array $context): void
