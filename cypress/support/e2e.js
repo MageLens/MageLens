@@ -7,9 +7,21 @@ const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/
 registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 
 const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
-Cypress.on('window:before:load', disablePageTransitions);
+const {installUiBrowserObserver} = require('../../bin/xml-ui-browser.cjs');
+let uiDocuments = new Set();
+Cypress.on('window:before:load', win => {
+    disablePageTransitions(win);
+    installUiBrowserObserver(Cypress.expose('xmlUiScope') || {}, win);
+    uiDocuments.add(win.__mageLensUiEffects);
+});
+
+afterEach(() => {
+    const entries = [...uiDocuments].flatMap(document => document.snapshot());
+    if (entries.length) cy.task('recordXmlUiCandidates', entries, {log: false});
+});
 
 beforeEach(() => {
+    uiDocuments = new Set();
     installCypressAdminDependencies();
     const run = Cypress.expose('coverageRun');
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);

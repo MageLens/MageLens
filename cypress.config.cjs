@@ -31,7 +31,12 @@ module.exports = defineConfig({
                 require('@cypress/code-coverage/task')(on, config);
                 const {captureHtml} = require('./bin/html-validation.cjs');
                 const {recordXmlBrowserEvidence} = require('./bin/xml-browser-evidence.cjs');
-                on('task', {recordXmlBrowserEvidence});
+                const {loadUiBrowserScope} = require('./bin/xml-ui-browser-scope.cjs');
+                config.expose.xmlUiScope = loadUiBrowserScope(config.expose.coverageRun);
+                on('task', {recordXmlBrowserEvidence, recordXmlUiCandidates(entries) {
+                    for (const entry of entries) recordXmlBrowserEvidence({...entry, candidate: true});
+                    return null;
+                }});
                 // A capture problem must not fail the test that requested the audit.
                 on('task', {mageLensValidateHtml(capture) {
                     try { captureHtml({runner: 'cypress', ...capture}); }

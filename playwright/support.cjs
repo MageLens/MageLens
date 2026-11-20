@@ -11,6 +11,8 @@ const playwright = require('@playwright/test');
 const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
 const {captureHtml} = require('../bin/html-validation.cjs');
 const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
+const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
+const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
@@ -56,14 +58,20 @@ function withCoverage(base = playwright.test) {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
+            await context.addInitScript(installUiBrowserObserver, loadUiBrowserScope(run.id));
             await context.addCookies([{name: 'application_coverage', value: run.id,
                 domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
             const snapshots = new Map();
+            const uiCandidates = new Map();
             const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
-            await context.exposeBinding(binding, (_source, snapshot) => snapshots.set(snapshot.id, snapshot.coverage));
+            await context.exposeBinding(binding, (_source, snapshot) => {
+                snapshots.set(snapshot.id, snapshot.coverage);
+                for (const entry of snapshot.ui) uiCandidates.set(JSON.stringify(entry), entry);
+            });
             await context.addInitScript(({binding}) => {
                 const id = crypto.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2);
-                const publish = () => window[binding]({id, coverage: window.__coverage__ || {}});
+                const publish = () => window[binding]({id, coverage: window.__coverage__ || {},
+                    ui: window.__mageLensUiEffects?.snapshot() ?? []});
                 window[binding + '_flush'] = publish;
                 setInterval(() => publish().catch(() => {}), 250);
                 addEventListener('pagehide', () => publish().catch(() => {}));
@@ -87,6 +95,7 @@ function withCoverage(base = playwright.test) {
                 for (const page of context.pages()) await flush(page);
                 context.off('page', track);
                 for (const [page, close] of closeMethods) page.close = close;
+                for (const entry of uiCandidates.values()) recordXmlBrowserEvidence({...entry, candidate: true});
                 const coverage = createCoverageMap({});
                 for (const snapshot of snapshots.values()) coverage.merge(snapshot);
                 fs.mkdirSync('.nyc_output', {recursive: true});

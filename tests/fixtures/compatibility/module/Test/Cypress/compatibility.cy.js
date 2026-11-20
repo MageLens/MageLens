@@ -4,6 +4,7 @@
 
 const {verifyScriptPolicy} = require('../csp-proof');
 const admin = require('../../../../Application/Blog/Test/Cypress/support');
+const {runUiJourney} = require('../../../UiProbe/Test/Browser/cypress.cjs');
 describe('Magento storefront coverage compatibility', () => {
     it('collects real PHP, JavaScript and template execution', () => {
         cy.log('Verify source replacement, CSP and interactive template output');
@@ -388,6 +389,8 @@ describe('Magento storefront coverage compatibility', () => {
         for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias', 'ui-acl-dashboard', 'ui-acl-blog']) {
             cy.get(`[data-layout-structure="${entry}"]`).should('have.text', entry);
         }
+        cy.log('Verify browser effects from native standalone UI listing and form');
+        runUiJourney(admin, true);
         cy.visit('/');
         cy.clearCookies();
         const fixture = admin.fixtures();
