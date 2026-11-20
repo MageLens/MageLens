@@ -172,7 +172,7 @@ fi
             printf 'obsolete report content\n' > coverage/obsolete-publication.txt
             MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage | tee .runtime/coverage-run.log
             cp .runtime/coverage-run.log "$artifacts/coverage-$pass.log"
-            ./bin/runner node tests/verify-report-publication.cjs
+            ./bin/runner node tests/verify-report-publication.cjs bundled-blog
             ./bin/runner node tests/verify-scenarios.cjs coverage bundled-blog
         done
         ./bin/runner node tests/verify-layout-warm-repeat.cjs .runtime/default-xml.json

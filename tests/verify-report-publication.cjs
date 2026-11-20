@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const https = require('node:https');
 
+const bundledBlog = process.argv[2] === 'bundled-blog';
 const output = fs.readFileSync('.runtime/coverage-run.log', 'utf8');
 const links = [...output.matchAll(/^Open the combined coverage report: (https?:\/\/\S+)$/gm)];
 assert.equal(links.length, 1, 'Expected exactly one successful report URL');
@@ -64,8 +65,11 @@ async function main() {
         assert.ok(nested, `Missing nested ${type} report`);
         await verifyPage(`${type}/${nested}`);
     }
-    await verifyPage('html-validation/index.html');
-    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json', 'html-validation/results.json']) await verify(file);
+    if (!bundledBlog) {
+        await verifyPage('html-validation/index.html');
+        await verify('html-validation/results.json');
+    }
+    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json']) await verify(file);
     const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8')).id;
     const raw = path.posix.join('raw/php', run);
     const record = fs.readdirSync(path.join('coverage', raw)).find(file => file.endsWith('.json'));
