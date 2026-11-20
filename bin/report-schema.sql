@@ -46,21 +46,35 @@ CREATE TABLE hits (
     hit_count INTEGER CHECK (hit_count IS NULL OR hit_count > 0)
 ) STRICT;
 
--- Test attribution. Filled only when manifest.status of 'test-attribution' is 'collected'.
--- Kept apart from hits: one unit is often reached by many tests.
-CREATE TABLE tests (
-    test_id   INTEGER PRIMARY KEY,
-    test_key  TEXT NOT NULL UNIQUE,  -- runner, file and full title
-    runner    TEXT NOT NULL,         -- cypress, playwright, cli
-    test_file TEXT NOT NULL,
-    test_name TEXT NOT NULL
+-- Test attribution, from coverage/attribution/. Filled only when manifest.status of
+-- 'test-attribution' is 'collected'. Kept apart from hits: one unit is often reached by many tests.
+-- One row per test attempt; a retry is a separate attempt of the same test.
+CREATE TABLE attempts (
+    attempt_id  INTEGER PRIMARY KEY,   -- start order within the run
+    attempt_key TEXT NOT NULL UNIQUE,  -- the attempt ID that collectors recorded
+    runner      TEXT NOT NULL,         -- cypress, playwright, cli
+    spec        TEXT NOT NULL,         -- test file, relative to the project
+    title_path  TEXT NOT NULL,         -- JSON array of titles below the spec
+    test_name   TEXT NOT NULL,         -- titles joined with ' › '
+    retry       INTEGER NOT NULL,
+    project     TEXT,                  -- Playwright project
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,                  -- NULL when the attempt did not finish
+    outcome     TEXT                   -- the runner's state: passed, failed, timedOut, pending, ...
 ) STRICT;
-CREATE TABLE test_hits (
-    test_id   INTEGER NOT NULL REFERENCES tests (test_id),
-    record_id INTEGER NOT NULL REFERENCES records (record_id),
-    PRIMARY KEY (test_id, record_id)
+-- hit_count follows hits: NULL for PHP lines.
+CREATE TABLE attempt_hits (
+    attempt_id INTEGER NOT NULL REFERENCES attempts (attempt_id),
+    record_id  INTEGER NOT NULL REFERENCES records (record_id),
+    hit_count  INTEGER CHECK (hit_count IS NULL OR hit_count > 0),
+    PRIMARY KEY (attempt_id, record_id)
 ) STRICT, WITHOUT ROWID;
-CREATE INDEX test_hits_by_record ON test_hits (record_id, test_id);
+CREATE INDEX attempt_hits_by_record ON attempt_hits (record_id, attempt_id);
+-- Execution outside any attempt, such as shared setup in another browser context.
+CREATE TABLE unattributed_hits (
+    record_id INTEGER PRIMARY KEY REFERENCES records (record_id),
+    hit_count INTEGER CHECK (hit_count IS NULL OR hit_count > 0)
+) STRICT;
 
 -- Totals per file and metric. A file or metric without eligible units has no row.
 CREATE VIEW file_totals AS
@@ -90,3 +104,9 @@ CREATE VIEW uncovered_records AS
 SELECT r.source_type, r.metric, r.module_name, r.file_path, r.start_line, r.end_line, r.record_type, r.record_key
 FROM records r LEFT JOIN hits h USING (record_id)
 WHERE h.record_id IS NULL;
+
+-- The attempts that reached each unit, for lookups such as "which tests ran this file".
+CREATE VIEW record_attempts AS
+SELECT r.source_type, r.metric, r.module_name, r.file_path, r.start_line, r.end_line, r.record_type, r.record_key,
+       a.attempt_key, a.runner, a.spec, a.test_name, a.retry, a.outcome, ah.hit_count
+FROM attempt_hits ah JOIN records r USING (record_id) JOIN attempts a USING (attempt_id);

@@ -76,10 +76,10 @@ SELECT file_path, source_type, metric, total FROM file_totals
 WHERE module_name = 'Application_Blog' AND covered = 0;
 ```
 
-Tests covering a file. First confirm that `test-attribution` is `collected` in `manifest`; otherwise `tests` and `test_hits` are empty and the answer is "not measured":
+Tests covering a file. First confirm that `test-attribution` is `collected` in `manifest`; otherwise `attempts` and `attempt_hits` are empty and the answer is "not measured". A unit can also have `unattributed_hits` from shared setup:
 
 ```sql
-SELECT DISTINCT t.runner, t.test_file, t.test_name
-FROM records r JOIN test_hits th USING (record_id) JOIN tests t USING (test_id)
-WHERE r.file_path = 'app/code/Application/Blog/Model/Posts.php';
+SELECT DISTINCT runner, spec, test_name, retry, outcome
+FROM record_attempts
+WHERE file_path = 'app/code/Application/Blog/Model/Posts.php';
 ```
