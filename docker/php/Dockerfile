@@ -34,7 +34,8 @@ COPY docker/php/collection.php /opt/application/collection.php
 COPY docker/php/configure-user.sh /opt/application/configure-user.sh
 # Upstream's main FPM config does not include php-fpm.d/*.conf.
 # The private socket volume is shared with nginx's upstream UID.
-RUN printf '\nphp_admin_value[auto_prepend_file] = /opt/application/collect.php\npm = static\npm.max_children = 1\nlisten.mode = 0666\n' >> /usr/local/etc/php-fpm.conf
+RUN printf '\nphp_admin_value[auto_prepend_file] = /opt/application/collect.php\npm = static\npm.max_children = 1\nlisten.mode = 0666\n' >> /usr/local/etc/php-fpm.conf \
+    && chmod 0644 /usr/local/etc/php-fpm.conf
 WORKDIR /var/www/html
 USER app:app
 RUN php-fpm -tt
