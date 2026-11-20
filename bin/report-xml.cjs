@@ -6,6 +6,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const {createHash} = require('node:crypto');
+const {layoutEvents, layoutDecisions, layoutObservations, layoutLimitations, countsAsLayoutCoverage} = require('./xml-report/layout/index.cjs');
+const {BLOG_CONFIGURATION_ROUTE, WARM_REQUEST_SUFFIX, XML_REQUEST_METADATA} = require('./xml-report/regex.cjs');
+const {assertSourcePath, readSources} = require('./xml-report/source-files.cjs');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const escape = text => String(text).replace(/[&<>"']/g, value => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[value]));
 const callbackKey = ({subject, method, phase}) => hash(JSON.stringify([subject, method, phase]));
@@ -28,14 +31,13 @@ const diFamilies = {
 function merge(manifest, records, sources) {
     const declarations = new Map(), files = structuredClone(manifest.files);
     for (const file of files) {
-        assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
-        assert.ok(!file.path.split('/').some(part => part === '..' || part === '.'));
+        assertSourcePath(file.path);
         assert.equal(hash(sources[file.path]), file.sourceHash, `XML source changed: ${file.path}`);
         file.sourceFingerprint = hash(sources[file.path].toString().replaceAll('\r\n', '\n'));
         file.lines = {};
         for (const item of file.declarations) {
             assert.ok(!declarations.has(item.id), 'Duplicate XML declaration');
-            declarations.set(item.id, item);
+            declarations.set(item.id, {item, source: file.path});
             item.hits = 0; item.evidence = [];
         }
     }
@@ -56,6 +58,12 @@ function merge(manifest, records, sources) {
         assert.ok(!enabled || hook, `No functioning XML ${details.title.toLowerCase()} hook observed`);
         diTotals[family] = {total: 0, covered: 0, hook};
     }
+    const layoutHook = records.some(record => record.layoutHook === true);
+    const limitedHandles = new Map();
+    const layoutTotals = {total: 0, covered: 0, hook: layoutHook, limitations: []};
+    const layoutMeasurement = [...declarations.values()].some(({item}) => item.family === 'layout' && item.supported);
+    assert.ok(!layoutMeasurement || layoutHook, 'No functioning XML layout hook observed');
+    const requestLimitations = new Set();
     const requests = [];
     const commands = new Map();
     const warnings = [];
@@ -64,18 +72,42 @@ function merge(manifest, records, sources) {
         assert.equal(record.manifest, manifest.id, 'XML manifest mismatch');
         const url = new URL(record.uri || '/', 'https://application.invalid');
         let scenario = url.searchParams.get('case');
-        if (!/\/blog\/index\/configuration\/?$/.test(url.pathname) || !cases.has((scenario || '').replace(/-warm$/, ''))) scenario = null;
+        if (!BLOG_CONFIGURATION_ROUTE.test(url.pathname) || !cases.has((scenario || '').replace(WARM_REQUEST_SUFFIX, ''))) scenario = null;
         const events = [];
+        const argumentApplications = new Set(record.events.filter(event => event.type === 'layout-argument-applied')
+            .map(event => JSON.stringify([event.id, event.area, event.theme])));
+        const layoutEffectHits = new Map();
+        const layoutEffectKey = (id, type, area, theme) => JSON.stringify([id, type, area, theme]);
+        for (const event of record.events) if (event.type?.startsWith('layout-')) {
+            const key = layoutEffectKey(event.id, event.type, event.area, event.theme);
+            layoutEffectHits.set(key, (layoutEffectHits.get(key) || 0) + event.hits);
+        }
+        for (const limitation of record.layoutLimitations || []) {
+            assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
+            requestLimitations.add(limitation);
+        }
+        for (const {reason, area, handles} of record.layoutScopedLimitations || []) {
+            assert.ok(['layout-package-cache', 'layout-merge-cache', 'scheduled-layout-cache', 'missing-layout-origins'].includes(reason)
+                && record.layoutLimitations?.includes(reason), 'Unexpected scoped layout limitation');
+            assert.ok(['frontend', 'adminhtml'].includes(area));
+            assert.ok(Array.isArray(handles) && handles.length && new Set(handles).size === handles.length, 'Invalid limited layout handles');
+            for (const handle of handles) {
+                assert.ok(typeof handle === 'string' && handle, 'Invalid layout handle');
+                const key = JSON.stringify([area, handle]);
+                if (!limitedHandles.has(key)) limitedHandles.set(key, new Set());
+                limitedHandles.get(key).add(reason);
+            }
+        }
         for (const [id, areas] of Object.entries(record.ambiguousPlugins || {})) {
             assert.equal(record.pluginHook, true);
             for (const [area, callbacks] of Object.entries(areas)) for (const [key, seen] of Object.entries(callbacks)) {
                 assert.equal(seen, true);
-                pluginCallback(declarations.get(id), area, key).callback.ambiguousEntry = true;
+                pluginCallback(declarations.get(id)?.item, area, key).callback.ambiguousEntry = true;
             }
         }
         for (const event of record.events) {
-            const item = declarations.get(event.id);
-            assert.ok(item?.supported, 'Unknown or unmeasured XML evidence');
+            const {item, source} = declarations.get(event.id) || {};
+            assert.ok(item?.supported || (item?.family === 'layout' && item.layout.kind === 'file-selection'), 'Unknown or unmeasured XML evidence');
             assert.ok(Number.isSafeInteger(event.hits) && event.hits > 0);
             const evidence = {run: record.run, request: record.request, type: event.type};
             if (item.family === 'events') {
@@ -115,6 +147,33 @@ function merge(manifest, records, sources) {
                 }
                 outcome.hits = (outcome.hits || 0) + event.hits;
                 Object.assign(evidence, {area: event.area, requested: event.requested, binding: item.binding, resolved: outcome.resolved});
+            } else if (item.family === 'layout') {
+                assert.ok(record.layoutHook === true || item.layout.kind === 'file-selection', 'Layout evidence without a functioning request hook');
+                assert.deepEqual(Object.keys(event).sort(), ['area', 'hits', 'id', 'theme', 'type']);
+                assert.ok(layoutEvents[item.layout.kind]?.includes(event.type), 'Unexpected layout effect');
+                assert.ok(['frontend', 'adminhtml'].includes(event.area), 'Unexpected layout evidence area');
+                assert.ok(typeof event.theme === 'string' && event.theme.startsWith(event.area + '/'), 'Unexpected layout theme');
+                assert.equal(manifest.layoutSources?.[source]?.targets[item.layout.ordinal]?.ids[item.layout.kind],
+                    item.id, 'Layout evidence does not match manifest provenance');
+                if (event.type === 'layout-argument-read') {
+                    assert.ok(argumentApplications.has(JSON.stringify([event.id, event.area, event.theme])),
+                        'Argument read without native application evidence');
+                }
+                const target = manifest.layoutSources?.[source]?.targets[item.layout.ordinal];
+                for (const [valueKind, nameKind, valueType, nameType] of [
+                    ['argument', 'argument-name', 'layout-argument-applied', 'layout-argument-name-applied'],
+                    ['action-argument', 'action-argument-name', 'layout-action-argument-applied', 'layout-action-argument-name-applied'],
+                ]) {
+                    const valueHits = layoutEffectHits.get(layoutEffectKey(target?.ids[valueKind], valueType, event.area, event.theme));
+                    const nameHits = layoutEffectHits.get(layoutEffectKey(target?.ids[nameKind], nameType, event.area, event.theme));
+                    if (item.layout.kind === nameKind && event.type === nameType) {
+                        assert.ok(valueHits > 0 && valueHits === nameHits, 'Argument name application without matching native value evidence');
+                    }
+                    if (item.layout.kind === valueKind && event.type === valueType && target?.ids[nameKind]) {
+                        assert.ok(nameHits > 0 && valueHits === nameHits, 'Native value application without matching argument name evidence');
+                    }
+                }
+                Object.assign(evidence, {area: event.area, theme: event.theme});
             } else if (item.family === 'plugins') {
                 assert.equal(record.pluginHook, true, 'Plugin evidence without a functioning request hook');
                 assert.equal(event.type, 'plugin-execute');
@@ -135,17 +194,25 @@ function merge(manifest, records, sources) {
                 assert.equal(typeof event.requestedScope.code, 'string');
                 evidence.requestedScope = event.requestedScope;
             }
-            item.hits += event.hits;
-            if (!item.evidence.some(previous => JSON.stringify(previous) === JSON.stringify(evidence))) item.evidence.push(evidence);
+            if (item.family !== 'layout' || countsAsLayoutCoverage(event.type)) item.hits += event.hits;
+            const sameEvidence = previous => item.family === 'layout'
+                ? previous.type === evidence.type && previous.area === evidence.area && previous.theme === evidence.theme
+                : JSON.stringify(previous) === JSON.stringify(evidence);
+            if (!item.evidence.some(sameEvidence)) item.evidence.push(evidence);
             events.push(event);
         }
-        if (events.length || scenario) {
+        const limitations = [...new Set(record.layoutLimitations || [])].sort().map(key => layoutLimitations[key]);
+        if (events.length || scenario || limitations.length) {
             const command = record.tool && commands.get(record.request);
             if (command) {
                 assert.equal(command.tool, record.tool);
                 command.events.push(...events);
+                if (limitations.length) {
+                    command.layoutLimitations = [...new Set([...(command.layoutLimitations || []), ...limitations])].sort();
+                }
             } else {
-                const request = {id: record.request, case: scenario, ...(record.tool ? {tool: record.tool} : {}), events};
+                const request = {id: record.request, case: scenario, ...(record.tool ? {tool: record.tool} : {}), events,
+                    ...(limitations.length ? {layoutLimitations: limitations} : {})};
                 requests.push(request);
                 if (record.tool) commands.set(record.request, request);
             }
@@ -158,7 +225,27 @@ function merge(manifest, records, sources) {
         if (file.reason) warnings.push({path: file.path, reason: file.reason});
         for (const item of file.declarations) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
-            if (item.areas) {
+            if (item.family === 'layout') {
+                const decisions = new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean));
+                if (item.state === 'uncovered' && ['page', 'generic'].includes(item.layout.fileType)) {
+                    // Theme fallback and replacement cannot be inferred from a cache key.
+                    if (file.layoutProvider ? file.layoutProvider.type === 'module' : /^(?:app\/code\/|vendor\/[^/]+\/[^/]+\/.*view\/)/.test(file.path)) {
+                        const areas = item.declaredScope.type === 'base' ? ['frontend', 'adminhtml'] : [item.declaredScope.type];
+                        for (const area of areas) {
+                            for (const key of limitedHandles.get(JSON.stringify([area, item.layout.handle])) || []) {
+                                decisions.add(layoutLimitations[key]);
+                            }
+                        }
+                    }
+                }
+                if (item.supported && decisions.size) {
+                    item.reason = [...decisions].sort().map(reason => reason.replace(/\.$/, '')).join('. ');
+                    if (!item.hits) item.state = 'unmeasured';
+                }
+                if (item.state !== 'unmeasured') layoutTotals.total++;
+                if (item.state === 'covered') layoutTotals.covered++;
+                if (item.state === 'unmeasured' || decisions.size) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
+            } else if (item.areas) {
                 const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals, ...diTotals}[item.family];
                 for (const [area, outcome] of Object.entries(item.areas)) {
                     outcome.hits ??= 0;
@@ -186,22 +273,26 @@ function merge(manifest, records, sources) {
             for (let line = item.startLine; line <= (item.highlightEndLine ?? item.endLine); line++) {
                 const previous = file.lines[line];
                 const hits = (previous?.hits || 0) + item.hits;
-                const supported = item.supported || previous?.state === 'uncovered' || previous?.state === 'covered';
+                const supported = item.state !== 'unmeasured' || previous?.state === 'uncovered' || previous?.state === 'covered';
                 file.lines[line] = {hits, state: supported ? (hits ? 'covered' : 'uncovered') : 'unmeasured'};
             }
         }
-        const lines = file.family === 'plugins' ? [] : Object.values(file.lines).filter(line => line.state !== 'unmeasured');
+        const lines = ['plugins', 'layout'].includes(file.family) ? [] : Object.values(file.lines).filter(line => line.state !== 'unmeasured');
         file.total = lines.length; file.covered = lines.filter(line => line.hits > 0).length;
     }
+    layoutTotals.limitations = [...requestLimitations].sort().map(key => layoutLimitations[key]);
     const total = files.reduce((sum, file) => sum + file.total, 0);
     const covered = files.reduce((sum, file) => sum + file.covered, 0);
     return {schemaVersion: 1, run: manifest.run, manifest: manifest.id, complete: true, sourcesUnchanged: true,
         collectorErrors: [], observers: {...observerTotals, hook: observerHook}, plugins: {...pluginTotals, hook: pluginHook},
-        preferences: {...preferenceTotals, hook: preferenceHook},
+        preferences: {...preferenceTotals, hook: preferenceHook}, layout: layoutTotals,
         ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])), total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
 }
-const style = 'body{font:15px system-ui;margin:32px;color:#172b3a}a{color:#086b68}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{padding:5px 10px;text-align:left;border-bottom:1px solid #ddd}.covered{background:#dcefe0}.uncovered{background:#fbdada}.unmeasured{background:#eee;color:#555}.neutral{color:#555}.line{display:block}small{display:block}a:focus-visible{outline:2px solid #086b68;outline-offset:3px}td,code,small,h1{overflow-wrap:anywhere}.preferences{max-width:75rem;line-height:1.35}.preference-list,.preference-areas{list-style:none;padding:0}.preference-list>li{padding:12px 0;border-top:1px solid #ddd}.preference-areas{margin-top:6px}.preference-areas li{padding:6px 10px;margin:2px 0;overflow-wrap:anywhere}.preference-areas span{display:block}.line:target{outline:2px solid #086b68;outline-offset:-2px}@media(max-width:480px){body{margin:16px}td,th{padding:5px}.di-details,.di-details tbody,.di-details tr,.di-details td{display:block}.di-details td{border-bottom:0}.di-details tr{border-bottom:1px solid #ddd}}';
-function page(title, body) { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>${style}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`; }
+const stylesheet = 'report.css';
+function page(title, body, stylesheetPrefix = '') {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${stylesheetPrefix}${stylesheet}"></head><body><h1>${escape(title)}</h1>${body}</body></html>`;
+}
+
 function sourceHref(file, line, prefix = '') {
     return prefix + file.split('/').map(encodeURIComponent).join('/') + '.html#L' + line;
 }
@@ -282,6 +373,7 @@ function diSections(result, files) {
 }
 function writeReport(result, sources, directory = 'coverage/xml') {
     fs.mkdirSync(directory, {recursive: true});
+    fs.copyFileSync(path.join(__dirname, 'xml-report', stylesheet), path.join(directory, stylesheet));
     const directories = new Map([['', new Map()]]);
     const files = new Set(result.files.map(file => file.path));
     for (const file of result.files) {
@@ -297,6 +389,12 @@ function writeReport(result, sources, directory = 'coverage/xml') {
                 return `<tr><td>${bindingLabel(item, label => `<a href="#L${item.startLine}">${label}</a>`)}
                     <small>Original ${lineLabel(item)}</small></td><td>${preferenceAreas(item, files, prefix)}</td></tr>`;
             }
+            if (item.family === 'layout') {
+                const {element, handle, fileType, selection, destination} = item.layout;
+                const outcomes = item.evidence.map(event =>
+                    `<small>${escape(event.type.replace(/^layout-/, '').replaceAll('-', ' '))}${layoutObservations.has(event.type) ? ' · observed fact' : ''} · ${escape(event.theme)}</small>`).join('');
+                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(selection || element)}${destination ? ' → ' + escape(destination) : ''} · ${escape(handle)} · ${escape(fileType)} · ${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}<small>${escape(item.reason || '')}</small></td></tr>`;
+            }
             const outcomes = item.areas
                 ? Object.entries(item.areas).map(([area, outcome]) => {
                     const callbacks = [...Object.values(outcome.callbacks || {}), ...Object.values(outcome.unmeasuredCallbacks || {})].map(callback =>
@@ -307,7 +405,7 @@ function writeReport(result, sources, directory = 'coverage/xml') {
             const type = {events: 'Observer execution', plugins: 'Plugin execution'}[item.family] || item.state;
             return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(item.declaredScope.type)} ${escape(item.declaredScope.code)} · lines ${item.startLine}–${item.endLine}</small></td><td>${escape(type)}${outcomes}</td></tr>`;
         }).join('');
-        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`));
+        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`, prefix));
         let parent = path.posix.dirname(file.path);
         if (!directories.has(parent)) directories.set(parent, new Map());
         directories.get(parent).set(path.posix.basename(file.path) + '.html', {label: path.posix.basename(file.path), file});
@@ -320,10 +418,10 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         }
     }
     for (const [name, entries] of directories) {
-        const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
-        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
+        const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file && entry.file.family !== 'layout' ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
+        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. Block creation and template selection are retained as facts; their declarations require native block rendering or template execution for coverage. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
         fs.mkdirSync(path.join(directory, name), {recursive: true});
-        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files))));
+        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files)), name ? '../'.repeat(name.split('/').length) : ''));
     }
     fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
 }
@@ -334,7 +432,7 @@ function report() {
     assert.equal(run.id, manifest.run);
     const raw = `coverage/raw/php/${run.id}`;
     assert.ok(!fs.readdirSync(raw).some(file => file.endsWith('.error')), 'Failed PHP collection');
-    const metadata = fs.readdirSync(raw).filter(file => /^[a-f0-9]+(?:\.[1-9]\d*)?\.json$/.test(file));
+    const metadata = fs.readdirSync(raw).filter(file => XML_REQUEST_METADATA.test(file));
     const records = metadata.map(file => {
         const request = read(`${raw}/${file}`);
         assert.ok(request.xml, 'Missing XML runtime evidence');
@@ -344,10 +442,10 @@ function report() {
         }
         return {...request.xml, uri: request.uri, tool: request.commandId ? request.tool : undefined, request: request.commandId ?? file.slice(0, -5)};
     });
-    const sources = Object.fromEntries(manifest.files.map(file => [file.path, fs.readFileSync(`src/${file.path}`)]));
+    const sources = readSources(manifest.files);
     const result = merge(manifest, records, sources);
     writeReport(result, sources);
     return result;
 }
-module.exports = {merge, writeReport, report};
+module.exports = {merge, writeReport, report, layoutEvents, countsAsLayoutCoverage};
 if (require.main === module) report();

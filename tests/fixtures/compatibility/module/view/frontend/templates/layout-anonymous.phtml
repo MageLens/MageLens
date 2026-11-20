@@ -1,0 +1,12 @@
+<?php
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+$layout = $block->getLayout();
+$parent = $layout->getParentName($block->getNameInLayout());
+$verified = $layout->getChildName($parent, 'anonymous-child') === $block->getNameInLayout()
+    && $layout->getElementProperty($parent, 'label') === 'Anonymous fixture';
+?>
+<span data-layout-anonymous><?= $verified ? 'verified' : 'unexpected' ?></span>

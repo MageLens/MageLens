@@ -13,5 +13,9 @@ License: see LICENSE in the repository root.
                 <magerun_message>magerun-handler-ran</magerun_message>
             </cron>
         </magelens_probe>
+        <magelens_layout_fixture>
+            <visibility><enabled>1</enabled><disabled>0</disabled></visibility>
+            <actions><allowed>1</allowed><denied>0</denied><duplicate>1</duplicate><same_allowed>1</same_allowed><same_denied>0</same_denied></actions>
+        </magelens_layout_fixture>
     </default>
 </config>

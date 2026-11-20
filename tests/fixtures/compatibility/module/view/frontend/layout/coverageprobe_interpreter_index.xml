@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.layout.interpreter" template="MageLens_Compatibility::layout-mutation.phtml">
+            <arguments>
+                <argument name="value" xsi:type="helper" helper="MageLens\Compatibility\Model\LayoutValueInterpreter::value"/>
+                <argument name="late" xsi:type="string">xml-value</argument>
+                <argument name="nested" xsi:type="array">
+                    <item name="changed" xsi:type="helper" helper="MageLens\Compatibility\Model\LayoutValueInterpreter::value"/>
+                    <item name="surviving" xsi:type="string">xml-value</item>
+                </argument>
+            </arguments>
+            <action method="setData">
+                <argument name="key" xsi:type="string">action_value</argument>
+                <argument name="value" xsi:type="helper" helper="MageLens\Compatibility\Model\LayoutValueInterpreter::value"/>
+            </action>
+        </block>
+    </body>
+</page>

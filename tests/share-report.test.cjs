@@ -102,6 +102,30 @@ test('the default export contains only file paths and projected results, includi
     assert.equal(fs.existsSync(path.join(report.root, 'coverage/share-with-source.html')), false);
 });
 
+test('the export counts layout declarations and withholds their runtime evidence', t => {
+    const report = fixture(t);
+    const config = JSON.parse(report.read('xml/coverage.json'));
+    const layout = moduleRoot + '/view/frontend/layout/fixture.xml';
+    const source = '<page><body><block name="fixture"/></body></page>';
+    report.write('src/' + layout, source);
+    const run = JSON.parse(report.read('run.json'));
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    run.sources['src/' + layout] = sourceHash;
+    report.artifact('run.json', run);
+    const declarations = ['covered', 'uncovered', 'unmeasured'].map(state => ({
+        family: 'layout', state, evidence: [{type: privateMarker}], reason: privateMarker,
+    }));
+    config.files.push({path: layout, family: 'layout', declarations, covered: 0, total: 0, sourceHash});
+    config.layout = {covered: 1, total: 2, limitations: [privateMarker]};
+    report.artifact('xml/coverage.json', config);
+    const result = report.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = report.read('share.html');
+    assert.match(html, /Layout XML declarations<\/th><td>1<\/td><td>2<\/td><td>50\.00%<\/td>/);
+    assert.match(html, /Measurement warnings: 2\./);
+    assert.doesNotMatch(html, new RegExp(privateMarker));
+});
+
 test('opting into source escapes the original and keeps runtime data out of both exports', t => {
     const report = fixture(t);
     const clean = report.run();

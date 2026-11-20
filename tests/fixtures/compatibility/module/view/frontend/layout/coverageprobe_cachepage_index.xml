@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.layout.page.cache" htmlTag="section" htmlId="layout-page-cache">
+        <block class="Magento\Framework\View\Element\Text" name="magelens.layout.page.cache.marker">
+            <arguments>
+                <argument name="text" xsi:type="string"><![CDATA[<span data-layout-page-cache>cached-layout</span>]]></argument>
+            </arguments>
+        </block>
+    </container>
+</layout>

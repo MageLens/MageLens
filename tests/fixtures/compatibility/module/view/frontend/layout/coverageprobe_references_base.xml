@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.reference.root" htmlTag="section" htmlId="layout-reference-root">
+        <container name="magelens.reference.inner" htmlTag="div" htmlId="layout-reference-inner">
+            <block name="magelens.reference.subject" template="MageLens_Compatibility::layout-reference-base.phtml">
+                <arguments><argument name="marker" xsi:type="string">base-marker</argument></arguments>
+            </block>
+            <block name="magelens.reference.hidden" template="MageLens_Compatibility::layout-reference-base.phtml"/>
+        </container>
+    </container>
+    <container name="magelens.reference.removed" htmlTag="div" htmlId="layout-reference-removed">
+        <block name="magelens.reference.removed.child" template="MageLens_Compatibility::layout-reference-base.phtml"/>
+    </container>
+    <container name="magelens.reference.empty" htmlTag="div" htmlId="layout-reference-empty"/>
+    <block name="magelens.reference.unrendered" template="MageLens_Compatibility::layout-reference-base.phtml"/>
+    <referenceBlock name="magelens.reference.subject"/>
+</layout>

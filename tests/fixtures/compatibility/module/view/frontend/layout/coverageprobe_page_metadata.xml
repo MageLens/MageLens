@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <html><attribute value="layout-unnamed-html">ignored attribute text</attribute></html>
+    <head>
+        <title>Metadata title fallback</title>
+        <meta name="charset" content="UTF-8"/>
+        <meta name="content_type" content="auto"/>
+        <meta name="media_type" content="text/x-magelens"/>
+        <meta name="keywords" content="layout keyword proof"/>
+        <meta name="title" content=""/>
+        <meta name="og:layout-fixture" content="property metadata"/>
+        <meta name="x_ua_compatible" content="IE=edge"/>
+        <attribute name="" value="layout-unnamed-head"/>
+    </head>
+    <body><attribute name="0" value="layout-zero-attribute"/></body>
+</page>

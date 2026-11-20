@@ -150,7 +150,8 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args, recipe: fs.readF
     assert.equal(calls.length, 1);
     assert.equal(calls[0].recipe, original.toString()
         .replace('FROM php:8.4-fpm-bookworm AS base', `FROM ${image} AS base`)
-        .replace('--version=2.9.8', `--version=${configured('COMPOSER_VERSION')}`),
+        .replace('--version=2.9.8', `--version=${configured('COMPOSER_VERSION')}`)
+        .replace('COPY conf/php.ini ', 'COPY --chmod=0644 conf/php.ini '),
         'Preserve upstream extensions, configuration and later build stages');
     assert.equal(calls[0].args.at(-1), context, 'Build with the upstream context for its configuration files');
     for (const content of [

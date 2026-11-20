@@ -7,6 +7,7 @@ const path = require('node:path');
 const {createManifest, merge} = require('@magelens/magento-template-coverage');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {snapshot} = require('./ci/report-equivalence.cjs');
+const {writeProjection} = require('./ci/report-artifact.cjs');
 const loc = {start: {line: 1, column: 0}, end: {line: 1, column: 8}};
 function writeCoverage(directory) {
     const write = (file, value) => {
@@ -41,9 +42,7 @@ function writeCoverage(directory) {
     write('xml/coverage.json', xml);
     const summary = JSON.parse(fs.readFileSync(path.join(directory, 'summary.json')));
     summary.metrics.xml = {percent: 50}; write('summary.json', summary);
-    const complete = snapshot(directory);
-    write('xml/coverage-summary.json', complete.xml);
-    write('equivalence.json', complete);
+    writeProjection(directory, snapshot(directory));
     return {write, read: file => JSON.parse(fs.readFileSync(path.join(directory, file)))};
 }
 module.exports = {writeCoverage};

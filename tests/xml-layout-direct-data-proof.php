@@ -1,0 +1,82 @@
+<?php
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+declare(strict_types=1);
+
+require '/var/www/html/app/bootstrap.php';
+$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+require $hooks . '/xml-hooks.php';
+require $hooks . '/xml-layout-manifest.php';
+
+use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, LayoutRuntimeHooks, Recorder};
+use Magento\Framework\View\Element\Template;
+
+class MageLensDirectDataFixture extends Template
+{
+    public static int $writes = 0;
+    protected function _beforeToHtml()
+    {
+        self::$writes++;
+        $this->_data['value'] = 'xml-value';
+        return parent::_beforeToHtml();
+    }
+}
+$path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_packagemutation_native.xml';
+$source = file_get_contents(BP . '/' . $path);
+$declarations = LayoutManifest::declarations($path, $source);
+[$collector, $callbacks] = LayoutCoverage::register(LayoutManifest::targets([
+    ['path' => $path, 'family' => 'layout', 'sourceHash' => hash('sha256', $source), 'declarations' => $declarations],
+]));
+if (!in_array('--without-collector', $argv, true)) foreach ($callbacks as [$class, $method, $pre, $post]) {
+    if (!LayoutRuntimeHooks::register($class, $method, $pre, $post)) throw new RuntimeException('Cannot observe direct data fixture');
+}
+$objects = Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
+$objects->get(Magento\Framework\App\State::class)->setAreaCode('frontend');
+$area = $objects->get(Magento\Framework\App\AreaList::class)->getArea('frontend');
+foreach ([Magento\Framework\App\Area::PART_CONFIG, Magento\Framework\App\Area::PART_DESIGN] as $part) $area->load($part);
+foreach (['layout', 'block_html', 'full_page'] as $type) {
+    $objects->get(Magento\Framework\App\Cache\StateInterface::class)->setEnabled($type, false);
+}
+$external = in_array('--external-writer', $argv, true);
+$control = in_array('--untouched', $argv, true);
+$config = $objects->get(Magento\Framework\ObjectManager\ConfigInterface::class);
+if ($config instanceof Magento\Framework\ObjectManager\Config\Compiled) {
+    $parameters = array_column((new ReflectionMethod(Template::class, '__construct'))->getParameters(), 'name');
+    $arguments = array_intersect_key($config->getArguments(Template::class) ?? [], array_fill_keys($parameters, true));
+    $config->extend(['arguments' => [MageLensDirectDataFixture::class => $arguments]]);
+}
+if (!$external && !$control) $objects->configure(['preferences' => [Template::class => MageLensDirectDataFixture::class]]);
+$objects->get(Magento\Framework\App\ViewInterface::class);
+$page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
+$page->addHandle('coverageprobe_packagemutation_native');
+$block = $page->getLayout()->getBlock('magelens.layout.package.native');
+if ($external) {
+    $writer = new class extends \Magento\Framework\DataObject {
+        public function replace(Template $block): void
+        {
+            $block->_data['value'] = 'xml-value';
+        }
+    };
+    $writer->replace($block);
+}
+if (!$block instanceof Template || !str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')
+    || MageLensDirectDataFixture::$writes !== ($external || $control ? 0 : 1)) {
+    throw new RuntimeException('Native direct data write or rendered output changed');
+}
+if (hash_file('sha256', BP . '/' . $path) !== hash('sha256', $source)) throw new RuntimeException('Original fixture XML changed');
+echo "Verified native equal-valued direct PHP data assignment and unchanged original XML.\n";
+if (in_array('--without-collector', $argv, true)) exit;
+$collector->finish();
+$value = array_values(array_filter($declarations, static fn($item) => $item['layout']['kind'] === 'argument'
+    && $item['layout']['element'] === 'value'))[0];
+$events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
+$effects = array_column(array_filter($events, static fn($event) => $event['id'] === $value['id']), 'type');
+if (!in_array('layout-argument-applied', $effects, true)
+    || in_array('layout-argument-field-access-unconfirmed', $effects, true) === $control
+    || in_array('layout-argument-read', $effects, true) !== $control) {
+    throw new RuntimeException('Direct PHP data write retained original XML read credit or erased earlier application');
+}
+echo "Verified direct-field data read limitation and independent earlier XML application.\n";

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.argument.groups.root">
+        <block class="Magento\Framework\View\Element\Template" name="magelens.argument.groups" template="MageLens_Compatibility::layout-argument-groups.phtml">
+            <arguments><argument name="selected" xsi:type="string">first-group</argument></arguments>
+            <arguments><argument name="ignored" xsi:type="string">second-group</argument></arguments>
+        </block>
+    </container>
+    <referenceBlock name="magelens.argument.groups">
+        <arguments><argument name="reference" xsi:type="string">first-reference-group</argument></arguments>
+        <arguments><argument name="ignored_reference" xsi:type="string">second-reference-group</argument></arguments>
+    </referenceBlock>
+</layout>

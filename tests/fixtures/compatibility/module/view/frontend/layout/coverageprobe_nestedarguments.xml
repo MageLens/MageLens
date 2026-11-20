@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <block class="Magento\Framework\View\Element\Template" name="magelens.nested.arguments">
+        <arguments>
+            <argument name="values" xsi:type="array">
+                <item name="shared_first" xsi:type="object" shared="true">MageLens\Compatibility\Model\LayoutArgumentSource</item>
+                <item name="shared_second" xsi:type="object" shared="1">MageLens\Compatibility\Model\LayoutArgumentSource</item>
+                <item name="fresh_first" xsi:type="object" shared="false">MageLens\Compatibility\Model\LayoutArgumentSource</item>
+                <item name="fresh_second" xsi:type="object" shared="0">MageLens\Compatibility\Model\LayoutArgumentSource</item>
+                <item name="translated" xsi:type="string" translate="1">MageLens nested translation marker</item>
+                <item name="untranslated" xsi:type="string" translate="0">MageLens nested translation marker</item>
+                <item name="options" xsi:type="options" model="MageLens\Compatibility\Model\LayoutArgumentSource"/>
+                <item name="helper" xsi:type="helper" helper="MageLens\Compatibility\Model\LayoutArgumentSource::join">
+                    <param name="first">nested</param><param name="second">helper</param>
+                </item>
+                <item name="route" xsi:type="url" path="coverageprobe/nestedarguments/index">
+                    <param name="variant">nested</param>
+                </item>
+            </argument>
+        </arguments>
+        <arguments>
+            <argument name="ignored" xsi:type="array">
+                <item name="object" xsi:type="object" shared="false">MageLens\Compatibility\Model\LayoutArgumentSource</item>
+                <item name="text" xsi:type="string" translate="true">ignored translation</item>
+                <item name="options" xsi:type="options" model="MageLens\Compatibility\Model\LayoutArgumentSource"/>
+                <item name="helper" xsi:type="helper" helper="MageLens\Compatibility\Model\LayoutArgumentSource::join">
+                    <param name="first">ignored</param><param name="second">helper</param>
+                </item>
+                <item name="route" xsi:type="url" path="coverageprobe/ignored/index"/>
+            </argument>
+        </arguments>
+    </block>
+</layout>

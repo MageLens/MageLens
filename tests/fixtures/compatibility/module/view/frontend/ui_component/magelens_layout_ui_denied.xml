@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<container xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Ui:etc/ui_configuration.xsd" name="magelens_layout_ui_denied">
+    <dataSource name="magelens_layout_source_denied">
+        <dataProvider class="MageLens\Compatibility\Ui\DataProvider" name="magelens_layout_source_denied">
+            <settings>
+                <requestFieldName>id</requestFieldName>
+                <primaryFieldName>id</primaryFieldName>
+            </settings>
+        </dataProvider>
+    </dataSource>
+    <htmlContent name="fixture">
+        <block name="magelens.layout.ui-content.denied" class="Magento\Framework\View\Element\Template" template="MageLens_Compatibility::layout-structure.phtml"/>
+    </htmlContent>
+</container>

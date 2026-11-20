@@ -9,6 +9,7 @@ const {execFileSync} = require('node:child_process');
 const {browserTitles, cliTitles, verifyScenarios} = require('../verify-scenarios.cjs');
 const {cases} = require('./cases.cjs');
 const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
+const {snapshotFile, xmlFile, readProjection} = require('./report-artifact.cjs');
 const {provenance} = require('../../docker/runner/cypress-source/provenance.cjs');
 const {configuration: previewConfiguration, verifyEvidence: verifyPreviewEvidence} = require('./dependency-previews.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -53,8 +54,9 @@ function verifyCase(entry, evidence, directory, context) {
     assert.ok(Object.keys(read(path.join(directory, 'php/line-coverage.json'))).length, 'Missing PHP coverage');
     assert.ok(Object.keys(read(path.join(directory, 'js/coverage-final.json'))).length, 'Missing JavaScript coverage');
     assert.ok(read(path.join(directory, 'templates/coverage-summary.json')).templates.length, 'Missing template coverage');
-    validateSnapshot(read(path.join(directory, 'equivalence.json')), run.id, summary);
-    assert.deepEqual(read(path.join(directory, 'xml/coverage-summary.json')), read(path.join(directory, 'equivalence.json')).xml, 'Incomplete XML report projection');
+    const complete = readProjection(directory, snapshotFile);
+    validateSnapshot(complete, run.id, summary);
+    assert.deepEqual(readProjection(directory, xmlFile), complete.xml, 'Incomplete XML report projection');
     verifyScenarios(directory);
     return run.id;
 }
@@ -79,13 +81,13 @@ function gate() {
             else assert.deepEqual(evidence.dependencyPreviews || {}, previewProvenance, 'Cases tested different library sources or archives');
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
-            themeReports.push({...entry, snapshot: read(path.join(directory, 'equivalence.json'))});
+            themeReports.push({...entry, snapshot: readProjection(directory, snapshotFile)});
             reports.push(directory);
         } catch (error) { errors.push(`${entry.id}: ${error.message}`); }
     }
     if (reports.length === cases.length) {
         try {
-            execFileSync(process.execPath, ['tests/compare-matrix.cjs', ...reports], {stdio: 'inherit',
+            execFileSync(process.execPath, [path.join(__dirname, '..', 'compare-matrix.cjs'), ...reports], {stdio: 'inherit',
                 env: {...process.env, MAGELENS_MATRIX_REPORT: 'ci-gate/matrix-comparison.json'}});
         } catch { errors.push('Complete matrix coverage comparison failed'); }
     } else errors.push(`Matrix comparison incomplete: ${reports.length}/${cases.length} reports`);

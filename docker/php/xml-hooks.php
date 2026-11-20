@@ -13,6 +13,30 @@ require_once __DIR__ . '/xml-plugins.php';
 require_once __DIR__ . '/xml-preference-manifest.php';
 require_once __DIR__ . '/xml-preferences.php';
 require_once __DIR__ . '/xml-di-usage.php';
+require_once __DIR__ . '/xml-layout-runtime-hooks.php';
+require_once __DIR__ . '/xml-layout.php';
+require_once __DIR__ . '/xml-layout-ownership.php';
+require_once __DIR__ . '/xml-layout-package-events.php';
+require_once __DIR__ . '/xml-layout-argument-evaluation.php';
+require_once __DIR__ . '/xml-layout-argument-ownership.php';
+require_once __DIR__ . '/xml-layout-argument-groups.php';
+require_once __DIR__ . '/xml-layout-action-guards.php';
+require_once __DIR__ . '/xml-layout-template-ownership.php';
+require_once __DIR__ . '/xml-layout-field-access.php';
+require_once __DIR__ . '/xml-layout-block-arguments.php';
+require_once __DIR__ . '/xml-layout-block-rendering.php';
+require_once __DIR__ . '/xml-layout-handle-metadata.php';
+require_once __DIR__ . '/xml-layout-selection-ownership.php';
+require_once __DIR__ . '/xml-layout-before-plugin.php';
+require_once __DIR__ . '/xml-layout-page.php';
+require_once __DIR__ . '/xml-layout-page-values.php';
+require_once __DIR__ . '/xml-layout-structure.php';
+require_once __DIR__ . '/xml-layout-positions.php';
+require_once __DIR__ . '/xml-layout-references.php';
+require_once __DIR__ . '/xml-layout-argument-names.php';
+require_once __DIR__ . '/xml-layout-registry.php';
+require_once __DIR__ . '/xml-layout-assets.php';
+require_once __DIR__ . '/xml-layout-cache.php';
 use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences};
 
 function startXmlHooks(string $run): void
@@ -52,8 +76,8 @@ function startXmlHooks(string $run): void
     foreach (['save', 'delete'] as $method) $hooks[] = ['Magento\\Framework\\App\\Config\\Storage\\Writer', $method,
         static function ($subject, array $params) { Recorder::mutation(); }, null];
     $hooks = array_merge($hooks, Observers::hooks(Recorder::observerTargets()), Plugins::hooks(Recorder::pluginTargets()),
-        Preferences::hooks(Recorder::preferenceTargets()));
+        Preferences::hooks(Recorder::preferenceTargets()), Recorder::layoutHooks());
     foreach ($hooks as [$class, $method, $pre, $post]) {
-        if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) throw new RuntimeException('Cannot register XML runtime hook');
+        if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::registerWrapped($class, $method, $pre, $post)) throw new RuntimeException('Cannot register XML runtime hook');
     }
 }

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<container xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Ui:etc/ui_configuration.xsd" name="magelens_layout_ui_acl_dashboard">
+    <argument name="data" xsi:type="array">
+        <item name="template" xsi:type="string">templates/magelens/acl</item>
+        <item name="config" xsi:type="array">
+            <item name="template" xsi:type="string">ui/collection</item>
+        </item>
+    </argument>
+    <dataSource name="magelens_layout_ui_acl_dashboard_source">
+        <dataProvider class="MageLens\Compatibility\Ui\DataProvider" name="magelens_layout_ui_acl_dashboard_source">
+            <settings>
+                <requestFieldName>id</requestFieldName>
+                <primaryFieldName>id</primaryFieldName>
+            </settings>
+        </dataProvider>
+    </dataSource>
+    <htmlContent name="fixture">
+        <block name="magelens.layout.ui-acl-dashboard" class="Magento\Framework\View\Element\Template" template="MageLens_Compatibility::layout-structure.phtml"/>
+    </htmlContent>
+</container>

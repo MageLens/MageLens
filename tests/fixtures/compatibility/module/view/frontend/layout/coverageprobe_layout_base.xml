@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceContainer name="content">
+            <block class="Magento\Framework\View\Element\Template" name="magelens.layout.replaced" template="MageLens_Compatibility::layout-original.phtml">
+                <block class="Magento\Framework\View\Element\Template" name="magelens.layout.unrendered" template="MageLens_Compatibility::layout-unvisited.phtml"/>
+            </block>
+            <block class="Magento\Framework\View\Element\Template" name="magelens.layout.equal" template="MageLens_Compatibility::layout-equal.phtml"/>
+            <block class="MageLens\Compatibility\Block\LateTemplate" name="magelens.layout.late" template="MageLens_Compatibility::layout-original.phtml"/>
+        </referenceContainer>
+    </body>
+</page>

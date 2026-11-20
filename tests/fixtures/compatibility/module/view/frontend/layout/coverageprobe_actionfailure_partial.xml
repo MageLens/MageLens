@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <block class="MageLens\Compatibility\Block\LayoutFailedAction" name="magelens.action.failure.partial">
+        <action method="observe">
+            <argument name="before" xsi:type="options" model="MageLens\Compatibility\Model\LayoutFailedActionOptions"/>
+            <argument name="broken" xsi:type="number">not-numeric</argument>
+            <argument name="later" xsi:type="options" model="MageLens\Compatibility\Model\LayoutFailedActionOptions"/>
+        </action>
+        <action method="observe"><argument name="marker" xsi:type="string">after</argument></action>
+    </block>
+</layout>

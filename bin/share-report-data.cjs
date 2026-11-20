@@ -87,6 +87,21 @@ function shareReportData(coverageDir) {
         if (xml.run !== run.id || xml.complete !== true) throw new Error('Incomplete or stale XML coverage.');
         const xmlFiles = xml.files.map(entry => row(entry.path, /\.xml$/, entry));
         sections.push({...section('XML configuration lines', xml, xmlFiles), warningCount: warningCount(xml.warnings)});
+        if (xml.layout) {
+            const layoutFiles = xml.files.filter(entry => entry.family === 'layout');
+            let unmeasured = 0;
+            const layoutRows = layoutFiles.map(entry => {
+                const declarations = entry.declarations.filter(item => item.family === 'layout');
+                const applicable = declarations.filter(item => item.state !== 'unmeasured');
+                unmeasured += declarations.length - applicable.length;
+                return row(entry.path, /\.xml$/, {
+                    covered: applicable.filter(item => item.state === 'covered').length,
+                    total: applicable.length,
+                });
+            });
+            sections.push({...section('Layout XML declarations', xml.layout, layoutRows),
+                warningCount: unmeasured + warningCount(xml.layout.limitations)});
+        }
     }
     return sections;
 }

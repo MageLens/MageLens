@@ -300,3 +300,110 @@ test('factory DI equivalence retains virtual routes and inherited parameter iden
         assert.equal(compareThemes(matrix, cases).passed, false);
     }
 });
+
+test('layout equivalence preserves effects, source and context without exposing identities', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    const effect = {type: 'layout-template-executed', area: 'frontend', theme: 'frontend/SECRET/theme'};
+    const declaration = {
+        id: 'b'.repeat(64), family: 'layout', path: '/page/body/block/@template', declaredScope: {type: 'frontend', code: ''},
+        startLine: 11, endLine: 11, state: 'covered', supported: true, hits: 2, evidence: [effect],
+        layout: {kind: 'template', fileType: 'page', ordinal: 2, element: 'SECRET block', handle: 'SECRET handle',
+            instruction: 'block', attribute: 'template'}
+    };
+    const action = {...declaration, id: 'c'.repeat(64), path: '/page/body/block/action', state: 'unmeasured', hits: 0,
+        layout: {...declaration.layout, kind: 'action', ordinal: 3, instruction: 'action', attribute: null},
+        evidence: [{...effect, type: 'layout-action-ambiguous'}]};
+    const hint = {...declaration, id: 'd'.repeat(64), path: '/page/@xsi:noNamespaceSchemaLocation',
+        state: 'unmeasured', supported: false, hits: 0, evidence: [],
+        layout: {...declaration.layout, kind: 'schema-hint', ordinal: 0, instruction: 'page', attribute: 'xsi:noNamespaceSchemaLocation'}};
+    xml.files[0].declarations = [declaration, action, hint];
+    xml.layout = {total: 1, covered: 1, limitations: ['SECRET cache reason']};
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    declaration.evidence.push({...effect, request: 'another'});
+    declaration.hits = 90;
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    const invalidHint = structuredClone(original);
+    const hints = Object.values(invalidHint.xml.files).flatMap(file => file.declarations).filter(item => item.layout?.[0] === 'schema-hint');
+    assert.equal(hints.length, 1);
+    hints[0].state = 'covered';
+    assert.throws(() => validateSnapshot(invalidHint, 'fresh', read('summary.json')), /Schema hints cannot receive runtime coverage/);
+
+    for (const change of [
+        report => { report.files[0].declarations[0].evidence[0].theme = 'frontend/Acme/different'; },
+        report => {
+            const item = report.files[0].declarations[0];
+            item.evidence = [{...item.evidence[0], type: 'layout-template-selected'}];
+            item.state = 'uncovered'; item.hits = 0; report.layout.covered = 0;
+        },
+        report => { report.files[0].declarations[1].evidence = []; },
+        report => { report.files[0].declarations[0].startLine++; },
+        report => { report.layout.limitations.pop(); }
+    ]) {
+        const changed = structuredClone(xml);
+        change(changed);
+        write('xml/coverage.json', changed);
+        const matrix = reports(original);
+        matrix[1].snapshot = snapshot(directory);
+        assert.equal(compareThemes(matrix, cases).passed, false);
+    }
+});
+
+test('native Admin context names are platform metadata while every source and effect remains exact', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    const effect = {type: 'layout-block-rendered', area: 'adminhtml', theme: 'adminhtml/Magento/backend'};
+    xml.files[0].declarations = [{id: 'a'.repeat(64), family: 'layout', path: '/page/body/block',
+        declaredScope: {type: 'adminhtml', code: ''}, startLine: 1, endLine: 1, supported: true,
+        state: 'covered', hits: 1, evidence: [effect], layout: {kind: 'block', fileType: 'page', ordinal: 1,
+            element: 'fixture', handle: 'fixture', instruction: 'block', attribute: null}}];
+    xml.layout = {total: 1, covered: 1, limitations: []};
+    write('xml/coverage.json', xml);
+    const magento = snapshot(directory);
+    effect.theme = 'adminhtml/MageOS/m137-admin-theme';
+    write('xml/coverage.json', xml);
+    const mageos = snapshot(directory);
+    assert.notDeepEqual(magento.xml, mageos.xml, 'The actual contexts must remain in the saved snapshots');
+    const matrix = cases.map(entry => ({...entry, snapshot: structuredClone(entry.platform === 'mageos' ? mageos : magento)}));
+    const original = structuredClone(matrix);
+    assert.equal(compareThemes(matrix, cases).passed, true);
+    assert.deepEqual(matrix, original, 'Comparison must not rewrite the original snapshots');
+    const declaration = value => Object.values(value.xml.files)[0].declarations[0];
+    for (const alter of [
+        value => { declaration(value).evidence[0][2] = 'f'.repeat(64); },
+        value => { declaration(value).evidence[0][0] = 'layout-block-created'; },
+        value => { Object.values(value.xml.files)[0].source = 'f'.repeat(64); },
+        value => { declaration(value).state = 'uncovered'; declaration(value).evidence = []; value.xml.layout.covered = 0; },
+    ]) {
+        const changed = structuredClone(matrix);
+        alter(changed[1].snapshot);
+        assert.equal(compareThemes(changed, cases).passed, false);
+    }
+});
+
+test('complete XML validation rejects rendering coverage inferred from construction or selection facts', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json');
+    for (const [kind, boundary, observation] of [
+        ['block', 'layout-block-rendered', 'layout-block-created'],
+        ['template', 'layout-template-executed', 'layout-template-selected'],
+    ]) {
+        xml.files[0].declarations = [{id: 'a'.repeat(64), family: 'layout', path: '/layout/block',
+            declaredScope: {type: 'frontend', code: ''}, startLine: 1, endLine: 1, supported: true,
+            state: 'covered', hits: 1, evidence: [{type: boundary, area: 'frontend', theme: 'frontend/Acme/theme'}],
+            layout: {kind, fileType: 'generic', ordinal: 1, element: 'fixture', handle: 'fixture',
+                instruction: 'block', attribute: kind === 'template' ? 'template' : null}}];
+        xml.layout = {total: 1, covered: 1, limitations: []};
+        write('xml/coverage.json', xml);
+        const value = snapshot(directory);
+        const declaration = Object.values(value.xml.files).flatMap(file => file.declarations).find(item => item.layout?.[0] === kind);
+        declaration.evidence[0][0] = observation;
+        assert.throws(() => validateSnapshot(value, 'fresh', read('summary.json')), /creation and selection facts cannot substitute for rendering/);
+        declaration.state = 'uncovered';
+        value.xml.layout.covered = 0;
+        validateSnapshot(value, 'fresh', read('summary.json'));
+    }
+});

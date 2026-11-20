@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <block class="Magento\Framework\View\Element\Template" name="magelens.scope.template.bind" template="MageLens_Compatibility::layout-mutation.phtml">
+        <arguments>
+            <argument name="value" xsi:type="string">xml-value</argument>
+            <argument name="late" xsi:type="string">xml-value</argument>
+        </arguments>
+    </block>
+    <block class="Magento\Framework\View\Element\Template" name="magelens.scope.template.bindTo" template="MageLens_Compatibility::layout-mutation.phtml">
+        <arguments>
+            <argument name="value" xsi:type="string">xml-value</argument>
+            <argument name="late" xsi:type="string">xml-value</argument>
+        </arguments>
+    </block>
+    <block class="Magento\Framework\View\Element\Template" name="magelens.scope.template.call" template="MageLens_Compatibility::layout-mutation.phtml">
+        <arguments>
+            <argument name="value" xsi:type="string">xml-value</argument>
+            <argument name="late" xsi:type="string">xml-value</argument>
+        </arguments>
+    </block>
+    <block class="Magento\Framework\View\Element\Template" name="magelens.scope.data.bind" template="MageLens_Compatibility::layout-mutation.phtml">
+        <arguments>
+            <argument name="value" xsi:type="string">xml-value</argument>
+            <argument name="late" xsi:type="string">xml-value</argument>
+        </arguments>
+    </block>
+    <block class="Magento\Framework\View\Element\Template" name="magelens.scope.data.bindTo" template="MageLens_Compatibility::layout-mutation.phtml">
+        <arguments>
+            <argument name="value" xsi:type="string">xml-value</argument>
+            <argument name="late" xsi:type="string">xml-value</argument>
+        </arguments>
+    </block>
+    <block class="Magento\Framework\View\Element\Template" name="magelens.scope.data.call" template="MageLens_Compatibility::layout-mutation.phtml">
+        <arguments>
+            <argument name="value" xsi:type="string">xml-value</argument>
+            <argument name="late" xsi:type="string">xml-value</argument>
+        </arguments>
+    </block>
+</layout>

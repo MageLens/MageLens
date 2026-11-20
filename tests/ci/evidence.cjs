@@ -8,6 +8,7 @@ const os = require('node:os');
 const {browserTitles, cliTitles, verifyScenarios} = require('../verify-scenarios.cjs');
 const {cases} = require('./cases.cjs');
 const {snapshot} = require('./report-equivalence.cjs');
+const {writeProjection} = require('./report-artifact.cjs');
 const {evidence: previewEvidence} = require('./dependency-previews.cjs');
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => key in value).map(key => [key, value[key]]));
 const blog = file => file.includes('/Application/Blog/');
@@ -90,10 +91,7 @@ function writeEvidence() {
         }
         report.counts = pick(read(`${directory}/coverage/${entry.runner}-results.json`), ['totalTests', 'totalPassed', 'totalFailed', 'totalSkipped', 'totalPending']);
         report.browser = read(`${directory}/coverage/${entry.runner}-results.json`).browser;
-        const complete = snapshot(source);
-        fs.mkdirSync(`${directory}/coverage/xml`, {recursive: true});
-        fs.writeFileSync(`${directory}/coverage/xml/coverage-summary.json`, JSON.stringify(complete.xml) + '\n');
-        fs.writeFileSync(`${directory}/coverage/equivalence.json`, JSON.stringify(complete) + '\n');
+        writeProjection(path.join(directory, 'coverage'), snapshot(source));
         verifyScenarios(`${directory}/coverage`);
         report.passed = !report.diagnostics && !report.previewError && ['probe', 'resources', 'isolation', 'e2e', 'cleanup'].every(step => report.steps[step]?.outcome === 'success');
     } catch (error) {

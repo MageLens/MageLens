@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <update handle="coverageprobe_moveoperands_base"/>
+    <move element="magelens.layout.moveoperand.movable" destination="magelens.layout.moveoperand.left" as="moved-alias" after="-"/>
+</layout>

@@ -7,13 +7,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {cases} = require('./ci/cases.cjs');
 const {verifyCase} = require('./ci/gate.cjs');
 const {sanitizedCoverage} = require('./ci/evidence.cjs');
 const {writeCoverage} = require('./ci-coverage-fixture.cjs');
 const {provenance} = require('../docker/runner/cypress-source/provenance.cjs');
-const {snapshot} = require('./ci/report-equivalence.cjs');
+const {snapshot, validateSnapshot, compareThemes} = require('./ci/report-equivalence.cjs');
+const {snapshotFile, xmlFile, readProjection, writeProjection} = require('./ci/report-artifact.cjs');
 const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
 const {browserTitles, cliTitles} = require('./verify-scenarios.cjs');
 const counts = {totalTests: 8, totalPassed: 8, totalFailed: 0, totalSkipped: 0, totalPending: 0};
@@ -60,6 +62,30 @@ test('artifact projection removes credentials, source, private packages and arbi
     assert.equal(safe['php/line-coverage.json']['/shop/app/code/Application/Blog/Model/Article.php']['1'], 1);
     assert.equal(safe['cypress-results.json'].totalPassed, 8);
 });
+test('a large sanitized report preserves its complete inventory within the artifact limit', t => {
+    const {directory, entry, evidence, context} = fixture(t);
+    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
+    fs.writeFileSync(path.join(directory, 'magelens-result'), directory);
+    const rawXml = path.join(directory, 'xml/coverage.json');
+    const xml = JSON.parse(fs.readFileSync(rawXml));
+    const warning = {path: xml.files[1].path, reason: 'SECRET'};
+    xml.warnings = Array.from({length: 60_000}, () => warning);
+    fs.writeFileSync(rawXml, JSON.stringify(xml));
+    const expected = snapshot(directory);
+    assert.ok(Buffer.byteLength(JSON.stringify(expected)) > 5 * 1024 * 1024);
+    const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/evidence.cjs')], {cwd: directory, encoding: 'utf8', env: {...process.env,
+        CI_CASE: entry.id, CI_SHA: context.sha, RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: '', RUNNER_OS: 'Linux',
+        ImageOS: 'ubuntu', ImageVersion: 'today', GITHUB_RUN_ID: context.run, GITHUB_RUN_ATTEMPT: context.attempt,
+        CI_STEPS: JSON.stringify(evidence.steps)}});
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const coverage = path.join(directory, 'ci-reports', entry.id, 'coverage');
+    const readGzip = name => JSON.parse(require('node:zlib').gunzipSync(fs.readFileSync(path.join(coverage, name))));
+    const projected = readGzip(snapshotFile);
+    assert.deepEqual(projected, JSON.parse(JSON.stringify(expected)));
+    assert.deepEqual(readGzip(xmlFile), JSON.parse(JSON.stringify(expected.xml)));
+    assert.doesNotMatch(JSON.stringify(projected), /SECRET/);
+    assert.equal(verifyCase(entry, evidence, coverage, context), 'fresh');
+});
 test('case gate accepts complete evidence and rejects stale, skipped, canceled and forged host evidence', t => {
     const {directory, entry, evidence, context} = fixture(t);
     assert.equal(verifyCase(entry, evidence, directory, context), 'fresh');
@@ -89,8 +115,6 @@ test('complete qualification uses the Windows report for the eighth mode and sti
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-complete-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(root, 'dependencies.yaml'));
-    fs.mkdirSync(path.join(root, 'tests'));
-    for (const file of ['verify-scenarios.cjs', 'compare-matrix.cjs']) fs.copyFileSync(path.join(__dirname, file), path.join(root, 'tests', file));
     const artifacts = new Map();
     for (const entry of cases) {
         const artifact = path.join(root, 'ci-artifacts', `case-${entry.id}-attempt-1`);
@@ -124,7 +148,18 @@ test('complete qualification uses the Windows report for the eighth mode and sti
         const scope = read('javascript-scope.json');
         scope.included.push({path: file.slice('/shop/'.length), group: 'application'}); write('javascript-scope.json', scope);
         const complete = snapshot(coverage);
-        write('equivalence.json', complete); write('xml/coverage-summary.json', complete.xml);
+        const layoutSource = 'app/code/Application/Blog/view/frontend/layout/blog_index_index.xml';
+        const fingerprint = 'a'.repeat(64);
+        const covered = entry.theme === 'hyva';
+        const state = covered ? 'covered' : 'uncovered';
+        complete.xml.files[layoutSource] = {source: fingerprint, lines: {1: state}, declarations: [{
+            supported: true, state, id: fingerprint,
+            layout: ['template', 'page', 1, ...Array(6).fill(fingerprint)],
+            evidence: covered ? [['layout-template-executed', 'frontend', fingerprint]] : [],
+        }]};
+        complete.xml.layout.total++;
+        if (covered) complete.xml.layout.covered++;
+        writeProjection(coverage, complete);
         fs.writeFileSync(path.join(artifact, 'evidence.json'), JSON.stringify({...evidence, ...entry, browser,
             host: entry.os === 'windows-latest' ? 'Windows' : 'Linux'}));
         artifacts.set(entry.id, artifact);
@@ -139,12 +174,86 @@ test('complete qualification uses the Windows report for the eighth mode and sti
     assert.equal(qualification.expectedAcceptanceTests, 64);
     const comparison = JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/matrix-comparison.json')));
     assert.ok(comparison.runs.some(entry => entry.directory.includes('windows-latest-mageos-luma-cypress')));
+    const hyva = cases.find(entry => entry.theme === 'hyva');
+    const hyvaCoverage = path.join(artifacts.get(hyva.id), 'coverage');
+    const original = readProjection(hyvaCoverage, snapshotFile);
+    const divergent = structuredClone(original);
+    const layout = divergent.xml.files['app/code/Application/Blog/view/frontend/layout/blog_index_index.xml'];
+    layout.declarations[0].evidence = [];
+    layout.declarations[0].state = layout.lines[1] = 'uncovered';
+    divergent.xml.layout.covered--;
+    writeProjection(hyvaCoverage, divergent);
+    assert.equal(run().status, 1, 'A valid report with different layout outcomes in the same theme must fail');
+    const failed = JSON.parse(fs.readFileSync(path.join(root, 'ci-gate/qualification.json')));
+    assert.equal(failed.completedCases, 8);
+    assert.equal(failed.themeReportsEqual, false);
+    writeProjection(hyvaCoverage, original);
     const windows = cases.find(entry => entry.os === 'windows-latest');
     fs.renameSync(artifacts.get(windows.id), path.join(root, 'ci-artifacts', 'case-ubuntu-latest-mageos-luma-cypress-attempt-1'));
     const missing = run();
     assert.equal(missing.status, 1);
     assert.match(missing.stdout, /Matrix comparison incomplete: 7\/8/);
 });
+test('layout qualification compares static declarations across storefronts', t => {
+    const {directory} = fixture(t);
+    const complete = snapshot(directory);
+    const source = 'app/code/Application/Blog/view/frontend/layout/shared.xml';
+    const fingerprint = 'a'.repeat(64);
+    complete.xml.files[source] = {source: fingerprint, lines: {1: 'uncovered'}, declarations: [{
+        id: fingerprint, supported: true, state: 'uncovered', range: [1, 1],
+        layout: ['template', 'page', 1, ...Array(6).fill(fingerprint)], evidence: [],
+    }]};
+    const sharedProvider = 'app/design/frontend/MageLens/child/MageLens_Compatibility/layout/shared.xml';
+    complete.xml.files[sharedProvider] = structuredClone(complete.xml.files[source]);
+    complete.xml.layout.total = 2;
+    const reports = cases.map(entry => ({...entry, snapshot: structuredClone(complete)}));
+    assert.equal(compareThemes(reports, cases).passed, true);
+    for (const change of [
+        xml => { delete xml.files[source]; xml.layout.total--; },
+        xml => { xml.files[source].source = 'b'.repeat(64); },
+        xml => { xml.files[source].declarations[0].range = [2, 3]; },
+        xml => { delete xml.files[sharedProvider]; xml.layout.total--; },
+    ]) {
+        const changed = structuredClone(reports);
+        for (const report of changed.filter(entry => entry.theme === 'hyva')) change(report.snapshot.xml);
+        assert.equal(compareThemes(changed, cases).passed, false, 'Storefront-wide change to shared layout passed qualification');
+    }
+});
+
+test('layout qualification requires the summary even when every declaration is unmeasured', t => {
+    const {directory} = fixture(t);
+    const complete = snapshot(directory);
+    const fingerprint = 'a'.repeat(64);
+    complete.xml.files['app/code/Application/Blog/view/frontend/layout/shared.xml'] = {
+        source: fingerprint, lines: {1: 'unmeasured'}, declarations: [{
+            id: fingerprint, supported: false, state: 'unmeasured',
+            layout: ['instruction', 'page', 0, ...Array(6).fill(fingerprint)], evidence: [],
+        }],
+    };
+    delete complete.xml.layout;
+    const summary = JSON.parse(fs.readFileSync(path.join(directory, 'summary.json')));
+    assert.throws(() => validateSnapshot(complete, complete.run, summary), /Missing layout coverage summary/);
+});
+
+test('layout qualification sorts native and custom Admin evidence after normalizing native themes', () => {
+    const hash = value => createHash('sha256').update(value).digest('hex');
+    const custom = 'adminhtml/Custom/theme-4';
+    const entries = ['Magento/backend', 'MageOS/m137-admin-theme'].map((native, index) => ({
+        id: native, theme: 'luma', platform: index ? 'mageos' : 'magento',
+        snapshot: {xml: {files: {'app/code/Application/Blog/view/adminhtml/layout/shared.xml': {
+            declarations: [{layout: ['template'], evidence: [hash('adminhtml/' + native), hash(custom)].sort()
+                .map(theme => ['layout-template-executed', 'adminhtml', theme])}],
+        }}}},
+    }));
+    assert.notEqual(entries[0].snapshot.xml.files[Object.keys(entries[0].snapshot.xml.files)[0]].declarations[0].evidence[0][2] === hash(custom),
+        entries[1].snapshot.xml.files[Object.keys(entries[1].snapshot.xml.files)[0]].declarations[0].evidence[0][2] === hash(custom),
+        'The fixture must put custom evidence on opposite sides of native evidence');
+    assert.equal(compareThemes(entries, entries).passed, true);
+    const declaration = Object.values(entries[1].snapshot.xml.files)[0].declarations[0];
+    declaration.evidence.find(row => row[2] === hash(custom))[2] = hash('adminhtml/Custom/different');
+    assert.equal(compareThemes(entries, entries).passed, false);
+});
+
 test('case gate rejects missing or incomplete runner regressions and stale source builds', t => {
     const {directory, entry, evidence, context} = fixture(t);
     const file = path.join(directory, 'cypress-runner-results.json');
@@ -211,7 +320,7 @@ test('case gate rejects stale collection reports and missing coverage evidence',
     assert.throws(() => verifyCase(entry, evidence, directory, context), /ENOENT/);
 });
 
-for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templates/coverage-summary.json', 'equivalence.json']) {
+for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templates/coverage-summary.json', snapshotFile, xmlFile]) {
     test(`every host case requires ${file}`, t => {
         const {directory, entry, evidence, context} = fixture(t);
         fs.rmSync(path.join(directory, file));
@@ -268,6 +377,6 @@ test('invalid full report fails its case while retaining safe acceptance and leg
     assert.deepEqual(evidence.counts, counts);
     assert.ok(evidence.diagnosticLocations.some(location => location.includes('report-equivalence.cjs:')));
     assert.ok(fs.existsSync(path.join(target, 'coverage/php/line-coverage.json')));
-    assert.ok(!fs.existsSync(path.join(target, 'coverage/equivalence.json')));
+    assert.ok(!fs.existsSync(path.join(target, 'coverage', snapshotFile)));
     assert.doesNotMatch(JSON.stringify(evidence), /SECRET/);
 });
