@@ -26,7 +26,7 @@ function reports(t, covered, runner = 'cypress') {
     const areas = {frontend: {status: 'eligible', hits: covered}, adminhtml: {status: 'unsupported', hits: 0}};
     json('coverage/xml/coverage.json', {run: 'fixture', covered, total: 1, percent, complete: true, sourcesUnchanged: true, collectorErrors: [],
         observers: totals, plugins: totals, preferences: totals, virtualTypes: totals, arguments: totals, lifecycles: totals, warnings: [],
-        files: [{path: 'app/code/Acme/Shop/etc/config.xml', family: 'config', declarations: [],
+        files: [{path: 'app/code/Acme/Shop/etc/config.xml', family: 'config', declarations: [{id: 'config-1', family: 'config', startLine: 5, endLine: 5}],
             lines: {5: {hits: covered, state: covered ? 'covered' : 'uncovered'}, 6: {hits: 0, state: 'unmeasured'}}},
         {path: 'app/code/Acme/Shop/etc/di.xml', family: 'plugins', lines: {3: {hits: covered, state: covered ? 'covered' : 'uncovered'}},
             declarations: ['events', 'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles'].map((family, index) =>
@@ -209,6 +209,69 @@ test('the coverage database is written only when the run asks for it', t => {
     assert.deepEqual(fs.readdirSync(`${fixture.root}/coverage`).filter(file => /sqlite|schema/.test(file)), ['report.sqlite', 'schema.sql']);
 });
 
+// coverage/attribution/ for the reports() fixture: two attempts and shared setup.
+function attribution(fixture, change = files => files) {
+    const attempt = (id, test, outcome) => ({run: 'fixture', id, runner: 'cypress', spec: 'cypress/e2e/cart.cy.js', test: ['cart', test], retry: 0,
+        project: null, worker: null, startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', outcome});
+    const di = 'app/code/Acme/Shop/etc/di.xml';
+    const files = change({
+        php: {'app/code/Acme/Shop/Model/Cart.php': {12: {0: 1, unattributed: 1}}},
+        javascript: {'app/code/Acme/Shop/view/frontend/web/js/cart.js': {'s:0': {0: 5, 1: 2}, 'f:0': {1: 1}, 'b:0:0': {0: 1}}},
+        templates: {'app/code/Acme/Shop/view/frontend/templates/cart.phtml': {'binding:1': {0: 2}, 'script:1:f:0': {1: 1}, 'script:1:b:0': {unattributed: 1}}},
+        xml: {'app/code/Acme/Shop/etc/config.xml': {'config-1': {0: 1}},
+            [di]: Object.fromEntries([0, 1, 2, 3, 4, 5].map(index => [`declaration-${index}@frontend`, {1: 1}]))}
+    });
+    fixture.json('coverage/attribution/index.json', {schemaVersion: 1, run: 'fixture', attempts: [attempt('a'.repeat(32), 'adds', 'passed'), attempt('b'.repeat(32), 'removes', 'failed')]});
+    for (const [name, data] of Object.entries(files)) fixture.json(`coverage/attribution/${name}.json`, {schemaVersion: 1, run: 'fixture', files: data});
+}
+
+test('the coverage database loads test attribution with each collector\'s hit semantics', t => {
+    const fixture = reports(t, 1);
+    fs.mkdirSync(`${fixture.root}/coverage/attribution`);
+    attribution(fixture);
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
+    const query = database(t, fixture);
+    assert.deepEqual(query("SELECT status FROM manifest WHERE collector = 'test-attribution'"), [{status: 'collected'}]);
+    assert.deepEqual(query('SELECT attempt_id, attempt_key, test_name, outcome FROM attempts'), [
+        {attempt_id: 0, attempt_key: 'a'.repeat(32), test_name: 'cart › adds', outcome: 'passed'},
+        {attempt_id: 1, attempt_key: 'b'.repeat(32), test_name: 'cart › removes', outcome: 'failed'}]);
+    assert.deepEqual(query("SELECT source_type, metric, record_key, test_name, hit_count FROM record_attempts WHERE file_path LIKE '%Cart.php' OR file_path LIKE '%.js' ORDER BY source_type, metric, test_name"), [
+        {source_type: 'js', metric: 'branches', record_key: '0:0', test_name: 'cart › adds', hit_count: 1},
+        {source_type: 'js', metric: 'functions', record_key: '0', test_name: 'cart › removes', hit_count: 1},
+        {source_type: 'js', metric: 'statements', record_key: '0', test_name: 'cart › adds', hit_count: 5},
+        {source_type: 'js', metric: 'statements', record_key: '0', test_name: 'cart › removes', hit_count: 2},
+        {source_type: 'php', metric: 'lines', record_key: '12', test_name: 'cart › adds', hit_count: null}]);
+    assert.deepEqual(query('SELECT r.source_type, r.metric, r.record_key, u.hit_count FROM unattributed_hits u JOIN records r USING (record_id) ORDER BY r.source_type'), [
+        {source_type: 'php', metric: 'lines', record_key: '12', hit_count: null},
+        {source_type: 'template', metric: 'branches', record_key: 'script:1:b:0', hit_count: 1}]);
+    assert.deepEqual(query("SELECT metric, record_key FROM record_attempts WHERE source_type = 'xml' ORDER BY metric"), [
+        'arguments', 'lifecycles', 'lines', 'observers', 'plugins', 'preferences', 'virtual-types'].map(metric =>
+        ({metric, record_key: metric === 'lines' ? '5' : `declaration-${['observers', 'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles'].indexOf(metric)}@frontend`})));
+});
+
+test('attribution that does not match the database records blocks publication', t => {
+    for (const [change, error] of [
+        [files => { files.php['app/code/Acme/Shop/Model/Cart.php'][13] = {0: 1}; return files; }, /php unit without one record/],
+        [files => { delete files.templates['app/code/Acme/Shop/view/frontend/templates/cart.phtml']['binding:1']; return files; }, /Covered unit without attribution/]
+    ]) {
+        const fixture = reports(t, 1);
+        fs.mkdirSync(`${fixture.root}/coverage/attribution`);
+        attribution(fixture, change);
+        const result = fixture.run(['--include-machine-report']);
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, error);
+        assert.ok(!fs.existsSync(`${fixture.root}/coverage/report.sqlite`));
+    }
+});
+
+test('an attributed unit that the report shows as uncovered blocks publication', t => {
+    const fixture = reports(t, 0);
+    fs.mkdirSync(`${fixture.root}/coverage/attribution`);
+    attribution(fixture, () => ({php: {'app/code/Acme/Shop/Model/Cart.php': {12: {0: 1}}}, javascript: {}, templates: {}, xml: {}}));
+    const result = fixture.run(['--include-machine-report']);
+    assert.match(result.stderr, /report shows as uncovered/);
+});
+
 function database(t, fixture) {
     const connection = new DatabaseSync(`${fixture.root}/coverage/report.sqlite`, {readOnly: true});
     t.after(() => connection.close());
@@ -239,7 +302,8 @@ test('the coverage database stores every eligible unit once and only positive ob
     ].map(([record_type, source_type, metric, record_key, file_path, module_name, start_line, end_line, hit_count]) =>
         ({record_type, source_type, metric, record_key, file_path, module_name, start_line, end_line, hit_count})));
     assert.deepEqual(query('SELECT COUNT(*) AS uncovered FROM uncovered_records'), [{uncovered: 0}]);
-    assert.deepEqual(query('SELECT COUNT(*) AS rows FROM tests UNION ALL SELECT COUNT(*) FROM test_hits'), [{rows: 0}, {rows: 0}]);
+    assert.deepEqual(query('SELECT COUNT(*) AS rows FROM attempts UNION ALL SELECT COUNT(*) FROM attempt_hits UNION ALL SELECT COUNT(*) FROM unattributed_hits'),
+        [{rows: 0}, {rows: 0}, {rows: 0}]);
 });
 
 test('uncovered units stay in the coverage database as records without hits', t => {
@@ -327,11 +391,14 @@ test('the published schema matches the database and pins version 1', t => {
         metric_totals: ['source_type', 'metric', 'total', 'covered', 'percent'],
         module_totals: ['source_type', 'metric', 'module_name', 'files', 'total', 'covered', 'percent'],
         records: ['record_id', 'record_type', 'source_type', 'metric', 'record_key', 'file_path', 'module_name', 'start_line', 'end_line'],
-        test_hits: ['test_id', 'record_id'],
-        tests: ['test_id', 'test_key', 'runner', 'test_file', 'test_name'],
+        attempt_hits: ['attempt_id', 'record_id', 'hit_count'],
+        attempts: ['attempt_id', 'attempt_key', 'runner', 'spec', 'title_path', 'test_name', 'retry', 'project', 'started_at', 'finished_at', 'outcome'],
+        record_attempts: ['source_type', 'metric', 'module_name', 'file_path', 'start_line', 'end_line', 'record_type', 'record_key',
+            'attempt_key', 'runner', 'spec', 'test_name', 'retry', 'outcome', 'hit_count'],
+        unattributed_hits: ['record_id', 'hit_count'],
         uncovered_records: ['source_type', 'metric', 'module_name', 'file_path', 'start_line', 'end_line', 'record_type', 'record_key']});
     assert.deepEqual(query("SELECT name FROM sqlite_schema WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name").map(row => row.name),
-        ['records_by_module', 'test_hits_by_record']);
+        ['attempt_hits_by_record', 'records_by_module']);
 });
 
 test('the commit is read from a Git checkout without the git command', t => {

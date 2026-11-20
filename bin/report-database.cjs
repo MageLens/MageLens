@@ -104,6 +104,65 @@ function* xmlUnits(xml) {
     }
 }
 
+// Units of coverage/attribution/ files, mapped to record keys: [source_type, metric, key] per unit.
+const attributionUnits = {
+    php: unit => [['php', 'lines', unit]],
+    javascript: unit => {
+        const [type, id, path] = unit.split(':');
+        return [['js', {s: 'statements', f: 'functions', b: 'branches'}[type], path === undefined ? id : `${id}:${path}`]];
+    },
+    // Template ids are unique across statements, functions and branches of one template.
+    templates: unit => ['statements', 'functions', 'branches'].map(metric => ['template', metric, unit]),
+    // Area-specific declarations are records of their own; config reads and field renders count on their line.
+    xml: (unit, declarations) => unit.includes('@')
+        ? Object.values(xmlMetrics).map(metric => ['xml', metric, unit]) : [['xml', 'lines', String(declarations.get(unit))]]
+};
+
+function writeAttribution(database, directory) {
+    const file = name => path.join(directory, 'attribution', name);
+    const addManifest = database.prepare('INSERT INTO manifest SELECT ?, schema_version, run_id, generated_at, commit_sha, ?, ?, ?, ? FROM manifest LIMIT 1');
+    const scope = 'Which test attempt reached which record (tables attempts, attempt_hits and unattributed_hits).';
+    if (!fs.existsSync(file('index.json'))) {
+        addManifest.run('test-attribution', 'not_collected', scope, '[]', '[]');
+        return;
+    }
+    const index = JSON.parse(fs.readFileSync(file('index.json'), 'utf8'));
+    const addAttempt = database.prepare('INSERT INTO attempts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    index.attempts.forEach((attempt, position) => addAttempt.run(position, attempt.id, attempt.runner, attempt.spec, JSON.stringify(attempt.test),
+        attempt.test.join(' › '), attempt.retry, attempt.project ?? null, attempt.startedAt, attempt.finishedAt, attempt.outcome));
+    const findRecord = database.prepare('SELECT r.record_id, h.record_id IS NOT NULL AS covered FROM records r LEFT JOIN hits h USING (record_id) WHERE file_path = ? AND source_type = ? AND metric = ? AND record_key = ?');
+    const addAttemptHit = database.prepare('INSERT INTO attempt_hits VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET hit_count = hit_count + excluded.hit_count');
+    const addUnattributed = database.prepare('INSERT INTO unattributed_hits VALUES (?, ?) ON CONFLICT DO UPDATE SET hit_count = hit_count + excluded.hit_count');
+    const xmlLines = new Map();
+    for (const xmlFile of JSON.parse(fs.readFileSync(path.join(directory, 'xml/coverage.json'), 'utf8')).files) {
+        for (const item of xmlFile.declarations) xmlLines.set(item.id, item.startLine);
+    }
+    for (const collector of ['php', 'javascript', 'templates', 'xml']) {
+        for (const [sourceFile, units] of Object.entries(JSON.parse(fs.readFileSync(file(`${collector}.json`), 'utf8')).files)) {
+            for (const [unit, owners] of Object.entries(units)) {
+                const matches = attributionUnits[collector](unit, xmlLines).map(([source, metric, key]) => findRecord.get(sourceFile, source, metric, key)).filter(Boolean);
+                assert.equal(matches.length, 1, `Attributed ${collector} unit without one record: ${sourceFile} ${unit}`);
+                assert.ok(matches[0].covered, `Attributed ${collector} unit that the report shows as uncovered: ${sourceFile} ${unit}`);
+                for (const [owner, hits] of Object.entries(owners)) {
+                    // PHP records whether a line ran, not how often.
+                    const count = collector === 'php' ? null : hits;
+                    if (owner === 'unattributed') addUnattributed.run(matches[0].record_id, count);
+                    else addAttemptHit.run(Number(owner), matches[0].record_id, count);
+                }
+            }
+        }
+    }
+    // Every covered unit of an attributed metric has an owner: an attempt or unattributed work.
+    const missing = database.prepare(`SELECT r.source_type, r.metric, r.file_path, r.record_key FROM records r JOIN hits USING (record_id)
+        WHERE NOT (r.source_type = 'template' AND r.metric IN ('executable-lines', 'dom-presence'))
+        AND NOT EXISTS (SELECT 1 FROM attempt_hits a WHERE a.record_id = r.record_id)
+        AND NOT EXISTS (SELECT 1 FROM unattributed_hits u WHERE u.record_id = r.record_id) LIMIT 1`).get();
+    assert.equal(missing, undefined, `Covered unit without attribution: ${JSON.stringify(missing)}`);
+    addManifest.run('test-attribution', 'collected', scope, JSON.stringify([
+        {id: 'unattributed-metrics', count: 2, description: 'Template executable lines and DOM presence are not attributed; query their statements and templates instead.'}
+    ]), JSON.stringify(['attribution/index.json', 'attribution/php.json', 'attribution/javascript.json', 'attribution/templates.json', 'attribution/xml.json']));
+}
+
 function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, php, js, templates, templateLimitations, xml}) {
     const read = file => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
     // Built on local disk and copied once: the coverage directory can be a slow bind mount.
@@ -139,7 +198,7 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
         manifest('xml', 'collected', 'Runtime config value consumption and Admin field rendering (metric lines); observer registrations and DI declarations per configuration area (metrics observers, plugins, preferences, virtual-types, arguments, lifecycles).', [
             {id: 'measurement-warnings', count: xml.warnings.length, description: 'Unsupported or ambiguous XML is unmeasured and has no records; see warnings in xml/coverage.json.'}
         ], ['xml/coverage.json']);
-        manifest('test-attribution', 'not_collected', 'Which test reached which record (tables tests and test_hits).', [], []);
+        writeAttribution(database, directory);
         database.exec('COMMIT');
 
         // The database must agree with the reports people read for the same run.

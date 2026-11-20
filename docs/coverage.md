@@ -267,7 +267,9 @@ Each DI section counts a declaration once per eligible area. Source highlights s
 | `manifest` | One row per collector: `php`, `js`, `template` and `xml`, named as in `records.source_type`, and `test-attribution`. `status` is `collected` or `not_collected`; `scope` says what is measured; `limitations` is a JSON array of `{id, count, description}` for what could not be measured; `export_paths` is a JSON array of the detailed exports. Every row repeats `schema_version`, `run_id`, `generated_at` and `commit_sha` (`NULL` when it cannot be read from the checkout). |
 | `records` | One eligible unit per row: `record_type`, `source_type`, `metric`, `record_key`, `file_path`, `module_name`, `start_line`, `end_line`. Uncovered units are included; unmeasurable code has no row. |
 | `hits` | Positive observations only, by `record_id`. `hit_count` is the number of observations the collector counted: executions of a statement, function or branch, the sum over the units of a template or XML line, or the observations of a template in a document. It is `NULL` where the collector records only that the unit ran (PHP lines). |
-| `tests`, `test_hits` | Test attribution: which test reached which record. Empty while `test-attribution` is `not_collected`. |
+| `attempts` | One row per test attempt from [`coverage/attribution/`](#per-test-attribution): `attempt_key` (the recorded attempt ID), `runner`, `spec`, `title_path` (JSON), `test_name`, `retry`, `project`, `started_at`, `finished_at`, `outcome`. Empty while `test-attribution` is `not_collected`. |
+| `attempt_hits`, `unattributed_hits` | Which attempt reached which record, and execution outside any attempt, with `hit_count` as in `hits`. Template executable lines and DOM presence are not attributed; see the `test-attribution` limitations. |
+| `record_attempts` | View joining records, attempts and their hits, for questions such as which tests ran a file. |
 | `metric_totals`, `module_totals`, `file_totals` | Views with `total`, `covered` and `percent` per metric for the run, a module or a file, summed from counts. |
 | `uncovered_records` | View of eligible units without a hit. |
 
