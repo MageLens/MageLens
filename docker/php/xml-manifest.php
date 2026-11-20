@@ -31,19 +31,15 @@ function xmlFingerprint($om): string
 function prepareXmlManifests($om, array $run): array
 {
     $files = []; $ids = []; $providers = [];
-    $vendorThemes = [];
     $registrar = $om->get(\Magento\Framework\Component\ComponentRegistrar::class);
-    foreach ($registrar->getPaths(\Magento\Framework\Component\ComponentRegistrar::THEME) as $name => $root) {
-        if (!str_starts_with($root, BP . '/vendor/')) continue;
-        $vendorThemes[substr($root, strlen(BP) + 1)] = explode('/', $name, 2)[0];
-    }
+    $themeAreas = Xml::registeredThemeAreas($registrar->getPaths(\Magento\Framework\Component\ComponentRegistrar::THEME), BP);
     foreach ($run['sources'] as $source => $hash) {
         if (!str_ends_with($source, '.xml') || preg_match('~/(Test|Setup|node_modules|tailwind)/~', $source)) continue;
         $path = substr($source, 4);
         $bytes = file_get_contents('/source/' . $path);
         if (hash('sha256', $bytes) !== $hash) throw new RuntimeException('XML source changed after preparation');
-        $layoutProvider = LayoutManifest::provider($path, $vendorThemes);
-        $inventory = FamilyEvidence::inventory($path, $bytes);
+        $layoutProvider = LayoutManifest::provider($path, $themeAreas);
+        $inventory = FamilyEvidence::inventory($path, $bytes, $themeAreas);
         $family = $inventory['family'] ?? match (true) {
             (bool) preg_match('~/etc/config\.xml$~', $path) => 'config',
             (bool) preg_match('~/etc/adminhtml/system\.xml$~', $path) => 'system',

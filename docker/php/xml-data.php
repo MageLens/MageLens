@@ -11,6 +11,17 @@ final class Xml
 {
     public const AREAS = ['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql', 'crontab'];
 
+    public static function registeredThemeAreas(array $paths, string $base): array
+    {
+        $areas = [];
+        foreach ($paths as $name => $root) {
+            if (str_starts_with($root, $base . '/')) {
+                $areas[substr($root, strlen($base) + 1)] = explode('/', $name, 2)[0];
+            }
+        }
+        return $areas;
+    }
+
     public static function scalarTreeSignature(array $data): ?string
     {
         return self::plainTree($data, 0) ? hash('sha256', serialize($data)) : null;

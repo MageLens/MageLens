@@ -1,8 +1,18 @@
 <?xml version="1.0"?>
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
-
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd"><router id="standard"><route id="coverageprobe" frontName="coverageprobe"><module name="MageLens_Compatibility"/></route></router></config>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd">
+    <router id="standard">
+        <route id="coverageprobe" frontName="coverageprobe"><module name="MageLens_Compatibility"/></route>
+        <route id="blog">
+            <module name="MageLens_Compatibility" before="Application_Blog"/>
+        </route>
+        <route id="123" frontName="catalogue"><module name="MageLens_Compatibility"/></route>
+        <route id="0123" frontName="alternatecatalogue"><module name="MageLens_Compatibility"/></route>
+        <route id="collisionwinner" frontName="0350"><module name="MageLens_Compatibility"/></route>
+        <route id="collisionloser" frontName="350"><module name="MageLens_Compatibility"/></route>
+    </router>
+</config>
