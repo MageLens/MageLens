@@ -32,4 +32,10 @@ const apiJourneys = [
     ['/rest/default/V1/magelens/area-probe', result('REST label')],
     ['/graphql?operationName=MageLensAreaProbe&query=' + query, {data: {mageLensAreaProbe: result('GraphQL label')}}]
 ];
-module.exports = {journeys, apiJourneys};
+const routingJourneys = [
+    ['GET', '/blog/index/routeprobe', 200, {winner: 'competing-module'}],
+    ['GET', '/rest/default/V1/magelens/area-probe/free', 200, [...result('REST label'), 'variable-route']],
+    ['GET', '/rest/default/V1/magelens/area-probe/restricted', 401],
+    ['PUT', '/rest/default/V1/magelens/area-probe', 404]
+];
+module.exports = {journeys, apiJourneys, routingJourneys};
