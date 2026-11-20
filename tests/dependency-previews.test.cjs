@@ -18,8 +18,12 @@ test('preview configuration rejects floating refs, arbitrary repositories and un
     write({schema: 1, templateCoverage: source});
     assert.deepEqual(configuration(root), {templateCoverage: source});
     const pcov = {...source, repository: 'MageLens/PCOV'};
-    for (const repository of ['MageLens/PCOV', 'MageLens/pcov']) {
-        write({schema: 1, templateCoverage: {...source, repository: 'MageLens/magento-template-coverage'}, pcov: {...pcov, repository}});
+    for (const [templateRepo, pcovRepo] of [
+        [source.repository, pcov.repository],
+        ['MageLens/magento-template-coverage', 'MageLens/pcov'],
+        ['VitaliyBoyko/magento-template-coverage', 'VitaliyBoyko/pcov']
+    ]) {
+        write({schema: 1, templateCoverage: {...source, repository: templateRepo}, pcov: {...pcov, repository: pcovRepo}});
         assert.deepEqual(configuration(root), {templateCoverage: source, pcov});
     }
     for (const patch of [{repository: pcov.repository}, {sha: 'main'}, {sha: 'a'.repeat(7)}, {repository: 'someone/another-package'}, {pullRequest: 0}, {version: 'latest'}]) {
