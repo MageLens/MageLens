@@ -162,11 +162,7 @@ fi
     if [[ "$focus" == default-coverage ]]; then
         ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
         mkdir -p coverage
-        for action in index view; do
-            for collection in --without-collector ''; do
-                layout_proof blog-constructor "$action" ${collection:+"$collection"}
-            done
-        done
+        prove_blog_controllers
         for pass in default warm; do
             if [[ "$pass" == warm ]]; then cp coverage/xml/coverage.json .runtime/default-xml.json; fi
             printf 'obsolete report content\n' > coverage/obsolete-publication.txt
@@ -189,6 +185,7 @@ fi
         [[ "$html" == *noVNC* ]]
     '
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"
+    if [[ "$theme" == hyva ]]; then prove_blog_controllers --hyva-cold; fi
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     if [[ "$platform" == mageos ]]; then

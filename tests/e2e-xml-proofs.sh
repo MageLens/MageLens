@@ -29,6 +29,14 @@ layout_cases() {
     for variant in "$@"; do layout_proof "$name" "$variant"; done
 }
 
+prove_blog_controllers() {
+    local action
+    for action in index view; do
+        xml_proof xml-layout-blog-constructor-proof.php "$action" "$@" --without-collector
+        layout_proof blog-constructor "$action" "$@"
+    done
+}
+
 run_xml_proofs() {
     local theme=$1 platform=$2 mode=$3
     mkdir -p coverage
