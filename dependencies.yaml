@@ -12,7 +12,7 @@ MAGEOS_VERSION: "4.0.0"
 # Selects Mark Shust's PHP build recipe and nginx, database, cache, and search images.
 MARKSHUST_DOCKER_MAGENTO_VERSION: "53.2.0"
 # Official PHP base used to rebuild the selected recipe.
-PHP_IMAGE: "php:8.4.27-fpm-bookworm@sha256:df5a5113e1179ddf4560cd15727eb3812f6457829756d2a96c6c11bb4c250089"
+PHP_IMAGE: "php:8.4.28-fpm-bookworm@sha256:e4b1eec29a5be22428aa93fb43da75a0e39006e403da0c3e93631dde92f067df"
 COMPOSER_VERSION: "2.11.2"
 PCOV_VERSION: "2.1.3"
 OPENTELEMETRY_VERSION: "1.5.0"
