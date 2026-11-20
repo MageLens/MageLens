@@ -68,7 +68,7 @@ if (( restart_php )); then
 fi
 dc exec -T runner true || fail 'Cannot access the browser runner. Check the diagnostics above; if services are stopped, use ./bin/run-coverage --start.'
 if [[ "$runner" == playwright ]]; then
-    dc exec -T runner node -e "require.resolve('@vitaliiboiko/magento-template-coverage/playwright')" >/dev/null \
+    dc exec -T runner node -e "require.resolve('@magelens/magento-template-coverage/playwright')" >/dev/null \
         || fail 'Playwright coverage requires template coverage 1.2 or newer. Update dependencies.yaml and rerun ./install.sh --playwright.'
 fi
 dc exec -T phpfpm php /application/docker/php/collection.php stop || fail 'Cannot prepare PHP collection. If services are stopped, use --start.'

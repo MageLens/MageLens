@@ -14,7 +14,7 @@ const {createCoverageMap} = require('istanbul-lib-coverage');
 const {createInstrumenter} = require('istanbul-lib-instrument');
 const {createContext} = require('istanbul-lib-report');
 const reports = require('istanbul-reports');
-const {createManifest, merge} = require('@vitaliiboiko/magento-template-coverage');
+const {createManifest, merge} = require('@magelens/magento-template-coverage');
 
 const {createJavascriptScope} = require('../bin/javascript-scope.cjs');
 

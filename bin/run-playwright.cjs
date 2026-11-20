@@ -15,7 +15,7 @@ async function main() {
             const page = await browser.newPage({ignoreHTTPSErrors: true});
             const checkAdminDependencies = await installPlaywrightAdminDependencies(page.context());
             await page.context().addInitScript(disablePageTransitions);
-            await require('@vitaliiboiko/magento-template-coverage/playwright').installTemplateRuntime(page.context());
+            await require('@magelens/magento-template-coverage/playwright').installTemplateRuntime(page.context());
             const paths = warmupPaths(JSON.parse(fs.readFileSync('coverage/project-fixtures.json')));
             const baseUrl = process.env.PLAYWRIGHT_BASE_URL || process.env.CYPRESS_BASE_URL;
             for (const path of paths) {
