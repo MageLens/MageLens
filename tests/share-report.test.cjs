@@ -299,3 +299,28 @@ test('opt-in declines modified and symlinked originals, even if the symlink targ
     assert.match(symlinked.stderr, /Symlinked coverage source is unsupported/);
     assert.equal(fs.existsSync(path.join(report.root, 'coverage/share-with-source.html')), false);
 });
+
+test('offline XML family details retain effects and omit request and browser data', t => {
+    const report = fixture(t);
+    const measurement = JSON.parse(report.read('xml/coverage.json'));
+    const [file] = measurement.files;
+    file.sourceFingerprint = file.sourceHash;
+    file.declarations.push({id: 'a'.repeat(64), path: 'configuration.<field>', family: 'ui-component', startLine: 1, endLine: 1,
+        supported: true, state: 'covered', effects: ['ui-delivered', 'ui-rendered'],
+        effectStates: {'ui-delivered': 'covered', 'ui-rendered': 'uncovered'},
+        evidence: [
+            {type: 'ui-delivered', area: 'adminhtml', outcome: 'observed', request: privateMarker, reason: null},
+            {type: 'ui-delivered', area: 'adminhtml', outcome: 'cache-only', reason: 'Unknown <origin>'}
+        ],
+        request: privateMarker, configuration: privateMarker});
+    report.artifact('xml/coverage.json', measurement);
+    for (const [args, output] of exportModes) {
+        const result = report.run(...args);
+        assert.equal(result.status, 0, result.stderr);
+        const html = report.read(output);
+        assert.match(html, /configuration\.&lt;field&gt;/);
+        assert.match(html, /ui-delivered · covered\s*<ul>\s*<li>adminhtml · observed<\/li>\s*<li>adminhtml · cache-only · Unknown &lt;origin&gt;<\/li>\s*<\/ul>/);
+        assert.match(html, /ui-rendered.*uncovered/s);
+        assert.doesNotMatch(html, /<field>|<origin>|PRIVATE_RUNTIME_VALUE/);
+    }
+});
