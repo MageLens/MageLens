@@ -7,6 +7,8 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const {createHash} = require('node:crypto');
 const {layoutEvents, layoutDecisions, layoutObservations, layoutLimitations, countsAsLayoutCoverage} = require('./xml-report/layout/index.cjs');
+const {BLOG_CONFIGURATION_ROUTE, WARM_REQUEST_SUFFIX, XML_REQUEST_METADATA} = require('./xml-report/regex.cjs');
+const {assertSourcePath, readSources} = require('./xml-report/source-files.cjs');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const escape = text => String(text).replace(/[&<>"']/g, value => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[value]));
 const callbackKey = ({subject, method, phase}) => hash(JSON.stringify([subject, method, phase]));
@@ -29,8 +31,7 @@ const diFamilies = {
 function merge(manifest, records, sources) {
     const declarations = new Map(), files = structuredClone(manifest.files);
     for (const file of files) {
-        assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
-        assert.ok(!file.path.split('/').some(part => part === '..' || part === '.'));
+        assertSourcePath(file.path);
         assert.equal(hash(sources[file.path]), file.sourceHash, `XML source changed: ${file.path}`);
         file.sourceFingerprint = hash(sources[file.path].toString().replaceAll('\r\n', '\n'));
         file.lines = {};
@@ -71,7 +72,7 @@ function merge(manifest, records, sources) {
         assert.equal(record.manifest, manifest.id, 'XML manifest mismatch');
         const url = new URL(record.uri || '/', 'https://application.invalid');
         let scenario = url.searchParams.get('case');
-        if (!/\/blog\/index\/configuration\/?$/.test(url.pathname) || !cases.has((scenario || '').replace(/-warm$/, ''))) scenario = null;
+        if (!BLOG_CONFIGURATION_ROUTE.test(url.pathname) || !cases.has((scenario || '').replace(WARM_REQUEST_SUFFIX, ''))) scenario = null;
         const events = [];
         const argumentApplications = new Set(record.events.filter(event => event.type === 'layout-argument-applied')
             .map(event => JSON.stringify([event.id, event.area, event.theme])));
@@ -287,11 +288,11 @@ function merge(manifest, records, sources) {
         preferences: {...preferenceTotals, hook: preferenceHook}, layout: layoutTotals,
         ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])), total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
 }
-const style = 'body{font:15px system-ui;margin:32px;color:#172b3a}a{color:#086b68}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{padding:5px 10px;text-align:left;border-bottom:1px solid #ddd}.covered{background:#dcefe0}.uncovered{background:#fbdada}.unmeasured{background:#eee;color:#555}.neutral{color:#555}.line{display:block}small{display:block}a:focus-visible{outline:2px solid #086b68;outline-offset:3px}td,code,small,h1{overflow-wrap:anywhere}.preferences{max-width:75rem;line-height:1.35}.preference-list,.preference-areas{list-style:none;padding:0}.preference-list>li{padding:12px 0;border-top:1px solid #ddd}.preference-areas{margin-top:6px}.preference-areas li{padding:6px 10px;margin:2px 0;overflow-wrap:anywhere}.preference-areas span{display:block}.line:target{outline:2px solid #086b68;outline-offset:-2px}@media(max-width:480px){body{margin:16px}td,th{padding:5px}.di-details,.di-details tbody,.di-details tr,.di-details td{display:block}.di-details td{border-bottom:0}.di-details tr{border-bottom:1px solid #ddd}}';
-function page(title, body) { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>${style}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`; }
-function sourceHref(file, line, prefix = '') {
-    return prefix + file.split('/').map(encodeURIComponent).join('/') + '.html#L' + line;
+const stylesheet = 'report.css';
+function page(title, body, stylesheetPrefix = '') {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${stylesheetPrefix}${stylesheet}"></head><body><h1>${escape(title)}</h1>${body}</body></html>`;
 }
+
 function lineLabel({startLine, endLine}) {
     return startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
 }
@@ -369,6 +370,7 @@ function diSections(result, files) {
 }
 function writeReport(result, sources, directory = 'coverage/xml') {
     fs.mkdirSync(directory, {recursive: true});
+    fs.copyFileSync(path.join(__dirname, 'xml-report', stylesheet), path.join(directory, stylesheet));
     const directories = new Map([['', new Map()]]);
     const files = new Set(result.files.map(file => file.path));
     for (const file of result.files) {
@@ -400,7 +402,7 @@ function writeReport(result, sources, directory = 'coverage/xml') {
             const type = {events: 'Observer execution', plugins: 'Plugin execution'}[item.family] || item.state;
             return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(item.declaredScope.type)} ${escape(item.declaredScope.code)} · lines ${item.startLine}–${item.endLine}</small></td><td>${escape(type)}${outcomes}</td></tr>`;
         }).join('');
-        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`));
+        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`, prefix));
         let parent = path.posix.dirname(file.path);
         if (!directories.has(parent)) directories.set(parent, new Map());
         directories.get(parent).set(path.posix.basename(file.path) + '.html', {label: path.posix.basename(file.path), file});
@@ -416,21 +418,10 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file && entry.file.family !== 'layout' ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
         const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. Block creation and template selection are retained as facts; their declarations require native block rendering or template execution for coverage. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
         fs.mkdirSync(path.join(directory, name), {recursive: true});
-        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files))));
+        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files)), name ? '../'.repeat(name.split('/').length) : ''));
     }
     fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
 }
-function readSources(files) {
-    const root = fs.realpathSync('src');
-    return Object.fromEntries(files.map(file => {
-        assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
-        assert.ok(!file.path.split('/').some(part => part === '..' || part === '.'));
-        const filename = path.join(root, file.path);
-        assert.equal(fs.realpathSync(filename), filename, `Symlinked XML source: ${file.path}`);
-        return [file.path, fs.readFileSync(filename)];
-    }));
-}
-
 function report() {
     const read = file => JSON.parse(fs.readFileSync(file));
     assert.equal(fs.existsSync('coverage/.active-run'), false, 'Stop and drain collection before XML reporting');
@@ -438,7 +429,7 @@ function report() {
     assert.equal(run.id, manifest.run);
     const raw = `coverage/raw/php/${run.id}`;
     assert.ok(!fs.readdirSync(raw).some(file => file.endsWith('.error')), 'Failed PHP collection');
-    const metadata = fs.readdirSync(raw).filter(file => /^[a-f0-9]+(?:\.[1-9]\d*)?\.json$/.test(file));
+    const metadata = fs.readdirSync(raw).filter(file => XML_REQUEST_METADATA.test(file));
     const records = metadata.map(file => {
         const request = read(`${raw}/${file}`);
         assert.ok(request.xml, 'Missing XML runtime evidence');

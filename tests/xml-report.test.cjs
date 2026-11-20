@@ -1043,6 +1043,12 @@ test('a multiline layout attribute anchors and highlights only its lexical lines
     t.after(() => fs.rmSync(output, {recursive: true, force: true}));
     writeReport(result, sources, output);
     const html = fs.readFileSync(output + '/' + path + '.html', 'utf8');
+    const stylesheet = html.match(/<link rel="stylesheet" href="([^"]+)">/)?.[1];
+    assert.ok(stylesheet, 'Expected the source page to link to the report stylesheet');
+    const asset = require('node:path').resolve(output, require('node:path').dirname(path), stylesheet);
+    assert.equal(asset, require('node:path').join(output, 'report.css'));
+    assert.match(fs.readFileSync(asset, 'utf8'), /\.covered\s*\{/);
+    assert.match(fs.readFileSync(output + '/index.html', 'utf8'), /<link rel="stylesheet" href="report.css">/);
     assert.match(html, /href="#L4">\/layout\/block\/@template<\/a><small>.*lines 4–5/);
     assert.match(html, /id="L2" class="line neutral"/);
     assert.match(html, /id="L3" class="line uncovered"/);
