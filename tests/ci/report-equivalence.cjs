@@ -128,7 +128,6 @@ function snapshot(directory) {
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
-                ...(file.layoutProvider?.type === 'theme' && file.layoutProvider.area === 'frontend' ? {storefrontLayout: true} : {}),
                 lines: Object.fromEntries(Object.entries(object(file.lines)).map(([line, value]) => [line, value.state])),
                 declarations: sort(array(file.declarations).map(item => ({
                     id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],
@@ -375,8 +374,9 @@ function comparableXml(xml, platform) {
 function sharedLayout(xml) {
     const result = {};
     for (const [path, file] of Object.entries(xml.files)) {
-        if (file.storefrontLayout || path.startsWith('app/design/frontend/')
-            || path.startsWith('vendor/hyva-themes/magento2-default-theme-csp/')) continue;
+        // The qualification harness configures this vendor root only for Hyvä.
+        // The independently exercised local store themes are shared fixtures.
+        if (path.startsWith('vendor/hyva-themes/magento2-default-theme-csp/')) continue;
         const declarations = file.declarations.filter(item => item.layout)
             .map(({id, path, scope, range, supported, layout}) => ({id, path, scope, range, supported, layout}));
         if (declarations.length) result[path] = {source: file.source, declarations: sort(declarations)};

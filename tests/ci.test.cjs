@@ -203,13 +203,16 @@ test('layout qualification compares static declarations across storefronts', t =
         id: fingerprint, supported: true, state: 'uncovered', range: [1, 1],
         layout: ['template', 'page', 1, ...Array(6).fill(fingerprint)], evidence: [],
     }]};
-    complete.xml.layout.total = 1;
+    const sharedProvider = 'app/design/frontend/MageLens/child/MageLens_Compatibility/layout/shared.xml';
+    complete.xml.files[sharedProvider] = structuredClone(complete.xml.files[source]);
+    complete.xml.layout.total = 2;
     const reports = cases.map(entry => ({...entry, snapshot: structuredClone(complete)}));
     assert.equal(compareThemes(reports, cases).passed, true);
     for (const change of [
         xml => { delete xml.files[source]; xml.layout.total--; },
         xml => { xml.files[source].source = 'b'.repeat(64); },
         xml => { xml.files[source].declarations[0].range = [2, 3]; },
+        xml => { delete xml.files[sharedProvider]; xml.layout.total--; },
     ]) {
         const changed = structuredClone(reports);
         for (const report of changed.filter(entry => entry.theme === 'hyva')) change(report.snapshot.xml);
