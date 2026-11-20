@@ -242,6 +242,10 @@ The XML report measures `di.xml` usage during developer and production HTTP requ
 
 Each DI section counts a declaration once per eligible area. Source highlights summarize the areas without adding DI entries to the XML line totals. Custom plugin lists and descendants outside the inventoried subjects are unmeasured. A TypeError at a plugin declaration can leave callback entry unconfirmed. In developer mode, use `./bin/run-coverage --refresh-cache` for stale DI configuration. In production, use `./bin/deploy-production` for stale compiled provenance.
 
+**HTTP routing** records native storefront and Admin selections from area `routes.xml` files. The report separates the selected route and module from entry into the selected controller. It measures synchronous `/rest[/<store>]/V<n>/...` requests from `webapi.xml`, with distinct outcomes for route selection, the permission decision and PHP service entry. Handler credit requires entry into the selected method.
+
+Custom routers, no-route fallbacks, SOAP, asynchronous and bulk REST, GraphQL and direct PHP calls are outside routing coverage. A native binding with competing declarations or disagreement between the observed and current configuration has an explicit limitation. Eligible declarations remain visible when no request selects them.
+
 ## Use an existing Playwright fixture
 
 MageLens supplies Playwright and the coverage collectors. To preserve a suite's

@@ -37,7 +37,7 @@ function request(result, name) {
     assert.equal(requests.length, 1, `Expected exactly one real request for ${name}`);
     const [record] = requests;
     const bridge = declaration(result, layoutFixtureDi, `${cacheDispatchSubject}/${cachePluginName}`, 'frontend', '', 'plugins');
-    const [dispatch, ...events] = record.events;
+    const [dispatch, ...events] = record.events.filter(event => !event.type.startsWith('route-'));
     // The cache fixture's native frontend dispatch runs before the Blog probe.
     assert.deepEqual(dispatch, {
         id: bridge.id, type: 'plugin-execute', area: 'frontend', name: cachePluginName,
@@ -369,9 +369,11 @@ test('attributes real REST and GraphQL calls to their own DI and observer source
     const result = report();
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
-    for (const [area, name, other] of [
-        ['webapi_rest', 'rest_probe', 'graphql'],
-        ['graphql', 'graphql_probe', 'webapi_rest']
+    for (const [area, name, other, paths] of [
+        ['webapi_rest', 'rest_probe', 'graphql', [
+            '/rest/default/V1/magelens/area-probe', '/rest/default/V1/magelens/area-probe/free'
+        ]],
+        ['graphql', 'graphql_probe', 'webapi_rest', ['/graphql']]
     ]) {
         const file = root + area + '/di.xml';
         const eventFile = root + area + '/events.xml';
@@ -383,13 +385,20 @@ test('attributes real REST and GraphQL calls to their own DI and observer source
         const expected = [[binding, 8, 8, 'preference-resolved'], [alias, 9, 11, 'virtual-type-resolved'],
             [label, 10, 10, 'argument-applied'], [plugin, 13, 13, 'plugin-execute'], [observer, 9, 9, 'observer-execute']];
         const requests = result.requests.filter(entry => entry.events.some(event => event.id === binding.id));
-        assert.equal(requests.length, 1, `One recorded request resolved the ${area} fixture binding`);
-        const [record] = requests;
-        const events = record.events;
         const selected = new Set(expected.map(([item]) => item.id));
-        assert.deepEqual(events.filter(event => selected.has(event.id)).map(event => [event.id, event.type, event.area, event.hits]).sort(),
-            expected.map(([item, , , kind]) => [item.id, kind, area, 1]).sort());
-        assert.ok(events.every(event => !event.area || event.area === area), 'Only the native API area supplies fixture evidence');
+        const outcomes = expected.map(([item, , , kind]) => [item.id, kind, area, 1]).sort();
+        const observedPaths = requests.map(({id, events}) => {
+            assert.match(id, /^[a-f0-9]{32}$/);
+            const request = read(path.join('raw', 'php', result.run, id + '.json'));
+            assert.equal(request.run, result.run);
+            assert.equal(request.method, 'GET');
+            assert.equal(request.status, 200);
+            assert.deepEqual(events.filter(event => selected.has(event.id)).map(event => [event.id, event.type, event.area, event.hits]).sort(),
+                outcomes);
+            assert.ok(events.every(event => !event.area || event.area === area), 'Only the native API area supplies fixture evidence');
+            return new URL(request.uri, 'https://application.invalid').pathname;
+        });
+        assert.deepEqual(observedPaths.sort(), paths, `Exact native ${area} requests resolved the fixture binding`);
         for (const [item, start, end] of expected) {
             assert.deepEqual([item.startLine, item.endLine], [start, end]);
             assert.equal(item.areas[area].state, 'covered');
