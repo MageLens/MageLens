@@ -23,8 +23,10 @@ function expectAdminNavigation(bool $condition, string $message): void
     }
 }
 
-$blog = __DIR__ . '/../src/app/code/Application/Blog/etc';
-$fixture = __DIR__ . '/fixtures/admin-navigation/module/etc';
+$root = $argv[2] ?? realpath(__DIR__ . '/..');
+$app = $argv[2] ?? $root . '/src';
+$blog = $app . '/app/code/Application/Blog/etc';
+$fixture = isset($argv[2]) ? $app . '/app/code/MageLens/AdminNavigation/etc' : __DIR__ . '/fixtures/admin-navigation/module/etc';
 
 $validation = new class implements ValidationStateInterface {
     public function isValidationRequired() { return true; }

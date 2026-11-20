@@ -188,7 +188,7 @@ fi
         html=$(curl --fail --silent --show-error --insecure "${url}vnc.html")
         [[ "$html" == *noVNC* ]]
     '
-    # Exercise a common native Admin theme so the layout evidence is comparable across platforms.
+    # Use the same native Admin theme for layout evidence on both platforms.
     if [[ "$platform" == mageos ]]; then
         ./bin/magento config:set admin/system_admin_design/active_theme Magento/backend
     fi
@@ -217,6 +217,8 @@ fi
     fi
     # Prepare the pinned cache through the interactive entry point before coverage.
     ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
+    # Run from the same host as Compose (WSL on Windows), before collection starts.
+    node tests/verify-cron-native.cjs
     ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/MageLens/UiProbe/Test/MageLens/hooks.php before
     ./bin/runner node tests/verify-ui-browser-native.cjs "$runner"
     if [[ "$mode" == production ]]; then
@@ -225,7 +227,6 @@ fi
         # The collected run publishes Admin assets from its instrumented source.
         ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
     fi
-    node tests/verify-cron-native.cjs
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt

@@ -48,7 +48,7 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
         await expect(page.locator('#email')).toBeVisible();
     });
 });
-test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml, recordXmlBrowserEvidence}) => {
+test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
     // This journey visits the layout fixtures, audits two responses and signs in as two Admin roles.
     test.setTimeout(180_000);
     const wireframe = page.locator('#layout-wireframe');
@@ -367,7 +367,7 @@ test('starts the next test with fresh state', async ({page, context, baseURL, ma
         await expect(page.locator('[data-layout-structure="acl-alias"]')).toHaveText('acl-alias');
         await expect(page.locator('[data-layout-structure="ui-acl-dashboard"]')).toHaveText('ui-acl-dashboard');
         await expect(page.locator('[data-layout-structure="ui-acl-blog"]')).toHaveText('ui-acl-blog');
-        await runUiJourney(page, admin, recordXmlBrowserEvidence);
+        await runUiJourney(page, admin, true);
         await page.goto('/');
         await page.context().clearCookies();
         const fixture = admin.fixtures();

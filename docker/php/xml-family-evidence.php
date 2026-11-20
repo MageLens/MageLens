@@ -57,10 +57,12 @@ final class FamilyEvidence
         ];
     }
 
-    public static function inventory(string $path, string $bytes): ?array
+    public static function inventory(string $path, string $bytes, array $themeAreas = []): ?array
     {
         foreach (self::collectors() as [$collector, $families]) {
-            $items = $collector::declarations($path, $bytes);
+            $items = $collector === UiFamily::class
+                ? $collector::declarations($path, $bytes, $themeAreas)
+                : $collector::declarations($path, $bytes);
             if ($items === null) continue;
             $family = $items[0]['family'] ?? $families[0];
             if (!in_array($family, $families, true)) throw new \RuntimeException('Invalid XML declaration family');

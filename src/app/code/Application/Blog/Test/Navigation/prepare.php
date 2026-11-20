@@ -17,11 +17,12 @@ if ($editor->getId()) throw new RuntimeException('Fixture editor already exists.
 $editorRole = $om->create(\Magento\Authorization\Model\Role::class)
     ->setName($fixture['prefix'] . 'editor')->setRoleType('G')->setParentId(0)->save();
 // The test's child XML resource receives permission through the Blog parent.
+$permissions = ['Application_Blog::manage', 'Magento_Backend::dashboard', 'Magento_Catalog::products'];
 $om->create(\Magento\Authorization\Model\Rules::class)->setRoleId($editorRole->getId())
-    ->setResources(['Magento_Backend::dashboard', 'Application_Blog::manage'])->saveRel();
+    ->setResources($permissions)->saveRel();
 // The role editor writes explicit denies for unchecked resources. The
 // native rule loader also denies missing resources for roles with deny rules.
-// Leave this disposable role with its two explicit allows and let ACL resolve
+// Leave this disposable role with its explicit allows and let ACL resolve
 // the child through the XML hierarchy. Remove the root allow that the
 // role editor adds by default so this fixture remains restricted.
 $rules = $resource->getTableName('authorization_rule');
@@ -32,7 +33,7 @@ if (!$db->delete($rules, $role + ['permission = ?' => 'deny'])) {
 $db->delete($rules, $role + ['resource_id = ?' => 'Magento_Backend::admin']);
 $allowed = $db->fetchCol($db->select()->from($rules, 'resource_id')->where('role_id = ?', (int) $editorRole->getId()));
 sort($allowed);
-if ($allowed !== ['Application_Blog::manage', 'Magento_Backend::dashboard']) {
+if ($allowed !== $permissions) {
     throw new RuntimeException('Unexpected direct permission on inherited Admin fixture role.');
 }
 

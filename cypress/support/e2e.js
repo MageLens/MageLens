@@ -6,9 +6,10 @@ require('./javascript-coverage');
 const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/cypress');
 registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
 
-const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
+const {disablePageTransitions, installCypressAdminDependencies, observeAdminMenuNavigation} = require('../../bin/browser-navigation.cjs');
 const {installUiBrowserObserver} = require('../../bin/xml-ui-browser.cjs');
-let uiDocuments = new Set();
+const uiDocuments = new Set();
+const uiExported = new WeakMap();
 Cypress.on('window:before:load', win => {
     disablePageTransitions(win);
     installUiBrowserObserver(Cypress.expose('xmlUiScope') || {}, win);
@@ -16,12 +17,29 @@ Cypress.on('window:before:load', win => {
 });
 
 afterEach(() => {
-    const entries = [...uiDocuments].flatMap(document => document.snapshot());
+    const entries = [...uiDocuments].flatMap(observer => {
+        const snapshot = observer.snapshot();
+        const previous = uiExported.get(observer) ?? 0;
+        uiExported.set(observer, snapshot.length);
+        return snapshot.slice(previous);
+    });
+    uiDocuments.clear();
     if (entries.length) cy.task('recordXmlUiCandidates', entries, {log: false});
 });
 
+let menuTest;
+Cypress.on('window:before:load', win => {
+    if (win.location.origin === new URL(Cypress.config('baseUrl')).origin) {
+        observeAdminMenuNavigation(win, () => menuTest?.scope, evidence => menuTest.observations.push(evidence));
+    }
+});
+
 beforeEach(() => {
-    uiDocuments = new Set();
+    // With test isolation disabled, a surviving page emits no new load event.
+    cy.window({log: false}).then(win => {
+        if (win.__mageLensUiEffects) uiDocuments.add(win.__mageLensUiEffects);
+    });
+    menuTest = {scope: crypto.randomUUID(), observations: []};
     installCypressAdminDependencies();
     const run = Cypress.expose('coverageRun');
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
@@ -29,6 +47,12 @@ beforeEach(() => {
     cy.setCookie('application_coverage', run, {
         domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
     });
+});
+
+afterEach(() => {
+    const observations = menuTest?.observations;
+    menuTest = null;
+    if (observations?.length) cy.task('recordAdminMenuNavigation', observations, {log: false});
 });
 
 // Captures the HTML source of the current page for the validation report; see docs/coverage.md#html-validation.

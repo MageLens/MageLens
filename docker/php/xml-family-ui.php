@@ -10,6 +10,7 @@ namespace MageLens\XmlCoverage;
 
 require_once __DIR__ . '/xml-ui-origin.php';
 require_once __DIR__ . '/xml-ui-runtime.php';
+require_once __DIR__ . '/xml-regex.php';
 
 final class UiFamily
 {
@@ -23,17 +24,16 @@ final class UiFamily
     private const SCHEMA = 'urn:magento:module:Magento_Ui:etc/ui_configuration.xsd';
     private const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
 
-    public static function declarations(string $path, string $bytes): ?array
+    public static function declarations(string $path, string $bytes, array $themeAreas = []): ?array
     {
-        if (!preg_match('~/(?:view/(?:base|adminhtml)/|adminhtml/[^/]+/[^/]+/[^/]+/)ui_component/([A-Za-z0-9_-]+)\.xml$~D',
-            $path, $match)) {
-            return null;
-        }
+        $namespace = basename($path, '.xml');
+        if (!str_ends_with($path, '.xml') || !preg_match(XmlRegex::UI_IDENTIFIER, $namespace)) return null;
+        $area = self::sourceArea($path, $themeAreas);
+        if ($area === null) return null;
         $dom = Xml::document($bytes);
         $root = $dom->documentElement;
         if ($root->getAttributeNS(self::XSI, 'noNamespaceSchemaLocation') !== self::SCHEMA) return [];
         $ranges = Xml::ranges($bytes, $dom, true);
-        $namespace = $match[1];
         $items = [];
         foreach ((new \DOMXPath($dom))->query('//field | //column | //dataSource | //button | //dataProvider | //settings/label') as $node) {
             $kind = match ($node->localName) {
@@ -57,6 +57,7 @@ final class UiFamily
             $effects = self::effects($kind, $type, $root->localName);
             $item = FamilyEvidence::declaration($path, 'ui-component', $node, $ranges,
                 $identity . ($kind === 'component' ? '' : '#' . $kind), $effects);
+            $item['declaredScope']['type'] = $area;
             $providerClass = $kind === 'provider' ? ltrim($node->getAttribute('class'), '\\') : null;
             $unsupported = match (true) {
                 !in_array($root->localName, ['listing', 'form'], true) => 'Only native listing and form instances are measured',
@@ -82,12 +83,37 @@ final class UiFamily
         return $items;
     }
 
+    private static function sourceArea(string $path, array $themeAreas): ?string
+    {
+        $uiDirectory = dirname($path);
+        if (basename($uiDirectory) !== 'ui_component') return null;
+
+        $parent = dirname($uiDirectory);
+        $section = basename($parent);
+        $root = dirname($parent);
+        $themeArea = $themeAreas[$root] ?? null;
+        // Theme overrides live under a Vendor_Module directory.
+        if ($themeArea !== null && (str_starts_with($root, 'app/design/') || str_starts_with($root, 'vendor/'))
+            && str_contains(substr($section, 1, -1), '_')) {
+            return $themeArea === 'adminhtml' ? 'adminhtml' : null;
+        }
+
+        if (basename($root) !== 'view') return null;
+        $moduleRoot = dirname($root);
+        if (!str_starts_with($moduleRoot, 'app/code/') && !str_starts_with($moduleRoot, 'vendor/')) return null;
+        return match ($section) {
+            'adminhtml' => 'adminhtml',
+            'base' => 'global',
+            default => null,
+        };
+    }
+
     private static function segments(\DOMElement $component, \DOMElement $root): ?array
     {
         $segments = [];
         for ($node = $component; !$node->isSameNode($root); $node = $node->parentNode) {
             $name = $node->getAttribute('name');
-            if (!preg_match('~^[A-Za-z0-9_-]+$~D', $name)) return null;
+            if (!preg_match(XmlRegex::UI_IDENTIFIER, $name)) return null;
             array_unshift($segments, $name);
         }
         return $segments ?: null;

@@ -11,9 +11,10 @@ async function main() {
     assert.ok(!fs.existsSync('coverage/.active-run'), 'Stop coverage collection before the native cron proof');
     setTransport(({tool, args, timeout}) => {
         const result = spawnSync('./bin/application-compose', [
-            'exec', '-T', 'phpfpm', 'php', tool === 'magerun' ? 'bin/n98-magerun2.phar' : 'bin/magento',
+            'exec', '-T', 'phpfpm', 'timeout', '--kill-after=5s', (timeout / 1000) + 's',
+            'php', tool === 'magerun' ? 'bin/n98-magerun2.phar' : 'bin/magento',
             '--no-ansi', '--no-interaction', ...args,
-        ], {encoding: 'utf8', timeout});
+        ], {encoding: 'utf8', timeout: timeout + 10000});
         if (result.error) throw result.error;
         return {code: result.status, stdout: result.stdout, stderr: result.stderr};
     });

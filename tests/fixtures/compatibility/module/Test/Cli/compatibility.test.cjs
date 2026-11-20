@@ -14,15 +14,19 @@ test('preserves command arguments and runs a named cron job through MageRun', as
     const result = await magento(['magelens:probe', 'invalid', value], {expectedExitCode: 2});
     assert.match(result.stderr, /Unknown probe action/);
     assert.equal((await probe('fork', value)).stdout.trim(), value);
-    const job = 'magelens_magerun_probe';
-    try {
-        assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), []);
-        await probe('cold-cron-config', job);
-        const native = await magerun(['sys:cron:run', job]);
-        assert.match(native.stdout, /runNamed.*done/s);
-        assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), ['magerun-handler-ran']);
-    } finally {
-        await probe('clean-magerun', job);
+    for (const [job, method, message] of [
+        ['magelens_magerun_probe', 'runNamed', 'magerun-handler-ran'],
+        ['456', 'Execute', 'preferred-worker-intercepted'],
+    ]) {
+        try {
+            assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), []);
+            await probe('cold-cron-config', job);
+            const native = await magerun(['sys:cron:run', job]);
+            assert.match(native.stdout, new RegExp(method + '.*done', 's'));
+            assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), [message]);
+        } finally {
+            await probe('clean-magerun', job);
+        }
     }
 });
 
@@ -39,6 +43,9 @@ test('executes a scheduled Magento cron job', async () => {
         await magento(['cron:run', '--group=magelens_probe']);
         for (const [schedule, expectedStatus] of schedules) {
             assert.equal((await probe('status', schedule)).stdout.trim(), expectedStatus);
+            if (expectedStatus === 'error') {
+                assert.equal((await probe('messages', schedule)).stdout.trim(), 'Cron probe failed after 2 ordinary calls');
+            }
         }
 
         const warm = (await probe('schedule', 'magelens_probe')).stdout.trim();
@@ -47,25 +54,59 @@ test('executes a scheduled Magento cron job', async () => {
         await magento(['cron:run', '--group=magelens_probe']);
         assert.equal((await probe('status', warm)).stdout.trim(), 'success');
 
-        await probe('clean-generated', '0');
-        assert.deepEqual(JSON.parse((await probe('generated-schedules', '0')).stdout), []);
-        await probe('cold-cron-config', 'magelens_generated_probe');
-        await magento(['cron:run', '--group=magelens_generated_probe']);
-        const generated = JSON.parse((await probe('generated-schedules', '0')).stdout);
+        const generatedJob = 'magelens_generated_probe';
+        await probe('clean-generated', generatedJob);
+        assert.deepEqual(JSON.parse((await probe('generated-schedules', generatedJob)).stdout), []);
+        await probe('cold-cron-config', generatedJob);
+        await magento(['cron:run', '--group=' + generatedJob]);
+        const generated = JSON.parse((await probe('generated-schedules', generatedJob)).stdout);
         assert.ok(generated.includes('pending'), 'The native scheduler must persist a future due row');
         assert.ok(generated.every(status => status === 'pending' || status === 'success'));
 
-        // At a minute boundary, the observer's dispatch clock may precede the
-        // generator's clock. Prove callback entry with an explicitly due row.
-        const generatedDue = (await probe('schedule', 'magelens_generated_probe')).stdout.trim();
+        // Magento runs one pending row per job each pass. Clear the rows just
+        // verified, retaining the generation timestamp for the dispatch pass.
+        await probe('delete-generated', generatedJob);
+        const generatedDue = (await probe('schedule', generatedJob)).stdout.trim();
         assert.match(generatedDue, /^\d+$/);
         assert.equal((await probe('status', generatedDue)).stdout.trim(), 'pending');
-        await probe('cold-cron-config', 'magelens_generated_probe');
-        await magento(['cron:run', '--group=magelens_generated_probe']);
+        await probe('cold-cron-config', generatedJob);
+        await magento(['cron:run', '--group=' + generatedJob]);
         assert.equal((await probe('status', generatedDue)).stdout.trim(), 'success');
+
+        await probe('clean-generated', '123');
+        const numericJobs = new Map([
+            ['123', 'preferred-worker-intercepted'],
+            ['0123', 'virtual-worker'],
+            ['magelens_scoped_probe', 'preferred-worker-intercepted'],
+        ]);
+        // The native --group filter compares strings strictly, but the XML group
+        // key is an integer. Exclude the other groups through the native CLI.
+        const otherGroups = JSON.parse((await probe('other-cron-groups', '123')).stdout);
+        const numericCron = ['cron:run', ...otherGroups.map(group => '--exclude-group=' + group)];
+        for (const job of numericJobs.keys()) assert.deepEqual(JSON.parse((await probe('generated-schedules', job)).stdout), []);
+        await probe('cold-cron-config', '123');
+        await magento(numericCron);
+        for (const job of ['123', '0123']) {
+            assert.ok(JSON.parse((await probe('generated-schedules', job)).stdout).includes('pending'), 'Missing future row for ' + job);
+        }
+        await probe('delete-generated', '123');
+        const due = new Map();
+        for (const [job, message] of numericJobs) {
+            const schedule = (await probe('schedule', job)).stdout.trim();
+            assert.match(schedule, /^\d+$/);
+            assert.equal((await probe('status', schedule)).stdout.trim(), 'pending');
+            due.set(schedule, {job, message});
+        }
+        await probe('cold-cron-config', '123');
+        await magento(numericCron);
+        for (const [schedule, {job, message}] of due) {
+            assert.equal((await probe('status', schedule)).stdout.trim(), 'success', 'Native dispatch did not run ' + job);
+            assert.equal((await probe('messages', schedule)).stdout.trim(), message);
+        }
     } finally {
         for (const id of schedules.keys()) await probe('unschedule', id);
-        await probe('clean-generated', '0');
+        await probe('clean-generated', 'magelens_generated_probe');
+        await probe('clean-generated', '123');
     }
 });
 

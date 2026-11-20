@@ -31,9 +31,12 @@ const traces = fs.readdirSync(raw).filter(file => /^[a-f0-9]+\.json$/.test(file)
     const data = JSON.parse(fs.readFileSync(path.join(raw, file)));
     return {id: file.slice(0, -5), method: data.method, uri: data.uri};
 }).filter(trace => trace.uri);
-function events(uri, method) {
-    const records = traces.filter(trace => uri.test(new URL(trace.uri, 'https://application.invalid').pathname)
-        && (!method || trace.method === method));
+function events(uri, method, search) {
+    const records = traces.filter(trace => {
+        const url = new URL(trace.uri, 'https://application.invalid');
+        return uri.test(url.pathname) && (!method || trace.method === method)
+            && (search === undefined || url.search === search);
+    });
     assert.ok(records.length > 0, 'No current native request for ' + uri);
     const ids = new Set(records.map(trace => trace.id));
     return result.requests.filter(request => ids.has(request.id)).flatMap(request => request.events);
@@ -56,11 +59,58 @@ test('attributes the Blog front name and the winning competing module at their o
     assert.deepEqual(stages(fallback, winner.id), []);
 });
 
+function routeDeclarations(route, line) {
+    const identity = 'frontend/standard/' + route;
+    return [
+        source(compatibility, identity, line, 'id="' + route + '"'),
+        source(compatibility, identity + '/MageLens_Compatibility', line, 'MageLens_Compatibility')
+    ];
+}
+
+function assertRouteEffects(seen, expected) {
+    const actual = seen.filter(event => event.type.startsWith('route-'));
+    assert.deepEqual([...new Set(actual.map(event => event.id))].sort(), expected.map(([item]) => item.id).sort());
+    for (const [item, effects] of expected) assert.deepEqual(stages(actual, item.id), effects);
+}
+
+const matched = ['route-handler-entered/entered', 'route-match/matched'];
+
+test('attributes alphabetic and numeric IDs including a distinct leading-zero ID', () => {
+    for (const [front, route, line] of [
+        ['coverageprobe', 'coverageprobe', 9], ['catalogue', '123', 13], ['alternatecatalogue', '0123', 14]
+    ]) {
+        const declarations = routeDeclarations(route, line);
+        for (const item of declarations) assert.equal(item.supported, true, item.path);
+        assertRouteEffects(events(new RegExp('^/' + front + '/index/catalogue$'), 'GET', ''),
+            declarations.map(item => [item, matched]));
+    }
+});
+
+test('a native after plugin displaces route metadata while preserving the original controller selection', () => {
+    const [route, module] = routeDeclarations('123', 13);
+    const seen = events(/^\/catalogue\/index\/catalogue$/, 'GET', '?rewrite=1');
+    assertRouteEffects(seen, [
+        [route, ['route-handler-entered/entered', 'route-match/displaced']],
+        [module, matched]
+    ]);
+});
+
+test('preserves the first native owner when front names compare equal', () => {
+    const selected = routeDeclarations('collisionwinner', 15);
+    for (const item of routeDeclarations('collisionloser', 16)) {
+        assert.equal(item.supported, false);
+        assert.equal(item.outcome, 'displaced');
+        assert.match(item.reason, /preceding native route owns the same front name/);
+    }
+    assertRouteEffects(events(/^\/350\/index\/catalogue$/, 'GET', ''), selected.map(item => [item, matched]));
+});
+
 test('attributes the native Blog Admin route and controller entry', () => {
-    const item = source(blog + '/adminhtml/routes.xml', 'adminhtml/admin/application_blog/Application_Blog', 9, 'Application_Blog');
+    const route = source(blog + '/adminhtml/routes.xml', 'adminhtml/admin/application_blog', 9, 'frontName="application_blog"');
+    const module = source(blog + '/adminhtml/routes.xml', 'adminhtml/admin/application_blog/Application_Blog', 9, 'Application_Blog');
     const seen = events(/\/application_blog\/manage\/index\b/);
-    assert.deepEqual(stages(seen, item.id), ['route-handler-entered/entered', 'route-match/matched']);
-    assert.ok(seen.filter(event => event.id === item.id).every(event => event.area === 'adminhtml'));
+    assertRouteEffects(seen, [[route, matched], [module, matched]]);
+    assert.ok(seen.filter(event => event.type.startsWith('route-')).every(event => event.area === 'adminhtml'));
 });
 
 test('keeps synchronous REST selection, permission, and handler entry distinct', () => {

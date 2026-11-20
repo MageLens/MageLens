@@ -66,7 +66,7 @@ final class CronRuntime
         $callbacks = [];
         foreach ($this->targets['jobs'] as $jobs) foreach ($jobs as $job) {
             if (!isset($job['handler'])) continue;
-            ['declaring' => $declaring, 'method' => $method] = $job['handler'];
+            ['declaring' => $declaring, 'callback' => $method] = $job['handler'];
             $callbacks[$declaring . '::' . $method] = [$declaring, $method, $this->handlerEntry(...), $this->handlerReturn(...)];
         }
         return [...$hooks, ...array_values($callbacks)];
@@ -179,7 +179,7 @@ final class CronRuntime
     private function beginGeneration($subject, array $args, string $class): void
     {
         if ($class === Observer::class && self::native($subject, Observer::class)) {
-            $this->generation[] = ['owner' => $subject, 'group' => $args[2] ?? null, 'jobs' => $args[0] ?? []];
+            $this->generation[] = ['owner' => $subject, 'group' => self::identifier($args[2] ?? null), 'jobs' => $args[0] ?? []];
         }
     }
 
@@ -192,10 +192,10 @@ final class CronRuntime
     {
         $generation = end($this->generation);
         if ($class !== Observer::class || ($generation['owner'] ?? null) !== $subject) return;
-        $code = $args[0] ?? null;
+        $code = self::identifier($args[0] ?? null);
         $group = $generation['group'];
-        $target = $this->targets['jobs'][$group][$code]['schedule'] ?? null;
-        $binding = $generation['jobs'][$code] ?? [];
+        $target = $group !== null && $code !== null ? ($this->targets['jobs'][$group][$code]['schedule'] ?? null) : null;
+        $binding = $code === null ? [] : ($generation['jobs'][$code] ?? []);
         $this->saving[] = ['owner' => $subject, 'code' => $code, 'group' => $group, 'target' => $target,
             'matches' => $target && !isset($binding['config_path']) && ($args[1] ?? null) === $target['expression']];
     }
@@ -209,7 +209,7 @@ final class CronRuntime
     {
         $index = array_key_last($this->saving);
         if (!$error && $class === Observer::class && ($this->saving[$index]['owner'] ?? null) === $subject
-            && ($this->saving[$index]['code'] ?? null) === ($args[0] ?? null) && self::native($result, Schedule::class)) {
+            && ($this->saving[$index]['code'] ?? null) === self::identifier($args[0] ?? null) && self::native($result, Schedule::class)) {
             $this->saving[$index]['schedule'] = $result;
         }
     }
@@ -218,7 +218,7 @@ final class CronRuntime
     {
         $frame = end($this->saving);
         if ($error || !is_bool($result) || $class !== Schedule::class || ($frame['schedule'] ?? null) !== $subject || !$frame['target']
-            || !$this->atCallSite(Observer::class, 'saveSchedule', '$valid = $schedule->trySchedule();')) return;
+            || !$this->atScheduleCallSite($frame['owner'])) return;
         $data = $this->scheduleData($subject);
         if (empty($data['scheduled_at']) || empty($data['cron_expr_arr'])) return;
         $target = $frame['target'];
@@ -232,9 +232,9 @@ final class CronRuntime
     {
         if ($class !== Observer::class || !self::native($subject, Observer::class)) return;
         $schedule = $args[3] ?? null;
-        $group = $args[4] ?? null;
-        $code = self::native($schedule, Schedule::class) ? $this->scheduleData($schedule)['job_code'] ?? null : null;
-        $target = $this->targets['jobs'][$group][$code]['handler'] ?? null;
+        $group = self::identifier($args[4] ?? null);
+        $code = self::native($schedule, Schedule::class) ? self::identifier($this->scheduleData($schedule)['job_code'] ?? null) : null;
+        $target = $group !== null && $code !== null ? ($this->targets['jobs'][$group][$code]['handler'] ?? null) : null;
         $binding = $args[2] ?? [];
         $outcome = $target ? $this->decision($this->observerConfig($subject), $group, $code, 'handler', self::matches($binding, $target)) : null;
         $this->execution[] = ['owner' => $subject, 'schedule' => $schedule, 'target' => $target, 'outcome' => $outcome];
@@ -261,18 +261,26 @@ final class CronRuntime
         if ($error || $class !== AbstractCronCommand::class || !is_array($result) || count($result) !== 3
             || ($this->direct[$index]['owner'] ?? null) !== $subject) return;
         [$code, $binding, $receiver] = $result;
+        $code = self::identifier($code);
+        if ($code === null || !is_array($binding)) return;
         $config = (new \ReflectionProperty(AbstractCronCommand::class, 'cronConfig'))->getValue($subject);
         $groups = [];
         foreach ($this->latest[$config] ?? [] as $group => $jobs) foreach ($jobs as $job => $data) {
-            if (($data['name'] ?? null) !== null && ($data['name'] == $code || $job == $code)) $groups[] = [$group, $job];
+            // MageRun returns the first loose match. Retain its actual key,
+            // and verify the returned binding before crediting that declaration.
+            if (isset($data['name']) && ($data['name'] == $code || $job == $code)) {
+                $groups[] = [(string) $group, (string) $job, $data];
+            }
         }
         if (!$groups) return;
-        [$group, $job] = $groups[0];
+        [$group, $job, $selected] = $groups[0];
         $target = $this->targets['jobs'][$group][$job]['handler'] ?? null;
         if (!$target) return;
 
-        $outcome = count($groups) > 1 ? ['ambiguous', 'MageRun named selection has several matching native cron jobs']
-            : $this->decision($config, $group, $job, 'handler', self::matches($binding, $target));
+        $duplicates = array_filter(array_slice($groups, 1), static fn(array $candidate) =>
+            $candidate[1] === $job || $candidate[2] === $binding);
+        $outcome = $duplicates ? ['ambiguous', 'MageRun named selection has several matching native cron jobs']
+            : $this->decision($config, $group, $job, 'handler', $selected === $binding && self::matches($binding, $target));
         $this->direct[$index] += ['target' => $target, 'outcome' => $outcome,
             'receiver' => $receiver, 'code' => $code];
     }
@@ -280,20 +288,28 @@ final class CronRuntime
     private function handlerEntry($subject, array $args, string $class, string $method): void
     {
         $this->callbacks[] = null;
-        $frame = end($this->execution);
+        $execution = end($this->execution);
         $direct = end($this->direct);
         $schedule = $args[0] ?? null;
-        $target = $frame ? ($frame['target'] ?? null) : ($direct['target'] ?? null);
-        if (!$target || $class !== $target['declaring'] || $method !== $target['method']
-            || !self::native($subject, $target['receiver']) || !self::native($schedule, Schedule::class)) return;
-        if ($frame) {
-            if ($frame['schedule'] !== $schedule
-                || !$this->atCallSite(Observer::class, '_runJob', 'call_user_func_array($callback, [$schedule]);')) return;
-        } elseif ($subject !== $direct['receiver'] || ($this->scheduleData($schedule)['job_code'] ?? null) !== $direct['code']
-            || !$this->atCallSite(RunCommand::class, 'execute', '$model->{$jobConfig[\'method\']}($schedule);')) {
+        if (!self::native($schedule, Schedule::class)) return;
+        if (isset($execution['target']) && $execution['schedule'] === $schedule
+            && $this->atCallSite($subject, $method, $execution['owner'], Observer::class, '_runJob',
+                'call_user_func_array($callback, [$schedule]);')) {
+            $frame = &$this->execution[array_key_last($this->execution)];
+        } elseif (isset($direct['target']) && $subject === $direct['receiver']
+            && self::identifier($this->scheduleData($schedule)['job_code'] ?? null) === $direct['code']
+            && $this->atCallSite($subject, $method, $direct['owner'], RunCommand::class, 'execute',
+                '$model->{$jobConfig[\'method\']}($schedule);')) {
+            $frame = &$this->direct[array_key_last($this->direct)];
+        } else {
             return;
         }
-        $this->callbacks[array_key_last($this->callbacks)] = ['id' => $target['id'], 'outcome' => ($frame ?: $direct)['outcome']];
+        $target = $frame['target'];
+        if (isset($frame['claimed']) || $method !== $target['callback'] || !self::native($subject, $target['receiver'])
+            || !in_array($class, [$target['declaring'], $target['receiver'] . '\\Interceptor'], true)) return;
+        // A compiled interceptor can notify more than one hook for the same call.
+        $frame['claimed'] = true;
+        $this->callbacks[array_key_last($this->callbacks)] = ['id' => $target['id'], 'outcome' => $frame['outcome']];
     }
 
     private function handlerReturn($subject, array $args, $result, ?\Throwable $error, string $class, string $method, string $file, int $line): void
@@ -309,7 +325,7 @@ final class CronRuntime
         Recorder::familyEvidence($id, 'cron-handler-completed', 'crontab', ...($outcome ?? [$error ? 'failed' : 'completed']));
     }
 
-    private function atCallSite(string $class, string $method, string $statement): bool
+    private function callSite(string $class, string $method, string $statement): ?array
     {
         $key = $class . '::' . $method;
         if (!array_key_exists($key, $this->callSites)) {
@@ -322,13 +338,40 @@ final class CronRuntime
             }
             $this->callSites[$key] = count($matched) === 1 ? [$file, $matched[0]] : null;
         }
-        $site = $this->callSites[$key];
+        return $this->callSites[$key];
+    }
+
+    private function atScheduleCallSite(object $owner): bool
+    {
+        $site = $this->callSite(Observer::class, 'saveSchedule', '$valid = $schedule->trySchedule();');
         if ($site === null) return false;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 30);
+        // Observe the native expression evaluator inside a Schedule interceptor, if present.
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 30);
         foreach ($trace as $index => $frame) {
-            if (($frame['class'] ?? null) !== $class || $frame['function'] !== $method || $index === 0) continue;
-            $callee = $trace[$index - 1];
+            if (($frame['object'] ?? null) !== $owner || ($frame['class'] ?? null) !== Observer::class
+                || $frame['function'] !== 'saveSchedule') continue;
+            $callee = $trace[$index - 1] ?? [];
             return ($callee['file'] ?? null) === $site[0] && ($callee['line'] ?? null) === $site[1];
+        }
+        return false;
+    }
+
+    private function atCallSite(
+        object $subject, string $callback, object $owner, string $class, string $method, string $statement
+    ): bool {
+        $site = $this->callSite($class, $method, $statement);
+        if ($site === null) return false;
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 12);
+        foreach ($trace as $index => $frame) {
+            if (($frame['object'] ?? null) !== $subject || $frame['function'] !== $callback) continue;
+            $caller = $trace[$index + 1] ?? [];
+            // PHP may expose the native call_user_func_array trampoline as its own frame.
+            if (!isset($caller['class']) && ($caller['function'] ?? null) === 'call_user_func_array') {
+                $frame = $caller;
+                $caller = $trace[$index + 2] ?? [];
+            }
+            return ($caller['object'] ?? null) === $owner && ($caller['class'] ?? null) === $class
+                && $caller['function'] === $method && ($frame['file'] ?? null) === $site[0] && ($frame['line'] ?? null) === $site[1];
         }
         return false;
     }
@@ -365,6 +408,11 @@ final class CronRuntime
     private static function matches(array $binding, array $target): bool
     {
         return ($binding['instance'] ?? null) === $target['instance'] && ($binding['method'] ?? null) === $target['method'];
+    }
+
+    private static function identifier(mixed $value): ?string
+    {
+        return is_int($value) || is_string($value) ? (string) $value : null;
     }
 
     private static function native(mixed $object, string $class): bool

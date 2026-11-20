@@ -161,15 +161,17 @@ final class RoutingFamily
         }
         $front = $data['frontName'];
         foreach ($config as $id => $candidate) {
-            if ($candidate['frontName'] !== $front) continue;
-            if ($id !== $route) {
+            // Match the native lookup's front-name comparison, while keeping
+            // route IDs such as "123" and "0123" distinct.
+            if ($candidate['frontName'] != $front) continue;
+            if (RoutingRuntime::identifier($id) !== $route) {
                 self::limit($item, 'A preceding native route owns the same front name', 'displaced');
                 return;
             }
             break;
         }
-        $http[$area][$route]['hash'] ??= RoutingRuntime::routeSignature($data);
-        $http[$area][$route]['ids'][$module ?? ''] = $item['id'];
+        $http[$area][$front] ??= ['route' => $route, 'hash' => RoutingRuntime::routeSignature($data)];
+        $http[$area][$front]['ids'][$module ?? ''] = $item['id'];
     }
 
     private static function source(array &$item, string $path, string $hash, array $origins, array $providers): bool
