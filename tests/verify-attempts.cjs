@@ -47,6 +47,7 @@ for (const [id, count] of used) assert.ok(count > 0, `No PHP execution attribute
 
 // Every test runs in an attributed browser context, so the attempts' JavaScript counters add up to the aggregate.
 const {mergeCounters} = require('../bin/javascript-attempts.cjs');
+const {isCoverageExcluded} = require('../bin/project.cjs');
 const javascript = {};
 for (const file of fs.readdirSync('coverage/raw/javascript-attempts')) {
     assert.ok(attempts.get(path.basename(file, '.json'))?.runner === runner, 'JavaScript counters of an unknown attempt');
@@ -60,6 +61,13 @@ for (const [file, {s, f, b}] of Object.entries(aggregate)) {
     for (const [id, hits] of Object.entries(f)) assert.equal(attributed.f?.[id] || 0, hits, `Function ${id} of ${file}`);
     for (const [id, hits] of Object.entries(b)) assert.deepEqual(attributed.b?.[id] || hits.map(() => 0), hits, `Branch ${id} of ${file}`);
     statements += Object.values(s).filter(hits => hits > 0).length;
+}
+// The reverse direction: attempts hold no counters that the aggregate lacks, except for excluded files.
+for (const [file, hit] of Object.entries(javascript).filter(([file]) => !isCoverageExcluded(file))) {
+    assert.ok(aggregate[file], `Attributed JavaScript outside the aggregate: ${file}`);
+    for (const type of ['s', 'f', 'b']) {
+        for (const id of Object.keys(hit[type] || {})) assert.ok(id in aggregate[file][type], `Attributed ${type} ${id} missing from ${file}`);
+    }
 }
 assert.ok(statements > 0, 'No JavaScript statements were attributed');
 console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed; per-attempt JavaScript counters match ${statements} covered statements.`);

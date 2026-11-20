@@ -100,8 +100,8 @@ function withCoverage(base = playwright.test) {
                 for (const snapshot of snapshots.values()) coverage.merge(snapshot);
                 fs.mkdirSync('.nyc_output', {recursive: true});
                 fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
-                recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
                 checkAdminDependencies();
+                recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
             }
         }
     });

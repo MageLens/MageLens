@@ -68,11 +68,11 @@ test('attempt records reject reused IDs, unknown identities and a second outcome
 });
 
 test('JavaScript counters keep only hits and add up across the pages of one attempt', () => {
-    const page = (statement, branch) => ({'/src/cart.js': {path: '/src/cart.js', statementMap: {}, s: {0: statement, 1: 0}, f: {0: 0}, b: {0: branch}},
+    const page = (statement, branch, call = 0) => ({'/src/cart.js': {path: '/src/cart.js', statementMap: {}, s: {0: statement, 1: 0}, f: {0: call, 1: 0}, b: {0: branch}},
         '/src/unused.js': {path: '/src/unused.js', s: {0: 0}, f: {0: 0}, b: {0: [0, 0]}}});
-    const first = sparseCounters(page(2, [1, 0]));
-    assert.deepEqual(first, {'/src/cart.js': {s: {0: 2}, b: {0: [1, 0]}}});
-    assert.deepEqual(mergeCounters(first, sparseCounters(page(1, [0, 3]))), {'/src/cart.js': {s: {0: 3}, b: {0: [1, 3]}}});
+    const first = sparseCounters(page(2, [1, 0], 1));
+    assert.deepEqual(first, {'/src/cart.js': {s: {0: 2}, f: {0: 1}, b: {0: [1, 0]}}});
+    assert.deepEqual(mergeCounters(first, sparseCounters(page(1, [0, 3], 2))), {'/src/cart.js': {s: {0: 3}, f: {0: 3}, b: {0: [1, 3]}}});
     assert.deepEqual(sparseCounters(page(0, [0, 0])), {});
     assert.throws(() => mergeCounters({'/src/cart.js': {b: {0: [1]}}}, first), /changed its paths/);
 });
