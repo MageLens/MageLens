@@ -6,6 +6,7 @@
  */
 declare(strict_types=1);
 require_once __DIR__ . '/xml-data.php';
+require_once __DIR__ . '/xml-family-evidence.php';
 require_once __DIR__ . '/xml-recorder.php';
 require_once __DIR__ . '/xml-observers.php';
 require_once __DIR__ . '/xml-plugin-manifest.php';
@@ -37,7 +38,7 @@ require_once __DIR__ . '/xml-layout-argument-names.php';
 require_once __DIR__ . '/xml-layout-registry.php';
 require_once __DIR__ . '/xml-layout-assets.php';
 require_once __DIR__ . '/xml-layout-cache.php';
-use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences};
+use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences, FamilyEvidence};
 
 function startXmlHooks(string $run): void
 {
@@ -76,7 +77,7 @@ function startXmlHooks(string $run): void
     foreach (['save', 'delete'] as $method) $hooks[] = ['Magento\\Framework\\App\\Config\\Storage\\Writer', $method,
         static function ($subject, array $params) { Recorder::mutation(); }, null];
     $hooks = array_merge($hooks, Observers::hooks(Recorder::observerTargets()), Plugins::hooks(Recorder::pluginTargets()),
-        Preferences::hooks(Recorder::preferenceTargets()), Recorder::layoutHooks());
+        Preferences::hooks(Recorder::preferenceTargets()), Recorder::layoutHooks(), FamilyEvidence::hooks(Recorder::familyTargets(), $run));
     foreach ($hooks as [$class, $method, $pre, $post]) {
         if (!\MageLens\XmlCoverage\LayoutRuntimeHooks::registerWrapped($class, $method, $pre, $post)) throw new RuntimeException('Cannot register XML runtime hook');
     }

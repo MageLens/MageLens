@@ -10,8 +10,10 @@ const {withTemplateCoverage} = require('@magelens/magento-template-coverage/play
 const playwright = require('@playwright/test');
 const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
 const {captureHtml} = require('../bin/html-validation.cjs');
+const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+        recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
         browserIdentity: [async ({browser}, use, testInfo) => {
             testInfo.annotations.push({type: 'magelens-browser', description: JSON.stringify({
                 name: testInfo.project.use.channel, version: browser.version()

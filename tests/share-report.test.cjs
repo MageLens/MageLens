@@ -299,3 +299,24 @@ test('opt-in declines modified and symlinked originals, even if the symlink targ
     assert.match(symlinked.stderr, /Symlinked coverage source is unsupported/);
     assert.equal(fs.existsSync(path.join(report.root, 'coverage/share-with-source.html')), false);
 });
+
+test('offline XML family details retain effects and omit request and browser data', t => {
+    const report = fixture(t);
+    const measurement = JSON.parse(report.read('xml/coverage.json'));
+    const [file] = measurement.files;
+    file.sourceFingerprint = file.sourceHash;
+    file.declarations.push({id: 'a'.repeat(64), path: 'configuration.changed', family: 'ui-component', startLine: 1, endLine: 1,
+        supported: true, state: 'covered', effects: ['ui-delivered', 'ui-rendered'],
+        effectStates: {'ui-delivered': 'covered', 'ui-rendered': 'uncovered'},
+        evidence: [{type: 'ui-delivered', area: 'adminhtml', outcome: 'observed', request: privateMarker, reason: null}],
+        request: privateMarker, configuration: privateMarker});
+    report.artifact('xml/coverage.json', measurement);
+    for (const [args, output] of exportModes) {
+        const result = report.run(...args);
+        assert.equal(result.status, 0, result.stderr);
+        const html = report.read(output);
+        assert.match(html, /ui-delivered.*covered.*adminhtml.*observed/s);
+        assert.match(html, /ui-rendered.*uncovered/s);
+        assert.doesNotMatch(html, new RegExp(privateMarker));
+    }
+});

@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
+const {familyOutcomes} = require('../../bin/xml-family-report.cjs');
 const {isDeepStrictEqual} = require('node:util');
 const {layoutEvents, countsAsLayoutCoverage} = require('../../bin/report-xml.cjs');
 const digest = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n')).digest('hex');
@@ -167,7 +168,12 @@ function snapshot(directory) {
                             ...(item.binding.argument ? [digest(item.binding.argument), ...(item.binding.items || []).map(digest)] : [])],
                         lifecycleAreas: diAreas(item.areas)
                     } : {}),
-                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(item.family === 'layout'
+                    ...(item.effects ? {
+                        family: item.family, familyOutcome: item.outcome ?? null,
+                        familyEffects: sort(familyOutcomes(item).map(({type, state, outcomes}) =>
+                            [type, state, sort(outcomes.map(({area, outcome, reason}) => [area, outcome, digest(reason ?? '')]))]))
+                    } : {}),
+                    evidence: item.effects ? [] : sort([...new Set(item.evidence.map(event => JSON.stringify(item.family === 'layout'
                         ? [event.type, event.area, digest(event.theme)]
                         : event.type === 'observer-execute'
                         ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
@@ -245,6 +251,25 @@ function validateSnapshot(value, run, summary) {
                     'Layout coverage requires an eligible native effect; creation and selection facts cannot substitute for rendering');
                 if (item.state !== 'unmeasured') layoutTotals.total++;
                 if (item.state === 'covered') layoutTotals.covered++;
+            }
+            if (item.familyEffects) {
+                assert.ok(['ui-component', 'routes', 'webapi', 'acl', 'menu', 'cron'].includes(item.family));
+                assert.match(item.id, /^[a-f0-9]{64}$/);
+                assert.ok(item.familyOutcome === null || ['ambiguous', 'displaced', 'cache-only', 'disabled', 'unsupported'].includes(item.familyOutcome));
+                assert.equal(new Set(array(item.familyEffects).map(row => row[0])).size, item.familyEffects.length);
+                for (const [effect, state, outcomes] of item.familyEffects) {
+                    assert.match(effect, /^[a-z]+(?:-[a-z]+)+$/);
+                    assert.ok(['covered', 'uncovered', 'unmeasured'].includes(state));
+                    for (const [area, outcome, reason] of array(outcomes)) {
+                        assert.ok(['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql', 'crontab'].includes(area));
+                        assert.ok(['observed', 'allowed', 'denied', 'matched', 'entered', 'completed', 'failed',
+                            'ambiguous', 'displaced', 'cache-only', 'disabled'].includes(outcome));
+                        assert.match(reason, /^[a-f0-9]{64}$/);
+                    }
+                    const covered = outcomes.some(([, outcome]) =>
+                        ['observed', 'allowed', 'denied', 'matched', 'entered', 'completed'].includes(outcome));
+                    assert.equal(state, item.supported ? (covered ? 'covered' : 'uncovered') : 'unmeasured');
+                }
             }
             if (item.plugin) {
                 assert.equal(array(item.plugin).length, 2);
