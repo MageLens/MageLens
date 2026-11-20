@@ -12,6 +12,7 @@ use Magento\Framework\App\ActionInterface;
 use Magento\Framework\App\FrontController;
 use Magento\Framework\App\Request\Http;
 use Magento\Framework\App\Route\Config as RouteConfig;
+use Magento\Framework\App\Route\ConfigInterface as RouteConfigInterface;
 use Magento\Framework\App\Router\Base;
 use Magento\Framework\Exception\AuthorizationException;
 use Magento\Framework\HTTP\PhpEnvironment\Request as PhpRequest;
@@ -51,7 +52,7 @@ final class RoutingRuntime
                             AdminRouter::class, AdminRouter::class . '\\Interceptor' => 'adminhtml',
                             default => null,
                         };
-                        $this->routeStack[] = ['area' => $area, 'config' => []];
+                        $this->routeStack[] = ['area' => $area, 'router' => $router, 'request' => $params[0]];
                     },
                     function ($router, array $params, $result, ?\Throwable $error, string $class): void {
                         if ($class !== Base::class) return;
@@ -60,13 +61,16 @@ final class RoutingRuntime
                             $this->routeMatch($match, $params[0], $result);
                         }
                     }],
-                [RouteConfig::class, '_getRoutes', null,
-                    function ($config, array $params, $result, ?\Throwable $error, string $class): void {
-                        $index = array_key_last($this->routeStack);
-                        if ($index !== null && !$error && $class === RouteConfig::class && is_array($result)) {
-                            $this->routeStack[$index]['config'] = $result;
-                        }
+                [Base::class, 'matchModuleFrontName', null,
+                    function ($router, array $params, $result, ?\Throwable $error): void {
+                        $index = $this->routeFrame('matchModuleFrontName', $router);
+                        if ($index !== null && !$error) $this->routeStack[$index]['front'] = self::identifier($result);
                     }],
+                [RouteConfigInterface::class, 'getModulesByFrontName', $this->lookupStart(...), $this->lookupResult(...)],
+                [RouteConfigInterface::class, 'getRouteByFrontName', $this->lookupStart(...), $this->lookupResult(...)],
+                [RouteConfig::class, '_getRoutes', null, $this->routeConfiguration(...)],
+                [Http::class, 'setControllerModule', $this->routeSetter(...), null],
+                [PhpRequest::class, 'setActionName', $this->routeSetter(...), null],
                 [FrontController::class, 'getActionResponse',
                     function ($controller, array $params, string $class): void {
                         if ($class !== FrontController::class) return;
@@ -193,23 +197,137 @@ final class RoutingRuntime
         ];
     }
 
+    private function routeFrame(string $method, object $subject): ?int
+    {
+        $index = array_key_last($this->routeStack);
+        if ($index === null || $this->routeStack[$index]['area'] === null) return null;
+        $caller = self::routeCaller($subject, $method);
+        return ($caller['class'] ?? null) === Base::class && $caller['function'] === 'matchAction'
+            && $caller['object'] === $this->routeStack[$index]['router'] ? $index : null;
+    }
+
+    private static function routeCaller(object $subject, string $method, int $options = DEBUG_BACKTRACE_IGNORE_ARGS): array
+    {
+        $frames = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_PROVIDE_OBJECT | $options, 12);
+        foreach ($frames as $i => $frame) {
+            if ($frame['function'] === $method && ($frame['object'] ?? null) === $subject) return $frames[$i + 1] ?? [];
+        }
+        return [];
+    }
+
+    private function routeSetter($request, array $params, string $class, string $method): void
+    {
+        // Observe what Base selected before request interceptors can rewrite it.
+        $index = $this->routeFrame($method, $request);
+        if ($index !== null && $this->routeStack[$index]['request'] === $request) {
+            $this->routeStack[$index][$method] = $params[0];
+        }
+    }
+
+    private function lookupStart($config, array $params, string $class, string $method): void
+    {
+        $index = $this->routeFrame($method, $config);
+        if ($index !== null) $this->routeStack[$index]['active'] = [$method, $config];
+    }
+
+    private function lookupResult($config, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        $index = $this->routeFrame($method, $config);
+        if ($index === null) return;
+        unset($this->routeStack[$index]['active']);
+        if (!$error) $this->routeStack[$index]['lookup'][$method] = [self::identifier($params[0]), $result];
+    }
+
+    private function routeConfiguration($config, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->routeStack);
+        if ($index === null || $error || $class !== RouteConfig::class || !is_array($result)) return;
+        $match =& $this->routeStack[$index];
+        if (($match['active'][1] ?? null) !== $config) return;
+        $method = $match['active'][0];
+        // Other config consumers can run inside this lookup. Only the route
+        // array returned directly to the native getter can prove selection.
+        $caller = self::routeCaller($config, '_getRoutes', 0);
+        if (($caller['class'] ?? null) !== RouteConfig::class || $caller['object'] !== $config
+            || $caller['function'] !== $method) return;
+        $front = self::identifier($caller['args'][0]);
+        $scope = $params[0] ?? null;
+        $selection = null;
+        if ($front !== null) {
+            foreach ($result as $id => $data) {
+                if ($data['frontName'] != $front || ($method === 'getModulesByFrontName' && !isset($data['modules']))) continue;
+                $selection = [self::identifier($id), $data];
+                break;
+            }
+        }
+        $match['native'][$method][] = [$front, $scope, $selection];
+    }
+
     private function routeMatch(array $match, Http $request, ActionInterface $action): void
     {
         $area = $match['area'];
-        [$route, $module] = self::properties($request, Http::class, ['route', 'controllerModule']);
-        [$actionName] = self::properties($request, PhpRequest::class, ['action']);
-        if ($area === null || !is_string($route) || !$module || $actionName === Base::NO_ROUTE) return;
-        $target = $this->targets['routes'][$area][$route] ?? null;
-        if ($target === null) return;
-        $ids = array_values(array_intersect_key($target['ids'], [$module => true, '' => true]));
-        if (!$ids) return;
-        if (self::routeSignature($match['config'][$route] ?? []) !== $target['hash']) {
-            foreach ($ids as $id) Recorder::familyEvidence($id, 'route-match', $area, 'cache-only',
-                'The native route configuration differs from the current source binding');
-            return;
+        $front = $match['front'] ?? null;
+        if ($area === null || $front === null || ($match['setActionName'] ?? Base::NO_ROUTE) === Base::NO_ROUTE) return;
+        $targets = $this->targets['routes'][$area] ?? [];
+        $target = $targets[$front] ?? null;
+        if ($target === null && is_numeric($front)) {
+            foreach ($targets as $name => $candidate) if ($name == $front) {
+                $target = $candidate;
+                break;
+            }
         }
-        foreach ($ids as $id) Recorder::familyEvidence($id, 'route-match', $area, 'matched');
-        $this->actions[$action] = [$area, $ids];
+        if ($target === null) return;
+        $routeId = $target['ids'][''] ?? null;
+        $module = $match['setControllerModule'] ?? null;
+        $moduleId = is_string($module) ? ($target['ids'][$module] ?? null) : null;
+
+        if ($routeId !== null) {
+            [$outcome, $reason, $result] = $this->routeBinding($match, $target, 'getRouteByFrontName');
+            [$route] = self::properties($request, Http::class, ['route']);
+            if ($outcome === 'matched'
+                && (self::identifier($result) !== $target['route'] || self::identifier($route) !== $target['route'])) {
+                [$outcome, $reason] = ['displaced', 'Runtime code changed the route ID assigned to the request'];
+            }
+            Recorder::familyEvidence($routeId, 'route-match', $area, $outcome, $reason);
+        }
+
+        // Controller selection consumes the module list before route metadata
+        // is assigned. A change to that metadata cannot transfer handler credit.
+        [$outcome, $reason, $modules, $data] = $this->routeBinding($match, $target, 'getModulesByFrontName');
+        if ($outcome === 'matched') {
+            if (!is_string($module)) {
+                [$outcome, $reason] = ['ambiguous', 'Cannot establish the module selected by the router'];
+            } elseif ($modules !== array_unique($data['modules']) || !in_array($module, $modules, true)) {
+                [$outcome, $reason] = ['displaced', 'Runtime code changed the native module selection'];
+            }
+        }
+        if ($moduleId !== null) Recorder::familyEvidence($moduleId, 'route-match', $area, $outcome, $reason);
+        $ids = array_values(array_filter([$routeId, $moduleId]));
+        if ($outcome === 'matched') {
+            $this->actions[$action] = [$area, $ids];
+        } else {
+            foreach ($ids as $id) Recorder::familyEvidence($id, 'route-handler-entered', $area, $outcome, $reason);
+        }
+    }
+
+    private function routeBinding(array $match, array $target, string $method): array
+    {
+        $lookup = $match['lookup'][$method] ?? null;
+        $native = $match['native'][$method] ?? [];
+        if ($lookup === null || count($native) !== 1) {
+            return ['ambiguous', 'Cannot establish the native lookup used by the router', null, null];
+        }
+        [$front, $scope, $selection] = $native[0];
+        if ($front !== $match['front'] || $lookup[0] !== $front) {
+            return ['displaced', 'Runtime code changed the front name used by the native route lookup', null, null];
+        }
+        if ($scope !== $match['area']) {
+            return ['displaced', 'Runtime code changed the scope used by the native route lookup', null, null];
+        }
+        if ($selection === null || $selection[0] !== $target['route'] || self::routeSignature($selection[1]) !== $target['hash']) {
+            return ['cache-only', 'The native route configuration differs from the current source binding', null, null];
+        }
+        return ['matched', null, $lookup[1], $selection[1]];
     }
 
     private function restMatch(array $match, RestRoute $route): void
@@ -318,6 +436,11 @@ final class RoutingRuntime
     public static function routeSignature(array $route): string
     {
         return hash('sha256', Xml::canonical($route));
+    }
+
+    public static function identifier(mixed $value): ?string
+    {
+        return is_string($value) || is_int($value) ? (string) $value : null;
     }
 
     public static function webSignature(string $service, string $method, bool $secure, array $resources, array $data, ?int $limit): string

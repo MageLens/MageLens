@@ -10,5 +10,9 @@ License: see LICENSE in the repository root.
         <route id="blog">
             <module name="MageLens_Compatibility" before="Application_Blog"/>
         </route>
+        <route id="123" frontName="catalogue"><module name="MageLens_Compatibility"/></route>
+        <route id="0123" frontName="alternatecatalogue"><module name="MageLens_Compatibility"/></route>
+        <route id="collisionwinner" frontName="0350"><module name="MageLens_Compatibility"/></route>
+        <route id="collisionloser" frontName="350"><module name="MageLens_Compatibility"/></route>
     </router>
 </config>
