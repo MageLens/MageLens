@@ -263,7 +263,7 @@ test('the coverage database loads test attribution with each collector\'s hit se
 
 test('attribution that does not match the database records blocks publication', t => {
     for (const [change, error] of [
-        [files => { files.php['app/code/Acme/Shop/Model/Cart.php'][13] = {0: 1}; return files; }, /php unit without one record/],
+        [files => { files.php['app/code/Acme/Shop/Model/Cart.php'][13] = {0: 1}; return files; }, /php unit without a covered record/],
         [files => { delete files.templates['app/code/Acme/Shop/view/frontend/templates/cart.phtml']['binding:1']; return files; }, /Covered unit without attribution/]
     ]) {
         const fixture = reports(t, 1);
