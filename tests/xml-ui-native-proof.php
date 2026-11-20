@@ -11,6 +11,8 @@ use Magento\Framework\App\Area;
 use Magento\Framework\App\AreaList;
 use Magento\Framework\App\Bootstrap;
 use Magento\Framework\App\State;
+use Magento\Framework\Component\ComponentRegistrar;
+use Magento\Framework\View\DesignInterface;
 use Magento\Framework\View\Element\UiComponentFactory;
 use Magento\Framework\View\Element\UiComponentInterface;
 use Magento\Ui\Component\DataSource;
@@ -18,6 +20,11 @@ use Magento\Ui\Component\Form;
 use Magento\Ui\Component\Form\Field;
 use Magento\Ui\Component\Listing;
 use Magento\Ui\Component\Listing\Columns\Column;
+
+const UI_PROOF_THEMES = [
+    'adminhtml/MageLens/ui-proof' => 'app/design/adminhtml/MageLens/ui-proof',
+    'adminhtml/MageLens/ui-composer-proof' => 'vendor/magelens/ui-composer-proof',
+];
 
 function verify(bool $condition, string $message): void
 {
@@ -36,9 +43,9 @@ function prepareTree(UiComponentInterface $component): void
 
 function renderedConfig(UiComponentInterface $component): array
 {
-    $recorder = \MageLens\XmlCoverage\Recorder::class;
-    $numberDelivered = static fn(): int => class_exists($recorder, false)
-        ? count(array_filter($recorder::$events, static fn(array $event): bool => $event[1] === 'ui-delivered'))
+    $recording = function_exists('MageLens\\XmlCoverage\\uiProofEvents');
+    $numberDelivered = static fn(): int => $recording
+        ? count(array_filter(\MageLens\XmlCoverage\uiProofEvents(), static fn(array $event): bool => $event['type'] === 'ui-delivered'))
         : 0;
     $before = $numberDelivered();
     $html = (string) $component->render();
@@ -54,7 +61,36 @@ function renderedConfig(UiComponentInterface $component): array
     $pattern = '~<script type="text/x-magento-init">(?:<!\[CDATA\[)?\s*(\{"\*":\s*\{"Magento_Ui/js/core/app":.*?\}\})\s*(?:\]\]>)?</script>~s';
     verify(preg_match($pattern, $html, $match) === 1, 'Native UI JavaScript configuration missing');
     $config = json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
-    return $config['*']['Magento_Ui/js/core/app']['components'][$component->getName()]['children'];
+    return [$config['*']['Magento_Ui/js/core/app']['components'][$component->getName()]['children'], hash('sha256', $html)];
+}
+
+function providerOutcomes(UiComponentFactory $factory): array
+{
+    $output = [];
+    $recording = function_exists('MageLens\\XmlCoverage\\uiProofEvents');
+    foreach (['throws', 'catches'] as $case) {
+        $name = 'probe_provider_' . $case;
+        $listing = $factory->create('magelens_ui_' . $name);
+        $provider = $listing->getComponent($name)->getDataProvider();
+        $invoke = static function (callable $getData) use ($case): array|string {
+            try {
+                $result = $getData();
+                verify($case === 'catches', 'Configured override did not throw');
+                return $result;
+            } catch (RuntimeException $error) {
+                verify($case === 'throws' && $error->getMessage() === 'Configured override failed', 'Wrong provider exception');
+                return $error->getMessage();
+            }
+        };
+        $before = $recording ? \MageLens\XmlCoverage\uiProofEvents() : null;
+        $direct = $invoke($provider->getData(...));
+        verify($before === null || \MageLens\XmlCoverage\uiProofEvents() === $before, 'Direct inherited provider call credited a UI XML binding');
+        $native = $invoke($listing->getDataSourceData(...));
+        verify($native === ($case === 'catches' ? ['data' => $direct] : $direct), 'Native provider outcome differs');
+        verify($provider->calls() === ['meta', 'data', 'data'], 'Native provider changed the parent call count');
+        $output[$case] = [$native, $provider->calls()];
+    }
+    return $output;
 }
 
 function exercise(UiComponentFactory $factory): array
@@ -69,7 +105,16 @@ function exercise(UiComponentFactory $factory): array
     verify($listingSource instanceof DataSource && $formSource instanceof DataSource, 'Expected native data sources');
     verify($columns->getComponent('disabled') === null, 'Disabled XML column was constructed');
     verify($fields->getComponent('uninstantiated') !== null, 'Client-disabled button missing from PHP tree');
-    foreach (['untouched', 'equal', 'replaced'] as $name) {
+    $expectedLabels = [
+        'untouched' => 'Untouched column',
+        'equal' => 'Equal column',
+        'replaced' => 'PHP replacement',
+        'before_different' => 'Before prepare replacement',
+        'before_equal' => 'Equal PHP column',
+        'after_prepare' => 'After prepare replacement',
+        'theme_label' => 'Composer Admin theme label',
+    ];
+    foreach (array_keys($expectedLabels) as $name) {
         verify($columns->getComponent($name) instanceof Column, 'Native default column class not applied');
     }
     verify($fields->getComponent('untouched') instanceof Field, 'Native default field class not applied');
@@ -83,21 +128,20 @@ function exercise(UiComponentFactory $factory): array
     prepareTree($listing);
     prepareTree($form);
     $labels = [];
-    foreach (['untouched', 'equal', 'replaced'] as $name) {
+    foreach (array_keys($expectedLabels) as $name) {
         $label = $columns->getComponent($name)->getConfiguration()['label'];
         $labels[$name] = (string) $label;
     }
-    verify($labels === [
-        'untouched' => 'Untouched column',
-        'equal' => 'Equal column',
-        'replaced' => 'PHP replacement',
-    ], 'Native overlay or modifier output differs');
+    verify($labels === $expectedLabels, 'Native overlay or PHP label output differs: ' . json_encode($labels, JSON_THROW_ON_ERROR));
     $fieldLabel = (string) $fields->getComponent('untouched')->getConfiguration()['label'];
     verify($fieldLabel === 'Untouched field', 'Native field preparation output differs');
-    $listingConfig = renderedConfig($listing);
-    $formConfig = renderedConfig($form);
+    [$listingConfig, $listingMarkup] = renderedConfig($listing);
+    [$formConfig, $formMarkup] = renderedConfig($form);
     $grid = $listingConfig['magelens_ui_probe_listing']['children']['probe_columns']['children'];
-    verify(array_keys($grid) === ['untouched', 'equal', 'replaced'], 'Rendered listing includes the wrong columns');
+    verify(array_keys($grid) === array_keys($expectedLabels), 'Rendered listing includes the wrong columns');
+    foreach ($grid as $name => $column) {
+        verify($column['config']['label'] === $expectedLabels[$name], 'Serialized label differs for ' . $name);
+    }
     $fields = $formConfig['magelens_ui_probe_form']['children']['probe_fields']['children'];
     verify(($fields['uninstantiated']['config']['componentDisabled'] ?? null) === true, 'Client-disabled component not delivered');
     $listingData = $listingConfig['probe_data_source']['config']['data'];
@@ -106,22 +150,28 @@ function exercise(UiComponentFactory $factory): array
     verify($formData === ['untouched' => 'Fixture value'], 'Form output differs');
     verify($listingProvider->calls() === ['meta', 'page', 'data'], 'Unexpected listing provider calls: ' . implode(', ', $listingProvider->calls()));
     verify($formProvider->calls() === ['meta', 'filter', 'data'], 'Unexpected form provider calls: ' . implode(', ', $formProvider->calls()));
-    $recorder = \MageLens\XmlCoverage\Recorder::class;
-    $before = class_exists($recorder, false) ? $recorder::$events : null;
+    $recording = function_exists('MageLens\\XmlCoverage\\uiProofEvents');
+    $before = $recording ? \MageLens\XmlCoverage\uiProofEvents() : null;
     verify($listingProvider->getData() === $listingData, 'Direct provider call returned different fixture data');
-    verify($before === null || $recorder::$events === $before, 'Direct provider call credited a UI XML binding');
+    verify($before === null || \MageLens\XmlCoverage\uiProofEvents() === $before, 'Direct provider call credited a UI XML binding');
     return [
         'columns' => $labels,
         'field' => $fieldLabel,
         'listing' => $listingData,
         'form' => $formData,
         'providerCalls' => [$listingProvider->calls(), $formProvider->calls()],
+        'inheritedProvider' => providerOutcomes($factory),
+        'markup' => [$listingMarkup, $formMarkup],
     ];
 }
 
 $app = $argv[1] ?? '/var/www/html';
-$collector = in_array('--collect', $argv, true) || in_array('--expect-cache-only', $argv, true);
-$cacheOnly = in_array('--expect-cache-only', $argv, true);
+$mode = $argv[2] ?? '';
+$collector = in_array($mode, ['--collect', '--collect-warm', '--expect-cache-only'], true);
+require $app . '/app/bootstrap.php';
+foreach (UI_PROOF_THEMES as $theme => $path) {
+    ComponentRegistrar::register(ComponentRegistrar::THEME, $theme, BP . '/' . $path);
+}
 if ($collector) {
     require_once __DIR__ . '/xml-ui-collector-proof.php';
     $files = \MageLens\XmlCoverage\startUiProof(
@@ -130,25 +180,31 @@ if ($collector) {
         $argv[3] ?? bin2hex(random_bytes(16))
     );
 }
-require $app . '/app/bootstrap.php';
 $om = Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $om->get(State::class)->setAreaCode(Area::AREA_ADMINHTML);
 $om->get(\Magento\Store\Model\StoreManagerInterface::class)->setCurrentStore("admin");
 $om->get(AreaList::class)->getArea(Area::AREA_ADMINHTML)->load(Area::PART_CONFIG);
 if (in_array('--clear-fixture-cache', $argv, true)) {
     $cache = $om->get(\Magento\Framework\Config\CacheInterface::class);
-    foreach (['listing', 'form', 'unopened'] as $screen) {
+    foreach (['listing', 'form', 'unopened', 'provider_throws', 'provider_catches'] as $screen) {
         $cache->remove(\Magento\Ui\Config\Data::CACHE_ID . '_magelens_ui_probe_' . $screen);
     }
     exit;
 }
+$parent = null;
+foreach (['Magento/backend', 'MageLens/ui-proof', 'MageLens/ui-composer-proof'] as $path) {
+    $parent = $om->create(\Magento\Theme\Model\Theme::class, ['data' => [
+        'area' => Area::AREA_ADMINHTML, 'theme_path' => $path, 'parent_theme' => $parent,
+    ]]);
+}
+$om->get(DesignInterface::class)->setDesignTheme($parent, Area::AREA_ADMINHTML);
 $result = exercise($om->get(UiComponentFactory::class));
 if ($collector) {
-    \MageLens\XmlCoverage\verifyUiEvidence($files, \MageLens\XmlCoverage\Recorder::$events, $cacheOnly);
-    \MageLens\XmlCoverage\Recorder::$events = [];
+    \MageLens\XmlCoverage\verifyUiEvidence($files, $mode, $argv[3], false);
+    \MageLens\XmlCoverage\uiProofEvents(true);
 }
 verify(exercise($om->get(UiComponentFactory::class)) === $result, 'Warm configuration changed native output or application calls');
 if ($collector) {
-    \MageLens\XmlCoverage\verifyUiEvidence($files, \MageLens\XmlCoverage\Recorder::$events, $cacheOnly);
+    \MageLens\XmlCoverage\verifyUiEvidence($files, $mode, $argv[3], true);
 }
 echo hash('sha256', json_encode($result, JSON_THROW_ON_ERROR)), PHP_EOL;

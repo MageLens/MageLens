@@ -8,7 +8,7 @@ const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {withTemplateCoverage} = require('@magelens/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
-const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
+const {disablePageTransitions, installPlaywrightAdminDependencies, observeAdminMenuNavigation} = require('../bin/browser-navigation.cjs');
 const {captureHtml} = require('../bin/html-validation.cjs');
 const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
 const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
@@ -59,6 +59,12 @@ function withCoverage(base = playwright.test) {
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
             await context.addInitScript(installUiBrowserObserver, loadUiBrowserScope(run.id));
+            const menuBinding = '__magelensMenu' + randomUUID().replaceAll('-', '');
+            await context.exposeBinding(menuBinding, (_source, evidence) => { recordXmlBrowserEvidence(evidence); });
+            await context.addInitScript({content:
+                `if (window === window.top && location.origin === ${JSON.stringify(new URL(baseURL).origin)}) {
+                    (${observeAdminMenuNavigation})(window, () => '${menuBinding}', window.${menuBinding});
+                }`});
             await context.addCookies([{name: 'application_coverage', value: run.id,
                 domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
             const snapshots = new Map();

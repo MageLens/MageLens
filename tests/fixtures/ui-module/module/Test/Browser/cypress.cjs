@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {parent, menu, listingEffects, formEffects, fields, provider, gridHead, rows,
+const {parent, menu, listingEffects, formEffects, fields, provider, gridHead, columnLabels, rows,
     input, button, responseId, documentResponse, sortingRequest, testValue} = require('./journey.cjs');
 
 function observe(expected, response) {
@@ -29,7 +29,7 @@ function runUiJourney(admin, collect) {
 
     admin.navigateAdminMenu(parent, menu('listing'));
     cy.get(gridHead).should(elements => expect([...elements].map(element => element.textContent.trim()))
-        .to.deep.equal(['Untouched column', 'Equal column', 'PHP replacement']));
+        .to.deep.equal(columnLabels));
     gridRows(['First row', 'Second row']);
     let listingResponse;
     cy.window({log: false}).then(win => {

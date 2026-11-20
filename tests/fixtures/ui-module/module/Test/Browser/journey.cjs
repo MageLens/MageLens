@@ -11,6 +11,10 @@ const fields = `${form}.${form}.probe_fields.`;
 const provider = `${listing}.probe_data_source#provider`;
 const grid = 'table[data-role=grid]';
 const gridHead = `${grid} thead th`;
+const columnLabels = [
+    'Untouched column', 'Equal column', 'PHP replacement', 'Before prepare replacement',
+    'Equal PHP column', 'After prepare replacement', 'Module theme label',
+];
 const rows = `${grid} tbody tr.data-row td:first-child`;
 const input = 'input[name=untouched]';
 const button = name => `button[data-index=${name}]`;
@@ -42,5 +46,5 @@ const formEffects = [
     {identity: fields + 'invoke', type: 'ui-action-invoked'},
 ];
 
-module.exports = {parent, menu, listingEffects, formEffects, columns, fields, provider, gridHead, rows,
+module.exports = {parent, menu, listingEffects, formEffects, columns, fields, provider, gridHead, columnLabels, rows,
     input, button, responseId, documentResponse, sortingRequest, testValue};

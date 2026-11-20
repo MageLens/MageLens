@@ -123,6 +123,8 @@ if [[ -z "$focus" ]]; then
     cp -a tests/fixtures/ui-module/overlay "$scratch/src/app/code/MageLens/UiProbeOverlay"
     mkdir -p "$scratch/src/app/design/frontend/MageLens"
     cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
+    cp -a tests/fixtures/admin-navigation/module "$scratch/src/app/code/MageLens/AdminNavigation"
+    touch "$scratch/src/app/code/Application/Blog/Test/Navigation/.enabled"
 fi
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
     mkdir -p "$scratch/.runtime"
@@ -199,6 +201,7 @@ fi
     ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/Application/Blog/Test/Configuration/merge.test.php
     run_xml_proofs "$theme" "$platform" "$mode"
     run_ui_component_proofs
+    ./bin/runner node --test tests/verify-routing-native.cjs
     # Original-source fixture assertions need fresh native layout interpretation.
     # Registry proofs separately verify warm cache zero-hit provenance boundaries.
     ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
@@ -225,7 +228,9 @@ fi
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
+    ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/routing-coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs
+    ./bin/runner node tests/verify-xml-admin-navigation.cjs
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-cli-coverage.cjs
     ./bin/runner node tests/verify-ui-browser-coverage.cjs

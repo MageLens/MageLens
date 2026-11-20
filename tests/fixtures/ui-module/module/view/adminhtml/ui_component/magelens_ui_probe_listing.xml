@@ -59,5 +59,25 @@ License: see LICENSE in the repository root.
                 <label>Disabled column</label>
             </settings>
         </column>
+        <column name="before_different" sortOrder="50">
+            <settings>
+                <label>Original column</label>
+            </settings>
+        </column>
+        <column name="before_equal" sortOrder="60">
+            <settings>
+                <label>Equal PHP column</label>
+            </settings>
+        </column>
+        <column name="after_prepare" sortOrder="70">
+            <settings>
+                <label>Prepared column</label>
+            </settings>
+        </column>
+        <column name="theme_label" sortOrder="80">
+            <settings>
+                <label>Module theme label</label>
+            </settings>
+        </column>
     </columns>
 </listing>

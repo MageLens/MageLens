@@ -3,7 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const {expect} = require('@playwright/test');
-const {parent, menu, listingEffects, formEffects, fields, provider, gridHead, rows,
+const {parent, menu, listingEffects, formEffects, fields, provider, gridHead, columnLabels, rows,
     input, button, responseId, documentResponse, sortingRequest, testValue} = require('./journey.cjs');
 
 async function observe(page, expected, response, record) {
@@ -23,7 +23,7 @@ async function runUiJourney(page, admin, record) {
     await admin.navigateAdminMenu(page, parent, menu('listing'));
     const heading = page.locator(gridHead).filter({hasText: 'Untouched column'});
     await expect(heading).toBeVisible();
-    await expect(page.locator(gridHead)).toHaveText(['Untouched column', 'Equal column', 'PHP replacement']);
+    await expect(page.locator(gridHead)).toHaveText(columnLabels);
     await expect(page.locator(rows)).toHaveText(['First row', 'Second row']);
     const listingResponse = await page.evaluate(documentResponse);
     if (collect) await observe(page, listingEffects, listingResponse, record);

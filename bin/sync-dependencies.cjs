@@ -24,7 +24,8 @@ function syncDependencies(root, env = process.env, execute = execFileSync) {
         'istanbul-lib-report': env.ISTANBUL_LIB_REPORT_VERSION,
         'istanbul-reports': env.ISTANBUL_REPORTS_VERSION,
         nyc: env.NYC_VERSION,
-        'html-validate': env.HTML_VALIDATE_VERSION
+        'html-validate': env.HTML_VALIDATE_VERSION,
+        mustache: env.MUSTACHE_VERSION
     };
     for (const [name, version] of Object.entries(requested)) {
         if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?$/.test(version || '')) {

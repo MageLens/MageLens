@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -143,5 +143,43 @@ test.describe('Blog Admin and publishing', () => {
             headers: headers(), form: {form_key: formKey, name: 'Forbidden', slug: f.prefix + 'forbidden', is_active: '1'}
         });
         expect(response.status()).toBe(403);
+        if (f.navigation) {
+            const entry = name => page.locator(`[data-ui-id="menu-magelens-adminnavigation-${name}"]`);
+            await expect(entry('inherited-posts')).toHaveCount(0);
+            await page.context().clearCookies({name: 'admin'});
+            await login(page, f.navigation.user, f.navigation.password);
+            const parent = page.locator('#menu-application-blog-manage > a');
+            const posts = entry('inherited-posts').locator('a');
+            const categories = entry('inherited-categories').locator('a');
+            await expect(posts).toHaveCount(1);
+            await expect(categories).toHaveCount(1);
+            await expect(entry('removed')).toHaveCount(0);
+            await expect(page.locator('.admin__menu-overlay')).toBeAttached();
+            await parent.click();
+            const clicked = await posts.evaluate(link => link.href);
+            await posts.click();
+            await expect(get(page, 'admin-new')).toContainText('Add post');
+            expect(page.url() === clicked, 'navigation matches the clicked menu entry').toBe(true);
+            const interrupted = entry('interrupted').locator('a');
+            await interrupted.evaluate(link => link.addEventListener('click', event => event.preventDefault(), {once: true}));
+            await expect(page.locator('.admin__menu-overlay')).toBeAttached();
+            await parent.click();
+            await interrupted.click();
+            await expect(get(page, 'admin-new')).toContainText('Add post');
+            // Visiting the very URL of the canceled click still earns no follow.
+            await page.goto(await interrupted.evaluate(link => link.href));
+            expect(new URL(page.url()).pathname).toContain('/section/comments/');
+            // Open the sibling directly. It must not inherit the preceding click.
+            await page.goto(await categories.evaluate(link => link.href));
+            await expect(get(page, 'admin-new')).toContainText('Add category');
+            const products = entry('products').locator('a');
+            await expect(page.locator('.admin__menu-overlay')).toBeAttached();
+            await parent.click();
+            const catalog = await products.evaluate(link => link.href);
+            expect(/\/catalog\/product\/index\/key\/[^/]+\//.test(new URL(catalog).pathname), 'native catalog URL includes its default action and secret key').toBe(true);
+            await products.click();
+            await expect(page.locator('h1.page-title')).toContainText('Products');
+            expect(page.url() === catalog, 'navigation matches the clicked catalog entry').toBe(true);
+        }
     });
 });
