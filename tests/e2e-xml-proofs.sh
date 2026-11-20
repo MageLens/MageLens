@@ -33,13 +33,15 @@ run_xml_proofs() {
     local theme=$1 platform=$2 mode=$3
     mkdir -p coverage
     xml_proof xml-layout-scope-bootstrap-proof.php
-    local assets_without assets_with
-    assets_without=$(layout_proof asset-passivity --without-collector)
-    assets_with=$(layout_proof asset-passivity)
-    if [[ "$assets_without" != "$assets_with" ]]; then
-        diff -u <(printf '%s\n' "$assets_without") <(printf '%s\n' "$assets_with")
-        return 1
-    fi
+    local assets_without assets_with renderer
+    for renderer in '' --custom-emission; do
+        assets_without=$(layout_proof asset-passivity --without-collector ${renderer:+"$renderer"})
+        assets_with=$(layout_proof asset-passivity ${renderer:+"$renderer"})
+        if [[ "$assets_without" != "$assets_with" ]]; then
+            diff -u <(printf '%s\n' "$assets_without") <(printf '%s\n' "$assets_with")
+            return 1
+        fi
+    done
     printf 'Verified identical native asset output and getter calls with collection off and on.\n'
     layout_cases equal-mutation block offset-set offset-unset-restore
 

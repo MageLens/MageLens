@@ -96,8 +96,8 @@ final class LayoutAssetsCoverage
     {
         static $fields = [];
         $property = $fields[$class][$name] ??= new \ReflectionProperty($class, $name);
-        $actual = new \ReflectionProperty($object, $name);
-        if ($actual->getDeclaringClass()->getName() !== $class || $actual->getHooks() || $actual->isStatic()) return null;
+        $actual = LayoutXmlOwnership::unhookedProperty($object, $name);
+        if ($actual?->getDeclaringClass()->getName() !== $class || $actual->isStatic()) return null;
         $value = $property->getRawValue($object);
         return is_array($value) ? $value : null;
     }
@@ -326,8 +326,17 @@ final class LayoutAssetsCoverage
 
     private function beginRender($renderer, array $params, string $class): void
     {
-        if ($class === Renderer::class) $this->rendering[] = ['renderer' => $renderer, 'group' => $params[0], 'origins' => [], 'pending' => [],
-            'attributes' => false, 'defaults' => false, 'font' => false, 'template' => null, 'conditional' => false];
+        if ($class !== Renderer::class) return;
+        $group = $params[0];
+        $origins = [];
+        foreach (self::storage($group, Collection::class, 'assets') ?? [] as $asset) {
+            if (!is_object($asset)) continue;
+            $binding = $this->assets[$asset] ?? null;
+            if ($binding && $binding['group'] === $group) $origins[spl_object_id($asset)] = $binding['origin'];
+        }
+        $this->rendering[] = ['renderer' => $renderer, 'group' => $group, 'allOrigins' => $origins,
+            'origins' => [], 'pending' => [], 'attributes' => false, 'defaults' => false, 'font' => false,
+            'template' => null, 'conditional' => false];
     }
 
     private function groupAttributes($renderer, array $params, $result, ?\Throwable $error, string $class): void
@@ -401,19 +410,19 @@ final class LayoutAssetsCoverage
         if (($caller['class'] ?? null) !== Renderer::class || ($caller['function'] ?? null) !== 'renderAssetHtml') return;
         $frame = &$this->rendering[$index];
         $binding = $this->assets[$asset];
-        if ($binding['group'] !== $frame['group'] || $frame['template'] === null) return;
+        if ($binding['group'] !== $frame['group']) return;
+        $assetId = spl_object_id($asset);
+        $frame['allOrigins'][$assetId] = $binding['origin'];
+        if ($frame['template'] === null) return;
         $template = $frame['template'];
         $frame['template'] = null;
         $properties = self::storage($frame['group'], PropertyGroup::class, 'properties');
         if ($properties === null || $binding['properties'] === null || $binding['properties'] !== self::signature($properties)
-            || !is_string($url) || substr_count($template, '%') !== 1 || !str_contains($template, '%s')) {
-            self::record($binding['origin'], 'layout-asset-emission-unconfirmed');
-            return;
-        }
+            || !is_string($url) || substr_count($template, '%') !== 1 || !str_contains($template, '%s')) return;
         $attributes = $frame['attributes'] && $frame['defaults']
             && (new \ReflectionMethod($frame['group'], 'getProperty'))->getDeclaringClass()->getName() === PropertyGroup::class
             && $binding['attributes'] === self::signature($properties['attributes'] ?? []);
-        $frame['pending'][] = ['origin' => $binding['origin'], 'attributes' => $attributes, 'font' => $frame['font'],
+        $frame['pending'][] = ['asset' => $assetId, 'origin' => $binding['origin'], 'attributes' => $attributes, 'font' => $frame['font'],
             'fragment' => str_replace('%s', $url, $template)];
     }
 
@@ -428,10 +437,7 @@ final class LayoutAssetsCoverage
         $offset = 0;
         foreach ($frame['pending'] as $entry) {
             $position = !$error && is_string($html) ? strpos($html, $entry['fragment'], $offset) : false;
-            if ($position === false) {
-                self::record($entry['origin'], 'layout-asset-emission-unconfirmed');
-                continue;
-            }
+            if ($position === false) continue;
             $offset = $position + strlen($entry['fragment']);
             $frame['origins'][] = $entry;
         }
@@ -445,18 +451,19 @@ final class LayoutAssetsCoverage
         if ($error) return;
         if ((new \ReflectionMethod($renderer, 'renderAssetHtml'))->getDeclaringClass()->getName() !== Renderer::class
             || (new \ReflectionMethod($renderer, 'processIeCondition'))->getDeclaringClass()->getName() !== Renderer::class) {
-            foreach ($frame['pending'] as $entry) self::record($entry['origin'], 'layout-asset-emission-unconfirmed');
-            return;
+            $frame['origins'] = [];
         }
         foreach ($frame['origins'] as $entry) {
+            unset($frame['allOrigins'][$entry['asset']]);
             $origin = $entry['origin'];
             self::record($origin, 'layout-asset-reference-rendered', ['asset-reference', 'asset-src', 'asset-src-type']);
             if ($frame['conditional']) self::record($origin, 'layout-asset-condition-rendered', ['asset-condition']);
-            if ($entry['attributes']) {
-                $kinds = array_filter(array_keys($origin['ids']), static fn($kind) => str_starts_with($kind, 'asset-attribute-'));
-                self::record($origin, $entry['font'] ? 'layout-asset-attributes-discarded' : 'layout-asset-attribute-emitted', $kinds);
-            }
+            $attributes = array_filter(array_keys($origin['ids']), static fn($kind) => str_starts_with($kind, 'asset-attribute-'));
+            $effect = !$entry['attributes'] ? 'layout-asset-emission-unconfirmed'
+                : ($entry['font'] ? 'layout-asset-attributes-discarded' : 'layout-asset-attribute-emitted');
+            self::record($origin, $effect, $attributes);
         }
+        foreach ($frame['allOrigins'] as $origin) self::record($origin, 'layout-asset-emission-unconfirmed');
     }
 
     private static function record(array $origin, string $effect, ?array $kinds = null): void

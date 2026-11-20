@@ -65,6 +65,7 @@ class CountingAssetCollection extends GroupedCollection
     }
 }
 
+$customEmission = in_array('--custom-emission', $argv, true);
 $enabled = !in_array('--without-collector', $argv, true);
 if ($enabled) {
     $collector = new LayoutAssetsCoverage(static fn() => [
@@ -87,7 +88,11 @@ function assetProofObject(string $class, array $properties = []): object
 {
     $type = new ReflectionClass($class);
     $object = $type->newInstanceWithoutConstructor();
-    foreach ($properties as $name => $value) $type->getProperty($name)->setValue($object, $value);
+    foreach ($properties as $name => $value) {
+        $owner = $type;
+        while (!$owner->hasProperty($name)) $owner = $owner->getParentClass();
+        $owner->getProperty($name)->setValue($object, $value);
+    }
     return $object;
 }
 
@@ -127,7 +132,14 @@ $scope = new class implements ScopeConfigInterface {
     public function getValue($path = null, $scopeType = ScopeConfigInterface::SCOPE_TYPE_DEFAULT, $scopeCode = null) { return false; }
     public function isSetFlag($path, $scopeType = ScopeConfigInterface::SCOPE_TYPE_DEFAULT, $scopeCode = null) { return false; }
 };
-$renderer = assetProofObject(Renderer::class, ['scopeConfig' => $scope, 'escaper' => new Magento\Framework\Escaper()]);
+class CustomAssetRenderer extends Renderer
+{
+    protected function getAssetTemplate($contentType, $attributes)
+    {
+        return parent::getAssetTemplate($contentType, $attributes);
+    }
+}
+$renderer = assetProofObject($customEmission ? CustomAssetRenderer::class : Renderer::class, ['scopeConfig' => $scope, 'escaper' => new Magento\Framework\Escaper()]);
 $group = $collection->getGroups()[0];
 $output = (new ReflectionMethod(Renderer::class, 'renderAssetGroup'))->invoke($renderer, $group);
 if (!str_contains($output, 'href="https://example.test/asset"') || !str_contains($output, 'rel="preconnect"')) {
@@ -139,6 +151,12 @@ if ($enabled) {
     $collector->finish();
     LayoutRuntimeHooks::assertHealthy();
     $events = array_column((new ReflectionProperty(Recorder::class, 'events'))->getValue(), 'type');
-    if (!in_array('layout-asset-reference-rendered', $events, true)) throw new RuntimeException('Native grouped asset was not attributed');
+    if ($customEmission) {
+        if (in_array('layout-asset-reference-rendered', $events, true) || !in_array('layout-asset-emission-unconfirmed', $events, true)) {
+            throw new RuntimeException('Custom emission lacked a specific XML attribution limitation');
+        }
+    } elseif (!in_array('layout-asset-reference-rendered', $events, true)) {
+        throw new RuntimeException('Native grouped asset was not attributed');
+    }
 }
 echo json_encode([$removed, $generated, $exception, $structure->reads, $collection->reads, $group->reads, $output], JSON_THROW_ON_ERROR) . "\n";
