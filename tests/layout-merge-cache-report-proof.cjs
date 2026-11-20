@@ -12,7 +12,7 @@ const manifest = {id: 'layout-cache-proof', run: 'layout-cache-proof', files: da
 const sources = Object.fromEntries(data.files.map(file => [file.path, fs.readFileSync(path.join(sourceRoot, file.path))]));
 const {files, layoutSources, ...evidence} = data;
 const report = merge(manifest, [{...evidence, manifest: manifest.id, run: manifest.run, request: 'layout-cache-proof', readHook: true}], sources);
-assert.equal(report.files.length, 2, 'Retain complete original fixture inventory');
+assert.equal(report.files.length, 3, 'Retain complete original fixture inventory');
 for (const file of data.files) {
     assert.equal(report.files.find(item => item.path === file.path).declarations.length, file.declarations.length);
 }
@@ -21,7 +21,16 @@ const target = fixture.declarations.filter(item => ['block', 'template', 'argume
 assert.equal(target.length, 4);
 for (const item of target) {
     if (mode === 'cold') assert.equal(item.state, 'covered', item.node);
-    else assert.equal(item.hits, 0, item.node);
+    else {
+        assert.equal(item.hits, 0, item.node);
+        assert.equal(item.state, 'unmeasured', item.node);
+        assert.match(item.reason, /cache|confirmed trace/, item.node);
+    }
+}
+const unvisited = report.files.find(file => file.path.endsWith('/coverageprobe_packagemutation_unused.xml'));
+for (const item of unvisited.declarations.filter(item => item.supported)) {
+    assert.equal(item.state, 'uncovered', item.node);
+    assert.equal(item.reason, null, item.node);
 }
 const components = report.files.find(file => file.path.endsWith('/coverageprobe_component_index.xml'));
 const rules = components.declarations.filter(item => item.layout.kind === 'visibility');

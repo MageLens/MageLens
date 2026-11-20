@@ -54,6 +54,10 @@ awk -v expected="$expected" -v image="$PHP_IMAGE" -v composer="$COMPOSER_VERSION
         sub(/--version=[0-9]+\.[0-9]+\.[0-9]+/, "--version=" composer)
         composerInstallations++
     }
+    /^COPY conf\/[[:alnum:].-]+\.(ini|conf) / {
+        # A restrictive host umask can make checked-out settings root-only.
+        sub(/^COPY /, "COPY --chmod=0644 ")
+    }
     /^RUN pecl channel-update pecl.php.net && pecl install \\$/ {
         # PECL can return success for a batch when one package was not installed.
         # Check each pinned extension in the same layer, before it can be cached.

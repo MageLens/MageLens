@@ -283,7 +283,7 @@ final class Recorder
         [$data['pluginHook'], $data['ambiguousPlugins']] = $checkDi && class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
         $data['preferenceHook'] = $checkDi && class_exists(Preferences::class, false) && Preferences::finish();
         $data['diUsageHooks'] = $checkDi && class_exists(DiUsage::class, false) ? DiUsage::finish() : [];
-        [$data['layoutHook'], $data['layoutSourceTrace'], $data['layoutLimitations']] = self::$layout?->finish() ?? [false, false, []];
+        [$data['layoutHook'], $data['layoutSourceTrace'], $data['layoutLimitations'], $data['layoutScopedLimitations']] = self::$layout?->finish() ?? [false, false, [], []];
         return $data;
     }
 }

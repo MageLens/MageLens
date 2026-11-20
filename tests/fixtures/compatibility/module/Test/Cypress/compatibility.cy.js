@@ -6,6 +6,7 @@ const {verifyScriptPolicy} = require('../csp-proof');
 const admin = require('../../../../Application/Blog/Test/Cypress/support');
 describe('Magento storefront coverage compatibility', () => {
     it('collects real PHP, JavaScript and template execution', () => {
+        cy.log('Verify source replacement, CSP and interactive template output');
         cy.visit('/coverageprobe/');
         for (const marker of ['replacement', 'equal', 'late']) {
             cy.get(`[data-layout-origin="${marker}"]`).should('have.length', 1).and('have.text', marker);
@@ -50,6 +51,7 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('#email').should('be.visible');
     });
     it('starts the next test with fresh state', () => {
+        cy.log('Restore pristine session state and validate rendered HTML');
         cy.visit('/coverageprobe/');
         cy.get('[data-cy="inline-probe"]').should('have.text', 'inline-ready');
         cy.window().its('magelensChildScript').should('equal', 'child-ready');
@@ -60,6 +62,7 @@ describe('Magento storefront coverage compatibility', () => {
             cy.visit(`/coverageprobe/index/markup/case/${markup}`);
             cy.mageLensValidateHtml();
         }
+        cy.log('Resolve handles, registry entries, structure and arguments');
         cy.visit('/coverageprobe/handle/');
         cy.get('#layout-wireframe [data-layout-handle]').should(markers => {
             expect([...markers].map(element => element.textContent)).to.deep.equal(['repeat', 'nested', 'action']);
@@ -95,6 +98,7 @@ describe('Magento storefront coverage compatibility', () => {
             'indexed-array', 'indexed-string', 'literal-slash']) {
             cy.get(`#layout-wireframe [data-layout-argument="${effect}"]`).should('have.length', 1).and('have.text', 'verified');
         }
+        cy.log('Render page metadata and head assets');
         cy.title().should('equal', 'Effective fixture title');
         for (const element of ['html', 'head', 'body']) {
             cy.get(element).should('have.attr', `data-layout-${element}`, 'fixture');
@@ -127,6 +131,7 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.get('head').invoke('html').should('contain', '<!--[if lt IE 9]>');
         cy.window().then(win => expect(typeof win.magelensConditionalAsset).to.equal('undefined'));
+        cy.log('Apply falsy page values, metadata variants and controller URL assets');
         cy.visit('/coverageprobe/handle/?variant=page-values');
         cy.get('body').should('have.attr', 'data-layout-body-truthy', '00');
         cy.get('meta[name="0"]').should('have.attr', 'content', 'zero-key');
@@ -146,6 +151,7 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('head link[rel="magelens-controller-fixture"]').should('have.length', 1).invoke('attr', 'href').should('include', '/coverageprobe/fragment/');
         cy.visit('/coverageprobe/handle/?variant=selected');
         cy.get('#layout-wireframe [data-layout-handle="dynamic"]').should('have.length', 1).and('have.text', 'dynamic');
+        cy.log('Render fragments, move elements and initialize UI components');
         cy.visit('/coverageprobe/fragment/');
         cy.get('#layout-fragment [data-layout-structure="fragment-marker"]').should('have.text', 'fragment-marker');
         cy.get('title').should('not.exist');
@@ -179,6 +185,7 @@ describe('Magento storefront coverage compatibility', () => {
             cy.get('[data-layout-ui-proof]').should('have.text', 'verified');
             cy.get('[data-layout-ui-effect="calls"]').should('have.text', 'verified');
         }
+        cy.log('Evaluate XML grammar and preserve ownership boundaries');
         cy.visit('/coverageprobe/grammar/');
         cy.get('[data-layout-grammar="serviceurl"]').should('have.text', 'applied');
         cy.get('[data-layout-grammar="const"]').should('have.text', 'applied');
@@ -218,6 +225,7 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-mutation]').should('have.length', 5).each(element => {
             cy.wrap(element).should('have.text', 'xml-value');
         });
+        cy.log('Verify block and full-page cache hits and cleanup');
         cy.visit('/coverageprobe/cache/');
         cy.get('[data-layout-block-cache]').should(elements => {
             expect([...elements].map(element => element.textContent)).to.deep.equal(['cold-value', 'cold-value']);
@@ -233,6 +241,7 @@ describe('Magento storefront coverage compatibility', () => {
         cy.get('[data-layout-page-cache]').should('have.text', 'cached-layout');
         cy.visit(`/coverageprobe/cachepage/cleanup/?probe=${cacheNonce}`);
         cy.get('[data-layout-page-cache-cleanup]').should('have.text', 'cleaned');
+        cy.log('Render dynamic, database, shared and CMS layout updates');
         cy.visit('/coverageprobe/dynamic/');
         cy.get('[data-layout-dynamic]').should(markers => {
             expect([...markers].map(marker => marker.textContent)).to.deep.equal(['xml-value', 'xml-value', 'xml-value', 'xml-value']);
@@ -267,6 +276,7 @@ describe('Magento storefront coverage compatibility', () => {
                     .and('have.attr', 'data-layout-cms-template', 'xml');
             }
         }
+        cy.log('Verify render failures, names and template values');
         cy.visit('/coverageprobe/renderfailure/');
         for (const effect of ['empty', 'missing', 'throw', 'after']) {
             cy.get(`[data-layout-renderfailure="${effect}"]`).should('have.text', 'verified');
@@ -293,6 +303,7 @@ describe('Magento storefront coverage compatibility', () => {
             expect([...nodes].map(node => node.getAttribute('data-layout-template-value')))
                 .to.deep.equal(['argument', 'action', 'equal.action', 'equal.argument', 'late.argument', 'late.action', 'default', 'case', 'interceptor', 'direct.attribute', 'direct.argument', 'direct.action'].map(name => 'magelens.template.values.' + name));
         });
+        cy.log('Evaluate nested arguments, actions and scope guards');
         cy.visit('/coverageprobe/nestedarguments/');
         for (const effect of ['shared', 'fresh', 'translate', 'options', 'helper', 'url']) {
             cy.get(`[data-layout-nested-argument="${effect}"]`).should('have.text', 'verified');
@@ -325,6 +336,7 @@ describe('Magento storefront coverage compatibility', () => {
         for (const [name, markers] of Object.entries({allowed: 'allowed', denied: '', duplicate: 'first,second', empty: 'empty', zero: 'zero', same: 'same'})) {
             cy.get(`[data-layout-action-case="magelens.action.guard.${name}"]`).should('have.text', markers);
         }
+        cy.log('Render falsy operands, references and custom property access');
         cy.visit('/coverageprobe/falsy/');
         cy.get('[data-layout-falsy-proof]').should('have.text', 'verified');
         cy.get('[data-layout-falsy]').then(elements => {
@@ -358,6 +370,7 @@ describe('Magento storefront coverage compatibility', () => {
         cy.title().should('equal', 'Class reset fixture');
         cy.get('[data-layout-structure="class-clear"]').should('have.text', 'class-clear');
         cy.get('body').should('not.have.class', 'class-before').and('not.have.class', 'class-after');
+        cy.log('Resolve default and inherited theme providers');
         cy.visit('/coverageprobe/theme/?___store=default');
         cy.get('#layout-theme [data-layout-structure]').should(markers => {
             expect([...markers].map(marker => marker.textContent).sort()).to.deep.equal(['provider.base.overlay-template',
@@ -370,6 +383,7 @@ describe('Magento storefront coverage compatibility', () => {
                 'provider.parent', 'provider.parent-replacement']);
         });
         cy.get('[data-layout-structure="provider.inactive"], [data-layout-structure="provider.replaced-empty"]').should('not.exist');
+        cy.log('Check layout access for both Admin roles');
         admin.login();
         for (const entry of ['acl-dashboard', 'acl-blog', 'acl-alias', 'ui-acl-dashboard', 'ui-acl-blog']) {
             cy.get(`[data-layout-structure="${entry}"]`).should('have.text', entry);

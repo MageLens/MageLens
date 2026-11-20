@@ -18,11 +18,13 @@ require_once __DIR__ . '/xml-layout-runtime-hooks.php';
 require_once __DIR__ . '/xml-layout.php';
 require_once __DIR__ . '/xml-layout-ownership.php';
 require_once __DIR__ . '/xml-layout-package-events.php';
+require_once __DIR__ . '/xml-layout-argument-evaluation.php';
 require_once __DIR__ . '/xml-layout-argument-ownership.php';
 require_once __DIR__ . '/xml-layout-argument-groups.php';
 require_once __DIR__ . '/xml-layout-action-guards.php';
 require_once __DIR__ . '/xml-layout-template-ownership.php';
 require_once __DIR__ . '/xml-layout-field-access.php';
+require_once __DIR__ . '/xml-layout-block-arguments.php';
 require_once __DIR__ . '/xml-layout-block-rendering.php';
 require_once __DIR__ . '/xml-layout-handle-metadata.php';
 require_once __DIR__ . '/xml-layout-selection-ownership.php';
@@ -35,6 +37,7 @@ require_once __DIR__ . '/xml-layout-references.php';
 require_once __DIR__ . '/xml-layout-argument-names.php';
 require_once __DIR__ . '/xml-layout-registry.php';
 require_once __DIR__ . '/xml-layout-assets.php';
+require_once __DIR__ . '/xml-layout-cache.php';
 use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences, FamilyEvidence};
 
 function startXmlHooks(string $run): void

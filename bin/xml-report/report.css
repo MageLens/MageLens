@@ -1,0 +1,33 @@
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
+body { font:15px system-ui; margin:32px; color:#172b3a; }
+a { color:#086b68; }
+pre { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+table { border-collapse:collapse; width:100%; }
+td,th { padding:5px 10px; text-align:left; border-bottom:1px solid #ddd; }
+.covered { background:#dcefe0; }
+.uncovered { background:#fbdada; }
+.unmeasured { background:#eee; color:#555; }
+.neutral { color:#555; }
+.line { display:block; }
+small { display:block; }
+a:focus-visible { outline:2px solid #086b68; outline-offset:3px; }
+td,code,small,h1 { overflow-wrap:anywhere; }
+.preferences { max-width:75rem; line-height:1.35; }
+.preference-list,.preference-areas { list-style:none; padding:0; }
+.preference-list>li { padding:12px 0; border-top:1px solid #ddd; }
+.preference-areas { margin-top:6px; }
+.preference-areas li { padding:6px 10px; margin:2px 0; overflow-wrap:anywhere; }
+.preference-areas span { display:block; }
+.line:target { outline:2px solid #086b68; outline-offset:-2px; }
+@media (max-width:480px) {
+    body { margin:16px; }
+    td,th { padding:5px; }
+    .di-details,.di-details tbody,.di-details tr,.di-details td { display:block; }
+    .di-details td { border-bottom:0; }
+    .di-details tr { border-bottom:1px solid #ddd; }
+}

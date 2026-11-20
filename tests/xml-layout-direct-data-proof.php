@@ -40,20 +40,30 @@ foreach ([Magento\Framework\App\Area::PART_CONFIG, Magento\Framework\App\Area::P
 foreach (['layout', 'block_html', 'full_page'] as $type) {
     $objects->get(Magento\Framework\App\Cache\StateInterface::class)->setEnabled($type, false);
 }
+$external = in_array('--external-writer', $argv, true);
+$control = in_array('--untouched', $argv, true);
 $config = $objects->get(Magento\Framework\ObjectManager\ConfigInterface::class);
 if ($config instanceof Magento\Framework\ObjectManager\Config\Compiled) {
     $parameters = array_column((new ReflectionMethod(Template::class, '__construct'))->getParameters(), 'name');
     $arguments = array_intersect_key($config->getArguments(Template::class) ?? [], array_fill_keys($parameters, true));
     $config->extend(['arguments' => [MageLensDirectDataFixture::class => $arguments]]);
 }
-$objects->configure(['preferences' => [Template::class => MageLensDirectDataFixture::class]]);
+if (!$external && !$control) $objects->configure(['preferences' => [Template::class => MageLensDirectDataFixture::class]]);
 $objects->get(Magento\Framework\App\ViewInterface::class);
 $page = $objects->get(Magento\Framework\View\Result\PageFactory::class)->create(true, ['isIsolated' => true]);
 $page->addHandle('coverageprobe_packagemutation_native');
 $block = $page->getLayout()->getBlock('magelens.layout.package.native');
-if (!$block instanceof MageLensDirectDataFixture
-    || !str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')
-    || MageLensDirectDataFixture::$writes !== 1) {
+if ($external) {
+    $writer = new class extends \Magento\Framework\DataObject {
+        public function replace(Template $block): void
+        {
+            $block->_data['value'] = 'xml-value';
+        }
+    };
+    $writer->replace($block);
+}
+if (!$block instanceof Template || !str_contains($block->toHtml(), 'data-layout-mutation>xml-value</span>')
+    || MageLensDirectDataFixture::$writes !== ($external || $control ? 0 : 1)) {
     throw new RuntimeException('Native direct data write or rendered output changed');
 }
 if (hash_file('sha256', BP . '/' . $path) !== hash('sha256', $source)) throw new RuntimeException('Original fixture XML changed');
@@ -65,8 +75,8 @@ $value = array_values(array_filter($declarations, static fn($item) => $item['lay
 $events = array_values((new ReflectionProperty(Recorder::class, 'events'))->getValue());
 $effects = array_column(array_filter($events, static fn($event) => $event['id'] === $value['id']), 'type');
 if (!in_array('layout-argument-applied', $effects, true)
-    || !in_array('layout-argument-field-access-unconfirmed', $effects, true)
-    || in_array('layout-argument-read', $effects, true)) {
+    || in_array('layout-argument-field-access-unconfirmed', $effects, true) === $control
+    || in_array('layout-argument-read', $effects, true) !== $control) {
     throw new RuntimeException('Direct PHP data write retained original XML read credit or erased earlier application');
 }
 echo "Verified direct-field data read limitation and independent earlier XML application.\n";

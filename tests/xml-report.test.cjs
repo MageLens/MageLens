@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const {createHash} = require('node:crypto');
-const {merge, writeReport} = require('../bin/report-xml.cjs');
+const {merge, writeReport, layoutEvents, countsAsLayoutCoverage} = require('../bin/report-xml.cjs');
 function fixture() {
     const file = 'app/code/Acme/Blog/etc/config.xml';
     const source = '<config>\n<first>used</first><second>unused</second>\n<!-- <script>unsafe</script> -->\n</config>';
@@ -649,6 +649,45 @@ test('native file selection remains a zero-hit observation and cannot substitute
     assert.throws(() => merge(manifest, [request], sources), /No functioning XML layout hook/);
 });
 
+test('cached storefront handles and independent Admin evidence have order-independent outcomes', () => {
+    const {manifest, record, sources} = fixture();
+    manifest.layoutSources = {};
+    for (const [id, area, handle] of [
+        ['cached', 'frontend', 'shared'], ['admin', 'adminhtml', 'shared'],
+        ['unvisited', 'frontend', 'unvisited'],
+    ]) {
+        const path = `app/code/Acme/Blog/view/${area}/layout/${handle}.xml`;
+        const source = Buffer.from('<layout><container name="fixture"/></layout>');
+        const sourceHash = createHash('sha256').update(source).digest('hex');
+        const item = {id, family: 'layout', path: '/layout/container', startLine: 1, endLine: 1, supported: true,
+            declaredScope: {type: area, code: ''}, layout: {kind: 'container', element: 'fixture', ordinal: 1,
+                handle, fileType: 'generic', instruction: 'container'}};
+        sources[path] = source;
+        manifest.files.push({path, sourceHash, family: 'layout', declarations: [item]});
+        manifest.layoutSources[path] = {hash: sourceHash, targets: {1: {ids: {container: id}}}};
+    }
+    const reasons = ['layout-merge-cache', 'missing-layout-origins'];
+    const storefront = {...record, request: 'storefront', layoutHook: true, layoutSourceTrace: false, events: [],
+        layoutLimitations: reasons, layoutScopedLimitations: reasons.map(reason => ({reason, area: 'frontend', handles: ['shared']}))};
+    const admin = {...record, request: 'admin', layoutHook: true, layoutSourceTrace: true,
+        events: [{id: 'admin', type: 'layout-container-created', hits: 1, area: 'adminhtml', theme: 'adminhtml/Magento/backend'}]};
+    for (const requests of [[storefront, admin], [admin, storefront], [storefront]]) {
+        const report = merge(manifest, requests, sources);
+        const [cached, adminItem, unvisited] = report.files.slice(1).map(file => file.declarations[0]);
+        assert.equal(cached.state, 'unmeasured');
+        assert.match(cached.reason, /confirmed trace.*merged handle update/);
+        assert.equal(cached.hits, 0);
+        assert.equal(adminItem.state, requests.length === 2 ? 'covered' : 'uncovered');
+        assert.equal(adminItem.reason, undefined);
+        assert.equal(unvisited.state, 'uncovered');
+        assert.equal(unvisited.reason, undefined);
+        assert.equal(report.layout.total, 2);
+        assert.equal(report.layout.covered, requests.length === 2 ? 1 : 0);
+        assert.equal(report.requests.find(request => request.id === 'admin')?.layoutLimitations, undefined);
+        assert.equal(report.requests.find(request => request.id === 'storefront').layoutLimitations.length, 2);
+    }
+});
+
 test('cache and opaque file-list observations preserve a functioning zero-hit layout inventory', () => {
     const {manifest, record, sources} = fixture();
     const path = 'app/code/Acme/Blog/view/frontend/layout/fixture.xml';
@@ -685,7 +724,7 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     const fileList = merge(manifest, [{...warm, layoutLimitations: ['layout-file-replacement-storage-unconfirmed']}], sources);
     assert.equal(fileList.layout.covered, 0);
     assert.equal(fileList.files[1].declarations.length, 1);
-    assert.equal(fileList.files[1].declarations[0].state, 'unmeasured');
+    assert.equal(fileList.files[1].declarations[0].state, 'uncovered');
     assert.deepEqual(fileList.files[1].declarations[0].evidence, []);
     assert.match(fileList.layout.limitations[0], /file-list backing storage/);
     assert.deepEqual(fileList.requests[0].layoutLimitations, fileList.layout.limitations);
@@ -698,7 +737,7 @@ test('cache and opaque file-list observations preserve a functioning zero-hit la
     const opaque = merge(manifest, [{...warm, layoutLimitations: ['layout-opaque-action-data']}], sources);
     assert.equal(opaque.layout.covered, 0);
     assert.equal(opaque.files[1].declarations.length, 1);
-    assert.equal(opaque.files[1].declarations[0].state, 'unmeasured');
+    assert.equal(opaque.files[1].declarations[0].state, 'uncovered');
     assert.deepEqual(opaque.files[1].declarations[0].evidence, []);
     assert.match(opaque.layout.limitations[0], /could execute application serialization/);
     assert.deepEqual(opaque.requests[0].layoutLimitations, opaque.layout.limitations);
@@ -967,7 +1006,8 @@ test('native action scope decisions remain independent of action calls and skipp
         const healthy = {...record, layoutHook: true};
         assert.equal(merge(manifest, [healthy], sources).files[1].declarations[0].state, 'uncovered');
         const unselected = merge(manifest, [{...healthy, layoutSourceTrace: false,
-            layoutLimitations: ['missing-layout-origins'], events: []}], sources);
+            layoutLimitations: ['missing-layout-origins'],
+            layoutScopedLimitations: [{reason: 'missing-layout-origins', area: 'frontend', handles: ['guards']}], events: []}], sources);
         assert.equal(unselected.files[1].declarations[0].state, 'unmeasured');
         assert.equal(unselected.files[1].declarations[0].hits, 0);
         assert.deepEqual(unselected.files[1].declarations[0].evidence, []);
@@ -981,6 +1021,47 @@ test('native action scope decisions remain independent of action calls and skipp
         manifest.files[1].declarations[0].layout.kind = 'action';
         assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /Unexpected layout effect/);
     }
+});
+
+test('a multiline layout attribute anchors and highlights only its lexical lines', t => {
+    const {manifest, record, sources} = fixture();
+    const path = 'app/code/Acme/Blog/view/frontend/layout/range.xml';
+    const source = Buffer.from('<layout>\n <block\n name="untouched"\n template="Fixture_Module::a\n b.phtml">\n </block>\n</layout>\n');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const common = {family: 'layout', supported: true, declaredScope: {type: 'frontend', code: ''}};
+    const layout = {element: 'untouched', ordinal: 1, handle: 'range', fileType: 'generic', instruction: 'block'};
+    manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+        {...common, id: 'named', path: '/layout/block/@name', startLine: 3, endLine: 3, layout: {...layout, kind: 'position-name'}},
+        {...common, id: 'template', path: '/layout/block/@template', startLine: 4, endLine: 5, layout: {...layout, kind: 'template'}},
+    ]});
+    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {'position-name': 'named', template: 'template'}}}}};
+    sources[path] = source;
+    const result = merge(manifest, [{...record, layoutHook: true, events: [
+        {id: 'template', type: 'layout-template-executed', hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'},
+    ]}], sources);
+    const output = fs.mkdtempSync(os.tmpdir() + '/magelens-layout-ranges-');
+    t.after(() => fs.rmSync(output, {recursive: true, force: true}));
+    writeReport(result, sources, output);
+    const html = fs.readFileSync(output + '/' + path + '.html', 'utf8');
+    const stylesheet = html.match(/<link rel="stylesheet" href="([^"]+)">/)?.[1];
+    assert.ok(stylesheet, 'Expected the source page to link to the report stylesheet');
+    const asset = require('node:path').resolve(output, require('node:path').dirname(path), stylesheet);
+    assert.equal(asset, require('node:path').join(output, 'report.css'));
+    assert.match(fs.readFileSync(asset, 'utf8'), /\.covered\s*\{/);
+    assert.match(fs.readFileSync(output + '/index.html', 'utf8'), /<link rel="stylesheet" href="report.css">/);
+    assert.match(html, /href="#L4">\/layout\/block\/@template<\/a><small>.*lines 4–5/);
+    assert.match(html, /id="L2" class="line neutral"/);
+    assert.match(html, /id="L3" class="line uncovered"/);
+    assert.match(html, /id="L4" class="line covered"/);
+    assert.match(html, /id="L5" class="line covered"/);
+    assert.match(html, /id="L6" class="line neutral"/);
+});
+
+test('every allowed layout event has a coverage classification', () => {
+    for (const effect of new Set(Object.values(layoutEvents).flat())) {
+        assert.equal(typeof countsAsLayoutCoverage(effect), 'boolean');
+    }
+    assert.throws(() => countsAsLayoutCoverage('layout-new-unclassified-effect'), /Unclassified layout effect/);
 });
 function familyFixture() {
     const {manifest, record, sources} = fixture();

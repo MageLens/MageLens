@@ -79,8 +79,10 @@ final class LayoutFieldAccess
         $declared = get_declared_classes();
         if (count($declared) !== $this->declared) {
             $this->declared = count($declared);
+            $scope = $this->field === '_data' ? DataObject::class : $this->base;
             foreach ($declared as $name) {
-                if (isset($this->classes[$name]) || !is_subclass_of($name, $this->base)) continue;
+                if (isset($this->classes[$name]) || !is_subclass_of($name, $scope)) continue;
+                $canBeReceiver = is_subclass_of($name, $this->base);
                 if (count($this->classes) >= 1024) throw new \RuntimeException($this->description . ' implementation inventory exceeded 1024 classes');
                 $this->classes[$name] = false;
                 $type = new \ReflectionClass($name);
@@ -92,8 +94,10 @@ final class LayoutFieldAccess
                     if ($accesses === null) { $this->external = true; continue; }
                     foreach ($accesses as $access) {
                         if ($access['line'] < $method->getStartLine() || $access['line'] > $method->getEndLine()) continue;
-                        if ($access['self']) $this->classes[$name] = true;
-                        else $this->external = true;
+                        // A sibling DataObject can write protected storage on a block.
+                        // Its own storage is unrelated to that block's XML argument.
+                        if (!$access['self']) $this->external = true;
+                        elseif ($canBeReceiver) $this->classes[$name] = true;
                     }
                 }
             }

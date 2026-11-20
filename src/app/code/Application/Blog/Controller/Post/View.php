@@ -11,21 +11,13 @@ namespace Application\Blog\Controller\Post;
 use Application\Blog\Model\Posts;
 use Magento\Framework\App\Action\HttpGetActionInterface;
 use Magento\Framework\App\RequestInterface;
-use Magento\Framework\App\ViewInterface;
 use Magento\Framework\Controller\Result\ForwardFactory;
 use Magento\Framework\View\Result\PageFactory;
 use Magento\Framework\Exception\NoSuchEntityException;
 
 class View implements HttpGetActionInterface
 {
-    // Resolve the application view before layout generation can request it.
-    public function __construct(
-        private Posts $posts,
-        private RequestInterface $request,
-        private PageFactory $pages,
-        private ForwardFactory $forwards,
-        ViewInterface $view
-    ) {}
+    public function __construct(private Posts $posts, private RequestInterface $request, private PageFactory $pages, private ForwardFactory $forwards) {}
     public function execute()
     {
         try { $post = $this->posts->published((string) $this->request->getParam('slug')); }

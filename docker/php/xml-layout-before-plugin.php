@@ -9,6 +9,10 @@ namespace MageLens\XmlCoverage;
 
 final class LayoutBeforePluginOwnership
 {
+    private const PLUGIN_NAME_SLOT = '{PLUGIN_NAME}';
+    private const PLUGIN_CALLBACK_SLOT = '{PLUGIN_CALLBACK}';
+    private const NATIVE_METHOD_SLOT = '{NATIVE_METHOD}';
+
     private array $calls = [];
     private int $overflow = 0;
     private array $errors = [];
@@ -99,13 +103,16 @@ final class LayoutBeforePluginOwnership
         $expected = <<<'PHP'
 {
     $arguments = \func_get_args();
-    $beforeResult = $this->____plugin_PLUGIN()->CALLBACK($this, ...\array_values($arguments));
+    $beforeResult = $this->____plugin_{PLUGIN_NAME}()->{PLUGIN_CALLBACK}($this, ...\array_values($arguments));
     if ($beforeResult !== null) $arguments = (array)$beforeResult;
-    return parent::METHOD(...\array_values($arguments));
+    return parent::{NATIVE_METHOD}(...\array_values($arguments));
 }
 PHP;
-        $expected = str_replace(['PLUGIN', 'CALLBACK', 'METHOD'],
-            [$this->descriptor['name'], $this->descriptor['callback'], $this->descriptor['method']], $expected);
+        $expected = strtr($expected, [
+            self::PLUGIN_NAME_SLOT => $this->descriptor['name'],
+            self::PLUGIN_CALLBACK_SLOT => $this->descriptor['callback'],
+            self::NATIVE_METHOD_SLOT => $this->descriptor['method'],
+        ]);
         return LayoutXmlOwnership::bodyMatches($method, $expected);
     }
 

@@ -45,13 +45,16 @@ final class Xml
 
     // DOM supplies semantic nodes; this lexical pass retains inclusive original
     // closing lines, including CDATA, comments and quoted > in attributes.
-    public static function ranges(string $source, \DOMDocument $dom, bool $opening = false): array
+    public static function ranges(string $source, \DOMDocument $dom, bool $opening = false, bool $attributes = false): array
     {
         preg_match_all('~<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|</?[A-Za-z_](?:[^>"\']|"[^"]*"|\'[^\']*\')*>~s', $source, $matches, PREG_OFFSET_CAPTURE);
         $ranges = []; $stack = [];
+        $previousOffset = 0;
+        $start = 1;
         foreach ($matches[0] as [$token, $offset]) {
             if (str_starts_with($token, '<!') || str_starts_with($token, '<?')) continue;
-            $start = substr_count(substr($source, 0, $offset), "\n") + 1;
+            $start += substr_count($source, "\n", $previousOffset, $offset - $previousOffset);
+            $previousOffset = $offset;
             $end = $start + substr_count($token, "\n");
             if (str_starts_with($token, '</')) {
                 $index = array_pop($stack);
@@ -61,6 +64,7 @@ final class Xml
                 $index = count($ranges);
                 $ranges[] = ['startLine' => $start, 'endLine' => $end];
                 if ($opening) $ranges[$index]['highlightEndLine'] = $end;
+                if ($attributes) $ranges[$index]['attributes'] = self::attributeRanges($token, $start);
                 if (!preg_match('~/\s*>$~', $token)) $stack[] = $index;
             }
         }
@@ -69,6 +73,19 @@ final class Xml
         $result = [];
         foreach ($nodes as $index => $node) $result[$node->getNodePath()] = $ranges[$index];
         return $result;
+    }
+
+    private static function attributeRanges(string $tag, int $line): array
+    {
+        preg_match_all('~([^\s=<>/]+)\s*=\s*(?:"[^"]*"|\'[^\']*\')~s', $tag, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        $ranges = [];
+        $previousOffset = 0;
+        foreach ($matches as [[$text, $offset], [$name]]) {
+            $line += substr_count($tag, "\n", $previousOffset, $offset - $previousOffset);
+            $ranges[$name] = ['startLine' => $line, 'endLine' => $line + substr_count($text, "\n")];
+            $previousOffset = $offset;
+        }
+        return $ranges;
     }
 
     public static function leaves(array $data, string $prefix = ''): array

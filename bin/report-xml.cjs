@@ -8,6 +8,9 @@ const assert = require('node:assert/strict');
 const {startFamilyDeclaration, observeFamilyEffect, familyWarnings, familyOutcomes} = require('./xml-family-report.cjs');
 const {correlateBrowserEvidence, readXmlBrowserEvidence, browserEffects} = require('./xml-browser-evidence.cjs');
 const {createHash} = require('node:crypto');
+const {layoutEvents, layoutDecisions, layoutObservations, layoutLimitations, countsAsLayoutCoverage} = require('./xml-report/layout/index.cjs');
+const {BLOG_CONFIGURATION_ROUTE, WARM_REQUEST_SUFFIX, XML_REQUEST_METADATA} = require('./xml-report/regex.cjs');
+const {assertSourcePath, readSources} = require('./xml-report/source-files.cjs');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const escape = text => String(text).replace(/[&<>"']/g, value => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[value]));
 const callbackKey = ({subject, method, phase}) => hash(JSON.stringify([subject, method, phase]));
@@ -27,326 +30,10 @@ const diFamilies = {
     arguments: {key: 'arguments', title: 'Constructor argument usage', event: 'argument-applied', action: 'applied'},
     lifecycles: {key: 'lifecycles', title: 'Object lifetime usage', event: 'lifetime-applied', action: 'applied'},
 };
-const layoutEvents = {
-    'configured-argument': ['layout-configured-argument-evaluated', 'layout-configured-class-selected', 'layout-configured-argument-supplied', 'layout-configured-operand-origin-unconfirmed'],
-    'configured-argument-name': ['layout-configured-class-selected', 'layout-configured-argument-supplied', 'layout-configured-operand-origin-unconfirmed'],
-    'configured-item': ['layout-configured-item-evaluated', 'layout-configured-operand-origin-unconfirmed'],
-    'configured-item-name': ['layout-configured-item-name-applied', 'layout-configured-operand-origin-unconfirmed'],
-    'action-item': ['layout-action-item-evaluated', 'layout-action-item-origin-unconfirmed'],
-    'action-item-name': ['layout-action-item-name-applied', 'layout-action-item-origin-unconfirmed'],
-    parameter: ['layout-parameter-evaluated', 'layout-parameter-value-inherited', 'layout-parameter-origin-unconfirmed', 'layout-parameter-overridden', 'layout-argument-group-ignored'],
-    'parameter-name': ['layout-parameter-name-applied', 'layout-parameter-origin-unconfirmed', 'layout-parameter-overridden', 'layout-argument-group-ignored'],
-    'argument-group': ['layout-argument-group-selected', 'layout-argument-group-ignored', 'layout-argument-group-failed', 'layout-argument-group-origin-unconfirmed'],
-    'argument-translate': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
-    'argument-shared': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
-    'argument-model': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
-    'argument-helper': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
-    'argument-path': ['layout-argument-modifier-evaluated', 'layout-argument-modifier-deferred', 'layout-argument-modifier-failed', 'layout-argument-modifier-origin-unconfirmed', 'layout-argument-modifier-ambiguous'],
-    'argument-type': ['layout-argument-type-evaluated', 'layout-argument-type-deferred', 'layout-argument-type-failed', 'layout-argument-type-origin-unconfirmed', 'layout-argument-type-ambiguous'],
-    'ui-group': ['layout-ui-group-applied'],
-    'visibility': ['layout-condition-allowed', 'layout-condition-denied', 'layout-condition-unconfirmed', 'layout-condition-failed'],
-    'visibility-name': ['layout-condition-name-applied', 'layout-condition-name-unused', 'layout-condition-unconfirmed'],
-    'visibility-class': ['layout-condition-class-selected', 'layout-condition-unconfirmed'],
-    'visibility-argument': ['layout-condition-argument-applied', 'layout-condition-argument-unconsumed', 'layout-condition-unconfirmed'],
-    'visibility-argument-name': ['layout-condition-argument-applied', 'layout-condition-argument-unconsumed', 'layout-condition-unconfirmed'],
-    'page-type': ['layout-page-type-applied'],
-    'page-type-id': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
-    'page-type-label': ['layout-page-type-applied', 'layout-page-type-read', 'layout-registry-overridden'],
-    'registry-entry': ['layout-registry-entry-consumed', 'layout-registry-entry-configured', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
-    'registry-id': ['layout-registry-id-consumed', 'layout-registry-overridden', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
-    'registry-label': ['layout-registry-label-consumed', 'layout-registry-overridden', 'layout-registry-label-ignored', 'layout-registry-label-unconfirmed', 'layout-registry-snapshot-returned', 'layout-registry-cache-unconfirmed'],
-    'file-selection': ['layout-file-selected'],
-    'include-handle': ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
-    'position-name': ['layout-position-name-applied', 'layout-position-name-defaulted', 'layout-position-replaced'],
-    'position-as': ['layout-position-alias-applied', 'layout-position-replaced'],
-    'position-before': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],
-    'position-after': ['layout-position-order-applied', 'layout-position-order-unchanged', 'layout-position-ignored', 'layout-position-replaced'],
-    'file-override': ['layout-file-override-selected', 'layout-file-override-unconfirmed'],
-    'asset-order': ['layout-asset-group-applied', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
-    'asset-condition': ['layout-asset-condition-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
-    'body-class': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
-    'body-class-name': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
-    'body-class-value': ['layout-body-class-rendered', 'layout-body-class-duplicate', 'layout-body-class-canceled', 'layout-body-classes-cleared', 'layout-body-class-replaced'],
-    'asset-reference': ['layout-asset-reference-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
-    'asset-src': ['layout-asset-reference-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
-    'asset-src-type': ['layout-asset-reference-rendered', 'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'],
-    'condition-ifconfig': ['layout-condition-allowed', 'layout-condition-denied'],
-    'condition-aclResource': ['layout-condition-allowed', 'layout-condition-denied'],
-    'condition-acl': ['layout-condition-allowed', 'layout-condition-denied'],
-    container: ['layout-container-created'],
-    'ui-placement': ['layout-ui-created', 'layout-ui-rendered', 'layout-ui-denied'],
-    'page-attribute': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
-    'page-attribute-name': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
-    'page-attribute-value': ['layout-page-attribute-rendered', 'layout-page-attribute-overridden', 'layout-page-attribute-replaced'],
-    metadata: ['layout-metadata-rendered', 'layout-metadata-overridden', 'layout-metadata-replaced'],
-    'metadata-name': ['layout-metadata-rendered', 'layout-metadata-overridden', 'layout-metadata-replaced'],
-    'metadata-content': ['layout-metadata-rendered', 'layout-metadata-overridden', 'layout-metadata-replaced'],
-    'container-label': ['layout-container-label-applied', 'layout-container-label-read', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
-    'container-htmlTag': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
-    'container-htmlId': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
-    'container-htmlClass': ['layout-container-wrapper-rendered', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
-    'container-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-overridden', 'layout-container-attribute-replaced'],
-    'block-display': ['layout-display-allowed', 'layout-display-denied', 'layout-container-attribute-replaced'],
-    'block-class': ['layout-block-class-applied', 'layout-block-attribute-overridden', 'layout-block-class-origin-unconfirmed', 'layout-block-class-storage-unconfirmed', 'layout-block-class-defaulted'],
-    'block-group': ['layout-block-group-applied', 'layout-block-attribute-overridden'],
-    'block-ttl': ['layout-block-ttl-applied', 'layout-block-attribute-overridden', 'layout-block-ttl-origin-unconfirmed'],
-    cacheability: ['layout-cacheability-denied', 'layout-cacheability-target-missing'],
-    block: ['layout-block-created', 'layout-block-rendered', 'layout-block-render-failed', 'layout-block-reading-failed', 'layout-block-generation-failed', 'layout-block-cache-unconfirmed', 'layout-block-render-origin-unconfirmed', 'layout-block-registration-origin-unconfirmed'],
-    action: ['layout-action-executed', 'layout-action-ambiguous', 'layout-action-origin-unconfirmed', 'layout-action-evaluation-failed', 'layout-action-completion-failed'],
-    'action-method': ['layout-action-executed', 'layout-action-ambiguous', 'layout-action-origin-unconfirmed', 'layout-action-evaluation-failed', 'layout-action-completion-failed'],
-    'action-ifconfig': ['layout-action-condition-allowed', 'layout-action-condition-denied', 'layout-action-condition-ambiguous',
-        'layout-action-condition-empty-ignored', 'layout-action-condition-unobserved', 'layout-action-condition-origin-unconfirmed', 'layout-action-condition-failed'],
-    'action-argument': ['layout-action-argument-evaluated', 'layout-action-argument-evaluation-incomplete', 'layout-action-argument-applied', 'layout-action-argument-ambiguous', 'layout-argument-origin-unconfirmed'],
-    'argument-name': ['layout-argument-name-applied', 'layout-argument-name-overridden', 'layout-argument-name-mixed-origin', 'layout-argument-name-origin-unconfirmed'],
-    'action-argument-name': ['layout-action-argument-name-evaluated', 'layout-action-argument-name-evaluation-incomplete', 'layout-action-argument-name-applied', 'layout-action-argument-name-ambiguous', 'layout-action-argument-name-origin-unconfirmed'],
-    'argument-updater': ['layout-updater-executed', 'layout-updater-ignored', 'layout-updater-failed', 'layout-updater-ambiguous'],
-    argument: ['layout-argument-evaluated', 'layout-argument-applied', 'layout-argument-read', 'layout-argument-replaced',
-        'layout-argument-mixed-origin', 'layout-argument-overridden', 'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed', 'layout-argument-application-unconfirmed', 'layout-argument-storage-unconfirmed', 'layout-argument-field-access-unconfirmed'],
-    'page-title': ['layout-title-rendered', 'layout-title-overridden', 'layout-title-replaced'],
-    'asset-removal': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
-    'asset-removal-node': ['layout-asset-removed', 'layout-asset-removal-target-missing'],
-    wireframe: ['layout-wireframe-selected'],
-    removal: ['layout-removal-applied', 'layout-removal-canceled', 'layout-removal-restored'],
-    move: ['layout-move-applied', 'layout-move-removed', 'layout-move-detached', 'layout-move-target-missing', 'layout-move-unchanged', 'layout-move-unresolved', 'layout-move-replaced', 'layout-move-overridden', 'layout-move-origin-unconfirmed'],
-    'wireframe-selection': ['layout-wireframe-selected', 'layout-wireframe-origin-unconfirmed'],
-    include: ['layout-include-traversed', 'layout-include-duplicate', 'layout-include-cycle', 'layout-include-missing'],
-    template: ['layout-template-selected', 'layout-template-executed', 'layout-template-overridden', 'layout-template-replaced', 'layout-template-failed', 'layout-template-field-access-unconfirmed', 'layout-template-origin-unconfirmed', 'layout-template-cache-unconfirmed',
-        'layout-template-resolver-storage-unconfirmed', 'layout-template-context-storage-unconfirmed', 'layout-template-engine-pool-storage-unconfirmed', 'layout-template-validation-rejected'],
-};
-for (const name of ['element', 'destination', 'as', 'before', 'after']) {
-    const effects = name === 'as' ? ['alias-applied', 'alias-unchanged', 'destination-missing']
-        : ['before', 'after'].includes(name) ? ['order-applied', 'order-unchanged', 'ignored', 'destination-missing']
-        : ['applied', 'unchanged', ...(name === 'element' ? ['detached'] : ['destination-missing'])];
-    layoutEvents['move-' + name] = [...effects, 'target-missing', 'unresolved', 'replaced', 'overridden', 'origin-unconfirmed']
-        .map(effect => 'layout-move-' + effect);
-}
-for (const kind of ['label', 'type']) {
-    layoutEvents['handle-' + kind] = ['layout-handle-' + kind + '-evaluated', 'layout-handle-metadata-returned',
-        'layout-handle-metadata-overridden', 'layout-handle-metadata-origin-unconfirmed'];
-}
-for (const name of ['defer', 'async', 'charset', 'hreflang', 'media', 'rel', 'rev', 'sizes', 'target', 'type', 'integrity', 'crossorigin', 'as']) {
-    layoutEvents['asset-attribute-' + name] = ['layout-asset-attribute-emitted', 'layout-asset-attributes-discarded',
-        'layout-asset-overridden', 'layout-asset-replaced', 'layout-asset-removed-before-output'];
-}
-for (const [kind, type] of [
-    ['template', 'layout-template-empty-ignored'], ['page-title', 'layout-title-empty-ignored'], ['block-group', 'layout-block-group-empty-ignored'],
-    ['block-ttl', 'layout-block-ttl-empty-ignored'], ['block-display', 'layout-display-empty-ignored'],
-    ['removal', 'layout-removal-empty-ignored'], ['container-htmlClass', 'layout-container-wrapper-zero-class-emitted'],
-]) layoutEvents[kind].push(type);
-for (const kind of ['page-attribute', 'page-attribute-name', 'page-attribute-value']) {
-    layoutEvents[kind].push('layout-page-attribute-removed', 'layout-page-attribute-removed-before-output',
-        'layout-page-attribute-removal-target-missing');
-}
-for (const kind of ['metadata', 'metadata-name', 'metadata-content']) {
-    layoutEvents[kind].push('layout-metadata-empty-suppressed', 'layout-metadata-content-type-derived',
-        'layout-metadata-content-type-input', 'layout-metadata-template-skipped', 'layout-metadata-origin-unconfirmed');
-}
-for (const kind of ['metadata', 'metadata-name']) layoutEvents[kind].push('layout-metadata-key-emitted');
-layoutEvents['metadata-content'].push('layout-metadata-content-fallback');
-for (const kind of ['argument', 'argument-name', 'argument-type', 'argument-updater',
-    'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path',
-    'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name',
-    'visibility-argument', 'visibility-argument-name']) layoutEvents[kind].push('layout-argument-group-ignored');
-for (const kind of ['argument', 'action-argument']) layoutEvents[kind].push(...layoutEvents.template.filter(type => type !== 'layout-template-empty-ignored'));
-layoutEvents.argument.push('layout-template-constructor-origin-unconfirmed');
-layoutEvents['action-argument'].push('layout-template-assignment-origin-unconfirmed');
-const referenceEvents = [...new Set(['template', 'argument', 'action', 'container-htmlTag', 'container-label',
-    'block-class', 'block-group', 'block-ttl', 'block-display', 'removal'].flatMap(kind => layoutEvents[kind]))]
-    .filter(type => !['layout-argument-evaluated', 'layout-argument-mixed-origin', 'layout-argument-overridden',
-        'layout-argument-identity-unconfirmed', 'layout-argument-origin-unconfirmed'].includes(type));
-for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...referenceEvents,
-    'layout-reference-target-observed', 'layout-reference-unchanged', 'layout-reference-target-missing',
-    'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
-for (const [kind, events] of Object.entries(layoutEvents)) {
-    if (kind.startsWith('asset-') && !kind.startsWith('asset-removal')) events.push('layout-asset-controller-origin-unconfirmed');
-}
-for (const kind of ['asset-src', 'asset-src-type']) layoutEvents[kind].push('layout-asset-controller-url-generated');
-for (const events of Object.values(layoutEvents)) events.push('layout-file-provider-excluded', 'layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
-const layoutDecisions = {
-    'layout-file-provider-excluded': 'Magento’s native module output filter excluded this provider from the effective layout file list.',
-    'layout-configured-operand-origin-unconfirmed': 'The native configured object argument or constructor handoff has no uniquely verified source.',
-    'layout-action-item-origin-unconfirmed': 'The nested action array operand has no uniquely verified native evaluation.',
-    'layout-parameter-overridden': 'A later parameter replaced this operand in Magento’s named parameter map.',
-    'layout-parameter-value-inherited': 'This empty overlay supplied the name while Magento retained the earlier parameter value.',
-    'layout-parameter-origin-unconfirmed': 'The native parameter input or evaluator has no uniquely verified original source.',
-    'layout-argument-group-ignored': 'The native block reader selects only its first arguments group. This later group and its descendants supplied no values through that read.',
-    'layout-argument-group-failed': 'The native argument group read failed before returning its parsed argument map.',
-    'layout-argument-group-origin-unconfirmed': 'A custom group selector, parser or XML handoff did not establish the original group consumed by the reader.',
-    'layout-argument-type-deferred': 'The native reader selected its pass-through interpreter for this original type. Concrete value interpretation is deferred; selection alone earns zero evaluation hits.',
-    'layout-argument-type-failed': 'Native interpretation selected this type but failed before completing evaluation.',
-    'layout-argument-modifier-deferred': 'The native reader preserved this modifier for a later interpreter; it has not established modifier evaluation.',
-    'layout-argument-modifier-failed': 'The native modifier consumer failed before completing its evaluation.',
-    'layout-argument-modifier-origin-unconfirmed': 'The native interpreter handoff does not uniquely establish this original modifier operand.',
-    'layout-argument-type-ambiguous': 'Multiple original action operands match this native argument evaluation. No single original type field can receive evaluation credit.',
-    'layout-argument-modifier-ambiguous': 'Multiple original action operands match this native argument evaluation. No single original modifier field can receive evaluation credit.',
-    'layout-argument-type-origin-unconfirmed': 'The type dispatch used an unverified selector or native input handoff. No original type evaluation is credited.',
-    'layout-position-name-defaulted': 'Native scheduling ignores the empty or zero name and generates an anonymous identifier. The original name operand did not assign that identifier; the declaration retains independent creation and rendering evidence.',
-    'layout-template-assignment-origin-unconfirmed': 'The action call did not establish a unique native template assignment from this original argument. Custom setters, plugins, storage and ambiguous calls retain no template execution credit.',
-    'layout-template-constructor-origin-unconfirmed': 'The native constructor data, value getter or template setter did not establish this original argument as the template selection. Argument application and reads remain independent.',
-    'layout-template-empty-ignored': 'The native block generator treats the original empty string or zero template spelling as empty and skips its template assignment. Any PHP default template has a separate origin.',
-    'layout-block-group-empty-ignored': 'The native block generator treats this empty string or zero group name as empty and skips group registration.',
-    'layout-block-ttl-empty-ignored': 'The native block generator treats the zero TTL spelling as empty and skips its assignment. A constructor or other provider can retain its own TTL.',
-    'layout-display-empty-ignored': 'The native block generator treats the original zero display spelling as empty and skips the structural attribute. Container display processing has different semantics.',
-    'layout-removal-empty-ignored': 'The native reference reader treats the empty or zero remove spelling as false in both its removal and cancellation branches. It leaves any earlier removal queued.',
-    'layout-argument-name-overridden': 'A later declaration replaced the value associated with this original parser key before its native block-data assignment.',
-    'layout-argument-name-mixed-origin': 'The value at this parser key combines original declarations. The assignment cannot choose one complete original name operand.',
-    'layout-argument-name-origin-unconfirmed': 'The native value or assignment handoff does not establish this original name operand for the applied key.',
-    'layout-action-argument-name-ambiguous': 'Multiple original actions can supply this parsed argument key and position. The native call does not identify one original operand.',
-    'layout-action-argument-name-origin-unconfirmed': 'The action argument interpreter handoff does not establish this original parser key for the call.',
-    'layout-template-resolver-storage-unconfirmed': 'The template resolver backing property has hooks, unset storage, pending lazy initialization or no verified object. Reading it for attribution could execute application code; original template execution remains unconfirmed.',
-    'layout-template-context-storage-unconfirmed': 'The template context backing property has hooks, unset storage, pending lazy initialization or no verified object. The native engine context cannot be matched without invoking application code.',
-    'layout-template-engine-pool-storage-unconfirmed': 'The template engine pool backing property has hooks, unset storage, pending lazy initialization or no verified object. Its selection handoff cannot be inspected without invoking application code.',
-    'layout-reference-unchanged': 'This empty reference matched a native structural target and supplied no operation.',
-    'layout-reference-target-missing': 'The named reference target was absent at the observed native structural-build boundary.',
-    'layout-reference-target-removed': 'The named reference target was removed at the observed native structural-build boundary.',
-    'layout-reference-origin-unconfirmed': 'The reference reader, XML name accessor or structural storage lacks a verified native handoff. Independent descendant facts remain separate.',
-    'layout-reference-child-replaced': 'A later native schedule or parenting write replaced this original child-parent assignment, including equal-valued writes.',
-    'layout-block-registration-origin-unconfirmed': 'The block registration passed through an unverified setter or scope-dependent generated implementation. The resulting layout element has no verified original registration origin.',
-    'layout-handle-metadata-returned': 'The native API returned a handle metadata snapshot. Later PHP array offsets and classification calls do not preserve per-field origin identity.',
-    'layout-handle-metadata-overridden': 'A later package entry with the same handle replaced this metadata in the native result map.',
-    'layout-handle-metadata-origin-unconfirmed': 'The metadata API passed through an unverified implementation or plugin. Native field evaluation and final result ownership remain separate.',
-    'layout-block-render-origin-unconfirmed': 'A shared block object has multiple original layout declarations. A direct PHP render lacks a unique layout element origin.',
-    'layout-block-cache-unconfirmed': 'The native block HTML cache path supplied data while fresh template execution was bypassed. The original source of the cached bytes is unverified.',
-    'layout-template-cache-unconfirmed': 'Cached block HTML bypassed this selected template. Cached bytes do not establish fresh original XML template execution.',
-    'layout-template-field-access-unconfirmed': 'Template storage is opaque or publicly writable/promoted, or a custom block implementation or scoped closure can access it outside the observed native accessors. Those accesses are not traced; an equal filename cannot establish original XML execution ownership.',
-    'layout-template-origin-unconfirmed': 'The rendering input passed through an unverified template getter, filename resolver or PHP template engine handoff, or template validation supplied no attributable native decision. Native XML selection cannot establish original template execution ownership. Hooked or magic property storage can replace the selection even when values match.',
-    'layout-argument-application-unconfirmed': 'Block creation passed evaluated values through an unverified implementation, plugin or hooked, magic or uninitialized lazy data storage. Their later application lacks verified original ownership.',
-    'layout-argument-field-access-unconfirmed': 'A custom block implementation or scoped closure can access data storage outside the observed native data accessors or cannot be inspected. Those accesses are not traced; earlier application remains proven, while equal values cannot establish original XML read lineage.',
-    'layout-argument-storage-unconfirmed': 'The block data property became hooked, unset, magic or subject to unverified lazy initialization. Original application evidence is retained; later reads lack verified XML lineage.',
-    'layout-block-class-defaulted': 'The native generator selected its configured default class after treating the XML attribute as empty.',
-    'layout-block-class-storage-unconfirmed': 'Pending lazy initialization, property hooks or unset block-factory/object-manager storage prevents passive verification of the native producer. Original class ownership remains unconfirmed.',
-    'layout-block-class-origin-unconfirmed': 'Block creation used an unverified factory, object-manager dependency or intercepted creation method. Original-source class ownership is unavailable.',
-    'layout-argument-origin-unconfirmed': 'The argument interpreter chain includes an unverified implementation or intercepted method. Original-source value ownership is unavailable for this argument tree.',
-    'layout-origin-limit': 'Runtime layout document tracking reached its 256-document bound before this declaration could receive original-source evidence.',
-    'layout-ui-denied': 'The native visibility decision removed this UI placement before component generation.',
-    'layout-condition-unconfirmed': 'The custom condition source lacks a unique native composite, rule-key or bounded argument binding.',
-    'layout-condition-name-unused': 'The native rule used another condition key to retrieve its arguments.',
-    'layout-condition-argument-unconsumed': 'This rule retrieved its arguments from another XML condition key.',
-    'layout-condition-failed': 'The native visibility rule call failed before returning a decision.',
-    'layout-validation-failed': 'Native merged-layout validation stopped construction before this instruction could execute.',
-    'layout-registry-overridden': 'A later native registry write supplied the field used by the consumer.',
-    'layout-registry-label-ignored': 'The native label merge applied no replacement text and preserved the preceding label fragments.',
-    'layout-registry-label-unconfirmed': 'The mixed-content label merge lacks complete native text assignment evidence.',
-    'layout-registry-snapshot-returned': 'The native API returned the whole registry map. Individual entry and label consumption is unobserved on that path.',
-    'layout-registry-cache-unconfirmed': 'This registry input lacks a verified native file-read lineage in the current request.',
-    'layout-file-selected': 'Magento selected this file as merged layout input. Descendant declarations require their own native effect evidence.',
-    'layout-xml-ownership-revoked': 'Mutable layout XML reached external PHP or an unverified reader or parser, or was reassigned before native interpretation, so original ownership could not be retained.',
-    'layout-position-replaced': 'A later native structure operation replaced this declaration identity, alias or sibling order.',
-    'layout-position-ignored': 'The native scheduling helper selected after and ignored this before attribute.',
-    'layout-position-order-unchanged': 'The native ordering operation left the child order unchanged.',
-    'layout-updater-ignored': 'The native argument parser omitted this updater from the argument metadata.',
-    'layout-updater-failed': 'The native updater call failed before returning a value.',
-    'layout-updater-ambiguous': 'Multiple argument origins supplied identical updater metadata at the native interpreter boundary.',
-    'layout-block-reading-failed': 'The native block reader failed before completing scheduling and argument interpretation.',
-    'layout-argument-mixed-origin': 'The assembled argument retains multiple or unconfirmed XML contributors, so its parent has no unique application origin.',
-    'layout-argument-overridden': 'A later XML value replaced this argument before native value generation.',
-    'layout-argument-identity-unconfirmed': 'Value correlation is bounded to 1024 nodes, 32 nested levels and 64 KiB of string/key bytes; closed resources lack a supported identity.',
-    'layout-file-override-unconfirmed': 'The override source was selected without an attributable native file-list replacement.',
-    'layout-file-overridden': 'A selected native file-list replacement displaced this source in the effective theme.',
-    'layout-asset-attributes-discarded': 'The native font renderer supplied its fixed preload attributes and discarded these XML attributes.',
-    'layout-body-class-duplicate': 'The native body class assignment found this sanitized class already present.',
-    'layout-body-class-canceled': 'An empty class assignment suppressed all scheduled XML body classes, including later additions.',
-    'layout-body-class-replaced': 'A runtime body class assignment replaced the XML-origin class list before output.',
-    'layout-asset-overridden': 'A later declaration replaced this scheduled resource before native asset output.',
-    'layout-asset-replaced': 'A runtime assignment replaced this scheduled XML resource before native asset output.',
-    'layout-asset-controller-origin-unconfirmed': 'The native controller asset handoff did not establish the original route-to-URL conversion.',
-    'layout-asset-removed-before-output': 'The native removal pass removed this scheduled resource before asset generation.',
-    'layout-block-render-failed': 'The native block rendering boundary threw before returning HTML. Construction remains a separate observed fact.',
-    'layout-block-generation-failed': 'Native block generation failed before completing construction and data application.',
-    'layout-block-attribute-overridden': 'A later declaration supplied the block attribute used by the native generator.',
-    'layout-block-ttl-origin-unconfirmed': 'The native TTL setter reached hooked, magic or uninitialized lazy data storage. Its assignment lacks verified original XML ownership.',
-    'layout-cacheability-target-missing': 'The native cacheability check found that the noncacheable declaration had no surviving structural element.',
-    'layout-template-validation-rejected': 'The native template file validator rejected the effective file at the original template fetch boundary. No PHP template execution occurred on this path.',
-    'layout-template-failed': 'The native template fetch boundary failed. Any independently completed engine execution remains a separate fact.',
-    'layout-template-replaced': 'A later PHP template assignment replaced this XML selection before template execution.',
-    'layout-container-attribute-overridden': 'A later container declaration supplied the attribute used during generation.',
-    'layout-container-attribute-replaced': 'A runtime structure assignment replaced this XML attribute before its native rendering boundary.',
-    'layout-page-attribute-overridden': 'A later page configuration assignment replaced this element attribute.',
-    'layout-metadata-overridden': 'A later page configuration assignment replaced this metadata entry.',
-    'layout-page-attribute-replaced': 'A runtime assignment replaced this XML element attribute before its native rendering boundary.',
-    'layout-metadata-replaced': 'A runtime assignment replaced this XML metadata before its native rendering boundary.',
-    'layout-action-condition-ambiguous': 'More than one native scheduled action has this guard path and scope. The observed decision cannot identify a unique original operand, including unmapped dynamic actions.',
-    'layout-action-condition-empty-ignored': 'Native action generation short-circuits the empty or zero guard without consulting configuration. The independent action call retains its own evidence.',
-    'layout-action-condition-unobserved': 'The original guard was supplied, but no uniquely attributable native scope decision or completed short-circuited call was observed.',
-    'layout-action-condition-origin-unconfirmed': 'The native action snapshot, generator, scheduled storage or original action list could not establish this guard operand. No value equality inference is made.',
-    'layout-action-condition-failed': 'The attributed native configuration flag call failed before it returned a guard decision.',
-    'layout-action-evaluation-failed': 'Native action generation failed during argument evaluation. No call completion or method body execution is established.',
-    'layout-action-completion-failed': 'Native action generation failed after argument evaluation completed. This boundary cannot establish method body entry, successful call completion or partial side effects.',
-    'layout-action-argument-evaluation-incomplete': 'The native action argument batch failed. This boundary does not establish which individual values finished evaluation before the failure.',
-    'layout-action-argument-name-evaluation-incomplete': 'The native action argument batch failed before a complete evaluated key map was observed.',
-    'layout-action-origin-unconfirmed': 'The effective native process action snapshot did not establish the original source of this call.',
-    'layout-action-ambiguous': 'Multiple scheduled actions match the native method and arguments; the executed declaration could not be identified.',
-    'layout-action-argument-ambiguous': 'Multiple scheduled actions supplied matching arguments, preventing a unique original parameter origin.',
-    'layout-argument-replaced': 'A runtime data write revoked this XML value origin before a later native getter could consume it.',
-    'layout-title-empty-ignored': 'The native head generator skipped assigning the effective empty or zero title.',
-    'layout-metadata-template-skipped': 'Magento skipped emitting a tag for this metadata key at the native template selector.',
-    'layout-metadata-content-fallback': 'Magento used a fallback getter result in place of this empty XML content.',
-    'layout-metadata-origin-unconfirmed': 'The native metadata getter path did not establish that the output came from the original content.',
-    'layout-metadata-empty-suppressed': 'The native metadata renderer suppressed the effective empty or zero content.',
-    'layout-page-attribute-removed-before-output': 'The native removal pass discarded this scheduled attribute before it could reach the renderer.',
-    'layout-page-attribute-removal-target-missing': 'The native removal queue found no remaining value for this element attribute.',
-    'layout-title-overridden': 'A later title replaced this declaration before the page configuration was applied.',
-    'layout-title-replaced': 'A runtime title assignment replaced this declaration before attribution at the renderer.',
-    'layout-asset-removal-target-missing': 'The scheduled removal had no asset in the native page configuration.',
-    'layout-removal-canceled': 'Magento canceled this scheduled removal before generating the structure.',
-    'layout-move-origin-unconfirmed': 'The native move schedule or structure uses customized storage or accessors without a verified original-source handoff.',
-    'layout-move-replaced': 'A later programmatic schedule write replaced this move, including an equal-valued tuple.',
-    'layout-move-overridden': 'A later XML move replaced this scheduled move before execution.',
-    'layout-move-destination-missing': 'The requested destination was absent. The native move could detach its existing source but could not apply this destination, alias or order.',
-    'layout-move-alias-unchanged': 'The native move retained the existing child alias.',
-    'layout-move-order-unchanged': 'The native destination reorder left its child order unchanged.',
-    'layout-move-ignored': 'The native move reader selected after and ignored this before attribute.',
-    'layout-move-target-missing': 'The scheduled move had no target in the structure Magento built.',
-    'layout-move-unchanged': 'The native move left the parent, alias and sibling order unchanged.',
-    'layout-move-unresolved': 'The scheduled move did not establish the requested parent.',
-    'layout-wireframe-origin-unconfirmed': 'The page-layout getter or active plugin lacks a verified original-source handoff. An equal result alone cannot establish ownership; selector identities longer than 4096 bytes are also unmeasured.',
-    'layout-template-overridden': 'A later declaration supplied the template used during block generation',
-    'layout-include-duplicate': 'Magento had already processed the included handle',
-    'layout-include-cycle': 'Magento was processing the included handle and skipped recursive re-entry',
-    'layout-include-missing': 'Magento found no package or database layout update for the handle',
-};
-const layoutObservations = new Set(['layout-block-created', 'layout-template-selected', 'layout-reference-target-observed']);
-const countsAsLayoutCoverage = type => !Object.hasOwn(layoutDecisions, type) && !layoutObservations.has(type);
-const layoutLimitations = {
-    'layout-file-replacement-descriptor-unconfirmed': 'A replacement file descriptor has a custom filename accessor, hooked or unset filename storage, pending lazy initialization or no verified string. Original replacement ancestry is unconfirmed; independently verified file reads retain their own evidence.',
-    'layout-file-replacement-storage-unconfirmed': 'The native file-list backing storage has hooks, unset storage, pending lazy initialization or no verified array. Replacement ancestry cannot be inspected without executing application code; independently verified file reads retain their own evidence.',
-    'layout-programmatic-update': 'A native programmatic XML update appended input without original file provenance.',
-    'full-page-cache-origin': 'A native full-page cache lookup returned a response. Its original XML/template lineage and fresh layout execution are unverified.',
-    'block-html-cache-origin': 'A native block HTML cache lookup returned data. Its original XML/template lineage is unverified.',
-    'layout-nonstring-update': 'A native update list contained a non-string value. Original-source alignment would require repeating application conversion, so its XML origins were withheld.',
-    'layout-processor-unconfirmed': 'A layout processor implementation falls outside the verified native merge path.',
-    'layout-opaque-action-data': 'Native scheduled action data contains opaque values or exceeds the reviewed scalar-tree depth. Inspecting it could execute application serialization; original action attribution is withheld on this path.',
-    'layout-theme-context-unconfirmed': 'Native file resolution returned no bounded area or theme path for original-source layout evidence.',
-    'layout-shared-block-origin': 'A shared block object was rendered directly without a uniquely attributable layout element. Native element rendering and template execution retain independent evidence.',
-    'layout-block-registration-origin': 'A native block registration used an unverified setter handoff. Block construction and template execution retain independent evidence; layout element render attribution requires a verified registration.',
-    'layout-database-update': 'Magento appended a database layout update through its native merge path. Database and widget row origins have no original XML file location; displaced file effects lose ownership.',
-    'layout-cms-update': 'The native CMS helper appended a CMS layout update from page data. Its inline or dated custom values have no original XML file location; surviving file effects retain independent evidence.',
-    'layout-handle-metadata-snapshot': 'Magento returned a handle metadata snapshot. Native XML field evaluation is measured; later individual PHP array reads and classification calls lack source identity.',
-    'mutable-layout-package': 'External PHP or an unverified getter received mutable package layout XML. Future selected entries lack verified original ownership.',
-    'layout-serialization-unconfirmed': 'Layout serialization or XML conversion used an unverified implementation or plugin. Evidence is limited to independently confirmed native calls.',
-    'layout-updates-reset': 'A discarded native update list was used again after reset without current original-source lineage.',
-    'layout-document-limit': 'Runtime layout origin tracking is bounded to 256 retained XML documents per request.',
-    'layout-condition-hook-limit': 'Runtime visibility hooks are bounded to 1024 declaring classes per request.',
-    'layout-validation-failed': 'Native merged-layout validation stopped this layout instance before interpretation.',
-    'layout-validation-warning': 'Native merged-layout validation logged a schema failure and continued in the current application mode.',
-    'layout-registry-custom-provider': 'A customized registry builder or configuration implementation lacks verified source and native consumer boundaries.',
-    'layout-registry-cache': 'The registry reused inputs without current native file-read provenance.',
-    'layout-registry-limit': 'Registry tracing is bounded to 512 files, 2 MiB of input XML and 16384 retained DOM nodes per request.',
-    'layout-registry-complex-label': 'A mixed-content registry label merge lacks complete native text assignment evidence.',
-    'layout-registry-data-replaced': 'A runtime registry data assignment revoked the original XML ownership.',
-    'layout-page-types-cache': 'Page type configuration reused cached or replaced data without current native file-read provenance.',
-    'layout-registry-context': 'The registry consumer lacked a uniquely associated native layout context or verified source state.',
-    'mutable-layout-xml': 'External PHP, a custom or intercepted reader, or an unverified parser received mutable layout XML. Direct and equal-valued replacements cannot retain verified original declaration ownership.',
-    'layout-package-cache': 'Magento reused a package layout cache entry without original file positions.',
-    'layout-merge-cache': 'Magento reused a merged handle update without original declaration positions.',
-    'scheduled-layout-cache': 'Magento populated the layout schedule from cache without running the layout readers.',
-    'missing-layout-origins': 'A generated layout had no confirmed trace from original files to its schedule.',
-};
 function merge(manifest, records, sources, browserObservations = []) {
     const declarations = new Map(), files = structuredClone(manifest.files);
     for (const file of files) {
-        assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
-        assert.ok(!file.path.split('/').some(part => part === '..' || part === '.'));
+        assertSourcePath(file.path);
         assert.equal(hash(sources[file.path]), file.sourceHash, `XML source changed: ${file.path}`);
         file.sourceFingerprint = hash(sources[file.path].toString().replaceAll('\r\n', '\n'));
         file.lines = {};
@@ -376,7 +63,7 @@ function merge(manifest, records, sources, browserObservations = []) {
         diTotals[family] = {total: 0, covered: 0, hook};
     }
     const layoutHook = records.some(record => record.layoutHook === true);
-    const layoutSourceTrace = records.some(record => record.layoutSourceTrace === true);
+    const limitedHandles = new Map();
     const layoutTotals = {total: 0, covered: 0, hook: layoutHook, limitations: []};
     const layoutMeasurement = [...declarations.values()].some(({item}) => item.family === 'layout' && item.supported);
     assert.ok(!layoutMeasurement || layoutHook, 'No functioning XML layout hook observed');
@@ -389,7 +76,7 @@ function merge(manifest, records, sources, browserObservations = []) {
         assert.equal(record.manifest, manifest.id, 'XML manifest mismatch');
         const url = new URL(record.uri || '/', 'https://application.invalid');
         let scenario = url.searchParams.get('case');
-        if (!/\/blog\/index\/configuration\/?$/.test(url.pathname) || !cases.has((scenario || '').replace(/-warm$/, ''))) scenario = null;
+        if (!BLOG_CONFIGURATION_ROUTE.test(url.pathname) || !cases.has((scenario || '').replace(WARM_REQUEST_SUFFIX, ''))) scenario = null;
         const events = [];
         const argumentApplications = new Set(record.events.filter(event => event.type === 'layout-argument-applied')
             .map(event => JSON.stringify([event.id, event.area, event.theme])));
@@ -402,6 +89,18 @@ function merge(manifest, records, sources, browserObservations = []) {
         for (const limitation of record.layoutLimitations || []) {
             assert.ok(Object.hasOwn(layoutLimitations, limitation), 'Unknown layout measurement limitation');
             requestLimitations.add(limitation);
+        }
+        for (const {reason, area, handles} of record.layoutScopedLimitations || []) {
+            assert.ok(['layout-package-cache', 'layout-merge-cache', 'scheduled-layout-cache', 'missing-layout-origins'].includes(reason)
+                && record.layoutLimitations?.includes(reason), 'Unexpected scoped layout limitation');
+            assert.ok(['frontend', 'adminhtml'].includes(area));
+            assert.ok(Array.isArray(handles) && handles.length && new Set(handles).size === handles.length, 'Invalid limited layout handles');
+            for (const handle of handles) {
+                assert.ok(typeof handle === 'string' && handle, 'Invalid layout handle');
+                const key = JSON.stringify([area, handle]);
+                if (!limitedHandles.has(key)) limitedHandles.set(key, new Set());
+                limitedHandles.get(key).add(reason);
+            }
         }
         for (const [id, areas] of Object.entries(record.ambiguousPlugins || {})) {
             assert.equal(record.pluginHook, true);
@@ -537,18 +236,25 @@ function merge(manifest, records, sources, browserObservations = []) {
             item.state = item.supported ? (item.hits ? 'covered' : 'uncovered') : 'unmeasured';
             if (item.effects) warnings.push(...familyWarnings(item, file.path));
             if (item.family === 'layout') {
-                const decisions = [...new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean))].sort();
-                if (item.supported && decisions.length) item.reason = decisions.join('. ');
-                if (item.supported && !item.hits && decisions.length) {
-                    item.state = 'unmeasured';
-                } else if (item.state === 'uncovered' && !layoutSourceTrace
-                    && [...requestLimitations].some(key => key !== 'full-page-cache-origin')) {
-                    item.state = 'unmeasured';
-                    item.reason = 'No measured layout request supplied a source trace';
+                const decisions = new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean));
+                if (item.state === 'uncovered' && ['page', 'generic'].includes(item.layout.fileType)) {
+                    // Theme fallback and replacement cannot be inferred from a cache key.
+                    if (file.layoutProvider ? file.layoutProvider.type === 'module' : /^(?:app\/code\/|vendor\/[^/]+\/[^/]+\/.*view\/)/.test(file.path)) {
+                        const areas = item.declaredScope.type === 'base' ? ['frontend', 'adminhtml'] : [item.declaredScope.type];
+                        for (const area of areas) {
+                            for (const key of limitedHandles.get(JSON.stringify([area, item.layout.handle])) || []) {
+                                decisions.add(layoutLimitations[key]);
+                            }
+                        }
+                    }
+                }
+                if (item.supported && decisions.size) {
+                    item.reason = [...decisions].sort().map(reason => reason.replace(/\.$/, '')).join('. ');
+                    if (!item.hits) item.state = 'unmeasured';
                 }
                 if (item.state !== 'unmeasured') layoutTotals.total++;
                 if (item.state === 'covered') layoutTotals.covered++;
-                if (item.state === 'unmeasured' || decisions.length) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
+                if (item.state === 'unmeasured' || decisions.size) warnings.push({path: file.path, declaration: item.id, reason: item.reason});
             } else if (item.areas) {
                 const totals = {plugins: pluginTotals, events: observerTotals, preferences: preferenceTotals, ...diTotals}[item.family];
                 for (const [area, outcome] of Object.entries(item.areas)) {
@@ -592,8 +298,11 @@ function merge(manifest, records, sources, browserObservations = []) {
         preferences: {...preferenceTotals, hook: preferenceHook}, layout: layoutTotals,
         ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])), total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
 }
-const style = 'body{font:15px system-ui;margin:32px;color:#172b3a}a{color:#086b68}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{padding:5px 10px;text-align:left;border-bottom:1px solid #ddd}.covered{background:#dcefe0}.uncovered{background:#fbdada}.unmeasured{background:#eee;color:#555}.neutral{color:#555}.line{display:block}small{display:block}a:focus-visible{outline:2px solid #086b68;outline-offset:3px}td,code,small,h1{overflow-wrap:anywhere}.preferences{max-width:75rem;line-height:1.35}.preference-list,.preference-areas{list-style:none;padding:0}.preference-list>li{padding:12px 0;border-top:1px solid #ddd}.preference-areas{margin-top:6px}.preference-areas li{padding:6px 10px;margin:2px 0;overflow-wrap:anywhere}.preference-areas span{display:block}.line:target{outline:2px solid #086b68;outline-offset:-2px}@media(max-width:480px){body{margin:16px}td,th{padding:5px}.di-details,.di-details tbody,.di-details tr,.di-details td{display:block}.di-details td{border-bottom:0}.di-details tr{border-bottom:1px solid #ddd}}';
-function page(title, body) { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>${style}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`; }
+const stylesheet = 'report.css';
+function page(title, body, stylesheetPrefix = '') {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${stylesheetPrefix}${stylesheet}"></head><body><h1>${escape(title)}</h1>${body}</body></html>`;
+}
+
 function sourceHref(file, line, prefix = '') {
     return prefix + file.split('/').map(encodeURIComponent).join('/') + '.html#L' + line;
 }
@@ -674,6 +383,7 @@ function diSections(result, files) {
 }
 function writeReport(result, sources, directory = 'coverage/xml') {
     fs.mkdirSync(directory, {recursive: true});
+    fs.copyFileSync(path.join(__dirname, 'xml-report', stylesheet), path.join(directory, stylesheet));
     const directories = new Map([['', new Map()]]);
     const files = new Set(result.files.map(file => file.path));
     for (const file of result.files) {
@@ -712,7 +422,7 @@ function writeReport(result, sources, directory = 'coverage/xml') {
             const type = {events: 'Observer execution', plugins: 'Plugin execution'}[item.family] || item.state;
             return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(item.declaredScope.type)} ${escape(item.declaredScope.code)} · lines ${item.startLine}–${item.endLine}</small></td><td>${escape(type)}${outcomes}</td></tr>`;
         }).join('');
-        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`));
+        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`, prefix));
         let parent = path.posix.dirname(file.path);
         if (!directories.has(parent)) directories.set(parent, new Map());
         directories.get(parent).set(path.posix.basename(file.path) + '.html', {label: path.posix.basename(file.path), file});
@@ -728,21 +438,10 @@ function writeReport(result, sources, directory = 'coverage/xml') {
         const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file && entry.file.family !== 'layout' ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
         const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. Block creation and template selection are retained as facts; their declarations require native block rendering or template execution for coverage. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
         fs.mkdirSync(path.join(directory, name), {recursive: true});
-        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files))));
+        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files)), name ? '../'.repeat(name.split('/').length) : ''));
     }
     fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
 }
-function readSources(files) {
-    const root = fs.realpathSync('src');
-    return Object.fromEntries(files.map(file => {
-        assert.match(file.path, /^(app\/code|app\/design|vendor)\//);
-        assert.ok(!file.path.split('/').some(part => part === '..' || part === '.'));
-        const filename = path.join(root, file.path);
-        assert.equal(fs.realpathSync(filename), filename, `Symlinked XML source: ${file.path}`);
-        return [file.path, fs.readFileSync(filename)];
-    }));
-}
-
 function report() {
     const read = file => JSON.parse(fs.readFileSync(file));
     assert.equal(fs.existsSync('coverage/.active-run'), false, 'Stop and drain collection before XML reporting');
@@ -750,7 +449,7 @@ function report() {
     assert.equal(run.id, manifest.run);
     const raw = `coverage/raw/php/${run.id}`;
     assert.ok(!fs.readdirSync(raw).some(file => file.endsWith('.error')), 'Failed PHP collection');
-    const metadata = fs.readdirSync(raw).filter(file => /^[a-f0-9]+(?:\.[1-9]\d*)?\.json$/.test(file));
+    const metadata = fs.readdirSync(raw).filter(file => XML_REQUEST_METADATA.test(file));
     const records = metadata.map(file => {
         const request = read(`${raw}/${file}`);
         assert.ok(request.xml, 'Missing XML runtime evidence');
