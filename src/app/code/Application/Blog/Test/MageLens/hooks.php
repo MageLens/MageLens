@@ -33,6 +33,7 @@ if (is_file($statePath)) {
     if ($user->getId()) $user->delete();
     $role = $om->create(\Magento\Authorization\Model\Role::class)->load($prefix . 'reader', 'role_name');
     if ($role->getId()) $role->delete();
+    if (isset($old['navigation'])) require __DIR__ . '/../Navigation/cleanup.php';
     if (isset($old['configuration'])) require __DIR__ . '/../Configuration/cleanup.php';
     unlink($statePath);
 }
@@ -80,5 +81,6 @@ $om->create(\Magento\Authorization\Model\Rules::class)->setRoleId($role->getId()
 $user->setData(['username' => $fixture['readerUser'], 'firstname' => 'Coverage', 'lastname' => 'Reader',
     'email' => $fixture['readerUser'] . '@example.test', 'password' => $fixture['readerPassword'], 'is_active' => 1])->setRoleId($role->getId())->save();
 $om->get(\Magento\ReleaseNotification\Model\ResourceModel\Viewer\Logger::class)->log((int) $user->getId(), $om->get(\Magento\Framework\App\ProductMetadataInterface::class)->getVersion());
+if (is_file(__DIR__ . '/../Navigation/.enabled')) require __DIR__ . '/../Navigation/prepare.php';
 $persist();
 echo json_encode($fixture, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR), "\n";

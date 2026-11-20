@@ -121,6 +121,8 @@ if [[ -z "$focus" ]]; then
     cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
     mkdir -p "$scratch/src/app/design/frontend/MageLens"
     cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
+    cp -a tests/fixtures/admin-navigation/module "$scratch/src/app/code/MageLens/AdminNavigation"
+    touch "$scratch/src/app/code/Application/Blog/Test/Navigation/.enabled"
 fi
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
     mkdir -p "$scratch/.runtime"
@@ -217,6 +219,7 @@ fi
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs
+    ./bin/runner node tests/verify-xml-admin-navigation.cjs
     ./bin/runner node tests/verify-scenarios.cjs
     ./bin/runner node tests/verify-cli-coverage.cjs
     ./bin/runner node tests/verify-e2e.cjs
