@@ -150,11 +150,13 @@ function xml(index, run) {
         assert.ok(owners.has(request.id), `XML request without a PHP record: ${request.id}`);
         const owner = owners.get(request.id);
         if (owner === unattributed) stats.unattributedRecords++;
-        for (const event of request.events) result.add(declarations.get(event.id).file, event.id, owner, event.hits);
+        // Area-specific declarations (observers, plugins, DI) count per area, as in the XML report.
+        for (const event of request.events) result.add(declarations.get(event.id).file, event.area ? `${event.id}@${event.area}` : event.id, owner, event.hits);
     }
     const json = result.toJSON();
     for (const {file, item} of declarations.values()) {
-        const total = Object.values(json[file]?.[item.id] || {}).reduce((sum, hits) => sum + hits, 0);
+        const total = Object.entries(json[file] || {}).filter(([unit]) => unit === item.id || unit.startsWith(`${item.id}@`))
+            .flatMap(([, owners]) => Object.values(owners)).reduce((sum, hits) => sum + hits, 0);
         assert.equal(total, item.hits || 0, `XML attribution differs from the report: ${file} ${item.id}`);
     }
     return {result, stats};

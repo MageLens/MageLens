@@ -196,7 +196,7 @@ After the reports, `bin/report-attribution.cjs` combines the attempt records int
 | `php.json` | Covered PHP lines from `coverage/php/line-coverage.json` |
 | `javascript.json` | Statement (`s:<id>`), function (`f:<id>`) and branch path (`b:<id>:<path>`) counters of the JavaScript report, by file below `src/` |
 | `templates.json` | Template statement, function and branch counters of the template report |
-| `xml.json` | XML declarations by runtime observations, from the requests and commands of the XML report |
+| `xml.json` | XML declarations by runtime observations, per configuration area where the XML report counts areas (`<declaration>@<area>`), from the requests and commands of the XML report |
 
 The collector files map each file and unit to its owners: the position of an attempt in `index.json`, or `unattributed`, with hit counts. PHP lines count 1 per owner, because PCOV records whether a line ran, not how often. A unit can belong to several attempts and to unattributed work at the same time. Uncovered units are not listed.
 

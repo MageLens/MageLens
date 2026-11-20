@@ -47,8 +47,9 @@ function workspace(t, change = () => {}) {
         'coverage/raw/php/current/c1.json': {attempt: retry, commandId: 'c1'},
         // A worker forked by that command shares its record name and attempt.
         'coverage/raw/php/current/c1.4321.json': {attempt: retry, commandId: 'c1'},
-        'coverage/xml/coverage.json': {files: [{path: 'app/code/Acme/Shop/etc/config.xml', declarations: [{id: 'd1', hits: 5}, {id: 'd2', hits: 0}, {id: 'd3'}]}],
-            requests: [{id: 'r1', events: [{id: 'd1', hits: 2}]}, {id: 'r2', events: [{id: 'd1', hits: 1}]}, {id: 'c1', events: [{id: 'd1', hits: 1}, {id: 'd1', hits: 1}]}]},
+        'coverage/xml/coverage.json': {files: [{path: 'app/code/Acme/Shop/etc/config.xml', declarations: [{id: 'd1', hits: 5}, {id: 'd2', hits: 0}, {id: 'd3', hits: 1}]}],
+            requests: [{id: 'r1', events: [{id: 'd1', hits: 2}, {id: 'd3', area: 'frontend', hits: 1}]}, {id: 'r2', events: [{id: 'd1', hits: 1}]},
+                {id: 'c1', events: [{id: 'd1', hits: 1}, {id: 'd1', hits: 1}]}]},
         'coverage/raw/templates/2.mtc': {spec: path.resolve(spec), test: [spec, 'cart', 'unknown'], retry: 0, project: '', hits: {t1: {'binding:1': 1}}}
     };
     change(data);
@@ -67,8 +68,8 @@ test('attribution lists the attempts that executed each unit and keeps shared wo
         'b:0:0': {1: 2}, 'f:0': {1: 1}, 's:0': {1: 3, unattributed: 1}}});
     assert.deepEqual(fixture.read('templates').files, {'app/code/Acme/Shop/view/frontend/templates/cart.phtml': {'binding:1': {1: 2, unattributed: 1}}});
     assert.deepEqual([summary.collectors.templates.records, summary.collectors.templates.unattributedRecords], [2, 1]);
-    assert.deepEqual(fixture.read('xml').files, {'app/code/Acme/Shop/etc/config.xml': {d1: {0: 2, 1: 2, unattributed: 1}}});
-    assert.deepEqual([summary.collectors.xml.records, summary.collectors.xml.unattributedRecords, summary.collectors.xml.attributedUnits], [3, 1, 1]);
+    assert.deepEqual(fixture.read('xml').files, {'app/code/Acme/Shop/etc/config.xml': {d1: {0: 2, 1: 2, unattributed: 1}, 'd3@frontend': {0: 1}}});
+    assert.deepEqual([summary.collectors.xml.records, summary.collectors.xml.unattributedRecords, summary.collectors.xml.attributedUnits], [3, 1, 2]);
     assert.deepEqual(JSON.parse(fs.readFileSync('coverage/attribution/index.json', 'utf8')), JSON.parse(JSON.stringify(summary)));
 });
 
