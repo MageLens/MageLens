@@ -95,8 +95,11 @@ function prepare({plain = false, runtimeOnly = false, updateReadme = false, them
     fs.mkdirSync('coverage/raw/templates', {recursive: true});
     const run = {id: randomBytes(16).toString('hex'), runner: process.env.MAGELENS_RUNNER || 'cypress', startedAt: new Date().toISOString(), roots: project.roots,
         sources: Object.fromEntries(Object.entries(inputs).filter(([file]) => scoped(file)))};
-    fs.mkdirSync(`coverage/raw/php/${run.id}`, {recursive: true, mode: 0o777});
-    fs.chmodSync(`coverage/raw/php/${run.id}`, 0o777);
+    for (const collector of ['php', 'xml-ui']) {
+        const directory = `coverage/raw/${collector}/${run.id}`;
+        fs.mkdirSync(directory, {recursive: true, mode: 0o777});
+        fs.chmodSync(directory, 0o777);
+    }
     fs.writeFileSync('coverage/run.json', JSON.stringify(run, null, 2));
     fs.writeFileSync('coverage/javascript-scope.json', JSON.stringify({run: run.id, ...JSON.parse(fs.readFileSync('.runtime/javascript-scope.json'))}, null, 2));
     fs.copyFileSync('.runtime/template-manifest.json', 'coverage/template-manifest.json');
