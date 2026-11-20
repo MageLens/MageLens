@@ -85,6 +85,7 @@ const php = read('attribution/php.json').files;
 const fixture = 'app/code/MageLens/Compatibility';
 for (const [file, fragment, title] of [
     ['Controller/Index/Markup.php', "$second = $this->request->getParam('case')", 'starts the next test with fresh state'],
+    ['Controller/Index/Late.php', 'usleep(2000000)', 'collects real PHP, JavaScript and template execution'],
     ['Cli/Jobs.php', "getValue('magelens_probe/cron/enabled')", 'executes a scheduled Magento cron job'],
     ['Cli/Jobs.php', "getValue('magelens_probe/cron/magerun_message')", 'preserves command arguments and runs a named cron job through MageRun'],
     ['Cli/Jobs.php', 'file_put_contents(self::marker($token), $token)', 'processes a message through a Magento database queue']
@@ -94,4 +95,11 @@ for (const [file, fragment, title] of [
     const owners = Object.keys(php[`${fixture}/${file}`]?.[line] || {}).map(owner => attribution.attempts[owner]?.test.at(-1) ?? owner);
     assert.deepEqual(owners, [title], `${file}:${line} must belong to "${title}" only`);
 }
+// The late request ran across the test boundary: the next attempt started before it could have finished.
+const late = requests.filter(request => request.uri?.startsWith('/coverageprobe/index/late'));
+assert.equal(late.length, 1, 'Missing the request that outlives its test');
+const owner = attempts.get(late[0].attempt);
+const next = [...attempts.values()].filter(attempt => attempt.runner === runner && attempt.startedAt > owner.startedAt)
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))[0];
+assert.ok(next && Date.parse(next.startedAt) < Date.parse(late[0].startedAt) + 2000, 'The late request did not overlap the next test');
 console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed; per-attempt JavaScript counters match ${statements} covered statements; attribution: ${['php', 'javascript', 'templates', 'xml'].map(name => `${attribution.collectors[name].attributedUnits} ${name}`).join(', ')} units.`);

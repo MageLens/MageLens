@@ -43,6 +43,11 @@ describe('Magento storefront coverage compatibility', () => {
         });
         cy.visit('/customer/account/login/');
         cy.get('#email').should('be.visible');
+        // The request is still running when this test ends; leaving the page aborts only the browser side.
+        cy.window().then(win => new Cypress.Promise(resolve => {
+            win.fetch('/coverageprobe/index/late').catch(() => {});
+            win.setTimeout(resolve, 500);
+        }));
     });
     it('starts the next test with fresh state', () => {
         cy.visit('/coverageprobe/');

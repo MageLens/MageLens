@@ -39,6 +39,10 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
     }
     await page.goto('/customer/account/login/');
     await expect(page.locator('#email')).toBeVisible();
+    // The request is still running when this test ends; closing the page aborts only the browser side.
+    const sent = page.waitForRequest('**/coverageprobe/index/late');
+    await page.evaluate(() => { fetch('/coverageprobe/index/late').catch(() => {}); });
+    await sent;
 });
 test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
     await page.goto('/coverageprobe/');
