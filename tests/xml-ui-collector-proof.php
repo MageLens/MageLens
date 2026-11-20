@@ -7,102 +7,139 @@
 declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
-final class Recorder
-{
-    public static array $events = [];
+use Magento\Framework\Component\ComponentRegistrar;
+use Magento\Ui\Config\Reader;
 
-    public static function familyEvidence(
-        string $id,
-        string $type,
-        string $area,
-        string $outcome = 'observed',
-        ?string $reason = null
-    ): void {
-        self::$events[] = [$id, $type, $area, $outcome, $reason];
-    }
+function uiProofEvents(bool $clear = false): array
+{
+    $events = new \ReflectionProperty(Recorder::class, 'events');
+    $result = array_values($events->getValue());
+    if ($clear) $events->setValue(null, []);
+    return $result;
 }
 
 function startUiProof(string $app, string $tooling, string $run): array
 {
     require_once $tooling . '/xml-data.php';
     require_once $tooling . '/xml-family-evidence.php';
-    require_once $tooling . '/xml-family-ui.php';
+    require_once $tooling . '/xml-recorder.php';
+    $areas = Xml::registeredThemeAreas((new ComponentRegistrar())->getPaths(ComponentRegistrar::THEME), BP);
+    $paths = glob($app . '/app/code/MageLens/UiProbe*/view/adminhtml/ui_component/*.xml');
+    foreach (\UI_PROOF_THEMES as $root) {
+        $paths[] = $app . '/' . $root . '/MageLens_UiProbe/ui_component/magelens_ui_probe_listing.xml';
+    }
     $files = [];
-    foreach (glob($app . '/app/code/MageLens/UiProbe*/view/adminhtml/ui_component/*.xml') as $file) {
+    foreach ($paths as $file) {
         $path = substr($file, strlen($app) + 1);
         $bytes = file_get_contents($file);
-        $files[$path] = [
-            'family' => 'ui-component',
-            'path' => $path,
-            'sourceHash' => hash('sha256', $bytes),
-            'declarations' => UiFamily::declarations($path, $bytes),
-        ];
+        $inventory = FamilyEvidence::inventory($path, $bytes, $areas);
+        if (($inventory['family'] ?? null) !== 'ui-component') throw new \RuntimeException('Missing disposable UI component fixture');
+        $files[$path] = ['path' => $path, 'sourceHash' => hash('sha256', $bytes), ...$inventory];
     }
-    if (count($files) !== 4) {
-        throw new \RuntimeException('Missing disposable UI component fixture');
-    }
-    [$targets] = UiFamily::prepare(null, $files);
-    foreach (UiFamily::hooks($targets + ['run' => $run]) as [$class, $method, $pre, $post]) {
-        if (!\OpenTelemetry\Instrumentation\hook($class, $method, $pre, $post)) {
+    [$targets, , $contracts] = FamilyEvidence::prepare(null, $files);
+    (new \ReflectionProperty(Recorder::class, 'manifest'))->setValue(null, ['familyContracts' => $contracts]);
+    foreach (FamilyEvidence::hooks($targets, $run) as [$class, $method, $pre, $post]) {
+        if (!LayoutRuntimeHooks::registerWrapped($class, $method, $pre, $post)) {
             throw new \RuntimeException('Could not install native UI hook');
         }
+    }
+    if (!\OpenTelemetry\Instrumentation\hook(Reader::class, 'read', null, UiProofReads::finished(...))) {
+        throw new \RuntimeException('Could not monitor native UI cache misses');
     }
     return $files;
 }
 
-function verifyUiEvidence(array $files, array $events, bool $cacheOnly): void
+final class UiProofReads
 {
+    public static array $names = [];
+
+    public static function finished($subject, array $params, $result, ?\Throwable $error, string $class): void
+    {
+        if ($class !== Reader::class) return;
+        $name = (new \ReflectionProperty(Reader::class, 'fileName'))->getValue($subject);
+        if (str_starts_with($name, 'magelens_ui_probe_')) self::$names[] = $name;
+    }
+}
+
+function verifyUiEvidence(array $files, string $mode, string $run, bool $repeat): void
+{
+    LayoutRuntimeHooks::assertHealthy();
+    \verify(!(new \ReflectionProperty(Recorder::class, 'errors'))->getValue(), 'Native UI collector reported an error');
+    $cold = $mode === '--collect' && !$repeat;
+    \verify(UiProofReads::$names === ($cold ? array_map(static fn(string $name): string => 'magelens_ui_probe_' . $name . '.xml',
+        ['listing', 'form', 'provider_throws', 'provider_catches']) : []), 'Unexpected native configuration reads: ' . json_encode(UiProofReads::$names));
+    UiProofReads::$names = [];
+
+    $byId = [];
+    foreach ($files as $path => $file) {
+        $source = match (true) {
+            str_starts_with($path, 'vendor/') => 'composer',
+            str_starts_with($path, 'app/design/') => 'local',
+            str_contains($path, '/UiProbeOverlay/') => 'overlay',
+            default => 'base',
+        };
+        foreach ($file['declarations'] as $item) {
+            $byId[$item['id']] = ['source' => $source, ...$item];
+        }
+    }
+    $cacheOnly = $mode === '--expect-cache-only';
     $listing = 'magelens_ui_probe_listing.magelens_ui_probe_listing.probe_columns.';
     $form = 'magelens_ui_probe_form.magelens_ui_probe_form.probe_fields.';
-    $byId = [];
-    foreach ($files as $file) {
-        foreach ($file['declarations'] as $item) {
-            $byId[$item['id']] = $item + ['file' => $file['path']];
-        }
-    }
-    $actual = [];
-    foreach ($events as [$id, $type, $area, $outcome, $reason]) {
-        $item = $byId[$id] ?? throw new \RuntimeException('Evidence refers to an unknown original declaration');
-        if ($area !== 'adminhtml' || str_contains($item['path'], 'unopened')) {
-            throw new \RuntimeException('Evidence from an unopened screen or wrong area');
-        }
-        if (($outcome !== 'observed') !== (is_string($reason) && $reason !== '')) {
-            throw new \RuntimeException('Non-creditable evidence must explain the limitation');
-        }
-        $module = str_contains($item['file'], '/UiProbeOverlay/') ? 'overlay' : 'base';
-        $key = implode('|', [$module, $item['path'], $type, $outcome]);
-        $actual[$key] = $item['startLine'];
-        $lines = file(BP . '/' . $item['file']);
-        if (!preg_match('/<\w+\b/', $lines[$item['startLine'] - 1])) {
-            throw new \RuntimeException('Evidence does not point at an original declaration');
-        }
-    }
+    $prepared = 'ui-prepared';
+    $delivered = 'ui-delivered';
+    $provider = 'ui-provider-executed';
     $cases = [
-        ['base', $listing . 'untouched', 'ui-created', 'observed', 39],
-        ['base', $listing . 'untouched#label', 'ui-prepared', 'observed', 41],
-        ['base', $listing . 'untouched', 'ui-delivered', 'observed', 39],
-        ['base', $listing . 'equal#label', 'ui-prepared', 'displaced', 46],
-        ['overlay', $listing . 'equal#label', 'ui-prepared', 'observed', 12],
-        ['base', $listing . 'replaced#label', 'ui-prepared', 'displaced', 51],
-        ['base', $listing . 'disabled', 'ui-created', 'disabled', 54],
-        ['base', $form . 'untouched', 'ui-prepared', 'observed', 35],
-        ['base', $form . 'uninstantiated', 'ui-delivered', 'observed', 70],
-        ['base', 'magelens_ui_probe_listing.probe_data_source#provider', 'ui-provider-executed', 'observed', 28],
-        ['base', 'magelens_ui_probe_form.probe_form_data_source#provider', 'ui-provider-executed', 'observed', 24],
+        ['base', $listing . 'untouched', 39, ['ui-created' => 'observed']],
+        ['base', $listing . 'untouched#label', 41, [$prepared => 'observed', $delivered => 'observed']],
+        ['base', $listing . 'equal#label', 46, [$prepared => 'displaced', $delivered => null]],
+        ['overlay', $listing . 'equal#label', 12, [$prepared => 'observed', $delivered => 'observed']],
+        ['base', $listing . 'replaced#label', 51, [$prepared => 'displaced', $delivered => null]],
+        ['base', $listing . 'disabled', 54, ['ui-created' => 'disabled']],
+        ['base', $listing . 'before_different#label', 64, [$prepared => 'displaced', $delivered => 'displaced']],
+        ['base', $listing . 'before_equal#label', 69, [$prepared => 'displaced', $delivered => 'displaced']],
+        ['base', $listing . 'after_prepare#label', 74, [$prepared => 'observed', $delivered => 'displaced']],
+        ['base', $listing . 'theme_label#label', 79, [$prepared => 'displaced', $delivered => null]],
+        ['local', $listing . 'theme_label#label', 12, [$prepared => 'displaced', $delivered => null]],
+        ['composer', $listing . 'theme_label#label', 12, [$prepared => 'observed', $delivered => 'observed']],
+        ['base', $form . 'untouched#label', 38, [$prepared => 'observed', $delivered => 'observed']],
+        ['base', $form . 'uninstantiated', 70, [$delivered => 'observed']],
+        ['base', 'magelens_ui_probe_listing.probe_data_source#provider', 28, [$provider => 'observed']],
+        ['base', 'magelens_ui_probe_form.probe_form_data_source#provider', 24, [$provider => 'observed']],
+        ['base', 'magelens_ui_probe_provider_throws.probe_provider_throws#provider', 10, [$provider => 'failed']],
+        ['base', 'magelens_ui_probe_provider_catches.probe_provider_catches#provider', 10, [$provider => 'observed']],
     ];
-    foreach ($cases as [$module, $identity, $type, $outcome, $line]) {
-        if ($cacheOnly && $type === 'ui-delivered') continue;
-        if ($cacheOnly && $type === "ui-prepared" && !str_ends_with($identity, "#label")) $type = "ui-created";
-        $key = implode('|', [$module, $identity, $type, $cacheOnly ? 'cache-only' : $outcome]);
-        if (($actual[$key] ?? null) !== $line) {
-            throw new \RuntimeException('Unproven UI XML evidence ' . $key . ' at expected line ' . $line
-                . ', evidence: ' . json_encode($actual, JSON_THROW_ON_ERROR));
+    $events = uiProofEvents();
+    $outcomes = [];
+    foreach ($events as $event) {
+        $item = $byId[$event['id']] ?? throw new \RuntimeException('Evidence refers to an unknown original declaration');
+        \verify($event['area'] === 'adminhtml' && !str_contains($item['path'], 'unopened'), 'Evidence from an unopened screen or wrong area');
+        \verify(!$cacheOnly || $event['outcome'] === 'cache-only', 'Cache-only proof received native credit');
+        $outcomes[$event['id']][$event['type']][] = $event['outcome'];
+    }
+    $expected = [];
+    $failures = [];
+    foreach ($cases as [$source, $identity, $line, $effects]) {
+        $ids = array_keys(array_filter($byId, static fn(array $item): bool => $item['source'] === $source && $item['path'] === $identity));
+        \verify(count($ids) === 1 && $byId[$ids[0]]['startLine'] === $line, 'Wrong original declaration or line for ' . $source . ' ' . $identity);
+        foreach ($effects as $effect => $outcome) {
+            if ($cacheOnly) $outcome = $effect === $delivered ? null : 'cache-only';
+            $actual = $outcomes[$ids[0]][$effect] ?? [];
+            if ($actual !== ($outcome === null ? [] : [$outcome])) {
+                $failures[] = $source . ' ' . $identity . ' on line ' . $line . ' ' . $effect
+                    . ' expected ' . json_encode($outcome) . ', observed ' . json_encode($actual);
+            }
+            $expected[$ids[0]][$effect] = $outcome === 'observed' ? 'covered' : 'uncovered';
         }
     }
-    foreach ($actual as $key => $line) {
-        if (str_ends_with($key, '|observed') && ($cacheOnly || preg_match('/(?:equal#label|replaced#label|\.disabled)\|/', $key)
-                && !str_starts_with($key, 'overlay|'))) {
-            throw new \RuntimeException('False credit for source line ' . $line . ' ' . $key);
-        }
+    \verify(!$failures, "Wrong native UI outcomes:\n" . implode("\n", $failures));
+    if (!$repeat) {
+        $directory = '/coverage/raw/xml-ui/' . $run;
+        if (!is_dir($directory)) mkdir($directory, 0770, true);
+        file_put_contents($directory . '/' . ltrim($mode, '-') . '-report.json', json_encode([
+            'files' => array_values($files),
+            'sources' => array_map(static fn(array $file): string => file_get_contents(BP . '/' . $file['path']), $files),
+            'events' => $events,
+            'expected' => $expected,
+        ], JSON_THROW_ON_ERROR));
     }
 }

@@ -433,18 +433,35 @@ run_xml_proofs() {
     )
 }
 
-run_ui_component_proofs() {
+run_ui_component_proofs() (
     local proof=xml-ui-native-proof.php app=/var/www/html run baseline collected warmed cache_only
+    local admin_design=src/app/design/adminhtml
+    local composer_theme=src/vendor/magelens/ui-composer-proof
+    if [[ -d .runtime/app/design/adminhtml ]]; then admin_design=.runtime/app/design/adminhtml; fi
+    local local_theme="$admin_design/MageLens/ui-proof"
     run=$(./bin/application-compose exec -T phpfpm php -r 'echo bin2hex(random_bytes(16));')
+    cleanup_ui_proof() {
+        local result=$?
+        trap - EXIT
+        xml_proof "$proof" "$app" --clear-fixture-cache || result=1
+        rm -rf -- "coverage/raw/xml-ui/$run" "$local_theme" "$composer_theme"
+        exit "$result"
+    }
+    [[ ! -e "$local_theme" && ! -e "$composer_theme" ]] || fail 'Native UI theme fixture paths already exist.'
+    trap cleanup_ui_proof EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    mkdir -p "$local_theme" "$composer_theme"
+    cp -a tests/fixtures/ui-module/themes/local/. "$local_theme/"
+    cp -a tests/fixtures/ui-module/themes/composer/. "$composer_theme/"
     xml_proof "$proof" "$app" --clear-fixture-cache
     baseline=$(xml_proof "$proof" "$app") || { printf "%s\n" "$baseline" >&2; return 1; }
     cache_only=$(xml_proof "$proof" "$app" --expect-cache-only "$run") || { printf "%s\n" "$cache_only" >&2; return 1; }
     xml_proof "$proof" "$app" --clear-fixture-cache
     collected=$(xml_proof "$proof" "$app" --collect "$run") || { printf "%s\n" "$collected" >&2; return 1; }
-    warmed=$(xml_proof "$proof" "$app" --collect "$run") || { printf "%s\n" "$warmed" >&2; return 1; }
-    xml_proof "$proof" "$app" --clear-fixture-cache
-    rm -rf "coverage/raw/xml-ui/$run"
+    warmed=$(xml_proof "$proof" "$app" --collect-warm "$run") || { printf "%s\n" "$warmed" >&2; return 1; }
+    ./bin/runner node tests/verify-ui-native-report.cjs "coverage/raw/xml-ui/$run"
     [[ "$baseline" == "$cache_only" && "$baseline" == "$collected" && "$baseline" == "$warmed" ]] \
         || fail 'Collection changed native UI output or provider calls.'
     printf 'Verified native Admin UI output, provider calls, original lines and cache ownership.\n'
-}
+)

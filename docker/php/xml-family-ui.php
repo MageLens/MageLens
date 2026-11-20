@@ -10,6 +10,7 @@ namespace MageLens\XmlCoverage;
 
 require_once __DIR__ . '/xml-ui-origin.php';
 require_once __DIR__ . '/xml-ui-runtime.php';
+require_once __DIR__ . '/xml-regex.php';
 
 final class UiFamily
 {
@@ -23,17 +24,21 @@ final class UiFamily
     private const SCHEMA = 'urn:magento:module:Magento_Ui:etc/ui_configuration.xsd';
     private const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
 
-    public static function declarations(string $path, string $bytes): ?array
+    public static function declarations(string $path, string $bytes, array $themeAreas = []): ?array
     {
-        if (!preg_match('~/(?:view/(?:base|adminhtml)/|adminhtml/[^/]+/[^/]+/[^/]+/)ui_component/([A-Za-z0-9_-]+)\.xml$~D',
-            $path, $match)) {
+        if (preg_match(XmlRegex::THEME_UI_PATH, $path, $match) && isset($themeAreas[$match['root']])) {
+            if ($themeAreas[$match['root']] !== 'adminhtml') return null;
+            $area = 'adminhtml';
+        } elseif (preg_match(XmlRegex::MODULE_ADMIN_UI_PATH, $path, $match)) {
+            $area = $match['area'] === 'adminhtml' ? 'adminhtml' : 'global';
+        } else {
             return null;
         }
         $dom = Xml::document($bytes);
         $root = $dom->documentElement;
         if ($root->getAttributeNS(self::XSI, 'noNamespaceSchemaLocation') !== self::SCHEMA) return [];
         $ranges = Xml::ranges($bytes, $dom, true);
-        $namespace = $match[1];
+        $namespace = $match['namespace'];
         $items = [];
         foreach ((new \DOMXPath($dom))->query('//field | //column | //dataSource | //button | //dataProvider | //settings/label') as $node) {
             $kind = match ($node->localName) {
@@ -57,6 +62,7 @@ final class UiFamily
             $effects = self::effects($kind, $type, $root->localName);
             $item = FamilyEvidence::declaration($path, 'ui-component', $node, $ranges,
                 $identity . ($kind === 'component' ? '' : '#' . $kind), $effects);
+            $item['declaredScope']['type'] = $area;
             $providerClass = $kind === 'provider' ? ltrim($node->getAttribute('class'), '\\') : null;
             $unsupported = match (true) {
                 !in_array($root->localName, ['listing', 'form'], true) => 'Only native listing and form instances are measured',

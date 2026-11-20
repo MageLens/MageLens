@@ -11,7 +11,7 @@ namespace MageLens\UiProbe\Model;
 use Magento\Framework\Api\Filter;
 use Magento\Ui\DataProvider\AbstractDataProvider;
 
-final class Provider extends AbstractDataProvider
+class Provider extends AbstractDataProvider
 {
     private array $calls = [];
     private ?string $direction = null;
@@ -30,7 +30,7 @@ final class Provider extends AbstractDataProvider
     public function getMeta(): array
     {
         $this->calls[] = 'meta';
-        if ($this->getName() === 'probe_form_data_source') {
+        if ($this->getName() !== 'probe_data_source') {
             return parent::getMeta();
         }
         return $this->modifier->modifyMeta(parent::getMeta());
@@ -39,6 +39,9 @@ final class Provider extends AbstractDataProvider
     public function getData(): array
     {
         $this->calls[] = 'data';
+        if ($this->getName() === 'probe_provider_catches') {
+            throw new \RuntimeException('Parent provider failed');
+        }
         if ($this->getName() === 'probe_form_data_source') {
             return ['' => ['untouched' => 'Fixture value']];
         }

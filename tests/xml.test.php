@@ -7,8 +7,33 @@
 declare(strict_types=1);
 require __DIR__ . '/../docker/php/xml-manifest.php';
 require_once __DIR__ . '/../docker/php/xml-routing-runtime.php';
-use MageLens\XmlCoverage\{LayoutManifest, RoutingRuntime, Xml};
+use MageLens\XmlCoverage\{FamilyEvidence, LayoutManifest, RoutingRuntime, Xml};
 function checkXml(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
+$themeRoots = Xml::registeredThemeAreas([
+    'adminhtml/MageLens/probe' => '/app/app/design/adminhtml/MageLens/probe',
+    'adminhtml/Acme/probe' => '/app/vendor/acme/admin-theme',
+    'frontend/Acme/probe' => '/app/vendor/acme/store-theme',
+    'adminhtml/Other/probe' => '/external/theme',
+], '/app');
+checkXml(!in_array('/external/theme', array_keys($themeRoots), true) && count($themeRoots) === 3, 'Only registered application theme roots are in scope');
+$listFile = 'magelens_ui_probe_listing.xml';
+$uiBytes = file_get_contents(__DIR__ . '/fixtures/ui-module/themes/local/MageLens_UiProbe/ui_component/' . $listFile);
+$uiModule = "app/code/MageLens/UiProbe/view/adminhtml/ui_component/$listFile";
+$uiTheme = "app/design/adminhtml/MageLens/probe/MageLens_UiProbe/ui_component/$listFile";
+$uiComposer = "vendor/acme/admin-theme/MageLens_UiProbe/ui_component/$listFile";
+$stripId = static fn(array $item): array => array_diff_key($item, ['id' => true]);
+$uiExpected = FamilyEvidence::inventory($uiModule, $uiBytes)['declarations'];
+checkXml(count($uiExpected) === 2 && $uiExpected[1]['startLine'] === 12, 'Module UI declarations retain original label lines');
+foreach ([$uiTheme, $uiComposer] as $uiPath) {
+    $uiActual = FamilyEvidence::inventory($uiPath, $uiBytes, $themeRoots)['declarations'] ?? [];
+    checkXml(array_map($stripId, $uiExpected) === array_map($stripId, $uiActual)
+        && $uiExpected[1]['id'] !== $uiActual[1]['id'], 'Admin theme declaration matches the module shape and keeps its own source identity');
+}
+checkXml(FamilyEvidence::inventory($uiComposer, $uiBytes) === null, 'An unregistered theme path cannot be inferred from a vendor package name');
+foreach ([str_replace('/admin-theme/', '/store-theme/', $uiComposer), str_replace('/adminhtml/', '/frontend/', $uiModule),
+    str_replace('/adminhtml/', '/frontend/', $uiTheme)] as $uiPath) {
+    checkXml(FamilyEvidence::inventory($uiPath, $uiBytes, $themeRoots) === null, 'Standalone frontend UI components are excluded');
+}
 foreach ([[123, '123'], ['123', '123'], ['0123', '0123'], ['catalogue', 'catalogue']] as [$input, $expected]) {
     checkXml(RoutingRuntime::identifier($input) === $expected, 'Native route IDs preserve string identity');
 }

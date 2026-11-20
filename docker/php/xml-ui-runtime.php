@@ -18,8 +18,12 @@ use Magento\Framework\View\Element\UiComponentFactory;
 use Magento\Ui\Component\AbstractComponent;
 use Magento\Ui\Component\DataSource;
 use Magento\Ui\Component\Form;
+use Magento\Ui\Component\Form\Field;
 use Magento\Ui\Component\Listing;
+use Magento\Ui\Component\Listing\Columns\Column;
 use Magento\Ui\TemplateEngine\Xhtml\Result;
+
+require_once __DIR__ . '/xml-layout-runtime-hooks.php';
 
 final class UiRuntime
 {
@@ -27,13 +31,16 @@ final class UiRuntime
     private array $factoryCalls = [];
     private array $providerReads = [];
     private \WeakMap $components;
+    private \WeakMap $labels;
     private \WeakMap $roots;
+    private int $fieldPreparations = 0;
     private array $scripts = [];
     private ?\WeakReference $sending = null;
 
     public function __construct(private readonly UiOrigin $origin)
     {
         $this->components = new \WeakMap();
+        $this->labels = new \WeakMap();
         $this->roots = new \WeakMap();
     }
 
@@ -45,13 +52,18 @@ final class UiRuntime
             [UiComponentFactory::class, 'createChildComponent', $this->child(...), null],
             [Listing::class, 'getDataSourceData', $this->beginProviderRead(...), $this->endProviderRead(...)],
             [Form::class, 'getDataSourceData', $this->beginProviderRead(...), $this->endProviderRead(...)],
-            [DataProviderInterface::class, 'getData', null, $this->providerData(...)],
+            [DataProviderInterface::class, 'getData', $this->beginProviderData(...), $this->providerData(...)],
+            [DataObject::class, 'setData', null, $this->labelWrite(...)],
+            [DataObject::class, 'unsetData', null, $this->labelWrite(...)],
+            [DataObject::class, 'offsetSet', null, $this->labelWrite(...)],
+            [DataObject::class, 'offsetUnset', null, $this->labelWrite(...)],
             [Result::class, '__toString', null, $this->serialized(...)],
             [NativeResponse::class, 'sendContent', $this->sending(...), $this->sent(...)],
             [AbstractComponent::class, 'prepare', null, $this->prepared(...)],
         ];
         foreach (UiFamily::COMPONENT_CLASSES as $type => $class) {
-            if ($type !== 'button') $hooks[] = [$class, 'prepare', null, $this->prepared(...)];
+            if ($type !== 'button') $hooks[] = [$class, 'prepare',
+                $type === 'field' ? $this->beginFieldPreparation(...) : null, $this->prepared(...)];
         }
         return $hooks;
     }
@@ -113,28 +125,42 @@ final class UiRuntime
         $proof = $this->origin->proof($call['namespace']);
         $root = ['items' => [], 'providers' => []];
         foreach ($call['items'] as $item) {
-            $component = $result;
-            foreach ($item['segments'] as $segment) {
-                $component = $component instanceof AbstractComponent
-                    ? ((new \ReflectionProperty(AbstractComponent::class, 'components'))->getValue($component)[$segment] ?? null)
-                    : null;
-            }
+            $component = self::componentAt($result, $item['segments']);
             $outcome = $this->outcome($call, $item, $proof, $component);
             if ($outcome !== null) {
                 [$state, $reason] = $outcome;
                 self::record($item, self::sourceEffect($item), $state, $reason);
                 continue;
             }
-            $root['items'][] = $item;
+            $root['items'][] = [$item, \WeakReference::create($component)];
             $known = $this->components[$component] ?? [];
             $this->components[$component] = [...$known, $item];
+            if ($item['kind'] === 'label') {
+                $data = self::labelConfig($component);
+                $ownership = (object) ['label' => $data['label'] ?? null, 'loss' => null];
+                if (!array_key_exists('label', $data)) {
+                    $ownership->loss = ['ambiguous', 'Native component did not receive a configured label'];
+                }
+                $this->labels[$component] = $ownership;
+            }
             if ($item['kind'] === 'component') self::record($item, 'ui-created');
             if ($item['kind'] === 'provider') {
                 $provider = (new \ReflectionProperty(DataSource::class, 'dataProvider'))->getValue($component);
-                $root['providers'][] = ['item' => $item, 'object' => $provider];
+                $root['providers'][] = ['item' => $item, 'object' => $provider,
+                    'methodClass' => (new \ReflectionMethod($item['providerClass'], 'getData'))->getDeclaringClass()->getName()];
             }
         }
         $this->roots[$result] = $root;
+    }
+
+    private static function componentAt(AbstractComponent $component, array $segments): mixed
+    {
+        $children = new \ReflectionProperty(AbstractComponent::class, 'components');
+        foreach ($segments as $segment) {
+            if (!$component instanceof AbstractComponent) return null;
+            $component = $children->getValue($component)[$segment] ?? null;
+        }
+        return $component;
     }
 
     private function outcome(array $call, array $item, ?array $proof, mixed $component): ?array
@@ -173,18 +199,74 @@ final class UiRuntime
         };
     }
 
+    private function beginFieldPreparation($subject, array $params, string $class): void
+    {
+        if ($class === Field::class && isset($this->labels[$subject])) $this->fieldPreparations++;
+    }
+
+    private static function labelConfig(AbstractComponent $component): array
+    {
+        $data = (new \ReflectionProperty(DataObject::class, '_data'))->getValue($component);
+        return (array) ($data['config'] ?? []);
+    }
+
+    private function labelWrite($subject, array $params, $result, ?\Throwable $error, string $class, string $method): void
+    {
+        if ($error || $class !== DataObject::class || !$subject instanceof AbstractComponent) return;
+        $ownership = $this->labels[$subject] ?? null;
+        if (($ownership === null && $this->fieldPreparations === 0) || $ownership?->loss !== null) return;
+        $key = $params[0] ?? null;
+        if ($key !== 'config' && !($method === 'setData' && is_array($key))
+            && !($method === 'unsetData' && $key === null)) return;
+        if ($method === 'setData' && $key === 'config') {
+            // The native prepare methods copy the current label as part of a config write.
+            // A plugin's write has its own caller even when it uses the same label.
+            $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 8);
+            $i = 0;
+            while (isset($trace[$i]) && (($trace[$i]['class'] ?? null) !== DataObject::class
+                || $trace[$i]['function'] !== 'setData' || ($trace[$i]['object'] ?? null) !== $subject)) $i++;
+            $setters = [DataObject::class, AbstractComponent::class];
+            $subjectClass = get_class($subject);
+            if (str_ends_with($subjectClass, '\\Interceptor')) $setters[] = $subjectClass;
+            while (($trace[$i]['function'] ?? null) === 'setData' && ($trace[$i]['object'] ?? null) === $subject
+                && in_array($trace[$i]['class'], $setters, true)) $i++;
+            $caller = $trace[$i] ?? [];
+            if (($caller['function'] ?? null) === 'prepare') {
+                $owner = $caller['object'] ?? null;
+                $prepareClass = $caller['class'] ?? null;
+                if ($prepareClass === Field::class && $owner !== $subject && isset($this->labels[$owner])) {
+                    // Field copies its own config into the wrapped component, then reads it back after preparation.
+                    $this->labels[$subject] = $this->labels[$owner];
+                    return;
+                }
+                if ($owner === $subject && in_array($prepareClass, [AbstractComponent::class, Field::class, Column::class], true)) return;
+            }
+        }
+        if ($ownership !== null) $ownership->loss = ['displaced', 'PHP wrote the native component label configuration'];
+    }
+
+    private function labelLoss(AbstractComponent $component): ?array
+    {
+        $ownership = $this->labels[$component];
+        if ($ownership->loss !== null) return $ownership->loss;
+        $config = self::labelConfig($component);
+        if (!array_key_exists('label', $config) || $config['label'] !== $ownership->label) {
+            return ['ambiguous', 'Native component label no longer matches its tracked configuration'];
+        }
+        return null;
+    }
+
     private function prepared($subject, array $params, $result, ?\Throwable $error, string $class): void
     {
+        if ($class === Field::class && isset($this->labels[$subject])) $this->fieldPreparations--;
         if ($error || !is_object($subject) || !$this->origin->admin()) return;
         foreach ($this->components[$subject] ?? [] as $item) {
             $expected = $item['type'] === 'button' ? AbstractComponent::class : UiFamily::COMPONENT_CLASSES[$item['type']];
             if ($class !== $expected || $item['kind'] === 'provider') continue;
-            if ($item['kind'] === 'label') {
-                $data = (new \ReflectionProperty(DataObject::class, '_data'))->getValue($subject);
-                if (!array_key_exists('label', $data['config'] ?? [])) {
-                    self::record($item, 'ui-prepared', 'ambiguous', 'Prepared native component has no configured label');
-                    continue;
-                }
+            $loss = $item['kind'] === 'label' ? $this->labelLoss($subject) : null;
+            if ($loss !== null) {
+                self::record($item, 'ui-prepared', ...$loss);
+                continue;
             }
             self::record($item, 'ui-prepared');
         }
@@ -202,16 +284,47 @@ final class UiRuntime
                 $bindings = array_filter($root['providers'], static fn(array $binding): bool => $binding['object'] === $provider);
             }
         }
-        $this->providerReads[] = ['bindings' => $bindings, 'seen' => []];
+        $this->providerReads[] = [
+            'subject' => $subject, 'bindings' => $bindings, 'seen' => [],
+            'provider' => reset($bindings)['object'] ?? null, 'depth' => 0, 'entered' => false,
+        ];
+    }
+
+    private function beginProviderData($subject, array $params, string $class): void
+    {
+        $index = array_key_last($this->providerReads);
+        if ($index === null) return;
+        $read = &$this->providerReads[$index];
+        if ($read['provider'] !== $subject) return;
+        if ($read['depth'] === 0) {
+            if (!self::calledFromDataSource($subject, $class, $read['subject'])) return;
+            $read['entered'] = false;
+        }
+        $read['depth']++;
+        foreach ($read['bindings'] as $binding) {
+            if ($class === $binding['methodClass']) $read['entered'] = true;
+        }
+    }
+
+    private static function calledFromDataSource(object $provider, string $class, object $root): bool
+    {
+        $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 8);
+        foreach ($trace as $index => $frame) {
+            if (($frame['object'] ?? null) !== $provider || $frame['class'] !== $class || $frame['function'] !== 'getData') continue;
+            $caller = $trace[$index + 1] ?? [];
+            return ($caller['object'] ?? null) === $root && $caller['function'] === 'getDataSourceData'
+                && in_array($caller['class'], [Listing::class, Form::class], true);
+        }
+        return false;
     }
 
     private function providerData($subject, array $params, $result, ?\Throwable $error, string $class): void
     {
         $index = array_key_last($this->providerReads);
-        if ($index === null || str_ends_with($class, '\Interceptor')) return;
+        if ($index === null) return;
         $read = &$this->providerReads[$index];
+        if ($read['provider'] !== $subject || $read['depth'] === 0 || --$read['depth'] !== 0 || !$read['entered']) return;
         foreach ($read['bindings'] as $binding) {
-            if ($binding['object'] !== $subject || isset($read['seen'][$binding['item']['id']])) continue;
             $read['seen'][$binding['item']['id']] = true;
             self::record($binding['item'], 'ui-provider-executed', $error ? 'failed' : 'observed');
         }
@@ -241,13 +354,21 @@ final class UiRuntime
         $items = [];
         $config = json_decode($match[1], true);
         $config = $config['*']['Magento_Ui/js/core/app']['components'] ?? [];
-        foreach ($root['items'] as $item) {
+        foreach ($root['items'] as [$item, $reference]) {
             if ($item['kind'] === 'provider') continue;
             $node = $config[$item['namespace']] ?? [];
             if ($item['type'] !== 'dataSource') $node = $node['children'][$item['namespace']] ?? [];
             foreach ($item['segments'] as $segment) $node = $node['children'][$segment] ?? [];
-            if (!isset($node['type']) || $item['kind'] === 'label' && !array_key_exists('label', $node['config'] ?? [])) continue;
-            $items[$item['id']] = $item;
+            $loss = null;
+            if ($item['kind'] === 'label') {
+                $labelComponent = $reference->get();
+                $loss = $labelComponent !== null && $labelComponent === self::componentAt($component, $item['segments'])
+                    ? $this->labelLoss($labelComponent)
+                    : ['ambiguous', 'The serialized UI path no longer points to the original native component'];
+                if ($loss === null && !array_key_exists('label', $node['config'] ?? [])) continue;
+            }
+            if ($loss === null && !isset($node['type'])) continue;
+            $items[$item['id']] = [$item, $loss];
         }
         ksort($items);
         if (!isset($this->scripts[$fingerprint])) {
@@ -276,9 +397,11 @@ final class UiRuntime
             $fingerprint = hash('sha256', $script);
             $delivery = $this->scripts[$fingerprint] ?? null;
             if ($delivery === null) continue;
-            foreach ($delivery['items'] as $item) {
+            foreach ($delivery['items'] as [$item, $loss]) {
                 if ($delivery['ambiguous']) {
                     self::record($item, 'ui-delivered', 'ambiguous', 'Identical native UI markup has competing source traces');
+                } elseif ($loss !== null) {
+                    self::record($item, 'ui-delivered', ...$loss);
                 } else {
                     self::record($item, 'ui-delivered');
                 }
