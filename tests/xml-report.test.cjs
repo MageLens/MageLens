@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const {createHash} = require('node:crypto');
-const {merge, writeReport} = require('../bin/report-xml.cjs');
+const {merge, writeReport, layoutEvents, countsAsLayoutCoverage} = require('../bin/report-xml.cjs');
 function fixture() {
     const file = 'app/code/Acme/Blog/etc/config.xml';
     const source = '<config>\n<first>used</first><second>unused</second>\n<!-- <script>unsafe</script> -->\n</config>';
@@ -1049,4 +1049,11 @@ test('a multiline layout attribute anchors and highlights only its lexical lines
     assert.match(html, /id="L4" class="line covered"/);
     assert.match(html, /id="L5" class="line covered"/);
     assert.match(html, /id="L6" class="line neutral"/);
+});
+
+test('every allowed layout event has a coverage classification', () => {
+    for (const effect of new Set(Object.values(layoutEvents).flat())) {
+        assert.equal(typeof countsAsLayoutCoverage(effect), 'boolean');
+    }
+    assert.throws(() => countsAsLayoutCoverage('layout-new-unclassified-effect'), /Unclassified layout effect/);
 });
