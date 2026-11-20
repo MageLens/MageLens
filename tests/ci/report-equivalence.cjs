@@ -128,8 +128,7 @@ function snapshot(directory) {
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
-                ...(/^(?:app\/design\/frontend\/|vendor\/[^/]+\/(?:theme-frontend-[^/]+|magento2-default-theme-csp)\/)/.test(file.path)
-                    && file.declarations.some(item => item.family === 'layout') ? {storefrontLayout: true} : {}),
+                ...(file.layoutProvider?.type === 'theme' && file.layoutProvider.area === 'frontend' ? {storefrontLayout: true} : {}),
                 lines: Object.fromEntries(Object.entries(object(file.lines)).map(([line, value]) => [line, value.state])),
                 declarations: sort(array(file.declarations).map(item => ({
                     id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],

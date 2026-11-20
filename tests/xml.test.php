@@ -352,3 +352,71 @@ echo "Empty and zero native magic action methods retain source identities.\n";
 checkXml(count(array_filter($magicMethods, static fn($item) => $item['layout']['instruction'] === 'action'
     && $item['layout']['kind'] === 'instruction' && !$item['supported'])) === 1,
     'An absent required method remains outside the supported action grammar');
+
+$module = 'app/code/Fixture/Module';
+$lexical = <<<'XML'
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <body>
+        <referenceBlock
+            name = "first"
+            template="Fixture_Module::a
+            b.phtml">
+            <arguments>
+                <argument name="value" xsi:type="string">first</argument>
+            </arguments>
+            <block name="own" template="Fixture_Module::own.phtml"/>
+            <referenceContainer name="nested">
+                <block name="child" template="Fixture_Module::child.phtml"/>
+                <referenceBlock name="inner" template="Fixture_Module::inner.phtml"/>
+            </referenceContainer>
+        </referenceBlock>
+        <referenceBlock name="empty"/>
+    </body>
+</page>
+XML;
+$lexicalPath = "$module/view/frontend/layout/ranges.xml";
+$items = LayoutManifest::declarations($lexicalPath, $lexical);
+$byPath = array_column($items, null, 'path');
+$refPath = '/page/body/referenceBlock[1]';
+$template = $byPath["$refPath/@template"];
+checkXml($template['startLine'] === 5 && $template['endLine'] === 6, 'Multiline attribute must retain its own lexical range');
+checkXml($byPath["$refPath/@name"]['startLine'] === 4 && $byPath["$refPath/@name"]['endLine'] === 4,
+    'Attribute followed by a multiline value must retain its own line');
+$targets = LayoutManifest::targets([['path' => $lexicalPath, 'sourceHash' => hash('sha256', $lexical), 'family' => 'layout',
+    'declarations' => $items]])[$lexicalPath]['targets'];
+$target = static fn(string $path) => $targets[$byPath[$path]['layout']['ordinal']];
+checkXml($target("$refPath/arguments/argument")['referenceOwner'] === $byPath[$refPath]['id'], 'Argument lost its outer reference');
+checkXml(!isset($target("$refPath/block")['referenceOwner']) && !isset($target("$refPath/referenceContainer/block")['referenceOwner']),
+    'Nested block leaked coverage to a reference');
+$innerPath = "$refPath/referenceContainer/referenceBlock";
+checkXml($target($innerPath)['referenceOwner'] === $byPath[$innerPath]['id'], 'Nested reference attribute lost its own target');
+checkXml(!$target($refPath)['reference']['empty'] && !$target("$refPath/referenceContainer")['reference']['empty']
+    && $target('/page/body/referenceBlock[2]')['reference']['empty'], 'Reference emptiness changed');
+
+$theme = 'app/design/frontend/Fixture/theme/Fixture_Module';
+$vendor = 'vendor/acme/module';
+foreach ([
+    ["$module/view/frontend/layout/layouts.xml", '<page><body/></page>', 'page', 'file-selection'],
+    ["$module/view/adminhtml/layout/page_types.xml", '<layout><container name="target"/></layout>', 'generic', 'file-selection'],
+    ["$module/view/base/layouts.xml", '<page_layouts><layout id="test"/></page_layouts>', 'registry', 'registry-entry'],
+    ["$module/etc/frontend/page_types.xml", '<page_types><type id="test" label="Test"/></page_types>', 'page-types', 'page-type'],
+    ["$theme/layouts.xml", '<page_layouts><layout id="test"/></page_layouts>', 'registry', 'registry-entry'],
+    ["$theme/layout/override/base/layouts.xml", '<page><body/></page>', 'page', 'file-override'],
+    ["$theme/layout/override/theme/Parent/default/page_types.xml", '<page/>', 'page', 'file-override'],
+    ["$vendor/view/frontend/page_layout/layouts.xml", '<layout/>', 'wireframe', 'wireframe'],
+    ['vendor/acme/theme/Fixture_Module/layout/page_types.xml', '<page/>', 'page', 'file-selection'],
+    ["$module/view/frontend/layout/layouts.xml", '<page_layouts><layout id="test"/></page_layouts>', 'custom', 'instruction'],
+    ["$module/etc/frontend/page_types.xml", '<page/>', 'custom', 'instruction'],
+] as [$path, $source, $type, $kind]) {
+    checkXml(LayoutManifest::isLayout($path), "Native provider path missing for $path");
+    $items = LayoutManifest::declarations($path, $source);
+    checkXml(array_unique(array_column(array_column($items, 'layout'), 'fileType')) === [$type]
+        && in_array($kind, array_column(array_column($items, 'layout'), 'kind'), true), "Misclassified native layout $path ($type)");
+}
+foreach ([
+    "$module/view/frontend/web/layout/layouts.xml",
+    "$theme/web/layout/page_types.xml",
+    "$vendor/view/frontend/web/layout/static.xml",
+    "$module/etc/subdirectory/layouts.xml",
+    "$module/view/frontend/layout/override/base/test.xml",
+] as $path) checkXml(!LayoutManifest::isLayout($path), "Static or non-provider XML accepted: $path");

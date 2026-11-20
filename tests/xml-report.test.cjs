@@ -1022,3 +1022,31 @@ test('native action scope decisions remain independent of action calls and skipp
         assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /Unexpected layout effect/);
     }
 });
+
+test('a multiline layout attribute anchors and highlights only its lexical lines', t => {
+    const {manifest, record, sources} = fixture();
+    const path = 'app/code/Acme/Blog/view/frontend/layout/range.xml';
+    const source = Buffer.from('<layout>\n <block\n name="untouched"\n template="Fixture_Module::a\n b.phtml">\n </block>\n</layout>\n');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const common = {family: 'layout', supported: true, declaredScope: {type: 'frontend', code: ''}};
+    const layout = {element: 'untouched', ordinal: 1, handle: 'range', fileType: 'generic', instruction: 'block'};
+    manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+        {...common, id: 'named', path: '/layout/block/@name', startLine: 3, endLine: 3, layout: {...layout, kind: 'position-name'}},
+        {...common, id: 'template', path: '/layout/block/@template', startLine: 4, endLine: 5, layout: {...layout, kind: 'template'}},
+    ]});
+    manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {'position-name': 'named', template: 'template'}}}}};
+    sources[path] = source;
+    const result = merge(manifest, [{...record, layoutHook: true, events: [
+        {id: 'template', type: 'layout-template-executed', hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'},
+    ]}], sources);
+    const output = fs.mkdtempSync(os.tmpdir() + '/magelens-layout-ranges-');
+    t.after(() => fs.rmSync(output, {recursive: true, force: true}));
+    writeReport(result, sources, output);
+    const html = fs.readFileSync(output + '/' + path + '.html', 'utf8');
+    assert.match(html, /href="#L4">\/layout\/block\/@template<\/a><small>.*lines 4–5/);
+    assert.match(html, /id="L2" class="line neutral"/);
+    assert.match(html, /id="L3" class="line uncovered"/);
+    assert.match(html, /id="L4" class="line covered"/);
+    assert.match(html, /id="L5" class="line covered"/);
+    assert.match(html, /id="L6" class="line neutral"/);
+});

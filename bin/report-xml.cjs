@@ -544,7 +544,7 @@ function merge(manifest, records, sources) {
                 const decisions = new Set(item.evidence.map(event => layoutDecisions[event.type]).filter(Boolean));
                 if (item.state === 'uncovered' && ['page', 'generic'].includes(item.layout.fileType)) {
                     // Theme fallback and replacement cannot be inferred from a cache key.
-                    if (/^(?:app\/code\/|vendor\/[^/]+\/[^/]+\/.*view\/)/.test(file.path)) {
+                    if (file.layoutProvider ? file.layoutProvider.type === 'module' : /^(?:app\/code\/|vendor\/[^/]+\/[^/]+\/.*view\/)/.test(file.path)) {
                         const areas = item.declaredScope.type === 'base' ? ['frontend', 'adminhtml'] : [item.declaredScope.type];
                         for (const area of areas) {
                             for (const key of limitedHandles.get(JSON.stringify([area, item.layout.handle])) || []) {

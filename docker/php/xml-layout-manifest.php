@@ -11,26 +11,52 @@ final class LayoutManifest
 {
     public static function isLayout(string $path): bool
     {
-        return (bool) preg_match('~/(?:layout|page_layout)/.+\.xml$|/(?:layouts|page_types)\.xml$~', $path)
-            && !str_contains($path, '/ui_component/');
+        return self::provider($path) !== null;
     }
 
-    public static function declarations(string $path, string $source): array
+    public static function provider(string $path, array $vendorThemes = []): ?array
     {
+        $area = '(?<area>frontend|adminhtml|base)';
+        $module = '(?:app/code/[^/]+(?:/[^/]+)?|vendor/[^/]+/[^/]+(?:/(?!view/|etc/|web/)[^/]+)*)';
+        $theme = "(?:app/design/$area/[^/]+/[^/]+|vendor/[^/]+/[^/]+)";
+        $paths = [
+            ['module', 'handle', "~^$module/view/$area/layout/[^/]+\\.xml$~D"],
+            ['module', 'wireframe', "~^$module/view/$area/page_layout/[^/]+\\.xml$~D"],
+            ['module', 'registry', "~^$module/view/$area/layouts\\.xml$~D"],
+            ['module', 'page-types', "~^$module/etc/(?:$area/)?page_types\\.xml$~D"],
+            ['theme', 'handle', "~^$theme/[^/]+_[^/]+/layout/[^/]+\\.xml$~D"],
+            ['theme', 'override', "~^$theme/[^/]+_[^/]+/layout/override/(?:base|theme/[^/]+/[^/]+)/[^/]+\\.xml$~D"],
+            ['theme', 'wireframe', "~^$theme/[^/]+_[^/]+/page_layout/(?:override/(?:base|theme/[^/]+/[^/]+)/)?[^/]+\\.xml$~D"],
+            ['theme', 'registry', "~^$theme/[^/]+_[^/]+/layouts\\.xml$~D"],
+        ];
+        foreach ($paths as [$type, $document, $pattern]) {
+            if (!preg_match($pattern, $path, $match)) continue;
+            $scope = ($match['area'] ?? '') ?: 'base';
+            if ($type === 'theme' && str_starts_with($path, 'vendor/')) {
+                $root = implode('/', array_slice(explode('/', $path), 0, 3));
+                $scope = $vendorThemes[$root] ?? $scope;
+            }
+            return ['type' => $type, 'document' => $document, 'area' => $scope];
+        }
+        return null;
+    }
+
+    public static function declarations(string $path, string $source, ?array $provider = null): array
+    {
+        $provider ??= self::provider($path);
+        if ($provider === null) return [];
         $document = Xml::document($source);
         $root = $document->documentElement;
-        $fileType = match (basename($path)) {
-            'layouts.xml' => 'registry',
-            'page_types.xml' => 'page-types',
-            default => match (true) {
-                $root->tagName === 'page' && str_contains($path, '/layout/') => 'page',
-                $root->tagName === 'layout' && str_contains($path, '/page_layout/') => 'wireframe',
-                $root->tagName === 'layout' && str_contains($path, '/layout/') => 'generic',
-                default => 'custom',
-            },
+        $fileType = match ([$provider['document'], $root->tagName, $root->namespaceURI]) {
+            ['registry', 'page_layouts', null] => 'registry',
+            ['page-types', 'page_types', null] => 'page-types',
+            ['wireframe', 'layout', null] => 'wireframe',
+            ['handle', 'page', null], ['override', 'page', null] => 'page',
+            ['handle', 'layout', null], ['override', 'layout', null] => 'generic',
+            default => 'custom',
         };
-        $area = preg_match('~/(?:view|etc|design)/(frontend|adminhtml|base)/~', $path, $match) ? $match[1] : 'base';
-        $ranges = Xml::ranges($source, $document, true);
+        $area = $provider['area'];
+        $ranges = Xml::ranges($source, $document, true, true);
         $handle = basename($path, '.xml');
         $result = [];
         foreach ($document->getElementsByTagName('*') as $index => $node) {
@@ -49,11 +75,12 @@ final class LayoutManifest
             $kind = match (true) {
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && $node->tagName === 'visibilityCondition' => 'visibility',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true) && self::visibilityArgument($node) => 'visibility-argument',
-                $fileType === 'page-types' && $node->tagName === 'type' => 'page-type',
-                $fileType === 'registry' && $node->tagName === 'layout' => 'registry-entry',
-                $fileType === 'registry' && $node->tagName === 'label' => 'registry-label',
+                $fileType === 'page-types' && $node->parentNode === $root && $node->tagName === 'type' => 'page-type',
+                $fileType === 'registry' && $node->parentNode === $root && $node->tagName === 'layout' => 'registry-entry',
+                $fileType === 'registry' && $node->parentNode->parentNode === $root
+                    && $node->parentNode->nodeName === 'layout' && $node->tagName === 'label' => 'registry-label',
                 in_array($fileType, ['page', 'generic'], true) && $index === 0
-                    && preg_match('~/layout/override/(?:base|theme)/~', $path) => 'file-override',
+                    && $provider['document'] === 'override' => 'file-override',
                 in_array($fileType, ['page', 'generic'], true) && $index === 0 => 'file-selection',
                 $blockNode && $node->tagName === 'block' => 'block',
                 in_array($fileType, ['page', 'generic', 'wireframe'], true)
@@ -165,6 +192,9 @@ final class LayoutManifest
                 };
                 $instructions[] = [$attribute->nodeName, $kind];
             }
+            $elementRange = $ranges[$position];
+            $attributeRanges = $elementRange['attributes'];
+            unset($elementRange['attributes']);
             foreach ($instructions as [$attribute, $kind]) {
                 $supported = in_array($kind, ['block', 'reference', 'reference-name', 'template', 'action', 'action-method', 'action-ifconfig', 'action-argument', 'action-argument-name', 'action-item', 'action-item-name', 'configured-argument', 'configured-argument-name', 'configured-item', 'configured-item-name', 'argument', 'argument-name', 'argument-type', 'argument-translate', 'argument-shared', 'argument-model', 'argument-helper', 'argument-path', 'argument-updater', 'argument-group', 'parameter', 'parameter-name', 'include', 'include-handle', 'file-selection', 'registry-entry', 'registry-id', 'registry-label', 'page-type', 'page-type-id', 'page-type-label', 'move', 'removal',
                     'wireframe', 'wireframe-selection', 'page-title', 'asset-removal', 'asset-removal-node', 'container',
@@ -197,7 +227,7 @@ final class LayoutManifest
                     'path' => $identity,
                     'family' => 'layout',
                     'declaredScope' => ['type' => $area, 'code' => ''],
-                    ...$ranges[$position],
+                    ...($attribute === null ? $elementRange : $attributeRanges[$attribute]),
                     'node' => $identity,
                     'layout' => ['kind' => $kind, 'element' => $element, 'handle' => $handle,
                         'fileType' => $fileType, 'ordinal' => $index, 'instruction' => $node->tagName,
@@ -385,41 +415,44 @@ final class LayoutManifest
         foreach ($files as $file) {
             if ($file['family'] !== 'layout') continue;
             $targets = [];
+            $scopes = [];
             foreach ($file['declarations'] as $item) {
-                if (!$item['supported'] && $item['layout']['kind'] !== 'file-selection') continue;
                 $details = $item['layout'];
-                $targets[$details['ordinal']]['element'] = $details['element'];
-                $targets[$details['ordinal']]['instruction'] = $details['instruction'];
-                $targets[$details['ordinal']]['ids'][$details['kind']] = $item['id'];
-                if (isset($details['selection'])) $targets[$details['ordinal']]['selection'] = $details['selection'];
-            }
-            $references = [];
-            foreach ($file['declarations'] as $item) {
-                if (!$item['supported'] || $item['layout']['kind'] !== 'reference') continue;
-                $ordinal = $item['layout']['ordinal'];
-                $definition = ['id' => $item['id'], 'nameId' => $targets[$ordinal]['ids']['reference-name'],
-                    'element' => $item['layout']['element'], 'empty' => true,
-                    'removeId' => $targets[$ordinal]['ids']['removal'] ?? null];
-                foreach ($file['declarations'] as $other) {
-                    if ($other['id'] !== $definition['id'] && $other['id'] !== $definition['nameId']
-                        && str_starts_with($other['path'], $item['path'] . '/')) $definition['empty'] = false;
-                }
-                $targets[$ordinal]['reference'] = $definition;
-                $references[$item['path']] = $definition;
-            }
-            // A nested block/container/UI placement starts its own target scope.
-            // Its effects cannot prove that an enclosing reference matched.
-            uksort($references, static fn($left, $right) => strlen($right) <=> strlen($left));
-            foreach ($file['declarations'] as $item) {
-                if (!$item['supported'] || in_array($item['layout']['kind'], ['reference', 'reference-name'], true)) continue;
-                foreach ($references as $path => $definition) {
-                    if (!str_starts_with($item['path'], $path . '/')) continue;
-                    $suffix = substr($item['path'], strlen($path));
-                    if (!preg_match('~/(?:block|container|uiComponent|referenceBlock|referenceContainer)(?:\[|/|$)~', $suffix)) {
-                        $targets[$item['layout']['ordinal']]['referenceOwner'] = $definition['id'];
+                $ordinal = $details['ordinal'];
+                $kind = $details['kind'];
+                if ($details['attribute'] === null) {
+                    while ($scopes && !str_starts_with($item['path'], end($scopes)['path'] . '/')) array_pop($scopes);
+                    $parent = end($scopes);
+                    $nearest = $parent['nearest'] ?? null;
+                    $owner = $parent['owner'] ?? null;
+                    if ($nearest !== null) $targets[$nearest]['reference']['empty'] = false;
+                    if (in_array($details['instruction'], ['block', 'container', 'uiComponent', 'referenceBlock', 'referenceContainer'], true)) {
+                        $owner = null;
                     }
-                    break;
+                    if ($item['supported'] && $kind === 'reference') {
+                        $nearest = $owner = $ordinal;
+                        $targets[$ordinal]['reference'] = ['id' => $item['id'], 'nameId' => null,
+                            'element' => $details['element'], 'empty' => true, 'removeId' => null];
+                    }
+                    $scopes[] = ['path' => $item['path'], 'nearest' => $nearest, 'owner' => $owner];
+                } else {
+                    $scope = end($scopes);
+                    $nearest = $scope['nearest'];
+                    $owner = $scope['owner'];
+                    if ($nearest !== null && $kind !== 'reference-name') $targets[$nearest]['reference']['empty'] = false;
                 }
+                if (!$item['supported'] && $kind !== 'file-selection') continue;
+                $target = &$targets[$ordinal];
+                $target['element'] = $details['element'];
+                $target['instruction'] = $details['instruction'];
+                $target['ids'][$kind] = $item['id'];
+                if (isset($details['selection'])) $target['selection'] = $details['selection'];
+                if ($kind === 'reference-name') $target['reference']['nameId'] = $item['id'];
+                if ($kind === 'removal' && isset($target['reference'])) $target['reference']['removeId'] = $item['id'];
+                if ($owner !== null && !in_array($kind, ['reference', 'reference-name'], true)) {
+                    $target['referenceOwner'] = $targets[$owner]['reference']['id'];
+                }
+                unset($target);
             }
             if ($targets) $result[$file['path']] = ['hash' => $file['sourceHash'], 'targets' => $targets];
         }
