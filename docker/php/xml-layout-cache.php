@@ -92,7 +92,7 @@ final class LayoutCacheCoverage
         if ($selected === null) {
             $property = LayoutXmlOwnership::unhookedProperty($merge, 'handles');
             if ($property?->getDeclaringClass()->getName() !== Merge::class
-                || (new \ReflectionMethod($merge, 'getHandles'))->getDeclaringClass()->getName() !== Merge::class) return;
+                || !LayoutXmlOwnership::nativeMethod($merge, Merge::class, 'getHandles')) return;
             $storage = $property->getRawValue($merge);
             if (!is_array($storage)) return;
             $selected = array_keys($storage);
