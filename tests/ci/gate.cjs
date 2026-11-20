@@ -67,7 +67,7 @@ function gate() {
     for (const name of ['static', 'integration', 'copyright', 'e2e', 'magento', 'images']) {
         if (needs[name]?.result !== 'success') errors.push(`${name}: ${needs[name]?.result || 'missing'}`);
     }
-    const reports = [], themeReports = [], runIds = new Set();
+    const linuxReports = [], themeReports = [], runIds = new Set();
     const previews = previewConfiguration();
     let previewProvenance;
     for (const entry of cases) {
@@ -82,15 +82,15 @@ function gate() {
             assert.ok(!runIds.has(id), 'Duplicate collection run ID');
             runIds.add(id);
             themeReports.push({...entry, snapshot: readProjection(directory, snapshotFile)});
-            reports.push(directory);
+            if (entry.os === 'ubuntu-latest') linuxReports.push(directory);
         } catch (error) { errors.push(`${entry.id}: ${error.message}`); }
     }
-    if (reports.length === cases.length) {
+    if (themeReports.length === cases.length) {
         try {
-            execFileSync(process.execPath, [path.join(__dirname, '..', 'compare-matrix.cjs'), ...reports], {stdio: 'inherit',
+            execFileSync(process.execPath, [path.join(__dirname, '..', 'compare-matrix.cjs'), ...linuxReports], {stdio: 'inherit',
                 env: {...process.env, MAGELENS_MATRIX_REPORT: 'ci-gate/matrix-comparison.json'}});
         } catch { errors.push('Complete matrix coverage comparison failed'); }
-    } else errors.push(`Matrix comparison incomplete: ${reports.length}/${cases.length} reports`);
+    } else errors.push(`Matrix comparison incomplete: ${themeReports.length}/${cases.length} reports`);
     fs.mkdirSync('ci-gate', {recursive: true});
     const themes = compareThemes(themeReports, cases);
     fs.writeFileSync('ci-gate/theme-report-comparison.json', JSON.stringify(themes, null, 2) + '\n');

@@ -46,7 +46,7 @@ export function login(username = 'application', password = 'ApplicationOnly12345
     cy.get('.action-login').click();
     cy.get('#nav').should('be.visible');
 }
-export function navigateAdminMenu(parent, child) {
+export function navigateAdminMenu(parent, child, onChild) {
     // The sidebar HTML is visible before Magento binds its click handlers.
     cy.get('.admin__menu-overlay', {timeout: Cypress.config('pageLoadTimeout')}).should('exist');
     const menuPoint = element => {
@@ -66,6 +66,7 @@ export function navigateAdminMenu(parent, child) {
         // Retry geometry assertions just like Cypress's actionability checks.
         return cy.wrap(link).should(link => { menuPoint(link[0]); }).then(link => {
             const {x, y} = menuPoint(link[0]);
+            if (selector === child) onChild?.(link[0]);
             return cy.wrap(link).click(x, y, {scrollBehavior: false});
         });
     });

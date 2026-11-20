@@ -1,8 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, login, section, findRecord, save, remove, visitBlog, storefrontMessage} from './support';
+import {fixtures, headers, get, login, navigateAdminMenu, section, findRecord, save, remove, visitBlog, storefrontMessage} from './support';
 
 function fillPost(title, slug, category) {
     cy.get('#blog-title').clear().type(title);
@@ -159,5 +159,38 @@ describe('Blog Admin and publishing', () => {
                 headers: headers(), failOnStatusCode: false, body: {form_key: win.FORM_KEY, name: 'Forbidden', slug: f.prefix + 'forbidden', is_active: '1'}})
                 .its('status').should('equal', 403);
         });
+        if (f.navigation) {
+            const entry = name => `[data-ui-id="menu-magelens-adminnavigation-${name}"]`;
+            cy.get(entry('inherited-posts')).should('not.exist');
+            cy.clearCookies({log: false});
+            cy.setCookie('application_coverage', f.run, {
+                domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
+            });
+            // The current browser document exposes the native response token.
+            // XHR and fetch timings cannot supply a document navigation entry.
+            const documentResponse = win => win.performance.getEntriesByType('navigation')[0]?.serverTiming
+                .find(entry => entry.name === 'magelens-response')?.description;
+            login(f.navigation.user, f.navigation.password);
+            cy.get(entry('inherited-posts') + ' > a').should('exist');
+            cy.get(entry('inherited-categories') + ' > a').should('exist');
+            cy.get(entry('removed')).should('not.exist');
+            let source, clicked;
+            cy.window({log: false}).then(win => { source = documentResponse(win); });
+            navigateAdminMenu('#menu-application-blog-manage > a', entry('inherited-posts') + ' > a', link => { clicked = link.href; });
+            get('admin-new').should('contain', 'Add post');
+            cy.window({log: false}).then(win => {
+                expect(win.location.href === clicked, 'navigation matches the clicked menu entry').to.equal(true);
+                const destination = documentResponse(win);
+                if (source === undefined && destination === undefined) return;
+                expect(source, 'menu document response ID').to.match(/^[a-f0-9]{32}$/);
+                expect(destination, 'clicked document response ID').to.match(/^[a-f0-9]{32}$/);
+                expect(destination, 'distinct navigation response').not.to.equal(source);
+                return cy.task('recordXmlBrowserEvidence',
+                    {type: 'menu-followed', identity: 'MageLens_AdminNavigation::inherited_posts', response: source, destination}, {log: false});
+            });
+            // Open the sibling directly. It must not inherit the preceding click.
+            cy.get(entry('inherited-categories') + ' > a', {log: false}).then(link => cy.visit(link[0].href, {log: false}));
+            get('admin-new').should('contain', 'Add category');
+        }
     });
 });

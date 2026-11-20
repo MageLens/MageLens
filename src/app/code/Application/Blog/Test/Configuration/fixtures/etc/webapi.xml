@@ -9,4 +9,16 @@ License: see LICENSE in the repository root.
         <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
         <resources><resource ref="anonymous"/></resources>
     </route>
+    <route url="/V1/magelens/area-probe/:scenario" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="variant"/>
+        <resources><resource ref="anonymous"/></resources>
+    </route>
+    <route url="/V1/magelens/area-probe/restricted" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
+        <resources><resource ref="Application_Blog::manage"/></resources>
+    </route>
+    <route url="/V1/magelens/area-probe/unused" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
+        <resources><resource ref="anonymous"/></resources>
+    </route>
 </routes>

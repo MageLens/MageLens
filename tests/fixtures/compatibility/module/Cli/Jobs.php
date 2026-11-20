@@ -35,6 +35,16 @@ class Jobs
         $schedule->setMessages($this->config->getValue('magelens_probe/cron/magerun_message'));
     }
 
+    public function runGenerated(Schedule $schedule): void
+    {
+        $schedule->setMessages('generated-handler-ran');
+    }
+
+    public function fail(Schedule $schedule): void
+    {
+        throw new \RuntimeException('Cron probe handler failed intentionally');
+    }
+
     public function consume(string $token): void
     {
         if (file_put_contents(self::marker($token), $token) === false) {
