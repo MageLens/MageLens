@@ -43,6 +43,8 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
     const sent = page.waitForRequest('**/coverageprobe/index/late');
     await page.evaluate(() => { fetch('/coverageprobe/index/late').catch(() => {}); });
     await sent;
+    // Like the Cypress spec, give the request time to reach PHP before the page closes.
+    await page.waitForTimeout(500);
 });
 test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
     await page.goto('/coverageprobe/');

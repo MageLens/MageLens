@@ -13,7 +13,7 @@ class Late implements \Magento\Framework\App\Action\HttpGetActionInterface
     public function __construct(private \Magento\Framework\Controller\Result\RawFactory $raw) {}
     public function execute()
     {
-        usleep(2000000);
+        usleep(5000000);
         return $this->raw->create()->setHeader('Content-Type', 'text/plain; charset=UTF-8', true)->setContents('late');
     }
 }
