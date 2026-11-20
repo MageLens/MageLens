@@ -17,7 +17,9 @@ test('preserves command arguments and runs a named cron job through MageRun', as
     const job = 'magelens_magerun_probe';
     try {
         assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), []);
-        await magerun(['sys:cron:run', job]);
+        await probe('cold-cron-config', job);
+        const native = await magerun(['sys:cron:run', job]);
+        assert.match(native.stdout, /runNamed.*done/s);
         assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), ['magerun-handler-ran']);
     } finally {
         await probe('clean-magerun', job);
@@ -25,15 +27,45 @@ test('preserves command arguments and runs a named cron job through MageRun', as
 });
 
 test('executes a scheduled Magento cron job', async () => {
-    const {stdout} = await probe('schedule', '0');
-    const schedule = stdout.trim();
-    assert.match(schedule, /^\d+$/);
+    const schedules = new Map();
     try {
-        assert.equal((await probe('status', schedule)).stdout.trim(), 'pending');
+        for (const [job, expectedStatus] of [['magelens_probe', 'success'], ['magelens_failing_probe', 'error']]) {
+            const schedule = (await probe('schedule', job)).stdout.trim();
+            assert.match(schedule, /^\d+$/);
+            schedules.set(schedule, expectedStatus);
+            assert.equal((await probe('status', schedule)).stdout.trim(), 'pending');
+        }
+        await probe('cold-cron-config', 'magelens_probe');
         await magento(['cron:run', '--group=magelens_probe']);
-        assert.equal((await probe('status', schedule)).stdout.trim(), 'success');
+        for (const [schedule, expectedStatus] of schedules) {
+            assert.equal((await probe('status', schedule)).stdout.trim(), expectedStatus);
+        }
+
+        const warm = (await probe('schedule', 'magelens_probe')).stdout.trim();
+        assert.match(warm, /^\d+$/);
+        schedules.set(warm, 'success');
+        await magento(['cron:run', '--group=magelens_probe']);
+        assert.equal((await probe('status', warm)).stdout.trim(), 'success');
+
+        await probe('clean-generated', '0');
+        assert.deepEqual(JSON.parse((await probe('generated-schedules', '0')).stdout), []);
+        await probe('cold-cron-config', 'magelens_generated_probe');
+        await magento(['cron:run', '--group=magelens_generated_probe']);
+        const generated = JSON.parse((await probe('generated-schedules', '0')).stdout);
+        assert.ok(generated.includes('pending'), 'The native scheduler must persist a future due row');
+        assert.ok(generated.every(status => status === 'pending' || status === 'success'));
+
+        // At a minute boundary, the observer's dispatch clock may precede the
+        // generator's clock. Prove callback entry with an explicitly due row.
+        const generatedDue = (await probe('schedule', 'magelens_generated_probe')).stdout.trim();
+        assert.match(generatedDue, /^\d+$/);
+        assert.equal((await probe('status', generatedDue)).stdout.trim(), 'pending');
+        await probe('cold-cron-config', 'magelens_generated_probe');
+        await magento(['cron:run', '--group=magelens_generated_probe']);
+        assert.equal((await probe('status', generatedDue)).stdout.trim(), 'success');
     } finally {
-        await probe('unschedule', schedule);
+        for (const id of schedules.keys()) await probe('unschedule', id);
+        await probe('clean-generated', '0');
     }
 });
 

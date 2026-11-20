@@ -12,6 +12,9 @@ namespace MageLens\Compatibility\Cli;
 use Magento\Cron\Model\ResourceModel\Schedule as ScheduleResource;
 use Magento\Cron\Model\Schedule;
 use Magento\Cron\Model\ScheduleFactory;
+use Magento\Cron\Observer\ProcessCronQueueObserver;
+use Magento\Framework\App\CacheInterface;
+use Magento\Framework\Config\CacheInterface as CronConfigCache;
 use Magento\Framework\MessageQueue\PublisherInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -21,10 +24,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class Probe extends Command
 {
+    private const CRON_PROBES = ['magelens_probe', 'magelens_failing_probe', 'magelens_generated_probe'];
+
     public function __construct(
         private readonly ScheduleFactory $schedules,
         private readonly ScheduleResource $resource,
-        private readonly PublisherInterface $publisher
+        private readonly PublisherInterface $publisher,
+        private readonly CacheInterface $cache,
+        private readonly CronConfigCache $cronConfigCache
     ) {
         parent::__construct('magelens:probe');
     }
@@ -52,9 +59,12 @@ class Probe extends Command
                 pcntl_waitpid($pid, $status);
                 return pcntl_wifexited($status) ? pcntl_wexitstatus($status) : self::FAILURE;
             case 'schedule':
+                if (!in_array($value, self::CRON_PROBES, true)) {
+                    throw new \InvalidArgumentException('Unknown probe job');
+                }
                 $now = time();
                 $schedule = $this->schedules->create()
-                    ->setJobCode('magelens_probe')
+                    ->setJobCode($value)
                     ->setStatus(Schedule::STATUS_PENDING)
                     ->setCreatedAt(gmdate('Y-m-d H:i:s', $now))
                     ->setScheduledAt(gmdate('Y-m-d H:i:00', $now - 60));
@@ -67,8 +77,23 @@ class Probe extends Command
             case 'unschedule':
                 $this->resource->getConnection()->delete($this->resource->getMainTable(), [
                     'schedule_id = ?' => $value,
-                    'job_code = ?' => 'magelens_probe',
+                    'job_code IN (?)' => ['magelens_probe', 'magelens_failing_probe'],
                 ]);
+                break;
+            case 'generated-schedules':
+                $db = $this->resource->getConnection();
+                $query = $db->select()->from($this->resource->getMainTable(), ['status'])
+                    ->where('job_code = ?', 'magelens_generated_probe')->order('scheduled_at');
+                $output->writeln(json_encode($db->fetchCol($query), JSON_THROW_ON_ERROR));
+                break;
+            case 'clean-generated':
+                $this->resource->getConnection()->delete($this->resource->getMainTable(), [
+                    'job_code = ?' => 'magelens_generated_probe',
+                ]);
+                $this->cache->remove(ProcessCronQueueObserver::CACHE_KEY_LAST_SCHEDULE_GENERATE_AT . 'magelens_generated_probe');
+                break;
+            case 'cold-cron-config':
+                $this->cronConfigCache->remove('crontab_config_cache');
                 break;
             case 'magerun-messages':
                 $db = $this->resource->getConnection();
@@ -106,7 +131,7 @@ class Probe extends Command
     {
         $schedule = $this->schedules->create();
         $this->resource->load($schedule, $id);
-        if ($schedule->getJobCode() !== 'magelens_probe') {
+        if (!in_array($schedule->getJobCode(), self::CRON_PROBES, true)) {
             throw new \RuntimeException('Unknown probe schedule');
         }
         return $schedule;
