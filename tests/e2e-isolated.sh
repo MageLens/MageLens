@@ -6,6 +6,7 @@
 set -euo pipefail
 export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true
 source "$(dirname "$0")/../bin/common"
+source "$(dirname "$0")/e2e-xml-proofs.sh"
 preflight
 [[ $# == 0 ]] || fail 'Usage: bash tests/e2e-isolated.sh (see tests/README.md for configuration)'
 theme=${MAGELENS_E2E_THEME:-luma}
@@ -96,8 +97,8 @@ fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
 cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
-cp tests/php-report.test.php tests/xml-observers.test.php tests/xml-observer-interceptor.php tests/xml-plugins.test.php tests/xml-preference-hook-proof.php tests/xml-preferences.test.php tests/xml-di-usage-hook-proof.php "$scratch/docker/php/e2e/"
-cp tests/xml-layout-configured-url-proof.php tests/xml-layout-controller-asset-proof.php tests/xml-layout-head-metadata-proof.php tests/xml-layout-page-falsy-proof.php tests/xml-layout-disabled-module-proof.php tests/xml-layout-configured-fields-proof.php tests/xml-layout-data-reference-proof.php tests/xml-layout-scope-bootstrap-proof.php tests/xml-layout-internal-bridge.test.php tests/xml-layout-early-hooks.php tests/xml-layout-scoped-closure-proof.php tests/xml-internal-closure-hooks.test.php tests/xml-layout-reflection-write-proof.php tests/xml-layout-opaque-action-proof.php tests/xml-internal-property-hooks.test.php tests/xml-layout-direct-data-proof.php tests/xml-layout-merge-cache-proof.php tests/xml-layout-nested-modifiers-proof.php tests/xml-compiled-di-hook-proof.php tests/xml-layout-template-field-proof.php tests/xml-layout-direct-template-proof.php tests/xml-layout-factory-lazy-proof.php tests/xml-layout-argument-groups-proof.php tests/xml-layout-argument-fields-proof.php tests/xml-layout-template-value-proof.php tests/xml-layout-failed-action-proof.php tests/xml-layout-shared-action-proof.php tests/xml-layout-magic-action-proof.php tests/xml-layout-callback-health-proof.php tests/xml-layout-argument-storage-proof.php tests/xml-layout-runtime-hooks.test.php tests/xml-layout-names-hook-proof.php tests/xml-layout-action-guard-proof.php tests/xml-layout-file-descriptor-hook-proof.php tests/xml-layout-registry-hook-proof.php tests/xml-layout-ui-hook-proof.php tests/xml-layout-reader-hook-proof.php tests/xml-layout-merge-hook-proof.php tests/xml-layout-argument-hook-proof.php tests/xml-layout-class-hook-proof.php tests/xml-layout-template-hook-proof.php tests/xml-layout-template-validation-hook-proof.php tests/xml-layout-cache-hook-proof.php tests/xml-layout-page-cache-hook-proof.php tests/xml-layout-shared-hook-proof.php tests/xml-layout-move-hook-proof.php tests/xml-layout-move-lazy-proof.php tests/xml-layout-file-list-hook-proof.php tests/xml-layout-render-hook-proof.php tests/xml-layout-falsy-hook-proof.php tests/xml-layout-property-hook-proof.php tests/xml-layout-dependency-hook-proof.php tests/xml-layout-reference-hook-proof.php tests/xml-layout-metadata-hook-proof.php tests/xml-layout-selection-hook-proof.php tests/xml-config-theme-proof.php tests/xml-layout-native-interceptor.php tests/xml-layout-bounds.test.php "$scratch/docker/php/e2e/"
+cp tests/php-report.test.php "$scratch/docker/php/e2e/"
+stage_xml_proofs "$scratch/docker/php/e2e"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
@@ -152,6 +153,25 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
+    if [[ "$platform/$theme/$runner/$mode" == magento/luma/cypress/developer ]]; then
+        ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
+        mkdir -p coverage
+        for action in index view; do
+            for collection in --without-collector ''; do
+                layout_proof blog-constructor "$action" ${collection:+"$collection"}
+            done
+        done
+        for pass in default warm; do
+            if [[ "$pass" == warm ]]; then cp coverage/xml/coverage.json .runtime/default-xml.json; fi
+            printf 'obsolete report content\n' > coverage/obsolete-publication.txt
+            MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage | tee .runtime/coverage-run.log
+            ./bin/runner node tests/verify-report-publication.cjs
+            ./bin/runner node tests/verify-scenarios.cjs
+        done
+        ./bin/runner node tests/verify-layout-warm-repeat.cjs .runtime/default-xml.json
+        if [[ "${MAGELENS_E2E_FOCUS:-}" == default-coverage ]]; then exit; fi
+    fi
     bash tests/runner-container.sh "$(./bin/application-compose images -q runner)"
     # Verify HTTPS routing through nginx, including the read-only viewer redirect.
     ./bin/application-compose exec -T phpfpm bash -c '
@@ -162,7 +182,6 @@ fi
         [[ "$html" == *noVNC* ]]
     '
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"
-    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     if [[ "$platform" == mageos ]]; then
         ./bin/application-compose exec -T phpfpm test ! -f /var/www/.composer/auth.json
@@ -171,543 +190,7 @@ fi
     ./bin/application-compose exec -T -e MAGELENS_REPORT_DATA=/application/docker/php/report-data.php phpfpm \
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
     ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/Application/Blog/Test/Configuration/merge.test.php
-    mkdir -p coverage
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-layout-scope-bootstrap-proof.php
-    for internal_bridge_mode in early late-closure late-property limit callback-error; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-layout-internal-bridge.test.php "$internal_bridge_mode"
-    done
-    for internal_closure_mode in --without-collector ''; do
-        ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/xml-internal-closure-hooks.test.php "$internal_closure_mode"
-    done
-    for internal_property_mode in --without-collector '' --late-registration; do
-        ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/xml-internal-property-hooks.test.php "$internal_property_mode"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-observers.test.php
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-plugins.test.php
-    for di_usage_case in proof collector collector-stale collector-gaps; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-di-usage-hook-proof.php /var/www/html/vendor "$di_usage_case"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-compiled-di-hook-proof.php
-    for preference_case in cold warm stale-removed stale-retained stale-mutation broken-hook; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-preferences.test.php /var/www/html/vendor "$preference_case"
-    done
-    if [[ "$platform" == mageos ]]; then
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-plugins.test.php inline
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-plugins.test.php inline stale-inline
-    fi
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-layout-bounds.test.php
-    for registry_case in native missing-import missing-attribute missing-cdata stale limit; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-layout-registry-hook-proof.php "$registry_case"
-    done
-    for ui_case in native custom-parser; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-ui-hook-proof.php "$ui_case" --without-collector
-    done
-    for ui_case in native custom-parser missing-factory missing-key missing-decision missing-dynamic-key missing-dynamic-decision missing-magic dynamic-limit; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-ui-hook-proof.php "$ui_case"
-    done
-    reader_cases=(native fallback plugin parser reader missing-reader)
-    if [[ "$platform" == mageos ]]; then reader_cases+=(compiled-fallback compiled-plugin); fi
-    for reader_case in "${reader_cases[@]}"; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reader-hook-proof.php "$reader_case"
-    done
-    merge_cases=(native theme-getter theme-context theme-context-limit missing-theme-area missing-theme-path unused-parser exposed reset document-limit string-plugin xml-plugin parser-plugin late-parser-plugin string-no-parent xml-no-parent package-no-parent opaque-update native-selection standard-selection-plugin selection-no-parent missing-string missing-document missing-package)
-    if [[ "$platform" == mageos ]]; then merge_cases+=(compiled-selection); fi
-    if [[ "$theme" == hyva ]]; then
-        merge_cases+=(package-event package-event-disabled missing-event-manager missing-event-config missing-event-invoker missing-event-observer event-depth observer-depth)
-    fi
-    for merge_case in "${merge_cases[@]}"; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-merge-hook-proof.php "$merge_case"
-    done
-    class_cases=(native native-production fallback factory object-manager manager-restore factory-fallback factory-plugin generator-plugin around no-parent missing-factory missing-creation missing-wrapper missing-creation-pre missing-creation-post missing-manager missing-manager-pre missing-manager-post manager-depth registration-limit missing-registration missing-block-process missing-render-path)
-    if [[ "$platform" == mageos ]]; then class_cases+=(compiled-fallback compiled-generator-plugin compiled-factory-plugin compiled-around); fi
-    for class_case in "${class_cases[@]}"; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-class-hook-proof.php "$class_case"
-    done
-    for lazy_factory_mode in '' --lazy-manager --lazy-generator; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-factory-lazy-proof.php "$lazy_factory_mode" --without-collector
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-factory-lazy-proof.php "$lazy_factory_mode"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-factory-lazy-proof.php --receiver-limit
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-shared-hook-proof.php
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-render-hook-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-render-hook-proof.php
-    for reference_case in native equal-schedule custom-block-reader custom-container-reader; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reference-hook-proof.php "$reference_case" --without-collector
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reference-hook-proof.php "$reference_case"
-    done
-    for reference_case in missing-block-reader missing-container-reader missing-child-writer missing-child-parent missing-child-lookup; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reference-hook-proof.php "$reference_case"
-    done
-    for reference_case in missing-structure missing-generator missing-removal missing-child-schedule missing-child-helper; do
-        for reference_half in "" -pre -post; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reference-hook-proof.php "$reference_case$reference_half"
-        done
-    done
-    for reference_case in structure-depth removal-depth generator-depth schedule-depth placement-depth; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reference-hook-proof.php "$reference_case"
-    done
-    property_baseline="$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-property-hook-proof.php --without-collector)"
-    printf '%s\n' "$property_baseline"
-    property_reads="$(printf '%s\n' "$property_baseline" | sed -n 's/^Native property reads: //p')"
-    if [[ -z "$property_reads" ]]; then
-        echo "Missing native property read baseline" >&2
-        exit 1
-    fi
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-property-hook-proof.php --expected-reads "$property_reads"
-    dependency_baseline="$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-dependency-hook-proof.php --without-collector)"
-    printf '%s\n' "$dependency_baseline"
-    dependency_reads="$(printf '%s\n' "$dependency_baseline" | sed -n 's/^Native dependency reads: //p')"
-    if [[ -z "$dependency_reads" ]]; then
-        echo "Missing native dependency read baseline" >&2
-        exit 1
-    fi
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-dependency-hook-proof.php --expected-reads "$dependency_reads"
-    for move_storage in hooked-storage custom-getter; do
-        move_baseline="$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-move-hook-proof.php "$move_storage" --without-collector)"
-        printf '%s\n' "$move_baseline"
-        if [[ ! "$move_baseline" =~ Native\ move\ storage/getter\ reads:\ ([0-9]+) ]]; then
-            echo "Missing native move storage baseline" >&2
-            exit 1
-        fi
-        move_reads="${BASH_REMATCH[1]}"
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-move-hook-proof.php "$move_storage" --expected-reads "$move_reads"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-layout-move-lazy-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-layout-move-lazy-proof.php
-    for move_case in native programmatic same unchanged sibling-missing alias-fallback overridden missing-writer missing-order missing-execution missing-list missing-reader missing-reader-entry missing-reader-end missing-order-pre missing-order-post missing-execution-pre missing-execution-post missing-schedule-pre missing-schedule-post reader-depth execution-depth interpret-depth custom-structure; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-move-hook-proof.php "$move_case"
-    done
-    if [[ "$platform" == mageos ]]; then
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-shared-hook-proof.php unverified-scope
-    fi
-    for controller_asset_options in '--without-collector' '--without-collector --custom-url' '' '--custom-url' '--missing-url-pre' '--missing-url-post'; do
-        read -r -a controller_asset_args <<< "$controller_asset_options"
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-controller-asset-proof.php "${controller_asset_args[@]}"
-    done
-    for metadata_case in native missing-api missing-attribute missing-label missing-type depth; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-metadata-hook-proof.php "$metadata_case"
-    done
-    for selection_area in frontend adminhtml; do
-        for selection_case in native missing-getter; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-selection-hook-proof.php "$selection_area" "$selection_case"
-        done
-    done
-    if [[ "$platform" == mageos ]]; then
-        for selection_case in standard missing-plugin missing-condition missing-lookup; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-selection-hook-proof.php adminhtml "$selection_case"
-        done
-    fi
-    template_cases=(native unmapped unmapped-first getter file resolver engine engine-inherited engine-inherited-fallback fallback resolver-fallback engine-fallback getter-plugin file-plugin resolver-plugin engine-plugin around engine-around custom-theme-plugin missing-getter missing-file missing-resolver missing-getter-pre missing-getter-post missing-theme-plugin missing-plugin-lookup missing-engine missing-engine-pre missing-engine-post missing-engine-wrapper missing-engine-pool resolution-depth rendering-depth before-plugin-depth)
-    if [[ "$theme" == hyva ]]; then template_cases+=(missing-engine-plugin missing-engine-lookup); fi
-    if [[ "$platform" == mageos ]]; then template_cases+=(compiled-fallback compiled-resolver-fallback compiled-engine-fallback compiled-getter-plugin compiled-file-plugin compiled-resolver-plugin compiled-engine-plugin compiled-around compiled-engine-around); fi
-    for template_case in "${template_cases[@]}"; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-template-hook-proof.php "$template_case"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-falsy-hook-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-falsy-hook-proof.php
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-falsy-hook-proof.php --zero-class-only
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-magic-action-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-magic-action-proof.php
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-groups-proof.php --without-collector
-    argument_group_selector_calls=6
-    [[ "$platform" != mageos ]] || argument_group_selector_calls=12
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-groups-proof.php --custom-selector --without-collector --selector-calls "$argument_group_selector_calls"
-    for argument_group_mode in '' --custom-selector --missing-group-pre --missing-group-post --missing-parser --group-depth --group-node-limit; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-groups-proof.php "$argument_group_mode" --selector-calls "$argument_group_selector_calls"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout --without-collector
-    for first_layout_mode in '' --missing-dispatch-pre --missing-dispatch-post --missing-first-dispatch-pre --missing-first-dispatch-post; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout "$first_layout_mode"
-    done
-    for first_foreign_mode in --without-collector '' --missing-native-first-pre --missing-native-first-post; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --first-layout --foreign-lookup "$first_foreign_mode"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --without-collector
-    for argument_field_mode in '' --missing-dispatch-pre --missing-dispatch-post --custom-dispatch --alternate-discriminator --custom-forwarder; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php "$argument_field_mode"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --service-url --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --service-url
-    for modifier_mode in '' --custom-dispatch --alternate-discriminator --custom-forwarder --missing-modifier-pre --missing-modifier-post --missing-modifier-both; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --modifier-fields "$modifier_mode"
-    done
-    for nested_type_native in '' --custom-items; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --nested-types "$nested_type_native" --without-collector
-    done
-    for nested_type_mode in '' --custom-items --missing-items-pre --missing-items-post; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --nested-types "$nested_type_mode"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-template-value-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-template-value-proof.php
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-direct-template-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-direct-template-proof.php
-    for direct_template in --reflection --closure; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-direct-template-proof.php --without-collector "$direct_template"
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-direct-template-proof.php "$direct_template"
-    done
-    for scoped_definition in '' --block-defined; do
-        for scoped_field in template data; do
-            for scoped_method in bind bindTo call; do
-                for scoped_collection in --without-collector ''; do
-                    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-scoped-closure-proof.php "$scoped_field" "$scoped_method" "$scoped_collection" "$scoped_definition"
-                done
-            done
-        done
-    done
-    for scoped_missing in bind bindTo call; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-scoped-closure-proof.php template bind --missing-hook "$scoped_missing"
-    done
-    for reflection_stage in '' --during-generation; do
-        for reflection_method in setValue setRawValue setRawValueWithoutLazyInitialization; do
-            for reflection_field in template data; do
-                for reflection_failure in '' --failed; do
-                    for reflection_collection in --without-collector ''; do
-                        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reflection-write-proof.php "$reflection_field" --method "$reflection_method" "$reflection_failure" "$reflection_collection" "$reflection_stage"
-                    done
-                done
-            done
-        done
-    done
-    for reflection_field in template data; do
-        for scoped_field in template data; do
-        for scoped_method in bind bindTo call; do
-            for scoped_collection in --without-collector ''; do
-                ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                    php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-scoped-closure-proof.php "$scoped_field" "$scoped_method" "$scoped_collection"
-            done
-        done
-    done
-    for scoped_missing in bind bindTo call; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-scoped-closure-proof.php template bind --missing-hook "$scoped_missing"
-    done
-    for reflection_stage in '' --during-generation; do
-            for reflection_collection in --without-collector ''; do
-                ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                    php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reflection-write-proof.php "$reflection_field" "$reflection_stage" "$reflection_collection" --unmapped
-            done
-        done
-    done
-    for reflection_field in template data; do
-        for reflection_outcome in success failed; do
-            reflection_options=()
-            [[ "$reflection_outcome" != failed ]] || reflection_options+=(--failed)
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-reflection-write-proof.php "$reflection_field" "${reflection_options[@]}" --during-generation --evidence-file /tmp/magelens-reflection-proof.json
-            ./bin/application-compose exec -T phpfpm cat /tmp/magelens-reflection-proof.json > .runtime/layout-reflection-proof.json
-            ./bin/runner node tests/layout-reflection-report-proof.cjs "$reflection_field" "$reflection_outcome" .runtime/layout-reflection-proof.json
-        done
-    done
-    for opaque_action_option in --without-collector ''; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-opaque-action-proof.php "$opaque_action_option"
-    done
-    for action_type_option in --without-collector ''; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --action-types "$action_type_option"
-    done
-    for action_type_missing in --missing-action-dispatch-pre --missing-action-dispatch-post --missing-action-dispatch-both; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-fields-proof.php --action-types "$action_type_missing"
-    done
-    for metadata_case in '' --programmatic; do
-        for metadata_collection in --without-collector ''; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-head-metadata-proof.php "$metadata_case" "$metadata_collection"
-        done
-    done
-    for page_falsy_option in --without-collector '' --missing-removal-pre --missing-removal-post --missing-removal-both; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-page-falsy-proof.php "$page_falsy_option"
-    done
-    for configured_url_collection in --without-collector ''; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-configured-url-proof.php "$configured_url_collection"
-    done
-    for configured_case in '' --action --nested-failure; do
-        for configured_collection in --without-collector ''; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-configured-fields-proof.php "$configured_case" "$configured_collection"
-        done
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-configured-fields-proof.php --missing-create
-    for named_parameter_option in --without-collector '' --custom-parameter-string; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php --parameters "$named_parameter_option"
-    done
-    for named_parameter_missing in --missing-parameter-pre --missing-parameter-post --missing-parameter-both --missing-parameter-string-pre --missing-parameter-string-post --missing-parameter-string-both --missing-parameter-map-pre --missing-parameter-map-post --missing-parameter-map-both; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php --parameters "$named_parameter_missing"
-    done
-    for nested_modifier_option in --without-collector ''; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-nested-modifiers-proof.php "$nested_modifier_option"
-    done
-    for direct_data_option in --without-collector ''; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-direct-data-proof.php "$direct_data_option"
-    done
-    for data_reference_mode in return alias foreach; do
-        for data_reference_collection in --without-collector ''; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-data-reference-proof.php "$data_reference_mode" "$data_reference_collection"
-        done
-    done
-    for implementation_field in '' --data; do
-        for template_field in clean literal variable braced foreign public hook reflection opaque edit symlink missing class-limit file-limit access-limit record-limit; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php /application/docker/php/e2e/xml-layout-template-field-proof.php "$template_field" "$implementation_field"
-        done
-    done
-    for template_value_missing in --missing-constructor-pre --missing-constructor-post --missing-getter --missing-setter --missing-query --method-limit --method-name-limit; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-template-value-proof.php "$template_value_missing"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-failed-action-proof.php --without-collector
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-failed-action-proof.php
-    for action_failure in --missing-action-pre --missing-action-post --missing-evaluation-pre --missing-evaluation-post --action-depth; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-failed-action-proof.php "$action_failure"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-failed-action-proof.php --partial-only
-    for action_interpreter in --missing-interpreter-pre --missing-interpreter-post; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-failed-action-proof.php "$action_interpreter" --partial-only
-    done
-    for shared_case in guarded unguarded distinct; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-shared-action-proof.php "$shared_case" --without-collector
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-shared-action-proof.php "$shared_case"
-    done
-    for shared_bound in --alias-limit --binding-limit; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-shared-action-proof.php "$shared_bound"
-    done
-    for shared_missing in --missing-process --missing-snapshot; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-shared-action-proof.php unguarded "$shared_missing"
-    done
-    for storage_case in array-access object-error; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-storage-proof.php "$storage_case" --without-collector
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-storage-proof.php "$storage_case"
-    done
-    for callback_case in healthy pre post; do
-        callback_result=$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-callback-health-proof.php "$callback_case" 2>&1)
-        printf '%s\n' "$callback_result"
-        if [[ "$callback_result" == *'OpenTelemetry:'* || "$callback_result" == *'private-callback-payload'* ]]; then
-            fail 'Layout callback failure escaped into native output.'
-        fi
-    done
-    for callback_case in healthy throw depth trace-limit location; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php /application/docker/php/e2e/xml-layout-runtime-hooks.test.php "$callback_case"
-    done
-    for names_case in blocks move containers; do
-        for names_collection in --without-collector ''; do
-            names_options=()
-            if [[ -n "$names_collection" ]]; then names_options+=("$names_collection"); fi
-            names_result=$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-names-hook-proof.php "$names_case" "${names_options[@]}" 2>&1)
-            printf '%s\n' "$names_result"
-            if [[ "$names_result" == *'OpenTelemetry:'* ]]; then fail 'Numeric layout names caused an instrumentation warning.'; fi
-        done
-    done
-    for guard_case in native guard-only zero-hit unvisited-scope unguarded dynamic equal-write custom-snapshot snapshot-limit delegated-flag delegated-scope failed-flag; do
-        guard_native=$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-action-guard-proof.php "$guard_case" --without-collector)
-        printf '%s\n' "$guard_native"
-        guard_options=()
-        if [[ "$guard_case" == custom-snapshot ]]; then
-            guard_reads=$(printf '%s\n' "$guard_native" | sed -n 's/^Native action schedule reads: //p')
-            [[ -n "$guard_reads" ]] || fail 'Missing native action schedule getter baseline.'
-            guard_options=(--expected-reads "$guard_reads")
-        fi
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-action-guard-proof.php "$guard_case" "${guard_options[@]}"
-    done
-    for guard_observation in process snapshot scope flag; do
-        for guard_side in '' -pre -post; do
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-action-guard-proof.php "missing-$guard_observation$guard_side"
-        done
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-action-guard-proof.php "$guard_observation-depth"
-    done
-    for descriptor_case in native redeclared accessor hook magic; do
-        descriptor_native=$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-file-descriptor-hook-proof.php "$descriptor_case" --without-collector)
-        printf '%s\n' "$descriptor_native"
-        descriptor_reads=$(printf '%s\n' "$descriptor_native" | sed -n 's/^Native file-descriptor reads: //p')
-        [[ -n "$descriptor_reads" ]]
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-file-descriptor-hook-proof.php "$descriptor_case" --expected-reads "$descriptor_reads"
-    done
-    for file_list_case in native hook magic; do
-        file_list_baseline=$(./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-file-list-hook-proof.php "$file_list_case" --without-collector)
-        printf '%s\n' "$file_list_baseline"
-        file_list_reads=$(printf '%s\n' "$file_list_baseline" | sed -n 's/^Native file-list reads: //p')
-        [[ -n "$file_list_reads" ]] || fail 'Missing native file-list getter baseline.'
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-file-list-hook-proof.php "$file_list_case" --expected-reads "$file_list_reads"
-    done
-    for validation_case in native missing unset-dependencies override parent-override; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-template-validation-hook-proof.php "$validation_case" --without-collector
-    done
-    for validation_case in native missing unset-dependencies override parent-override missing-pre missing-post missing-both; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-template-validation-hook-proof.php "$validation_case"
-    done
-    for layout_cache_case in cold package merge schedule stale-provider; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-merge-cache-proof.php "$layout_cache_case" --without-collector
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-merge-cache-proof.php "$layout_cache_case" --evidence-file /tmp/magelens-layout-cache-proof.json
-        ./bin/application-compose exec -T phpfpm cat /tmp/magelens-layout-cache-proof.json > .runtime/layout-cache-proof.json
-        ./bin/runner node tests/layout-merge-cache-report-proof.cjs "$layout_cache_case" .runtime/layout-cache-proof.json
-    done
-    for cache_case in native equal ui missing-read missing-loader missing-pre missing-post depth; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-cache-hook-proof.php "$cache_case"
-    done
-    ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-        php /application/docker/php/e2e/xml-config-theme-proof.php
-    for page_cache_case in native warm equal missing-pre missing-post depth; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-page-cache-hook-proof.php "$page_cache_case"
-    done
-    (
-        invalid_class=src/app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_classdefault_index.xml
-        [[ ! -e "$invalid_class" ]] || fail 'Disposable invalid class fixture path already exists.'
-        cleanup_invalid_class() {
-            local result=$?
-            trap - EXIT
-            if [[ -e "$invalid_class" ]]; then rm -- "$invalid_class"; fi
-            ./bin/runner node bin/prepare.cjs --runtime-only --theme-roots .runtime/active-themes.json || result=1
-            exit "$result"
-        }
-        trap cleanup_invalid_class EXIT
-        trap 'exit 130' INT
-        trap 'exit 143' TERM
-        cp tests/fixtures/compatibility/invalid-layout/class-empty.xml "$invalid_class"
-        ./bin/runner node bin/prepare.cjs --runtime-only --theme-roots .runtime/active-themes.json
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-class-hook-proof.php empty-class
-    )
-    for argument_case in native reader generator missing-interpreter missing-reader missing-generator missing-action batch-depth interpreter-depth action-depth argument-limit; do
-        ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-            php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-argument-hook-proof.php "$argument_case"
-    done
-    (
-        provider_proof() {
-            ./bin/application-compose exec -T -e MAGELENS_XML_HOOKS=/application/docker/php/xml-hooks.php phpfpm \
-                php -d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php /application/docker/php/e2e/xml-layout-disabled-module-proof.php "$@"
-        }
-        cleanup_provider_mode() {
-            local result=$?
-            trap - EXIT
-            provider_proof --clear-output-disabled || result=1
-            ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout || result=1
-            exit "$result"
-        }
-        trap cleanup_provider_mode EXIT
-        trap 'exit 130' INT
-        trap 'exit 143' TERM
-        provider_proof --without-collector --enabled
-        provider_proof --enabled
-        provider_proof --set-output-disabled
-        ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout
-        provider_proof --without-collector --output-disabled
-        provider_proof --output-disabled
-        ./bin/application-compose exec -T phpfpm php bin/magento module:disable MageLens_LayoutDisabled
-        provider_proof --clear-output-disabled
-        ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config layout
-        provider_proof --without-collector
-        provider_proof
-        provider_proof --without-collector --unvisited
-        provider_proof --unvisited
-        for provider_missing in --missing-filter-pre --missing-filter-post --missing-filter-candidates; do
-            provider_proof "$provider_missing"
-        done
-    )
+    run_xml_proofs "$theme" "$platform" "$mode"
     # Original-source fixture assertions need fresh native layout interpretation.
     # Registry proofs separately verify warm cache zero-hit provenance boundaries.
     ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
@@ -735,6 +218,7 @@ fi
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
     for layout_check in tests/verify-layout-*.cjs; do
         case "$layout_check" in
+            tests/verify-layout-warm-repeat.cjs) continue ;;
             tests/verify-layout-admin.cjs) ./bin/runner node "$layout_check" "$platform" ;;
             tests/verify-layout-handles.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$platform" ;;
             tests/verify-layout-ui-structure.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
