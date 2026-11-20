@@ -240,3 +240,84 @@ test('virtual and constructor usage require live evidence and preserve independe
     assert.match(index, /Object lifetime usage/);
     assert.match(index, /New instance/);
 });
+
+function familyFixture() {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/etc/crontab.xml';
+    const source = Buffer.from('<config>\n<job name="observed"/>\n<job name="untouched"/>\n<job name="shadowed"/>\n</config>');
+    const id = name => createHash('sha256').update(name).digest('hex');
+    const effects = ['cron-schedule-evaluated', 'cron-handler-entered', 'cron-handler-completed'];
+    sources[file] = source;
+    manifest.files.push({path: file, family: 'cron', sourceHash: id(source),
+        declarations: ['observed', 'untouched', 'shadowed'].map((name, index) => ({
+            id: id(name), family: 'cron', path: name, supported: true, effective: true, effects,
+            declaredScope: {type: 'source', code: ''}, startLine: 2 + index, endLine: 2 + index
+        }))
+    });
+    const event = (name, type, outcome, reason = null) => ({
+        id: id(name), type, outcome, reason, area: 'crontab', hits: 1
+    });
+    record.events.push(
+        event('observed', effects[0], 'cache-only', 'Schedule was read from the cache'),
+        event('observed', effects[1], 'entered'),
+        event('observed', effects[2], 'failed'),
+        event('shadowed', effects[1], 'displaced', 'Another module supplied the handler')
+    );
+    return {manifest, record, sources, file};
+}
+
+test('XML family effects distinguish observations, failed completion and uncertain provenance', t => {
+    const {manifest, record, sources, file} = familyFixture();
+    const result = merge(manifest, [record], sources);
+    const [observed, untouched, shadowed] = result.files.find(entry => entry.path === file).declarations;
+    assert.deepEqual([observed.state, untouched.state, shadowed.state], ['covered', 'uncovered', 'uncovered']);
+    assert.equal(observed.hits, 1);
+    assert.deepEqual(observed.effectStates, {
+        'cron-schedule-evaluated': 'uncovered',
+        'cron-handler-entered': 'covered',
+        'cron-handler-completed': 'uncovered'
+    });
+    assert.deepEqual(observed.evidence.map(event => [event.outcome, event.reason]), [
+        ['cache-only', 'Schedule was read from the cache'], ['entered', null], ['failed', null]
+    ]);
+    assert.equal(observed.evidence[0].request, record.request);
+    assert.equal(observed.evidence[0].run, record.run);
+    assert.ok(result.warnings.some(warning => warning.declaration === shadowed.id && warning.reason === 'Another module supplied the handler'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-family-report-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    writeReport(result, sources, directory);
+    const html = fs.readFileSync(path.join(directory, file + '.html'), 'utf8');
+    assert.match(html, /cron-handler-completed.*uncovered.*crontab.*failed/s);
+    assert.match(html, /cron-handler-entered.*uncovered.*displaced.*Another module supplied the handler/s);
+});
+
+test('XML family evidence rejects undeclared effects, malformed outcomes and extra data', () => {
+    const {manifest, record, sources} = familyFixture();
+    for (const patch of [{type: 'webapi-match'}, {outcome: 'true'}, {reason: null}, {payload: 'private'}]) {
+        const incorrect = {...record, events: [record.events[0], {...record.events[1], ...patch}]};
+        assert.throws(() => merge(manifest, [incorrect], sources));
+    }
+});
+
+test('browser XML effects require delivery from the same active HTTP response', () => {
+    const {manifest, record, sources} = fixture();
+    const file = 'app/code/Acme/Blog/view/adminhtml/ui_component/screen.xml';
+    const id = '1'.repeat(64), request = '2'.repeat(32), identity = 'screen.screen.field';
+    sources[file] = Buffer.from('<listing>\n<field name="field"/>\n</listing>');
+    manifest.files.push({path: file, family: 'ui-component', sourceHash: createHash('sha256').update(sources[file]).digest('hex'),
+        declarations: [{id, family: 'ui-component', path: identity, effects: ['ui-delivered', 'ui-constructed', 'ui-rendered'],
+            supported: true, effective: true, declaredScope: {type: 'adminhtml', code: ''}, startLine: 2, endLine: 2}]
+    });
+    const delivery = {id, type: 'ui-delivered', area: 'adminhtml', outcome: 'observed', reason: null, hits: 1};
+    const browser = {run: record.run, response: request, identity, type: 'ui-rendered'};
+    const native = {...record, request, status: 200, events: [delivery]};
+    const result = merge(manifest, [record, native], sources, [browser]);
+    const [declaration] = result.files.find(entry => entry.path === file).declarations;
+    assert.deepEqual(declaration.effectStates, {'ui-delivered': 'covered', 'ui-constructed': 'uncovered', 'ui-rendered': 'covered'});
+    assert.equal(declaration.evidence[1].request, request);
+    assert.equal(declaration.evidence[1].origin, 'browser');
+    assert.throws(() => merge(manifest, [record, {...native, events: []}], sources, [browser]), /delivery/i);
+    assert.throws(() => merge(manifest, [record, native], sources, [{...browser, run: 'stale'}]), /stale/i);
+    assert.throws(() => merge(manifest, [record, native], sources, [{...browser, identity: 'another.field'}]), /delivery/i);
+    assert.throws(() => merge(manifest, [record, native], sources, [{...browser, values: {customer: 'private'}}]), /browser XML/i);
+});

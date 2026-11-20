@@ -300,3 +300,24 @@ test('factory DI equivalence retains virtual routes and inherited parameter iden
         assert.equal(compareThemes(matrix, cases).passed, false);
     }
 });
+
+test('XML family comparison retains stage outcomes and masks local contexts', t => {
+    const {directory, read, write} = fixture(t);
+    const xml = read('xml/coverage.json'), [file] = xml.files;
+    const effect = {type: 'cron-handler-completed', area: 'crontab', outcome: 'failed', reason: null, run: 'SECRET', request: 'SECRET'};
+    file.declarations.push({id: 'd'.repeat(64), family: 'cron', path: 'SECRET job', declaredScope: {type: 'global', code: ''},
+        startLine: 11, endLine: 11, supported: true, effective: true, state: 'uncovered', effects: [effect.type],
+        effectStates: {[effect.type]: 'uncovered'}, evidence: [effect]});
+    write('xml/coverage.json', xml);
+    const original = snapshot(directory);
+    assert.doesNotMatch(JSON.stringify(original), /SECRET/);
+    assert.equal(original.xml.files[file.path].declarations[0].familyEffects[0][2][0][1], 'failed');
+    file.declarations[0].evidence.push({...effect, request: 'other'});
+    write('xml/coverage.json', xml);
+    assert.deepEqual(snapshot(directory), original);
+    file.declarations[0].evidence = [];
+    write('xml/coverage.json', xml);
+    const matrix = reports(original);
+    matrix[1].snapshot = snapshot(directory);
+    assert.equal(compareThemes(matrix, cases).passed, false);
+});
