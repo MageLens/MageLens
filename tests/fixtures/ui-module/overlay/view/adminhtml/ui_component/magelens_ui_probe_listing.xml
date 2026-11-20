@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<listing xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Ui:etc/ui_configuration.xsd">
+    <columns name="probe_columns">
+        <column name="equal">
+            <settings>
+                <label>Equal column</label>
+            </settings>
+        </column>
+    </columns>
+</listing>
