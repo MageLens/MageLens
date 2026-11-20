@@ -114,41 +114,36 @@ final class LayoutFieldAccess
         if (count($this->files) >= 1024) throw new \RuntimeException($this->description . ' implementation inventory exceeded 1024 files');
         $source = @file_get_contents($file);
         if (!is_string($source)) throw new \RuntimeException('Cannot inspect ' . $this->description . ' implementation source');
-        $tokens = [];
-        $line = 1;
-        foreach (token_get_all($source) as $token) {
-            $text = is_array($token) ? $token[1] : $token;
-            if (is_array($token)) $line = $token[2];
-            if (!is_array($token) || !in_array($token[0], [T_OPEN_TAG, T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
-                $tokens[] = ['id' => is_array($token) ? $token[0] : null, 'text' => $text, 'line' => $line];
-            }
-            $line += substr_count($text, "\n");
+        // A dynamic property operand needs punctuation or trivia after the
+        // operator. Only tokenize possible accesses, including split tokens.
+        if (!str_contains($source, $this->field) && preg_match('~->(?![a-zA-Z_\x80-\xff])~', $source) === 0) {
+            $this->files[$file] = ['hash' => hash('sha256', $source), 'accesses' => []];
+            return [];
         }
+        $tokens = array_values(array_filter(\PhpToken::tokenize($source), static fn(\PhpToken $token): bool => !$token->isIgnorable()));
         $accesses = [];
         foreach ($tokens as $index => $token) {
             // Reflection can replace protected storage without an accessor call.
             // A literal storage operand establishes capability, not an observed write.
-            if ($token['id'] === T_CONSTANT_ENCAPSED_STRING
-                && in_array($token['text'], ["'" . $this->field . "'", '"' . $this->field . '"'], true)) {
+            if ($token->id === T_CONSTANT_ENCAPSED_STRING
+                && in_array($token->text, ["'" . $this->field . "'", '"' . $this->field . '"'], true)) {
                 if (count($accesses) >= 4096) throw new \RuntimeException($this->description . ' implementation inventory exceeded 4096 field accesses');
-                $accesses[] = ['line' => $token['line'], 'self' => true];
+                $accesses[] = ['line' => $token->line, 'self' => true];
             }
-            if (!in_array($token['id'], [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR], true)) continue;
-            $property = $tokens[$index + 1] ?? [];
-            if (($property['id'] ?? null) === T_STRING && ($property['text'] ?? null) !== $this->field) continue;
+            if (!$token->is([T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR])) continue;
+            $property = $tokens[$index + 1] ?? null;
+            if ($property === null || ($property->id === T_STRING && $property->text !== $this->field)) continue;
             $end = $index + 1;
-            if (($property['text'] ?? null) === '{') {
+            if ($property->text === '{') {
                 for ($depth = 1, $end++; $depth && $end < count($tokens); $end++) {
-                    if ($tokens[$end]['text'] === '{') $depth++;
-                    elseif ($tokens[$end]['text'] === '}') $depth--;
+                    if ($tokens[$end]->text === '{') $depth++;
+                    elseif ($tokens[$end]->text === '}') $depth--;
                 }
                 $end--;
             }
-            if (($tokens[$end + 1]['text'] ?? null) === '(') continue;
-            if (($property['id'] ?? null) !== T_STRING && ($property['id'] ?? null) !== T_VARIABLE
-                && ($property['text'] ?? null) !== '{') continue;
+            if (($tokens[$end + 1]->text ?? null) === '(' || !$property->is([T_STRING, T_VARIABLE, '{'])) continue;
             if (count($accesses) >= 4096) throw new \RuntimeException($this->description . ' implementation inventory exceeded 4096 field accesses');
-            $accesses[] = ['line' => $token['line'], 'self' => ($tokens[$index - 1]['text'] ?? null) === '$this'];
+            $accesses[] = ['line' => $token->line, 'self' => ($tokens[$index - 1]->text ?? null) === '$this'];
         }
         $this->accessCount += count($accesses);
         if ($this->accessCount > 32768) throw new \RuntimeException($this->description . ' implementation inventory exceeded 32768 field accesses');

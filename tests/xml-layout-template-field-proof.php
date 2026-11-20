@@ -17,7 +17,7 @@ $bodies = [
     'clean' => 'public function fixture() { return $this->getTemplate(); }',
     'literal' => 'public function fixture() { $this->_template = "same"; }',
     'record-limit' => 'public function fixture() { $this->_template = "same"; }',
-    'variable' => 'public function fixture() { $field = "_template"; $this->$field = "same"; }',
+    'variable' => 'public function fixture($field) { $this->/* dynamic field */ $field = "same"; }',
     'braced' => 'public function fixture() { $this->{"_template"} = "same"; }',
     'foreign' => 'public function fixture($block) { $block->_template = "same"; }',
     'public' => 'public $_template;',
