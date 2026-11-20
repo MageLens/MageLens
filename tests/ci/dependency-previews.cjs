@@ -8,7 +8,10 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {syncDependencies} = require('../../bin/sync-dependencies.cjs');
-const repositories = {templateCoverage: 'MageLens/magento-template-coverage', pcov: 'MageLens/pcov'};
+const repositories = {
+    templateCoverage: {name: 'MageLens/MagentoTemplateCoverage', previous: 'MageLens/magento-template-coverage'},
+    pcov: {name: 'MageLens/PCOV', previous: 'MageLens/pcov'}
+};
 const configurationFile = '.github/dependency-previews.json';
 const evidenceFile = '.runtime/dependency-preview-evidence.json';
 function configuration(root = process.cwd()) {
@@ -21,11 +24,12 @@ function configuration(root = process.cwd()) {
         if (key === 'schema') continue;
         assert.ok(Object.hasOwn(repositories, key), 'Unknown preview library');
         assert.deepEqual(Object.keys(value).sort(), ['pullRequest', 'repository', 'sha', 'version']);
-        assert.equal(value.repository, repositories[key], 'Unexpected source repository');
+        const {name, previous} = repositories[key];
+        assert.ok(value.repository === name || value.repository === previous, 'Unexpected source repository');
         assert.match(value.sha, /^[a-f0-9]{40}$/, 'Pin a full source commit');
         assert.match(value.version, /^\d+\.\d+\.\d+$/, 'Pin a stable release version');
         assert.ok(Number.isSafeInteger(value.pullRequest) && value.pullRequest > 0, 'Missing source PR');
-        entries[key] = value;
+        entries[key] = {...value, repository: name};
     }
     assert.ok(Object.keys(entries).length, 'Remove an empty preview configuration');
     return entries;
