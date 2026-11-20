@@ -80,4 +80,19 @@ for (const name of ['php', 'javascript', 'templates']) assert.ok(attribution.col
 const owners = new Set(Object.values(read('attribution/php.json').files).flatMap(byLine => Object.values(byLine).flatMap(Object.keys)));
 attribution.attempts.forEach((attempt, index) => assert.ok(owners.has(String(index)), `No attributed PHP line for ${attempt.test.join(' › ')}`));
 assert.equal(attribution.collectors.templates.ambiguousRecords, 0);
+
+// Exact associations: fixture code that only one test can reach belongs to that test's attempt alone.
+const php = read('attribution/php.json').files;
+const fixture = 'app/code/MageLens/Compatibility';
+for (const [file, fragment, title] of [
+    ['Controller/Index/Markup.php', "$second = $this->request->getParam('case')", 'starts the next test with fresh state'],
+    ['Cli/Jobs.php', "getValue('magelens_probe/cron/enabled')", 'executes a scheduled Magento cron job'],
+    ['Cli/Jobs.php', "getValue('magelens_probe/cron/magerun_message')", 'preserves command arguments and runs a named cron job through MageRun'],
+    ['Cli/Jobs.php', 'file_put_contents(self::marker($token), $token)', 'processes a message through a Magento database queue']
+]) {
+    const line = fs.readFileSync(`src/${fixture}/${file}`, 'utf8').split('\n').findIndex(text => text.includes(fragment)) + 1;
+    assert.ok(line > 0, `Missing fixture line: ${fragment}`);
+    const owners = Object.keys(php[`${fixture}/${file}`]?.[line] || {}).map(owner => attribution.attempts[owner]?.test.at(-1) ?? owner);
+    assert.deepEqual(owners, [title], `${file}:${line} must belong to "${title}" only`);
+}
 console.log(`Verified ${attempts.size} test attempts; ${requests.length - unattributed} of ${requests.length} PHP records attributed, ${unattributed} unattributed; per-attempt JavaScript counters match ${statements} covered statements; attribution: ${['php', 'javascript', 'templates'].map(name => `${attribution.collectors[name].attributedUnits} ${name}`).join(', ')} units.`);
