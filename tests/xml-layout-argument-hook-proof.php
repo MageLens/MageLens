@@ -11,13 +11,26 @@ $hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-h
 require $hooks . '/xml-hooks.php';
 require $hooks . '/xml-layout-manifest.php';
 
-use MageLens\XmlCoverage\{LayoutCoverage, LayoutManifest, Recorder};
+use MageLens\XmlCoverage\{LayoutArgumentOwnership, LayoutCoverage, LayoutManifest, Recorder};
 use Magento\Framework\Data\Argument\Interpreter\Composite;
 use Magento\Framework\View\Layout\Reader\Block as BlockReader;
 use Magento\Framework\View\Layout\Generator\Block as BlockGenerator;
 
 $mode = $argv[1] ?? 'native';
 if (!in_array($mode, ['native', 'reader', 'generator', 'missing-interpreter', 'missing-reader', 'missing-generator', 'missing-action', 'batch-depth', 'interpreter-depth', 'action-depth', 'argument-limit'], true)) throw new RuntimeException('Unknown argument proof mode');
+if ($mode === 'native') {
+    $fingerprinted = [];
+    $ownership = new LayoutArgumentOwnership(static function (array $input) use (&$fingerprinted): array {
+        $fingerprinted[] = $input;
+        return $input;
+    }, static fn(array $identity, array $input): bool => $identity === $input);
+    $tracked = ['xsi:type' => 'string', 'value' => 'tracked'];
+    $core = ['xsi:type' => 'array', 'item' => array_fill(0, 32, ['xsi:type' => 'string', 'value' => 'core'])];
+    $ownership->beginBatch(new stdClass(), false, ['core' => $core, 'tracked' => $tracked], ['tracked' => ['id' => 'tracked']]);
+    $ownership->endBatch(new RuntimeException('The generator stopped before evaluating its queue'));
+    $ownership->finish();
+    if ($fingerprinted !== [$tracked]) throw new RuntimeException('A generator argument without XML provenance was fingerprinted');
+}
 $path = 'app/code/MageLens/Compatibility/view/frontend/layout/coverageprobe_interpreter_index.xml';
 $source = file_get_contents(BP . '/' . $path);
 $declarations = LayoutManifest::declarations($path, $source);

@@ -98,9 +98,12 @@ final class LayoutArgumentOwnership
             // application ArrayAccess probe or duplicate the generator's error.
             if (!is_array($data)) continue;
             if ($reader ? isset($data['updater']) : !isset($data['xsi:type'])) continue;
-            $queue[] = ['name' => $name, 'input' => ($this->fingerprint)($data),
-                'type' => self::evaluationType($origins[$name] ?? []),
-                'children' => $origins[$name]['children'] ?? []];
+            $origin = $origins[$name] ?? [];
+            // Keep every native queue position for completion validation. Only
+            // arguments with XML provenance need an input identity.
+            $queue[] = ['name' => $name, 'tracked' => $origin !== [],
+                'input' => $origin ? ($this->fingerprint)($data) : null,
+                'type' => self::evaluationType($origin), 'children' => $origin['children'] ?? []];
         }
         $this->batches[$index]['queue'] = $queue;
         if ($context !== null) $this->batches[$index]['context'] = $context;
@@ -179,7 +182,7 @@ final class LayoutArgumentOwnership
                 $input = $expected['input'];
                 $type = $expected['type'];
                 $children = $expected['children'];
-                if ($expected['input'] === null || !($this->matches)($expected['input'], $params[0])) {
+                if ($expected['tracked'] && ($input === null || !($this->matches)($input, $params[0]))) {
                     $this->batches[$index]['unconfirmed'][$name] = true;
                     $type = null; $children = [];
                 }
@@ -189,21 +192,26 @@ final class LayoutArgumentOwnership
             if ($parent !== null && $parent->batch === $index && ($caller['function'] ?? null) === 'evaluate'
                 && is_a($caller['class'] ?? '', InterpreterInterface::class, true)) {
                 $name = $parent->name;
-                if (!empty($parent->type['parameters']) && ($caller['object'] ?? null) === $parent->object
-                    && self::isParameterConsumer($parent->object) && self::native($parent->object)) {
+                $nativeParent = ($caller['object'] ?? null) === $parent->object && self::native($parent->object);
+                if ($nativeParent && !empty($parent->type['parameters']) && self::isParameterConsumer($parent->object)) {
                     $namedParameterParent = array_key_last($this->evaluating);
                     $this->evaluating[$namedParameterParent]->parameterMapEntered = true;
                 }
 
-                if (($caller['object'] ?? null) === $parent->object && self::native($parent->object)
-                    && (($parent->input !== null && ($this->matches)($parent->input, $params[0]))
-                    || ($parent->forwarded !== null && ($this->matches)($parent->forwarded, $params[0])))) {
-                    $type = $parent->type; $input = ($this->fingerprint)($params[0]);
+                $matchingInput = null;
+                if ($nativeParent) {
+                    foreach ([$parent->input, $parent->forwarded] as $identity) {
+                        if ($identity !== null && ($this->matches)($identity, $params[0])) {
+                            $matchingInput = $identity;
+                            break;
+                        }
+                    }
+                }
+                if ($matchingInput !== null) {
+                    $type = $parent->type; $input = $matchingInput;
                     $children = $parent->children;
                     $parameter = $parent->parameter;
-                } elseif (($caller['object'] ?? null) === $parent->object
-                    && $parent->object instanceof Interpreter\ArrayType && self::native($parent->object)
-                    && $parent->items) {
+                } elseif ($nativeParent && $parent->object instanceof Interpreter\ArrayType && $parent->items) {
                     $position = $parent->itemNext;
                     $this->evaluating[array_key_last($this->evaluating)]->itemNext++;
                     $item = $parent->items[$position] ?? null;
@@ -214,9 +222,7 @@ final class LayoutArgumentOwnership
                         $input = $item['input'];
                         if (isset($type['actionItem']) || isset($type['configuredOperand'])) $arrayOperand = ['parent' => array_key_last($this->evaluating), 'key' => $item['key']];
                     }
-                } elseif (($caller['object'] ?? null) === $parent->object
-                    && $parent->object instanceof ConfigurableObject && self::native($parent->object)
-                    && $parent->configuredArguments) {
+                } elseif ($nativeParent && $parent->object instanceof ConfigurableObject && $parent->configuredArguments) {
                     $position = $parent->configuredNext;
                     $parentIndex = array_key_last($this->evaluating);
                     $this->evaluating[$parentIndex]->configuredNext++;
@@ -228,9 +234,7 @@ final class LayoutArgumentOwnership
                         $input = $candidate->input;
                         $configuredChild = ['parent' => $parentIndex, 'key' => $candidate->key];
                     }
-                } elseif (($caller['object'] ?? null) === $parent->object
-                    && $parent->object instanceof LayoutInterpreter\NamedParams && self::native($parent->object)
-                    && $parent->parameters) {
+                } elseif ($nativeParent && $parent->object instanceof LayoutInterpreter\NamedParams && $parent->parameters) {
                     $position = $parent->parameterNext;
                     $this->evaluating[array_key_last($this->evaluating)]->parameterNext++;
                     $candidate = $parent->parameters[$position] ?? null;
@@ -250,7 +254,9 @@ final class LayoutArgumentOwnership
             $modifierInputs[$attribute] = array_key_exists($attribute, $params[0])
                 && ($this->matches)($field['value'], $params[0][$attribute]);
         }
-        $expected = $this->typeInput($interpreter, $type, $params[0]['xsi:type'] ?? null);
+        $value = $params[0]['xsi:type'] ?? null;
+        $typeIdentity = $type['value'] ?? null;
+        $expected = $this->typeInput($interpreter, $typeIdentity, $value);
         $forwarded = null;
         if ($type !== null && $interpreter instanceof LayoutInterpreter\Decorator\Updater
             && LayoutXmlOwnership::nativeMethod($interpreter, LayoutInterpreter\Decorator\Updater::class, 'evaluate')) {
@@ -259,9 +265,11 @@ final class LayoutArgumentOwnership
             $forwarded = ($this->fingerprint)($data);
         }
         $dispatchInput = null;
+        $dispatchType = null;
         if (($type !== null || $children) && $interpreter instanceof Interpreter\Composite) {
             $data = $params[0]; unset($data['xsi:type']);
             $dispatchInput = ($this->fingerprint)($data);
+            $dispatchType = $typeIdentity ?? ($this->fingerprint)($value);
         }
         $parameters = [];
         if ($input !== null && $interpreter instanceof LayoutInterpreter\NamedParams && self::native($interpreter)
@@ -301,12 +309,12 @@ final class LayoutArgumentOwnership
             arrayOperand: $arrayOperand,
             configuredArguments: $configuredArguments,
             configuredChild: $configuredChild,
-            itemInput: $interpreter instanceof Interpreter\ArrayType ? ($this->fingerprint)($params[0]['item'] ?? []) : null,
+            itemInput: $children && $interpreter instanceof Interpreter\ArrayType ? ($this->fingerprint)($params[0]['item'] ?? []) : null,
             input: $input,
             forwarded: $forwarded,
             expectedType: $expected,
             dispatchInput: $dispatchInput,
-            dispatchType: ($this->fingerprint)($params[0]['xsi:type'] ?? null),
+            dispatchType: $dispatchType,
         );
     }
 
@@ -315,9 +323,9 @@ final class LayoutArgumentOwnership
         if ($this->evaluationOverflow) return null;
         $index = array_key_last($this->evaluating);
         $frame = $index === null ? null : $this->evaluating[$index];
+        if (!$frame instanceof LayoutArgumentEvaluation || !$frame->children || !$frame->object instanceof Interpreter\ArrayType) return null;
         $caller = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 4)[3] ?? [];
-        return $frame instanceof LayoutArgumentEvaluation && $frame->object instanceof Interpreter\ArrayType
-            && ($caller['class'] ?? null) === Interpreter\ArrayType::class
+        return ($caller['class'] ?? null) === Interpreter\ArrayType::class
             && ($caller['function'] ?? null) === 'evaluate' && ($caller['object'] ?? null) === $frame->object
             && self::native($frame->object) ? $index : null;
     }
@@ -392,8 +400,8 @@ final class LayoutArgumentOwnership
     private function modifiers(LayoutArgumentEvaluation $frame, object $interpreter, ?\Throwable $error): void
     {
         $context = $this->batches[$frame->batch]['context'] ?? null;
-        if ($this->emit === null || $context === null || !self::native($interpreter)) return;
-        foreach ($frame->type['fields'] ?? [] as $attribute => $field) {
+        if (empty($frame->type['fields']) || $this->emit === null || $context === null || !self::native($interpreter)) return;
+        foreach ($frame->type['fields'] as $attribute => $field) {
             $deferred = $interpreter instanceof LayoutInterpreter\Passthrough;
             $consumer = self::modifierConsumer($attribute);
             $otherUrl = $attribute === 'path' && ($interpreter instanceof UiUrl
@@ -407,14 +415,14 @@ final class LayoutArgumentOwnership
         }
     }
 
-    private function typeInput(object $composite, ?array $type, $value): bool
+    private function typeInput(object $composite, ?array $identity, $value): bool
     {
-        if (!isset($type['value']) || !$composite instanceof Interpreter\Composite
+        if ($identity === null || !$composite instanceof Interpreter\Composite
             || !LayoutXmlOwnership::nativeMethod($composite, Interpreter\Composite::class, 'evaluate')
             || (new \ReflectionClass($composite))->isUninitializedLazyObject($composite)) return false;
         $property = new \ReflectionProperty(Interpreter\Composite::class, 'discriminator');
         return !$property->getHooks() && $property->isInitialized($composite)
-            && $property->getRawValue($composite) === 'xsi:type' && ($this->matches)($type['value'], $value);
+            && $property->getRawValue($composite) === 'xsi:type' && ($this->matches)($identity, $value);
     }
 
     private static function nativeTypeLookup(object $composite): bool
@@ -433,9 +441,7 @@ final class LayoutArgumentOwnership
         $this->evaluating[$index]->lookupEntered = true;
         // A lazy Composite initializes at its own discriminator read. Observe
         // the subsequent native lookup rather than initializing it ourselves.
-        $this->evaluating[$index]->expectedType = $this->typeInput(
-            $composite, isset($this->evaluating[$index]->type['value']) ? $this->evaluating[$index]->type
-                : ['value' => $this->evaluating[$index]->dispatchType], $params[0] ?? null);
+        $this->evaluating[$index]->expectedType = $this->typeInput($composite, $this->evaluating[$index]->dispatchType, $params[0] ?? null);
     }
 
     private function selectedType($composite, array $params, $result, ?\Throwable $error): void
@@ -449,7 +455,7 @@ final class LayoutArgumentOwnership
         $this->evaluating[$index]->trustedLookup = $frame->expectedType && !$error
             && $result instanceof InterpreterInterface
             && LayoutXmlOwnership::nativeMethod($composite, Interpreter\Composite::class, 'getInterpreter')
-            && ($this->matches)($frame->type['value'] ?? $frame->dispatchType, $params[0] ?? null);
+            && ($this->matches)($frame->dispatchType, $params[0] ?? null);
         if ($this->evaluating[$index]->trustedLookup) $this->evaluating[$index]->forwarded = $frame->dispatchInput;
         $this->evaluating[$index]->deferred = $result instanceof LayoutInterpreter\Passthrough;
 
