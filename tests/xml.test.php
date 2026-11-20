@@ -30,9 +30,20 @@ foreach ([$uiTheme, $uiComposer] as $uiPath) {
         && $uiExpected[1]['id'] !== $uiActual[1]['id'], 'Admin theme declaration matches the module shape and keeps its own source identity');
 }
 checkXml(FamilyEvidence::inventory($uiComposer, $uiBytes) === null, 'An unregistered theme path cannot be inferred from a vendor package name');
+$uiBase = str_replace('/view/adminhtml/', '/view/base/', $uiModule);
+checkXml((FamilyEvidence::inventory($uiBase, $uiBytes)['declarations'][1]['declaredScope']['type'] ?? null) === 'global',
+    'Base module UI declarations keep global scope');
+$uiVendorModule = str_replace('app/code/MageLens/UiProbe/', 'vendor/acme/ui-probe/', $uiModule);
+checkXml((FamilyEvidence::inventory($uiVendorModule, $uiBytes)['declarations'][1]['declaredScope']['type'] ?? null) === 'adminhtml',
+    'Vendor module UI declarations keep Admin scope');
 foreach ([str_replace('/admin-theme/', '/store-theme/', $uiComposer), str_replace('/adminhtml/', '/frontend/', $uiModule),
     str_replace('/adminhtml/', '/frontend/', $uiTheme)] as $uiPath) {
     checkXml(FamilyEvidence::inventory($uiPath, $uiBytes, $themeRoots) === null, 'Standalone frontend UI components are excluded');
+}
+foreach ([str_replace('/MageLens_UiProbe/', '/UiProbe/', $uiTheme),
+    str_replace('/ui_component/', '/ui_component/nested/', $uiComposer),
+    str_replace($listFile, 'invalid.name.xml', $uiModule)] as $uiPath) {
+    checkXml(FamilyEvidence::inventory($uiPath, $uiBytes, $themeRoots) === null, 'UI files require a recognized directory and component name');
 }
 foreach ([[123, '123'], ['123', '123'], ['0123', '0123'], ['catalogue', 'catalogue']] as [$input, $expected]) {
     checkXml(RoutingRuntime::identifier($input) === $expected, 'Native route IDs preserve string identity');
