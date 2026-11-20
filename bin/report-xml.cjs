@@ -156,7 +156,7 @@ for (const kind of ['reference', 'reference-name']) layoutEvents[kind] = [...ref
     'layout-reference-target-observed', 'layout-reference-unchanged', 'layout-reference-target-missing',
     'layout-reference-target-removed', 'layout-reference-origin-unconfirmed', 'layout-reference-child-attached', 'layout-reference-child-replaced', 'layout-container-wrapper-zero-class-emitted'];
 for (const [kind, events] of Object.entries(layoutEvents)) {
-    if (kind.startsWith('asset-') && !kind.startsWith('asset-removal')) events.push('layout-asset-controller-origin-unconfirmed');
+    if (kind.startsWith('asset-') && !kind.startsWith('asset-removal')) events.push('layout-asset-controller-origin-unconfirmed', 'layout-asset-storage-unconfirmed', 'layout-asset-emission-unconfirmed');
 }
 for (const kind of ['asset-src', 'asset-src-type']) layoutEvents[kind].push('layout-asset-controller-url-generated');
 for (const events of Object.values(layoutEvents)) events.push('layout-file-provider-excluded', 'layout-file-overridden', 'layout-xml-ownership-revoked', 'layout-validation-failed', 'layout-origin-limit');
@@ -247,6 +247,8 @@ const layoutDecisions = {
     'layout-body-class-replaced': 'A runtime body class assignment replaced the XML-origin class list before output.',
     'layout-asset-overridden': 'A later declaration replaced this scheduled resource before native asset output.',
     'layout-asset-replaced': 'A runtime assignment replaced this scheduled XML resource before native asset output.',
+    'layout-asset-storage-unconfirmed': 'The native asset collection storage or asset getter result could not be attributed to this XML declaration.',
+    'layout-asset-emission-unconfirmed': 'The renderer did not verify that the native asset URL contributed to the returned tag.',
     'layout-asset-controller-origin-unconfirmed': 'The native controller asset handoff did not establish the original route-to-URL conversion.',
     'layout-asset-removed-before-output': 'The native removal pass removed this scheduled resource before asset generation.',
     'layout-block-render-failed': 'The native block rendering boundary threw before returning HTML. Construction remains a separate observed fact.',

@@ -12,6 +12,7 @@ use Magento\Framework\View\Asset\Collection;
 use Magento\Framework\View\Asset\File;
 use Magento\Framework\View\Asset\Remote;
 use Magento\Framework\View\Asset\GroupedCollection;
+use Magento\Framework\View\Asset\PropertyGroup;
 use Magento\Framework\View\Page\Config;
 use Magento\Framework\View\Page\Config\Generator\Head as Generator;
 use Magento\Framework\View\Page\Config\Reader\Head;
@@ -42,6 +43,7 @@ final class LayoutAssetsCoverage
             [Structure::class, 'addAssets', null, $this->scheduleAsset(...)],
             [Structure::class, 'processRemoveAssets', $this->beginRemoval(...), $this->endRemoval(...)],
             [Generator::class, 'processAssets', $this->beginGeneration(...), $this->endGeneration(...)],
+            [Structure::class, 'getAssets', null, $this->generationAssets(...)],
             [Generator::class, 'getAssetProperties', null, $this->assetProperties(...)],
             [Url::class, 'getUrl', $this->beginControllerUrl(...), $this->endControllerUrl(...)],
             [Config::class, 'addPageAsset', $this->beginAdd(...), $this->endAdd(...)],
@@ -51,6 +53,7 @@ final class LayoutAssetsCoverage
             [Collection::class, 'insert', $this->replaceAsset(...), null],
             [Collection::class, 'remove', $this->removeAsset(...), null],
             [Renderer::class, 'renderAssetGroup', $this->beginRender(...), $this->endRender(...)],
+            [Renderer::class, 'renderAssetHtml', null, $this->assetOutput(...)],
             [Renderer::class, 'getGroupAttributes', null, $this->groupAttributes(...)],
             [Renderer::class, 'addDefaultAttributes', $this->beginDefaults(...), $this->endDefaults(...)],
             [Renderer::class, 'canTypeBeFont', null, $this->fontDefaults(...)],
@@ -64,6 +67,9 @@ final class LayoutAssetsCoverage
     public function finish(): void
     {
         if ($this->routing) throw new \RuntimeException('Unbalanced native controller asset URL evidence');
+        if ($this->reading || $this->removing || $this->generating || $this->adding || $this->rendering) {
+            throw new \RuntimeException('Unbalanced native asset observations');
+        }
     }
 
     public function snapshot(Structure $structure): array
@@ -86,18 +92,26 @@ final class LayoutAssetsCoverage
         return Xml::scalarTreeSignature($data);
     }
 
+    private static function storage(object $object, string $class, string $name): ?array
+    {
+        static $fields = [];
+        $property = $fields[$class][$name] ??= new \ReflectionProperty($class, $name);
+        $actual = new \ReflectionProperty($object, $name);
+        if ($actual->getDeclaringClass()->getName() !== $class || $actual->getHooks() || $actual->isStatic()) return null;
+        $value = $property->getRawValue($object);
+        return is_array($value) ? $value : null;
+    }
+
     private static function caller(object $object, string $method): array
     {
         $trace = LayoutRuntimeHooks::trace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
         $caller = $trace[3] ?? [];
-        $invocation = $trace[2] ?? [];
         $wrapper = get_class($object);
         if (str_ends_with($wrapper, '\\Interceptor') && ($caller['class'] ?? null) === $wrapper
             && ($caller['function'] ?? null) === $method) {
-            $invocation = $caller;
             $caller = $trace[4] ?? [];
         }
-        return [...$caller, 'invocationLine' => $invocation['line'] ?? null, 'invocationFile' => $invocation['file'] ?? null];
+        return $caller;
     }
 
     private function beginRead($reader, array $params, string $class): void
@@ -130,7 +144,9 @@ final class LayoutAssetsCoverage
 
     private function beginRemoval($structure, array $params, string $class): void
     {
-        if ($class === Structure::class) $this->removing[] = array_intersect_key($this->snapshot($structure), $structure->getAssets());
+        if ($class !== Structure::class) return;
+        $storage = self::storage($structure, Structure::class, 'assets');
+        $this->removing[] = $storage === null ? null : array_intersect_key($this->snapshot($structure), $storage);
     }
 
     private function endRemoval($structure, array $params, $result, ?\Throwable $error, string $class): void
@@ -139,7 +155,13 @@ final class LayoutAssetsCoverage
         $before = array_pop($this->removing);
         if ($error) return;
         $state = $this->snapshot($structure);
-        foreach (array_diff_key($before, $structure->getAssets()) as $name => $origin) {
+        $storage = self::storage($structure, Structure::class, 'assets');
+        if ($before === null || $storage === null) {
+            foreach ($state as $origin) self::record($origin, 'layout-asset-storage-unconfirmed');
+            $this->reset($structure);
+            return;
+        }
+        foreach (array_diff_key($before, $storage) as $name => $origin) {
             self::record($origin, 'layout-asset-removed-before-output');
             unset($state[$name]);
         }
@@ -149,9 +171,20 @@ final class LayoutAssetsCoverage
     private function beginGeneration($generator, array $params, string $class): void
     {
         if ($class !== Generator::class) return;
-        $state = $this->snapshot($params[0]);
+        $this->generating[] = ['structure' => $params[0], 'state' => [], 'properties' => null, 'route' => null, 'observed' => false];
+    }
+
+    private function generationAssets($structure, array $params, $assets, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->generating);
+        if ($error || $class !== Structure::class || $index === null || $this->generating[$index]['structure'] !== $structure
+            || !is_array($assets)) return;
+        $caller = self::caller($structure, 'getAssets');
+        if (($caller['class'] ?? null) !== Generator::class || ($caller['function'] ?? null) !== 'processAssets'
+            || (new \ReflectionMethod($structure, 'getAssets'))->getDeclaringClass()->getName() !== Structure::class) return;
+        $state = $this->snapshot($structure);
         $valid = [];
-        foreach ($params[0]->getAssets() as $name => $data) {
+        foreach ($assets as $name => $data) {
             if (!isset($state[$name]) || $state[$name]['signature'] === null
                 || $state[$name]['signature'] !== self::signature($data)) continue;
             $valid[$name] = $state[$name];
@@ -160,12 +193,17 @@ final class LayoutAssetsCoverage
                 $valid[$name]['controller'] = self::signature($data);
             }
         }
-        $this->generating[] = ['state' => $valid, 'properties' => null, 'route' => null];
+        $this->generating[$index]['state'] = $valid;
+        $this->generating[$index]['observed'] = true;
     }
 
     private function endGeneration($generator, array $params, $result, ?\Throwable $error, string $class): void
     {
-        if ($class === Generator::class) array_pop($this->generating);
+        if ($class !== Generator::class) return;
+        $frame = array_pop($this->generating);
+        if (!$error && !$frame['observed']) {
+            foreach ($this->snapshot($frame['structure']) as $origin) self::record($origin, 'layout-asset-storage-unconfirmed');
+        }
     }
 
     private function beginControllerUrl($url, array $params, string $class): void
@@ -256,7 +294,7 @@ final class LayoutAssetsCoverage
     private function removeAsset($collection, array $params, string $class): void
     {
         if ($class !== Collection::class) return;
-        $asset = $collection->getAll()[$params[0]] ?? null;
+        $asset = self::storage($collection, Collection::class, 'assets')[$params[0]] ?? null;
         if ($asset) unset($this->assets[$asset]);
     }
 
@@ -267,21 +305,29 @@ final class LayoutAssetsCoverage
         $caller = self::caller($collection, 'add');
         if (!$candidate || $candidate['name'] !== (string) $params[0] || ($caller['class'] ?? null) !== Config::class
             || !in_array($caller['function'] ?? null, ['addPageAsset', 'addRemotePageAsset'], true)) return;
-        foreach ($collection->getGroups() as $group) {
-            if (($group->getAll()[$params[0]] ?? null) !== $params[1]) continue;
-            $this->assets[$params[1]] = ['group' => $group, 'origin' => $candidate['origin'],
-                'properties' => self::signature($group->getProperties()), 'attributes' => $candidate['attributes']];
-            if ($candidate['order'] !== null && (string) $group->getProperty('order') === $candidate['order']) {
-                self::record($candidate['origin'], 'layout-asset-group-applied', ['asset-order']);
+        $matches = [];
+        foreach (self::storage($collection, GroupedCollection::class, 'groups') ?? [] as $group) {
+            if ($group instanceof PropertyGroup && (self::storage($group, Collection::class, 'assets')[$params[0]] ?? null) === $params[1]) {
+                $matches[] = $group;
             }
+        }
+        $group = count($matches) === 1 ? $matches[0] : null;
+        $properties = $group ? self::storage($group, PropertyGroup::class, 'properties') : null;
+        if ($properties === null) {
+            self::record($candidate['origin'], 'layout-asset-storage-unconfirmed');
             return;
+        }
+        $this->assets[$params[1]] = ['group' => $group, 'origin' => $candidate['origin'],
+            'properties' => self::signature($properties), 'attributes' => $candidate['attributes']];
+        if ($candidate['order'] !== null && (string) ($properties['order'] ?? '') === $candidate['order']) {
+            self::record($candidate['origin'], 'layout-asset-group-applied', ['asset-order']);
         }
     }
 
     private function beginRender($renderer, array $params, string $class): void
     {
-        if ($class === Renderer::class) $this->rendering[] = ['group' => $params[0], 'origins' => [],
-            'attributes' => false, 'defaults' => false, 'font' => false, 'template' => false, 'conditional' => false];
+        if ($class === Renderer::class) $this->rendering[] = ['renderer' => $renderer, 'group' => $params[0], 'origins' => [], 'pending' => [],
+            'attributes' => false, 'defaults' => false, 'font' => false, 'template' => null, 'conditional' => false];
     }
 
     private function groupAttributes($renderer, array $params, $result, ?\Throwable $error, string $class): void
@@ -301,7 +347,7 @@ final class LayoutAssetsCoverage
         if ($class !== Renderer::class || $index === null) return;
         $this->rendering[$index]['defaults'] = false;
         $this->rendering[$index]['font'] = false;
-        $this->rendering[$index]['template'] = false;
+        $this->rendering[$index]['template'] = null;
     }
 
     private function fontDefaults($renderer, array $params, $font, ?\Throwable $error, string $class): void
@@ -332,7 +378,7 @@ final class LayoutAssetsCoverage
         $caller = self::caller($renderer, 'getAssetTemplate');
         if (($caller['class'] ?? null) === Renderer::class && ($caller['function'] ?? null) === 'renderAssetHtml'
             && (new \ReflectionMethod($renderer, 'getAssetTemplate'))->getDeclaringClass()->getName() === Renderer::class) {
-            $this->rendering[$index]['template'] = true;
+            $this->rendering[$index]['template'] = is_string($result) ? $result : null;
         }
     }
 
@@ -340,7 +386,8 @@ final class LayoutAssetsCoverage
     {
         $index = array_key_last($this->rendering);
         if (!$error && $class === Renderer::class && $index !== null && $this->rendering[$index]['group'] === $params[1]
-            && !empty($params[1]->getProperty('ie_condition'))
+            && is_string($result) && ($condition = self::storage($params[1], PropertyGroup::class, 'properties')['ie_condition'] ?? null)
+            && str_starts_with($result, '<!--[if ' . $condition . ']>')
             && (new \ReflectionMethod($renderer, 'processIeCondition'))->getDeclaringClass()->getName() === Renderer::class) {
             $this->rendering[$index]['conditional'] = true;
         }
@@ -352,26 +399,43 @@ final class LayoutAssetsCoverage
         if ($error || !in_array($class, [File::class, Remote::class], true) || $index === null || !isset($this->assets[$asset])) return;
         $caller = self::caller($asset, 'getUrl');
         if (($caller['class'] ?? null) !== Renderer::class || ($caller['function'] ?? null) !== 'renderAssetHtml') return;
-        static $emission, $nativeFile;
-        if ($emission === null) {
-            $method = new \ReflectionMethod(Renderer::class, 'renderAssetHtml');
-            $nativeFile = $method->getFileName();
-            $lines = file($nativeFile);
-            $emission = [];
-            for ($line = $method->getStartLine(); $line <= $method->getEndLine(); $line++) {
-                if (str_contains($lines[$line - 1], 'sprintf($template, $asset->getUrl())')) $emission[] = $line;
-            }
-        }
-        if (count($emission) !== 1 || $caller['invocationLine'] !== $emission[0] || $caller['invocationFile'] !== $nativeFile) return;
+        $frame = &$this->rendering[$index];
         $binding = $this->assets[$asset];
-        $group = $this->rendering[$index]['group'];
-        if ($binding['group'] === $group && $binding['properties'] === self::signature($group->getProperties())
-            && $this->rendering[$index]['template']) {
-            $attributes = $this->rendering[$index]['attributes'] && $this->rendering[$index]['defaults']
-                && $binding['attributes'] === self::signature($group->getProperty('attributes') ?? []);
-            $this->rendering[$index]['origins'][] = ['origin' => $binding['origin'],
-                'attributes' => $attributes, 'font' => $this->rendering[$index]['font']];
+        if ($binding['group'] !== $frame['group'] || $frame['template'] === null) return;
+        $template = $frame['template'];
+        $frame['template'] = null;
+        $properties = self::storage($frame['group'], PropertyGroup::class, 'properties');
+        if ($properties === null || $binding['properties'] === null || $binding['properties'] !== self::signature($properties)
+            || !is_string($url) || substr_count($template, '%') !== 1 || !str_contains($template, '%s')) {
+            self::record($binding['origin'], 'layout-asset-emission-unconfirmed');
+            return;
         }
+        $attributes = $frame['attributes'] && $frame['defaults']
+            && (new \ReflectionMethod($frame['group'], 'getProperty'))->getDeclaringClass()->getName() === PropertyGroup::class
+            && $binding['attributes'] === self::signature($properties['attributes'] ?? []);
+        $frame['pending'][] = ['origin' => $binding['origin'], 'attributes' => $attributes, 'font' => $frame['font'],
+            'fragment' => str_replace('%s', $url, $template)];
+    }
+
+    private function assetOutput($renderer, array $params, $html, ?\Throwable $error, string $class): void
+    {
+        $index = array_key_last($this->rendering);
+        if ($class !== Renderer::class || $index === null) return;
+        $frame = &$this->rendering[$index];
+        if ($frame['renderer'] !== $renderer || $frame['group'] !== $params[0]) return;
+        $caller = self::caller($renderer, 'renderAssetHtml');
+        if (($caller['class'] ?? null) !== Renderer::class || ($caller['function'] ?? null) !== 'renderAssetGroup') return;
+        $offset = 0;
+        foreach ($frame['pending'] as $entry) {
+            $position = !$error && is_string($html) ? strpos($html, $entry['fragment'], $offset) : false;
+            if ($position === false) {
+                self::record($entry['origin'], 'layout-asset-emission-unconfirmed');
+                continue;
+            }
+            $offset = $position + strlen($entry['fragment']);
+            $frame['origins'][] = $entry;
+        }
+        $frame['pending'] = [];
     }
 
     private function endRender($renderer, array $params, $result, ?\Throwable $error, string $class): void
@@ -379,6 +443,11 @@ final class LayoutAssetsCoverage
         if ($class !== Renderer::class) return;
         $frame = array_pop($this->rendering);
         if ($error) return;
+        if ((new \ReflectionMethod($renderer, 'renderAssetHtml'))->getDeclaringClass()->getName() !== Renderer::class
+            || (new \ReflectionMethod($renderer, 'processIeCondition'))->getDeclaringClass()->getName() !== Renderer::class) {
+            foreach ($frame['pending'] as $entry) self::record($entry['origin'], 'layout-asset-emission-unconfirmed');
+            return;
+        }
         foreach ($frame['origins'] as $entry) {
             $origin = $entry['origin'];
             self::record($origin, 'layout-asset-reference-rendered', ['asset-reference', 'asset-src', 'asset-src-type']);
