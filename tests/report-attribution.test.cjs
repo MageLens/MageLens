@@ -31,7 +31,8 @@ function workspace(t, change = () => {}) {
         [`coverage/raw/attempts/${other}.json`]: attempt(other, ['cart', 'removes'], 0, 'passed', '2026-01-01T00:00:21.000Z', '2026-01-01T00:00:30.000Z'),
         // Line 12 runs in both attempts of one test, 13 in one attempt only, 14 in shared setup, 15 nowhere.
         'coverage/php/line-coverage.json': {'app/code/Acme/Shop/Model/Cart.php': {12: 1, 13: 1, 14: 1, 15: 0}},
-        'coverage/php/attribution.json': {'app/code/Acme/Shop/Model/Cart.php': {12: [first, retry], 13: [retry], 14: ['unattributed']}},
+        'coverage/php/attribution.json': {tests: {0: first, 1: 'unattributed', 2: retry},
+            lines: {'app/code/Acme/Shop/Model/Cart.php': {12: [0, 2], 13: [2], 14: [1]}}},
         'coverage/php/coverage-summary.json': {requests: [
             {attempt: first, startedAt: '2026-01-01T00:00:01.000Z'}, {attempt: retry, startedAt: '2026-01-01T00:00:12.000Z'},
             {attempt: retry, startedAt: '2026-01-01T00:00:20.500Z'}, {attempt: null, startedAt: '2026-01-01T00:00:00.500Z'}], commands: []},
@@ -71,9 +72,9 @@ test('a run without test attempts writes no attribution', t => {
 
 test('attribution that disagrees with the aggregate reports blocks the run', t => {
     const cases = [
-        [data => { data['coverage/php/attribution.json']['app/code/Acme/Shop/Model/Cart.php'][15] = [first]; }, /PHP attribution outside the report/],
-        [data => { delete data['coverage/php/attribution.json']['app/code/Acme/Shop/Model/Cart.php'][14]; }, /Covered PHP line without attribution/],
-        [data => { data['coverage/php/attribution.json']['app/code/Acme/Shop/Model/Cart.php'][13] = [1]; }, /unknown attempt/],
+        [data => { data['coverage/php/attribution.json'].lines['app/code/Acme/Shop/Model/Cart.php'][15] = [0]; }, /PHP attribution outside the report/],
+        [data => { delete data['coverage/php/attribution.json'].lines['app/code/Acme/Shop/Model/Cart.php'][14]; }, /Covered PHP line without attribution/],
+        [data => { data['coverage/php/attribution.json'].tests[3] = 'f'.repeat(32); data['coverage/php/attribution.json'].lines['app/code/Acme/Shop/Model/Cart.php'][13] = [3]; }, /unknown attempt/],
         [data => { Object.values(data[`coverage/raw/javascript-attempts/${retry}.json`])[0].s[0] = 5; }, /exceeds the aggregate/],
         [data => { data['coverage/raw/templates/2.mtc'].hits.t1['binding:1'] = 2; }, /Template attribution differs/],
         [data => { data[`coverage/raw/attempts/${other}.json`].run = 'previous'; }, /another run/]

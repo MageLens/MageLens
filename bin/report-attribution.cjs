@@ -41,12 +41,12 @@ const unattributedOnly = owners => Object.keys(owners).every(owner => owner === 
 
 function php(index, attempts) {
     const covered = read('coverage/php/line-coverage.json');
-    const lines = read('coverage/php/attribution.json');
+    const {tests: ids, lines} = read('coverage/php/attribution.json');
     const result = units();
     for (const [file, byLine] of Object.entries(lines)) {
         for (const [line, tests] of Object.entries(byLine)) {
             assert.equal(covered[file]?.[line], 1, `PHP attribution outside the report: ${file}:${line}`);
-            for (const test of tests) {
+            for (const test of tests.map(test => ids[test])) {
                 // Every attempt ID in a PHP record comes from an attempt record of this run.
                 assert.ok(test === unattributed || index.has(test), `PHP attribution to an unknown attempt: ${file}:${line}`);
                 result.add(file, line, index.get(test) ?? unattributed, 1);

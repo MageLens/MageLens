@@ -106,14 +106,14 @@ if (glob('/coverage/raw/attempts/*.json')) {
     // The attempts that executed each covered line, for coverage/attribution/ (bin/report-attribution.cjs).
     $attribution = [];
     $byTest = applicationPhpReportDataByTest($state['scope'], $byAttempt, $runData['sources'])->getData();
-    // Line data is keyed by test index; testIds() maps the indexes back to attempt IDs.
-    $ids = $byTest->testIds();
+    // Line data is keyed by test index; `tests` maps the indexes to attempt IDs, so each ID is stored once.
     foreach ($byTest->lineCoverage() as $file => $hits) {
         foreach ($hits as $line => $tests) {
-            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_map(static fn(int $index): string => $ids[$index], array_keys($tests));
+            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_keys($tests);
         }
     }
-    file_put_contents('/coverage/php/attribution.json', json_encode((object) $attribution, JSON_THROW_ON_ERROR) . "\n");
+    file_put_contents('/coverage/php/attribution.json', json_encode(['tests' => (object) $byTest->testIds(),
+        'lines' => (object) $attribution], JSON_THROW_ON_ERROR) . "\n");
 }
 file_put_contents('/coverage/php/merged-lines.json', json_encode($merged, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 $lines = [];
