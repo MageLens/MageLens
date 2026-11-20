@@ -98,7 +98,7 @@ function javascript(index) {
     return {result, stats: {unit: 'statement (s), function (f) and branch path (b) counters'}};
 }
 
-function templates(attempts) {
+function templates(attempts, index) {
     const summary = read('coverage/templates/coverage-summary.json');
     const entries = new Map(summary.templates.map(entry => [entry.id, entry]));
     // Template records identify their test, not the attempt; retries and projects tell attempts apart.
@@ -112,7 +112,9 @@ function templates(attempts) {
         // Playwright stores the absolute spec path and starts the title path with the spec file.
         const spec = path.isAbsolute(record.spec) ? path.relative(process.cwd(), record.spec) : record.spec;
         const test = record.test[0] === spec ? record.test.slice(1) : record.test;
-        const matches = owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
+        // Records that carry their attempt ID need no matching by test identity.
+        if (record.attempt) assert.ok(index.has(record.attempt), `Template record of an unknown attempt: ${file}`);
+        const matches = record.attempt ? [index.get(record.attempt)] : owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
         const owner = matches.length === 1 ? matches[0] : unattributed;
         stats.records++;
         if (owner === unattributed) stats.unattributedRecords++;
@@ -138,7 +140,7 @@ function writeAttribution() {
     if (!attempts.length) return null;
     for (const attempt of attempts) assert.equal(attempt.run, run, 'Test attempt from another run');
     const index = new Map(attempts.map((attempt, position) => [attempt.id, position]));
-    const collectors = {php: php(index, attempts), javascript: javascript(index), templates: templates(attempts)};
+    const collectors = {php: php(index, attempts), javascript: javascript(index), templates: templates(attempts, index)};
     fs.rmSync('coverage/attribution', {recursive: true, force: true});
     fs.mkdirSync('coverage/attribution');
     const summary = {schemaVersion: 1, run, attempts, collectors: {}};

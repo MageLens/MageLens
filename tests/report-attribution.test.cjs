@@ -91,3 +91,20 @@ test('identical template records of two attempts stay unattributed', t => {
     const summary = writeAttribution();
     assert.deepEqual([summary.collectors.templates.ambiguousRecords, summary.collectors.templates.unattributedRecords], [1, 2]);
 });
+
+test('template records that carry their attempt ID are attributed to it, also when titles repeat', t => {
+    workspace(t, data => {
+        data[`coverage/raw/attempts/${other}.json`].test = ['cart', 'adds'];
+        data[`coverage/raw/attempts/${other}.json`].retry = 1;
+        Object.assign(data['coverage/raw/templates/1.mtc'], {attempt: other});
+    });
+    const summary = writeAttribution();
+    assert.deepEqual([summary.collectors.templates.ambiguousRecords, summary.collectors.templates.unattributedRecords], [0, 1]);
+    assert.deepEqual(JSON.parse(fs.readFileSync('coverage/attribution/templates.json', 'utf8')).files['app/code/Acme/Shop/view/frontend/templates/cart.phtml'],
+        {'binding:1': {2: 2, unattributed: 1}});
+});
+
+test('a template record of an unknown attempt blocks the run', t => {
+    workspace(t, data => { data['coverage/raw/templates/1.mtc'].attempt = 'd'.repeat(32); });
+    assert.throws(() => writeAttribution(), /Template record of an unknown attempt/);
+});

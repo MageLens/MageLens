@@ -3,13 +3,14 @@
 // License: see LICENSE in the repository root.
 
 require('./javascript-coverage');
+const {currentAttempt, setAttempt} = require('./attempt');
 const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/cypress');
-registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
+// Template records carry the attempt ID where the package supports record metadata.
+registerTemplateCoverage({outputDir: 'coverage/raw/templates', metadata: () => ({attempt: currentAttempt()})});
 
 const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
 Cypress.on('window:before:load', disablePageTransitions);
 
-const {currentAttempt, setAttempt} = require('./attempt');
 beforeEach(function () {
     // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
