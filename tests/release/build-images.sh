@@ -31,7 +31,8 @@ for kind in php runner-cypress runner-playwright; do
         docker build --target portable --file docker/php/Dockerfile --tag "$image" \
             --label "org.magelens.inputs=$fingerprint" --label "org.opencontainers.image.source=$release_source" \
             --build-arg "PHP_IMAGE=$APPLICATION_PHP_IMAGE" --build-arg "EXPECTED_PHP_VERSION=$PHP_VERSION" \
-            --build-arg "OPENTELEMETRY_VERSION=$OPENTELEMETRY_VERSION" --build-arg "PIE_VERSION=$PIE_VERSION" --build-arg "PCOV_VERSION=$PCOV_VERSION" .
+            --build-arg "OPENTELEMETRY_VERSION=$OPENTELEMETRY_VERSION" --build-arg "OPENTELEMETRY_SHA256=$OPENTELEMETRY_SHA256" \
+            --build-arg "PIE_VERSION=$PIE_VERSION" --build-arg "PCOV_VERSION=$PCOV_VERSION" .
         docker run --rm --entrypoint php \
             --mount "type=bind,source=$ROOT/tests,target=/tests,readonly" \
             --mount "type=bind,source=$ROOT/docker/php,target=/application/docker/php,readonly" \

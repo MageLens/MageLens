@@ -352,7 +352,7 @@ test('layout equivalence preserves effects, source and context without exposing 
     }
 });
 
-test('native Admin context names are platform metadata while every source and effect remains exact', t => {
+test('Admin theme names, sources and effects remain exact in qualification', t => {
     const {directory, read, write} = fixture(t);
     const xml = read('xml/coverage.json');
     const effect = {type: 'layout-block-rendered', area: 'adminhtml', theme: 'adminhtml/Magento/backend'};
@@ -367,10 +367,12 @@ test('native Admin context names are platform metadata while every source and ef
     write('xml/coverage.json', xml);
     const mageos = snapshot(directory);
     assert.notDeepEqual(magento.xml, mageos.xml, 'The actual contexts must remain in the saved snapshots');
-    const matrix = cases.map(entry => ({...entry, snapshot: structuredClone(entry.platform === 'mageos' ? mageos : magento)}));
+    const matrix = cases.map(entry => ({...entry, snapshot: structuredClone(magento)}));
     const original = structuredClone(matrix);
     assert.equal(compareThemes(matrix, cases).passed, true);
     assert.deepEqual(matrix, original, 'Comparison must not rewrite the original snapshots');
+    const differentThemes = cases.map(entry => ({...entry, snapshot: entry.platform === 'mageos' ? mageos : magento}));
+    assert.equal(compareThemes(differentThemes, cases).passed, false);
     const declaration = value => Object.values(value.xml.files)[0].declarations[0];
     for (const alter of [
         value => { declaration(value).evidence[0][2] = 'f'.repeat(64); },

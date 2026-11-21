@@ -21,6 +21,8 @@ The full E2E matrix and release qualification use **GitHub Actions**. Focused lo
 | `ubuntu-latest` | Mage-OS | Luma | Playwright | 1 |
 | `windows-latest` | Mage-OS | Luma | Cypress | 1 |
 
+The disposable cases use the installed Magento backend theme for Admin journeys. Mage-OS selects it through its Admin theme setting. Storefront coverage follows each case’s Luma or Hyvä CSP selection.
+
 The host probe records the actual runner image, architecture, Bash and Docker/Compose versions. It requires Linux containers, writable host mounts, symlinks, container DNS and a published port reachable from the host before installation. A failed probe leaves the required case incomplete; it never substitutes a Linux runner.
 
 Apply the `run-ci` label to an open pull request to qualify its current merge candidate. Inspect the run and download its evidence with:

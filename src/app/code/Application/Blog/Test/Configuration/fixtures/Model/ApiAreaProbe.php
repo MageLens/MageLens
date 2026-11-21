@@ -30,6 +30,8 @@ class ApiAreaProbe
      */
     public function variant(string $scenario): array
     {
+        if ($scenario === 'cached') throw new \LogicException('A cached call must skip the service body');
+        if ($scenario === 'unrelated') return ['unrelated-call'];
         return [...$this->read(), 'variable-route'];
     }
 }

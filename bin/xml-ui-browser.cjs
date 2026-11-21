@@ -12,6 +12,7 @@ function installUiBrowserObserver(scope, win = window) {
     const entries = new Map();
     const origins = new WeakMap();
     const layoutOptions = new WeakMap();
+    const initialScripts = new WeakSet();
     let registry, UiElement, ko, activeInsert, navigationResponse;
 
     function documentResponse() {
@@ -22,10 +23,6 @@ function installUiBrowserObserver(scope, win = window) {
     function httpResponse(xhr) {
         const response = xhr?.status === 200 && xhr.getResponseHeader?.('X-MageLens-Response');
         return token.test(response) ? response : null;
-    }
-
-    function delivery(instance) {
-        return origins.has(instance) ? origins.get(instance) : documentResponse();
     }
 
     function record(type, identity, response) {
@@ -66,13 +63,14 @@ function installUiBrowserObserver(scope, win = window) {
                 if (name === 'mage/apply/scripts') {
                     facade.toArray = function (nodes) {
                         const array = underscore.toArray(nodes);
+                        if (!array.length || array[0]?.type !== 'text/x-magento-init') return array;
                         const insert = activeInsert;
-                        if (!insert) return array;
                         array.map = function (parse, receiver) {
                             return Array.prototype.map.call(this, (node, index, source) => {
-                                const owned = insert.element.contains(node);
+                                const response = insert?.element.contains(node) ? insert.response :
+                                    initialScripts.has(node) ? documentResponse() : null;
                                 const parsed = parse.call(receiver, node, index, source);
-                                if (owned) markConfig(parsed?.['*']?.['Magento_Ui/js/core/app']?.components, insert.response);
+                                if (response) markConfig(parsed?.['*']?.['Magento_Ui/js/core/app']?.components, response);
                                 return parsed;
                             });
                         };
@@ -148,7 +146,7 @@ function installUiBrowserObserver(scope, win = window) {
             case 'Magento_Ui/js/form/components/button':
                 wrap(module.prototype, 'applyAction', function (method, args) {
                     const name = registered(this) ? this.name : null;
-                    const response = name && delivery(this);
+                    const response = name && origins.get(this);
                     const result = Reflect.apply(method, this, args);
                     if (name) record('ui-action-invoked', name, response);
                     return result;
@@ -160,7 +158,7 @@ function installUiBrowserObserver(scope, win = window) {
                 wrap(module.prototype, 'onReload', function (method, args) {
                     const name = registered(this) ? this.name : null;
                     const result = Reflect.apply(method, this, args);
-                    if (name) record('ui-reloaded', name + '#provider', httpResponse(args[2]));
+                    if (name && origins.has(this)) record('ui-reloaded', name + '#provider', httpResponse(args[2]));
                     return result;
                 });
                 break;
@@ -199,7 +197,8 @@ function installUiBrowserObserver(scope, win = window) {
         if (win.document !== document || !registry || !UiElement || !ko) return;
         const names = new Map();
         for (const instance of registry.filter(item => registered(item) && Object.hasOwn(scope, item.name))) {
-            const response = delivery(instance);
+            const response = origins.get(instance);
+            if (!response) continue;
             names.set(instance, response);
             record('ui-constructed', instance.name, response);
         }
@@ -216,6 +215,12 @@ function installUiBrowserObserver(scope, win = window) {
     }
 
     if (Object.keys(scope).length) {
+        function identifyInitialScripts() {
+            for (const script of document.querySelectorAll('script[type="text/x-magento-init"]')) initialScripts.add(script);
+        }
+        // jQuery starts Magento's initial apply on DOM ready.
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', identifyInitialScripts, {once: true});
+        else identifyInitialScripts();
         watchRequireJs();
         win.setInterval(collect, 125);
         win.addEventListener('pagehide', collect);

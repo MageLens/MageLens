@@ -5,7 +5,8 @@
 const fs = require('node:fs');
 const {expect} = require('@playwright/test');
 const {parent, menu, gridHead, columnLabels, rows, input, readOnly, button, initialValue, readOnlyValue,
-    proofDirectory, responseId, documentResponse, uiRequest, testValue} = require('./journey.cjs');
+    proofDirectory, responseId, documentResponse, uiRequest, testValue,
+    initialDisabled, replacementButton, registerReplacement} = require('./journey.cjs');
 
 function waitForUiResponse(page, purpose) {
     return page.waitForResponse(response => response.request().method() === 'GET' && uiRequest(response.url()) === purpose);
@@ -58,6 +59,10 @@ async function runUiJourney(page, admin, collect = false) {
     await expect(page.locator(readOnly)).toHaveText(readOnlyValue);
     await expect(page.locator(button('uninvoked'))).toBeVisible();
     await expect(page.locator(button('uninstantiated'))).toHaveCount(0);
+    await page.evaluate(registerReplacement, initialDisabled);
+    const replacement = page.locator(replacementButton);
+    await replacement.click();
+    await expect(replacement).toHaveAttribute('data-invoked', 'true');
     await untouched.fill(testValue);
     await expect(untouched).toHaveValue(testValue);
     await page.locator(button('invoke')).click();

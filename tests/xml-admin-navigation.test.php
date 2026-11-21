@@ -64,4 +64,27 @@ expectAdminNavigation(!$removed['supported'] && str_contains($removed['reason'],
 expectAdminNavigation(!$remove['supported'] && $remove['reason'], 'Remove command must retain explicit limitations');
 expectAdminNavigation(!isset($targets['menu']['MageLens_AdminNavigation::removed']), 'Removed menu entry kept its runtime binding');
 
+$overlay = <<<'XML'
+<config>
+    <acl><resources>
+        <resource id="Magento_Backend::admin">
+            <resource id="Application_Blog::manage">
+                <resource id="MageLens_AdminNavigation::browse" title="Overlay title"/>
+            </resource>
+        </resource>
+    </resources></acl>
+</config>
+XML;
+$resolver->aclOverlay[BP . '/app/code/MageLens/AclOverlay/etc/acl.xml'] = $overlay;
+$resources = (new \Magento\Framework\Acl\AclResource\TreeBuilder())->build($aclReader->read()['config']['acl']['resources']);
+$rootResource = array_column($resources, null, 'id')['Magento_Backend::admin'];
+$parentResource = array_column($rootResource['children'], null, 'id')['Application_Blog::manage'];
+$browseResource = array_column($parentResource['children'], null, 'id')['MageLens_AdminNavigation::browse'];
+expectAdminNavigation($browseResource['title'] === 'Overlay title', 'Magento did not read the schema-less ACL overlay');
+[$overlayTargets] = AdminNavigationFamily::prepare($om, $files);
+$overlayItems = array_column($files[substr($aclFile, strlen(BP) + 1)]['declarations'], null, 'path');
+expectAdminNavigation($overlayItems['MageLens_AdminNavigation::browse']['outcome'] === 'ambiguous'
+    && !isset($overlayTargets['acl']['MageLens_AdminNavigation::browse']), 'A schema-less material ACL overlay did not make the original ambiguous');
+expectAdminNavigation(isset($overlayTargets['acl']['Application_Blog::manage']), 'ID-only ACL parent reference displaced the original');
+
 echo "Admin XML provenance proof passed.\n";

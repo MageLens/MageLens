@@ -26,7 +26,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class Probe extends Command
 {
     private const CRON_PROBES = ['magelens_probe', 'magelens_failing_probe', 'magelens_generated_probe',
-        '123', '0123', 'magelens_scoped_probe', '456'];
+        '123', '0123', 'magelens_scoped_probe', '456', 'magelens_cron_skipped', 'magelens_cron_proceeded'];
     private const GENERATED_JOBS = [
         'magelens_generated_probe' => ['magelens_generated_probe'],
         '123' => ['123', '0123', 'magelens_scoped_probe'],
@@ -110,6 +110,10 @@ class Probe extends Command
                 break;
             case 'cold-cron-config':
                 $this->cronConfigCache->remove('crontab_config_cache');
+                break;
+            case 'expire-cron-cleanup':
+                if (!isset(self::GENERATED_JOBS[$value])) throw new \InvalidArgumentException('Unknown probe group');
+                $this->cache->remove(ProcessCronQueueObserver::CACHE_KEY_LAST_HISTORY_CLEANUP_AT . $value);
                 break;
             case 'other-cron-groups':
                 $groups = array_map('strval', array_keys($this->cronConfig->create()->getJobs()));

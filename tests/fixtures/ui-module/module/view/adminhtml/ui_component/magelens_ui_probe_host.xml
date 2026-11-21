@@ -44,5 +44,19 @@ License: see LICENSE in the repository root.
                 <externalProvider>magelens_ui_probe_form.probe_form_data_source</externalProvider>
             </settings>
         </insertForm>
+        <button name="initial_disabled" sortOrder="50">
+            <argument name="data" xsi:type="array">
+                <item name="config" xsi:type="array">
+                    <item name="title" xsi:type="string">Disabled initial button</item>
+                    <item name="componentDisabled" xsi:type="boolean">true</item>
+                    <item name="actions" xsi:type="array">
+                        <item name="0" xsi:type="array">
+                            <item name="targetName" xsi:type="string">magelens_ui_probe_host.magelens_ui_probe_host</item>
+                            <item name="actionName" xsi:type="string">reset</item>
+                        </item>
+                    </item>
+                </item>
+            </argument>
+        </button>
     </fieldset>
 </form>

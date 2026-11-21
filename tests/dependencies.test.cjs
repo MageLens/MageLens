@@ -104,6 +104,8 @@ test('dependency YAML rejects missing, duplicate, unknown and unsafe values', t 
         select(yaml, {CHROME_VERSION: 'latest'}),
         select(yaml, {CHROME_VERSION: '156.0.8078'}),
         select(yaml, {CHROME_LINUX_X64_SHA256: '1234'}),
+        select(yaml, {OPENTELEMETRY_SHA256: '1234'}),
+        yaml.replace(/^OPENTELEMETRY_SHA256:.*\n/m, ''),
         yaml.replace(/^CHROME_LINUX_ARM64_SHA256:.*\n/m, ''),
         yaml.replace(/^MAGEOS_VERSION:.*\n/m, ''),
         yaml.replace(/^PHP_IMAGE:.*\n/m, ''),

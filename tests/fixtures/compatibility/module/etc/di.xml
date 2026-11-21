@@ -11,6 +11,9 @@ License: see LICENSE in the repository root.
     <type name="MageLens\Compatibility\Cli\PreferredCronWorker">
         <plugin name="magelens_cron_worker_message" type="MageLens\Compatibility\Plugin\CronWorkerMessage"/>
     </type>
+    <type name="MageLens\Compatibility\Cli\Jobs">
+        <plugin name="magelens_cron_interceptor" type="MageLens\Compatibility\Plugin\CronInterceptor"/>
+    </type>
     <type name="Magento\Framework\Console\CommandList">
         <arguments>
             <argument name="commands" xsi:type="array">

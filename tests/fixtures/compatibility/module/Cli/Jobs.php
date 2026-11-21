@@ -35,6 +35,11 @@ class Jobs
         $schedule->setMessages($this->config->getValue('magelens_probe/cron/magerun_message'));
     }
 
+    public function runIntercepted(Schedule $schedule): void
+    {
+        $schedule->setData('magelens_calls', $schedule->getData('magelens_calls') + 1);
+    }
+
     public function runGenerated(Schedule $schedule): void
     {
         $schedule->setMessages('generated-handler-ran');

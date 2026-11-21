@@ -21,4 +21,9 @@ License: see LICENSE in the repository root.
         <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
         <resources><resource ref="anonymous"/></resources>
     </route>
+    <route url="/V1/magelens/area-probe/cached" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="variant"/>
+        <resources><resource ref="anonymous"/></resources>
+        <data><parameter name="scenario" force="true">cached</parameter></data>
+    </route>
 </routes>

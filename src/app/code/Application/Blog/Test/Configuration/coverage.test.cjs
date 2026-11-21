@@ -16,6 +16,8 @@ const system = 'app/code/Application/Blog/etc/adminhtml/system.xml';
 const layoutFixtureDi = 'app/code/MageLens/Compatibility/etc/frontend/di.xml';
 const cacheDispatchSubject = 'Magento\\PageCache\\Model\\App\\FrontController\\BuiltinPlugin';
 const cachePluginName = 'magelens_layout_cache_fixture';
+const routeMetadataSubject = 'Magento\\Framework\\App\\Route\\Config';
+const routeMetadataName = 'magelens_route_metadata';
 const prefix = 'application_blog/display/';
 function report() {
     const value = read('xml/coverage.json');
@@ -37,11 +39,16 @@ function request(result, name) {
     assert.equal(requests.length, 1, `Expected exactly one real request for ${name}`);
     const [record] = requests;
     const bridge = declaration(result, layoutFixtureDi, `${cacheDispatchSubject}/${cachePluginName}`, 'frontend', '', 'plugins');
-    const [dispatch, ...events] = record.events.filter(event => !event.type.startsWith('route-'));
-    // The cache fixture's native frontend dispatch runs before the Blog probe.
+    const routeMetadata = declaration(result, layoutFixtureDi, `${routeMetadataSubject}/${routeMetadataName}`, 'frontend', '', 'plugins');
+    const [dispatch, metadata, ...events] = record.events.filter(event => !event.type.startsWith('route-'));
+    // Frontend cache dispatch and route lookup execute these callbacks before the Blog probe.
     assert.deepEqual(dispatch, {
         id: bridge.id, type: 'plugin-execute', area: 'frontend', name: cachePluginName,
         callback: {subject: cacheDispatchSubject, method: 'aroundDispatch', phase: 'before'}, hits: 1,
+    }, name);
+    assert.deepEqual(metadata, {
+        id: routeMetadata.id, type: 'plugin-execute', area: 'frontend', name: routeMetadataName,
+        callback: {subject: routeMetadataSubject, method: 'getRouteByFrontName', phase: 'after'}, hits: 1,
     }, name);
     return {...record, events};
 }
@@ -190,7 +197,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
             {subject, method, phase, state});
         return callback.hits;
     };
-    assert.deepEqual(result.plugins, {total: 50 + 4, covered: 16 + 3, hook: true});
+    assert.deepEqual(result.plugins, {total: 70, covered: 25, hook: true});
     assert.deepEqual([global.journal_shared.startLine, global.journal_shared.endLine], [9, 10]);
     assert.equal(global.journal_shared.registration.target, subject + 'Interface');
     assert.deepEqual([global.journal_duplicate.startLine, global.journal_duplicate.endLine], [14, 14]);
@@ -224,7 +231,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
 
 test('reports preference resolution by native binding and original configuration area', () => {
     const result = report();
-    assert.deepEqual(result.preferences, {total: 53, covered: 8, hook: true});
+    assert.deepEqual(result.preferences, {total: 59, covered: 9, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const globalFile = result.files.find(file => file.path === root + 'di.xml');
     assert.deepEqual([globalFile.covered, globalFile.total], [0, 0]);
@@ -281,14 +288,14 @@ test('reports preference resolution by native binding and original configuration
     }
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Preference usage/);
-    assert.match(html, /8\/53 eligible declaration–area pairs resolved/);
+    assert.match(html, /9\/59 eligible declaration–area pairs resolved/);
     assert.match(html, /href="app\/code\/Application\/Blog\/etc\/di.xml.html#L21"/);
 });
 
 test('reports only factory-resolved virtual types and applied constructor arguments', () => {
     const result = report();
-    assert.deepEqual(result.virtualTypes, {total: 18 + 2, covered: 9 + 2, hook: true});
-    assert.deepEqual(result.arguments, {total: 43 + 14, covered: 19 + 14, hook: true});
+    assert.deepEqual(result.virtualTypes, {total: 32, covered: 13, hook: true});
+    assert.deepEqual(result.arguments, {total: 57, covered: 33, hook: true});
     assert.deepEqual(result.lifecycles, {total: 6, covered: 4, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
@@ -335,16 +342,17 @@ test('reports only factory-resolved virtual types and applied constructor argume
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Virtual type usage/);
     assert.match(html, /Constructor argument usage/);
-    assert.match(html, /11\/20 eligible declaration–area pairs resolved/);
+    assert.match(html, /13\/32 eligible declaration–area pairs resolved/);
     assert.match(html, /33\/57 eligible declaration–area pairs applied/);
     assert.match(html, /4\/6 eligible declaration–area pairs applied/);
 });
 
-test('reports the additional frontend DI declarations for the layout fixtures', () => {
+test('reports the frontend DI declarations for the routing and layout fixtures', () => {
     const result = report();
     const file = result.files.find(entry => entry.path === layoutFixtureDi);
     const fixture = family => file.declarations.filter(item => item.family === family);
     assert.deepEqual(fixture('plugins').map(item => [item.path, item.areas.frontend.state]), [
+        [`${routeMetadataSubject}/${routeMetadataName}`, 'covered'],
         ['MageLens\\Compatibility\\Block\\LayoutTemplateValueIntercepted/magelens_template_value_unused', 'uncovered'],
         ['Magento\\Framework\\View\\Layout\\GeneratorPool/magelens_layout_move_mutation', 'covered'],
         [`${cacheDispatchSubject}/${cachePluginName}`, 'covered'],

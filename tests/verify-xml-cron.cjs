@@ -52,6 +52,7 @@ const numericSchedule = item('123/123#schedule', 30);
 const virtual = item('123/0123', 32);
 const leadingZeroSchedule = item('123/0123#schedule', 33);
 const scoped = item('123/magelens_scoped_probe', 35);
+const scopedSchedule = item('123/magelens_scoped_probe#schedule', 36);
 
 const seededCommand = evidence(seeded, 'handler-entered', 'entered', 'magento');
 assert.deepEqual(evidence(seeded, 'handler-completed', 'completed', 'magento'), seededCommand);
@@ -85,9 +86,11 @@ assert.ok([...numericDirectCommand].every(command => !directCommand.has(command)
 assert.equal(preferred.binding.method, 'Execute');
 const numericGeneration = evidence(numericSchedule, 'schedule-evaluated', 'observed', 'magento');
 assert.deepEqual(evidence(leadingZeroSchedule, 'schedule-evaluated', 'observed', 'magento'), numericGeneration);
+assert.deepEqual(evidence(scopedSchedule, 'schedule-evaluated', 'observed', 'magento'), numericGeneration);
 const scopedDispatch = evidence(scoped, 'handler-entered', 'entered', 'magento');
 assert.deepEqual(evidence(scoped, 'handler-completed', 'completed', 'magento'), scopedDispatch);
-assert.ok([...scopedDispatch].every(command => !numericGeneration.has(command)));
+assert.equal([...scopedDispatch].filter(command => !numericGeneration.has(command)).length, 1,
+    'The seeded scoped job must run in a separate command from schedule generation');
 for (const declaration of [preferred, virtual]) {
     const entered = evidence(declaration, 'handler-entered', 'entered', 'magento');
     assert.deepEqual(evidence(declaration, 'handler-completed', 'completed', 'magento'), entered);
@@ -98,5 +101,19 @@ for (const declaration of [seededSchedule, failedSchedule, untouched, untouchedS
     assert.equal(declaration.state, 'uncovered');
     assert.equal(declaration.hits, 0);
     assert.deepEqual(declaration.evidence, []);
+}
+const skipped = item('magelens_interceptor_probe/magelens_cron_skipped', 40);
+const proceeded = item('magelens_interceptor_probe/magelens_cron_proceeded', 43);
+assert.deepEqual(skipped.evidence, []);
+assert.equal(skipped.hits, 0);
+assert.deepEqual(skipped.effectStates, {'cron-handler-entered': 'uncovered', 'cron-handler-completed': 'uncovered'});
+assert.deepEqual(proceeded.effectStates, {'cron-handler-entered': 'covered', 'cron-handler-completed': 'covered'});
+for (const tool of ['magento', 'magerun']) {
+    const hits = report.requests.filter(request => request.tool === tool).flatMap(request => request.events)
+        .filter(event => event.id === proceeded.id).map(({type, outcome, hits}) => [type, outcome, hits]);
+    assert.deepEqual(hits, [
+        ['cron-handler-entered', 'entered', 1],
+        ['cron-handler-completed', 'completed', 1],
+    ], tool);
 }
 console.log('Verified cron schedule evaluation, independent callback entry and completion, and original XML lines.');

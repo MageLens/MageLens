@@ -188,6 +188,11 @@ fi
         html=$(curl --fail --silent --show-error --insecure "${url}vnc.html")
         [[ "$html" == *noVNC* ]]
     '
+    # Use the same native Admin theme for layout evidence on both platforms.
+    if [[ "$platform" == mageos ]]; then
+        prove_stock_admin_layout "$artifacts"
+        ./bin/magento config:set admin/system_admin_design/active_theme Magento/backend
+    fi
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"
     if [[ "$theme" == hyva ]]; then prove_blog_controllers --hyva-cold; fi
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
@@ -242,7 +247,6 @@ fi
     for layout_check in tests/verify-layout-*.cjs; do
         case "$layout_check" in
             tests/verify-layout-warm-repeat.cjs) continue ;;
-            tests/verify-layout-admin.cjs) ./bin/runner node "$layout_check" "$platform" ;;
             tests/verify-layout-handles.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$platform" ;;
             tests/verify-layout-ui-structure.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
             tests/verify-layout-render-failures.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;

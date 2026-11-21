@@ -4,7 +4,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {listingEffects, formEffects, fields, columns, provider, proofDirectory, responseId} =
+const {listingEffects, formEffects, fields, columns, provider, proofDirectory, responseId, initialDisabled} =
     require('./fixtures/ui-module/module/Test/Browser/journey.cjs');
 
 const result = JSON.parse(fs.readFileSync('coverage/xml/coverage.json'));
@@ -50,10 +50,13 @@ for (const {identity, type} of formEffects) {
     assert.deepEqual(evidence(identity, type).map(event => event.request), [form.delivery]);
 }
 
-const neverInstantiated = declaration(fields + 'uninstantiated');
-assert.equal(neverInstantiated.effectStates['ui-delivered'], 'covered');
-for (const effect of ['ui-constructed', 'ui-rendered', 'ui-action-invoked']) {
-    assert.equal(neverInstantiated.effectStates[effect], 'uncovered');
+for (const identity of [fields + 'uninstantiated', initialDisabled]) {
+    const disabled = declaration(identity);
+    assert.equal(disabled.effectStates['ui-delivered'], 'covered');
+    for (const effect of ['ui-constructed', 'ui-rendered', 'ui-action-invoked']) {
+        assert.equal(disabled.effectStates[effect], 'uncovered', `${identity} ${effect}`);
+        assert.ok(!disabled.evidence.some(event => event.type === effect && event.outcome === 'observed'));
+    }
 }
 assert.equal(declaration(fields + 'uninvoked').effectStates['ui-action-invoked'], 'uncovered');
 assert.equal(declaration(columns + 'disabled').effectStates['ui-delivered'], 'uncovered');

@@ -5,16 +5,17 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const platform = process.argv[2];
-const theme = {magento: 'adminhtml/Magento/backend', mageos: 'adminhtml/MageOS/m137-admin-theme'}[platform];
-assert.ok(theme, 'Specify magento or mageos as the first argument');
-const report = JSON.parse(fs.readFileSync(process.argv[3] || 'coverage/xml/coverage.json'));
-for (const [handle, block] of [['edit', 'application.blog.edit'], ['index', 'application.blog.manage']]) {
+const theme = process.argv[3] || 'adminhtml/Magento/backend';
+assert.ok(['adminhtml/Magento/backend', 'adminhtml/MageOS/m137-admin-theme'].includes(theme));
+const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const screens = [['index', 'application.blog.manage']];
+if (theme === 'adminhtml/Magento/backend') screens.push(['edit', 'application.blog.edit']);
+for (const [handle, block] of screens) {
     const path = `app/code/Application/Blog/view/adminhtml/layout/application_blog_manage_${handle}.xml`;
     const file = report.files.find(item => item.path === path);
     assert.ok(file, `Missing Admin layout file ${path}`);
     for (const [kind, element, effects] of [
-        ['wireframe-selection', '', ['layout-wireframe-selected']],
+        ...(theme === 'adminhtml/Magento/backend' ? [['wireframe-selection', '', ['layout-wireframe-selected']]] : []),
         ['block', block, ['layout-block-created', 'layout-block-rendered']],
         ['template', block, ['layout-template-executed', 'layout-template-selected']],
     ]) {
@@ -23,7 +24,7 @@ for (const [handle, block] of [['edit', 'application.blog.edit'], ['index', 'app
         const [item] = matches;
         assert.equal(item.state, 'covered', `${handle}/${kind}`);
         assert.deepEqual([...new Set(item.evidence.map(event => event.type))].sort(), effects, `${handle}/${kind}`);
-        assert.ok(item.evidence.every(event => event.area === 'adminhtml' && event.theme === theme));
+        assert.deepEqual([...new Set(item.evidence.map(event => `${event.area}:${event.theme}`))], [`adminhtml:${theme}`], `${handle}/${kind}`);
     }
 }
 console.log(`Verified original Blog Admin layout declarations in ${theme}.`);

@@ -37,9 +37,38 @@ prove_blog_controllers() {
     done
 }
 
+prove_stock_admin_layout() (
+    local artifacts=$1
+    cleanup_stock_admin() {
+        local result=$?
+        ./bin/application-compose exec -T phpfpm php /application/docker/php/collection.php stop || result=1
+        ./bin/application-compose exec -T phpfpm php bin/magento cache:enable layout || result=1
+        exit "$result"
+    }
+    trap cleanup_stock_admin EXIT
+    # Login can warm the theme's package cache before the Blog request.
+    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout
+    ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
+    ./bin/runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/xml-manifest.php
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/manifest.php
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/collection.php start
+    ./bin/application-compose exec -T -e MAGELENS_ROUTING_COLLECT=1 runner \
+        node --test --test-name-pattern='Blog Admin route' tests/verify-routing-native.cjs
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/collection.php stop
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/xml-manifest.php check
+    ./bin/runner node bin/report-xml.cjs
+    cp coverage/xml/coverage.json "$artifacts/stock-admin-xml.json"
+    ./bin/runner node tests/verify-layout-admin.cjs coverage/xml/coverage.json adminhtml/MageOS/m137-admin-theme
+    # The following native proofs install their own collector manifests.
+    find coverage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+)
+
 run_xml_proofs() {
     local theme=$1 platform=$2 mode=$3
     mkdir -p coverage
+    xml_proof xml-inventory-proof.php /var/www/html/vendor
     xml_proof xml-admin-navigation.test.php /var/www/html/vendor /source
     xml_proof xml-admin-navigation-acl-proof.php --without-collector
     xml_proof xml-admin-navigation-acl-proof.php

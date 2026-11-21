@@ -235,22 +235,19 @@ test('layout qualification requires the summary even when every declaration is u
     assert.throws(() => validateSnapshot(complete, complete.run, summary), /Missing layout coverage summary/);
 });
 
-test('layout qualification sorts native and custom Admin evidence after normalizing native themes', () => {
+test('layout qualification requires the same actual Admin theme evidence', () => {
     const hash = value => createHash('sha256').update(value).digest('hex');
     const custom = 'adminhtml/Custom/theme-4';
-    const entries = ['Magento/backend', 'MageOS/m137-admin-theme'].map((native, index) => ({
-        id: native, theme: 'luma', platform: index ? 'mageos' : 'magento',
+    const entries = ['magento', 'mageos'].map(platform => ({
+        id: platform, theme: 'luma', platform,
         snapshot: {xml: {files: {'app/code/Application/Blog/view/adminhtml/layout/shared.xml': {
-            declarations: [{layout: ['template'], evidence: [hash('adminhtml/' + native), hash(custom)].sort()
+            declarations: [{layout: ['template'], evidence: [hash('adminhtml/Magento/backend'), hash(custom)].sort()
                 .map(theme => ['layout-template-executed', 'adminhtml', theme])}],
         }}}},
     }));
-    assert.notEqual(entries[0].snapshot.xml.files[Object.keys(entries[0].snapshot.xml.files)[0]].declarations[0].evidence[0][2] === hash(custom),
-        entries[1].snapshot.xml.files[Object.keys(entries[1].snapshot.xml.files)[0]].declarations[0].evidence[0][2] === hash(custom),
-        'The fixture must put custom evidence on opposite sides of native evidence');
     assert.equal(compareThemes(entries, entries).passed, true);
     const declaration = Object.values(entries[1].snapshot.xml.files)[0].declarations[0];
-    declaration.evidence.find(row => row[2] === hash(custom))[2] = hash('adminhtml/Custom/different');
+    declaration.evidence.find(row => row[2] === hash('adminhtml/Magento/backend'))[2] = hash('adminhtml/MageOS/m137-admin-theme');
     assert.equal(compareThemes(entries, entries).passed, false);
 });
 

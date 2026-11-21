@@ -7,6 +7,7 @@
 declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
+use Magento\Framework\App\State;
 use Magento\Framework\DataObject;
 use Magento\Framework\ObjectManager\ObjectManager;
 use Magento\Framework\Simplexml\Config as XmlConfig;
@@ -97,6 +98,13 @@ final class LayoutCoverage
     private array $fetching = [];
     private int $fetchingOverflow = 0;
     private bool $healthy = false;
+    private bool $layoutConstructed = false;
+    private bool $restArea = false;
+
+    public function required(bool $cliCommand): bool
+    {
+        return $this->layoutConstructed || (!$cliCommand && !$this->restArea);
+    }
     private array $limitations = [];
     private array $errors = [];
     private array $validating = [];
@@ -249,6 +257,11 @@ final class LayoutCoverage
             [ScheduledStructure::class, 'unsetElementFromListToRemove', $this->beginRemovalChange(...), $this->completeRemovalChange(...)],
             [GeneratorPool::class, 'removeElement', $this->beginRemoval(...), $this->completeRemoval(...)],
             [GeneratorPool::class, 'buildStructure', null, $this->finishStructure(...)],
+            [State::class, 'setAreaCode', null,
+                function ($state, array $params, $result, ?\Throwable $error, string $class): void {
+                    if (!$error && $class === State::class) $this->restArea = $params[0] === 'webapi_rest';
+                }],
+            [Layout::class, '__construct', function (): void { $this->layoutConstructed = true; }, null],
             [Layout::class, 'generateXml', $this->beginXml(...), $this->completeXml(...)],
             [Layout::class, 'generateElements', null, $this->generateElements(...)],
             [XmlConfig::class, 'getNode', null, $this->layoutXmlAccess(...)],

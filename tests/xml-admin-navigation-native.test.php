@@ -32,6 +32,7 @@ $validation = new class implements ValidationStateInterface {
     public function isValidationRequired() { return true; }
 };
 $resolver = new class($blog, $fixture) implements FileResolverInterface {
+    public array $aclOverlay = [];
     public function __construct(private string $blog, private string $fixture) {}
     public function get($filename, $scope = null) {
         $directory = $scope === 'adminhtml' ? '/adminhtml' : '';
@@ -44,7 +45,7 @@ $resolver = new class($blog, $fixture) implements FileResolverInterface {
             $path = realpath($module . $directory . '/' . $filename);
             $files[$path] = file_get_contents($path);
         }
-        return $files;
+        return $filename === 'acl.xml' ? $files + $this->aclOverlay : $files;
     }
 };
 $urn = new UrnResolver();

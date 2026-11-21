@@ -3,7 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const {parent, menu, gridHead, columnLabels, rows, input, readOnly, button, initialValue, readOnlyValue,
-    proofDirectory, responseId, documentResponse, uiRequest, testValue} = require('./journey.cjs');
+    proofDirectory, responseId, documentResponse, uiRequest, testValue,
+    initialDisabled, replacementButton, registerReplacement} = require('./journey.cjs');
 
 function interceptUiRequests() {
     cy.intercept({method: 'GET', pathname: /\/mui\/index\/render(?:\/|$)/}, request => {
@@ -63,6 +64,8 @@ function openForm(admin, collect) {
     cy.get(readOnly).should('be.visible').and('have.text', readOnlyValue);
     cy.get(button('uninvoked')).should('be.visible');
     cy.get(button('uninstantiated')).should('not.exist');
+    cy.window().then(win => registerReplacement(initialDisabled, win));
+    cy.get(replacementButton).click().should('have.attr', 'data-invoked', 'true');
     cy.get(input).clear().type(testValue).blur();
     cy.get(input).should('have.value', testValue);
     return cy.then(() => {

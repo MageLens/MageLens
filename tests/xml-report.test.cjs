@@ -52,6 +52,28 @@ test('XML HTML preserves nested directories, source anchors, escaping and line c
     assert.match(source, /&lt;script&gt;unsafe/);
     assert.doesNotMatch(source, /<script>unsafe/);
 });
+test('indexes first-seen evidence in order and counts duplicate hits', t => {
+    const {manifest, record, sources} = fixture();
+    const first = record.events[0];
+    const second = {...first, requestedScope: {type: 'stores', code: 'other'}, hits: 3};
+    const stringify = JSON.stringify;
+    let evidenceEncodes = 0;
+    t.mock.method(JSON, 'stringify', (value, ...args) => {
+        if (value?.type === 'config-read' && value.request) evidenceEncodes++;
+        return stringify(value, ...args);
+    });
+    const report = merge(manifest, [
+        {...record, events: [first, second, first]},
+        {...record, request: 'next', events: [second, first, second]}
+    ], sources);
+    const [item] = report.files[0].declarations;
+    assert.equal(item.hits, 15);
+    assert.ok(evidenceEncodes <= 6, 'Previously seen evidence must not be serialized again');
+    assert.deepEqual(item.evidence.map(event => [event.request, event.requestedScope.code]), [
+        ['request', 'reading'], ['request', 'other'], ['next', 'other'], ['next', 'reading']
+    ]);
+});
+
 test('warm repeat frequencies do not grant credit to unvisited declarations', () => {
     const {manifest, record, sources} = fixture();
     const cold = merge(manifest, [record], sources), warm = merge(manifest, [{...record, events: [{...record.events[0], hits: 90}]}], sources);
@@ -256,6 +278,19 @@ test('layout reports validate effects and keep superseded and zero-hit declarati
     sources[file] = source;
     const healthy = {...record, layoutHook: true};
     assert.throws(() => merge(manifest, [record], sources), /No functioning XML layout hook/);
+    const route = {id: 'f'.repeat(64), path: 'GET /V1/example', family: 'webapi', startLine: 1, endLine: 1,
+        supported: true, effective: true, effects: ['webapi-match']};
+    const routeFile = 'app/code/Acme/Blog/etc/webapi.xml';
+    sources[routeFile] = Buffer.from('<routes/>');
+    manifest.files.push({path: routeFile, sourceHash: createHash('sha256').update(sources[routeFile]).digest('hex'),
+        declarations: [route]});
+    const rest = {...record, uri: '/rest/default/V1/example', layoutRequired: false, layoutHook: false,
+        events: [{id: route.id, type: 'webapi-match', outcome: 'matched', area: 'webapi_rest', reason: null, hits: 1}]};
+    const api = merge(manifest, [rest], sources);
+    assert.equal(api.layout.covered, 0);
+    assert.ok(api.files[1].declarations.every(item => item.hits === 0));
+    assert.equal(api.files[2].declarations[0].hits, 1);
+    assert.throws(() => merge(manifest, [{...rest, layoutRequired: true}], sources), /No functioning XML layout hook/);
     const empty = merge(manifest, [healthy], sources);
     assert.deepEqual(empty.layout, {total: 2, covered: 0, hook: true, limitations: []});
     assert.deepEqual(empty.files[1].declarations.map(item => item.state), ['uncovered', 'uncovered']);
