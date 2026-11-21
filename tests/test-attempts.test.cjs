@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {newAttemptId, isAttemptId, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
+const {newAttemptId, isAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
 const {sparseCounters, mergeCounters} = require('../bin/javascript-attempts.cjs');
 
 const read = id => JSON.parse(fs.readFileSync(`coverage/raw/attempts/${id}.json`, 'utf8'));
@@ -89,4 +89,11 @@ test('JavaScript counters are stored per attempt while it runs', t => {
     finishAttempt({id, outcome: 'passed'});
     assert.throws(() => recordJavascript({id, counters: {'/src/cart.js': {s: {0: 1}}}}), /already finished/);
     assert.throws(() => recordJavascript({id: newAttemptId(), counters: {}}), /ENOENT/);
+});
+
+test('test files are named relative to the project root with forward slashes', () => {
+    const root = path.join(os.tmpdir(), 'project');
+    assert.equal(projectPath(path.join(root, 'tests', 'e2e', 'cart.spec.js'), root), 'tests/e2e/cart.spec.js');
+    assert.equal(projectPath('cypress/e2e/cart.cy.js', root), 'cypress/e2e/cart.cy.js');
+    assert.equal(projectPath(path.join('src', 'app', 'code', 'Acme', 'Test', 'Cli', 'jobs.test.cjs'), root), 'src/app/code/Acme/Test/Cli/jobs.test.cjs');
 });

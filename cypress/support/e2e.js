@@ -54,6 +54,8 @@ afterEach(function () {
     if (!attempt) return;
     // Mocha leaves the state unset on an attempt that will be retried.
     cy.task('mageLensAttempt', {event: 'finish', id: attempt, outcome: this.currentTest.state || 'failed'}, {log: false});
+    // Shared setup and cleanup after this point, such as after() hooks, must not inherit the attempt.
+    cy.clearCookie('application_coverage_attempt', {log: false});
     setAttempt(null);
 });
 
@@ -68,8 +70,8 @@ function setCoverageCookies(attempt) {
     expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
     // Avoid intercepting multipart bodies: header mutation can corrupt binary uploads.
     const cookie = {domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true};
-    cy.setCookie('application_coverage', run, cookie);
-    return cy.setCookie('application_coverage_attempt', attempt, cookie);
+    const set = cy.setCookie('application_coverage', run, cookie);
+    return attempt ? cy.setCookie('application_coverage_attempt', attempt, cookie) : set;
 }
 
 Cypress.Commands.add('mageLensClearSessionCookies', () => {

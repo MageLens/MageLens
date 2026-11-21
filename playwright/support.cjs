@@ -13,7 +13,7 @@ const {captureHtml} = require('../bin/html-validation.cjs');
 const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
 const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
 const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
-const {newAttemptId, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
+const {newAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
 const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
@@ -59,7 +59,7 @@ function withCoverage(base = playwright.test) {
         // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
         coverageAttempt: [async ({}, use, testInfo) => {
             const id = newAttemptId();
-            startAttempt({id, runner: 'playwright', spec: path.relative(testInfo.config.rootDir, testInfo.file),
+            startAttempt({id, runner: 'playwright', spec: projectPath(testInfo.file),
                 test: testInfo.titlePath.slice(1), retry: testInfo.retry, project: testInfo.project.name, worker: testInfo.workerIndex});
             try { await use(id); }
             finally { finishAttempt({id, outcome: testInfo.status}); }

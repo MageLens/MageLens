@@ -10,6 +10,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const {isCoverageExcluded} = require('./project.cjs');
 const {mergeCounters} = require('./javascript-attempts.cjs');
+const {projectPath} = require('./test-attempts.cjs');
 const {countsAsFamilyCoverage} = require('./xml-family-report.cjs');
 const {countsAsLayoutCoverage} = require('./xml-report/layout/index.cjs');
 
@@ -112,8 +113,10 @@ function templates(attempts, index) {
     for (const file of files('coverage/raw/templates', '.mtc')) {
         const record = read(`coverage/raw/templates/${file}`);
         // Playwright stores the absolute spec path and starts the title path with the spec file.
-        const spec = path.isAbsolute(record.spec) ? path.relative(process.cwd(), record.spec) : record.spec;
-        const test = record.test[0] === spec ? record.test.slice(1) : record.test;
+        const spec = projectPath(record.spec);
+        // Its title path starts with the file relative to the Playwright testDir, not to the project.
+        const first = String(record.test[0]).split('\\').join('/');
+        const test = spec === first || spec.endsWith(`/${first}`) ? record.test.slice(1) : record.test;
         const identity = owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
         // Records that carry their attempt ID need no matching by test identity, but must not contradict it.
         if (record.attempt) {

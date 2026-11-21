@@ -95,6 +95,12 @@ for (const [file, fragment, title] of [
     const owners = Object.keys(php[`${fixture}/${file}`]?.[line] || {}).map(owner => attribution.attempts[owner]?.test.at(-1) ?? owner);
     assert.deepEqual(owners, [title], `${file}:${line} must belong to "${title}" only`);
 }
+// Cypress clears the attempt cookie when a test finishes, so an after() hook is unattributed.
+if (runner === 'cypress') {
+    const cleanup = requests.filter(request => request.uri?.includes('shared-cleanup=1'));
+    assert.equal(cleanup.length, 1, 'Missing the shared cleanup request');
+    assert.equal(cleanup[0].attempt, null, 'Shared cleanup inherited the attempt of the previous test');
+}
 // The late request ran across the test boundary: the next attempt started before it could have finished.
 const late = requests.filter(request => request.uri?.startsWith('/coverageprobe/index/late'));
 assert.equal(late.length, 1, 'Missing the request that outlives its test');

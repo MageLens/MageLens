@@ -15,6 +15,12 @@ const javascriptDirectory = 'coverage/raw/javascript-attempts';
 const runners = ['cypress', 'playwright', 'cli'];
 const isAttemptId = id => typeof id === 'string' && /^[a-f0-9]{32}$/.test(id);
 
+// Test files are identified relative to the project root in every runner and every record, with
+// forward slashes, whatever the runner's own root (for example a Playwright testDir) is.
+function projectPath(file, root = process.cwd()) {
+    return path.relative(root, path.resolve(root, file)).split(path.sep).join('/');
+}
+
 function newAttemptId() {
     return randomBytes(16).toString('hex');
 }
@@ -62,4 +68,4 @@ function recordJavascript({id, counters}) {
     return null;
 }
 
-module.exports = {newAttemptId, isAttemptId, startAttempt, finishAttempt, recordJavascript};
+module.exports = {newAttemptId, isAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript};

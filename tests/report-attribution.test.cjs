@@ -148,3 +148,17 @@ test('a template record whose attempt ID belongs to another test blocks the run'
     workspace(t, data => { data['coverage/raw/templates/1.mtc'].attempt = first; });
     assert.throws(() => writeAttribution(), /another test's attempt/);
 });
+
+test('Playwright template records match attempts when the testDir is not the project root', t => {
+    // Playwright starts the title path with the file relative to its testDir, here playwright/tests.
+    const nested = 'playwright/tests/e2e/cart.spec.js';
+    workspace(t, data => {
+        for (const id of [first, retry, other]) data[`coverage/raw/attempts/${id}.json`].spec = nested;
+        Object.assign(data['coverage/raw/templates/1.mtc'], {spec: path.resolve(nested), test: ['e2e/cart.spec.js', 'cart', 'adds'], attempt: retry});
+        Object.assign(data['coverage/raw/templates/2.mtc'], {spec: path.resolve(nested), test: ['e2e/cart.spec.js', 'cart', 'adds'], retry: 1});
+    });
+    const summary = writeAttribution();
+    assert.deepEqual([summary.collectors.templates.unattributedRecords, summary.collectors.templates.ambiguousRecords], [0, 0]);
+    assert.deepEqual(JSON.parse(fs.readFileSync('coverage/attribution/templates.json', 'utf8')).files['app/code/Acme/Shop/view/frontend/templates/cart.phtml'],
+        {'binding:1': {1: 3}});
+});

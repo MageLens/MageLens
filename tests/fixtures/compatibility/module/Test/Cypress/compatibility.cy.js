@@ -412,4 +412,9 @@ describe('Magento storefront coverage compatibility', {testIsolation: false}, ()
         cy.get('[data-layout-structure="ui-acl-dashboard"]').should('have.text', 'ui-acl-dashboard');
         cy.get('[data-layout-structure="ui-acl-blog"]').should('not.exist');
     });
+    // Shared cleanup after the last test runs without a test attempt.
+    after(() => {
+        // The fixture page is visited by every runner, so the request adds no runner-specific coverage.
+        cy.request('/coverageprobe/?shared-cleanup=1');
+    });
 });

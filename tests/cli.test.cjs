@@ -138,6 +138,31 @@ test('runs next', async () => {
     assert.deepEqual([attempts['fails while a second command is queued'].outcome, attempts['runs next'].outcome], ['failed', 'passed']);
 });
 
+test('a command chained after an unawaited command keeps the attempt of the test that started the chain', t => {
+    const fixture = suite(t);
+    fixture.write('cli/e2e/chain.test.cjs', `
+const fs = require('node:fs');
+const {test, magento} = require('../support.cjs');
+const sent = {};
+const record = name => result => { sent[name] = JSON.parse(result.stdout).attempt; };
+test('starts a chain', () => {
+    magento(['list']).then(record('first')).then(() => magento(['cache:status'])).then(record('chained'));
+});
+test('runs next', async () => {
+    record('next')(await magento(['list']));
+    // The chained command is sent once the first one has answered; wait for it, bounded.
+    for (let wait = 0; !sent.chained && wait < 150; wait++) await new Promise(resolve => setTimeout(resolve, 20));
+    fs.writeFileSync('coverage/sent.json', JSON.stringify(sent));
+});
+`);
+    assert.equal(fixture.run().status, 0);
+    const sent = JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/sent.json'), 'utf8'));
+    const attempts = Object.fromEntries(fs.readdirSync(path.join(fixture.root, 'coverage/raw/attempts'))
+        .map(file => JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/raw/attempts', file), 'utf8')))
+        .map(attempt => [attempt.test[0], attempt.id]));
+    assert.deepEqual(sent, {first: attempts['starts a chain'], chained: attempts['starts a chain'], next: attempts['runs next']});
+});
+
 test('CLI relay keeps projects without CLI specs working and rejects a spec that registers no tests', t => {
     const fixture = suite(t);
     const empty = fixture.run();
