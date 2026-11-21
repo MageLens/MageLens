@@ -98,6 +98,7 @@ function verifyUiEvidence(array $files, string $mode, string $run, bool $repeat)
         ['base', $listing . 'before_different#label', 64, [$prepared => 'displaced', $delivered => 'displaced']],
         ['base', $listing . 'before_equal#label', 69, [$prepared => 'displaced', $delivered => 'displaced']],
         ['base', $listing . 'after_prepare#label', 74, [$prepared => 'observed', $delivered => 'displaced']],
+        ['base', $listing . 'after_configuration#label', 84, [$prepared => 'observed', $delivered => 'displaced']],
         ['base', $listing . 'theme_label#label', 79, [$prepared => 'displaced', $delivered => null]],
         ['local', $listing . 'theme_label#label', 12, [$prepared => 'displaced', $delivered => null]],
         ['composer', $listing . 'theme_label#label', 12, [$prepared => 'observed', $delivered => 'observed']],

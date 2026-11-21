@@ -190,6 +190,7 @@ fi
     '
     # Use the same native Admin theme for layout evidence on both platforms.
     if [[ "$platform" == mageos ]]; then
+        prove_stock_admin_layout "$artifacts"
         ./bin/magento config:set admin/system_admin_design/active_theme Magento/backend
     fi
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"

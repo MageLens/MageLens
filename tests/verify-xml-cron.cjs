@@ -102,4 +102,18 @@ for (const declaration of [seededSchedule, failedSchedule, untouched, untouchedS
     assert.equal(declaration.hits, 0);
     assert.deepEqual(declaration.evidence, []);
 }
+const skipped = item('magelens_interceptor_probe/magelens_cron_skipped', 40);
+const proceeded = item('magelens_interceptor_probe/magelens_cron_proceeded', 43);
+assert.deepEqual(skipped.evidence, []);
+assert.equal(skipped.hits, 0);
+assert.deepEqual(skipped.effectStates, {'cron-handler-entered': 'uncovered', 'cron-handler-completed': 'uncovered'});
+assert.deepEqual(proceeded.effectStates, {'cron-handler-entered': 'covered', 'cron-handler-completed': 'covered'});
+for (const tool of ['magento', 'magerun']) {
+    const hits = report.requests.filter(request => request.tool === tool).flatMap(request => request.events)
+        .filter(event => event.id === proceeded.id).map(({type, outcome, hits}) => [type, outcome, hits]);
+    assert.deepEqual(hits, [
+        ['cron-handler-entered', 'entered', 1],
+        ['cron-handler-completed', 'completed', 1],
+    ], tool);
+}
 console.log('Verified cron schedule evaluation, independent callback entry and completion, and original XML lines.');

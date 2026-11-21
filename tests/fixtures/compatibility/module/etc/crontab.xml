@@ -36,4 +36,12 @@ License: see LICENSE in the repository root.
             <schedule>* * * * *</schedule>
         </job>
     </group>
+    <group id="magelens_interceptor_probe">
+        <job name="magelens_cron_skipped" instance="MageLens\Compatibility\Cli\Jobs" method="runIntercepted">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="magelens_cron_proceeded" instance="MageLens\Compatibility\Cli\Jobs" method="runIntercepted">
+            <schedule>* * * * *</schedule>
+        </job>
+    </group>
 </config>

@@ -26,7 +26,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class Probe extends Command
 {
     private const CRON_PROBES = ['magelens_probe', 'magelens_failing_probe', 'magelens_generated_probe',
-        '123', '0123', 'magelens_scoped_probe', '456'];
+        '123', '0123', 'magelens_scoped_probe', '456', 'magelens_cron_skipped', 'magelens_cron_proceeded'];
     private const GENERATED_JOBS = [
         'magelens_generated_probe' => ['magelens_generated_probe'],
         '123' => ['123', '0123', 'magelens_scoped_probe'],

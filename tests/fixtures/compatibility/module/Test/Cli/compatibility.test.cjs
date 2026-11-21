@@ -17,6 +17,8 @@ test('preserves command arguments and runs a named cron job through MageRun', as
     for (const [job, method, message] of [
         ['magelens_magerun_probe', 'runNamed', 'magerun-handler-ran'],
         ['456', 'Execute', 'preferred-worker-intercepted'],
+        ['magelens_cron_skipped', 'runIntercepted', '0'],
+        ['magelens_cron_proceeded', 'runIntercepted', '1'],
     ]) {
         try {
             assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), []);
@@ -24,6 +26,9 @@ test('preserves command arguments and runs a named cron job through MageRun', as
             const native = await magerun(['sys:cron:run', job]);
             assert.match(native.stdout, new RegExp(method + '.*done', 's'));
             assert.deepEqual(JSON.parse((await probe('magerun-messages', job)).stdout), [message]);
+            if (job.startsWith('magelens_cron_')) {
+                assert.deepEqual(JSON.parse((await probe('generated-schedules', job)).stdout), ['success']);
+            }
         } finally {
             await probe('clean-magerun', job);
         }
@@ -46,6 +51,20 @@ test('executes a scheduled Magento cron job', async () => {
             if (expectedStatus === 'error') {
                 assert.equal((await probe('messages', schedule)).stdout.trim(), 'Cron probe failed after 2 ordinary calls');
             }
+        }
+
+        const intercepted = new Map();
+        for (const [job, calls] of [['magelens_cron_skipped', '0'], ['magelens_cron_proceeded', '1']]) {
+            const schedule = (await probe('schedule', job)).stdout.trim();
+            assert.match(schedule, /^\d+$/);
+            schedules.set(schedule, 'success');
+            intercepted.set(schedule, calls);
+        }
+        await probe('cold-cron-config', 'magelens_interceptor_probe');
+        await magento(['cron:run', '--group=magelens_interceptor_probe']);
+        for (const [schedule, calls] of intercepted) {
+            assert.equal((await probe('status', schedule)).stdout.trim(), 'success');
+            assert.equal((await probe('messages', schedule)).stdout.trim(), calls, 'Unexpected original handler call count');
         }
 
         const warm = (await probe('schedule', 'magelens_probe')).stdout.trim();

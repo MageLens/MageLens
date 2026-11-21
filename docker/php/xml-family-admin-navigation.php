@@ -17,7 +17,6 @@ use Magento\Framework\Acl\{AclResource, AclResource\Config\Reader\Filesystem as 
 
 final class AdminNavigationFamily
 {
-    private const ACL_SCHEMA = 'urn:magento:framework:Acl/etc/acl.xsd';
     private const MENU_SCHEMA = 'urn:magento:module:Magento_Backend:etc/menu.xsd';
     private const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
     private const MENU_PROPERTIES = [
@@ -54,8 +53,8 @@ final class AdminNavigationFamily
         };
         if ($family === null) return null;
         $dom = Xml::document($bytes);
-        $schema = $family === 'acl' ? self::ACL_SCHEMA : self::MENU_SCHEMA;
-        if ($dom->documentElement->getAttributeNS(self::XSI, 'noNamespaceSchemaLocation') !== $schema) return [];
+        if ($family === 'menu'
+            && $dom->documentElement->getAttributeNS(self::XSI, 'noNamespaceSchemaLocation') !== self::MENU_SCHEMA) return [];
         $ranges = Xml::ranges($bytes, $dom, true);
         $query = $family === 'acl' ? '/config/acl/resources//resource' : '/config/menu/*';
         $declarations = [];
