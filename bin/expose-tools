@@ -9,7 +9,7 @@ upstream=.runtime/docker-magento/compose
 for file in "$upstream"/bin/*; do
     name=$(basename "$file")
     case "$name" in
-        application-compose|application-domain|badges.cjs|build-php-image|cli-relay|common|compose-project|dependencies|expose-tools|export-coverage|export-coverage.cjs|finalize.cjs|html-validation.cjs|install|image-inputs.cjs|prepare-images|sync-runner-dependencies|prepare.cjs|project.cjs|public-report.cjs|report-browser.cjs|report-index.cjs|run-browser.cjs|run-cli.cjs|run-playwright.cjs|run-coverage|runner|share-report-data.cjs|share-report-render.cjs|share-report-source.cjs|share-report-templates|sync-dependencies.cjs|javascript-scope.cjs)
+        application-compose|application-domain|badges.cjs|build-php-image|cli-relay|common|compose-project|dependencies|expose-tools|export-coverage|export-coverage.cjs|finalize.cjs|html-validation.cjs|test-attempts.cjs|javascript-attempts.cjs|report-attribution.cjs|install|image-inputs.cjs|prepare-images|sync-runner-dependencies|prepare.cjs|project.cjs|public-report.cjs|report-browser.cjs|report-index.cjs|run-browser.cjs|run-cli.cjs|run-playwright.cjs|run-coverage|runner|share-report-data.cjs|share-report-render.cjs|share-report-source.cjs|share-report-templates|sync-dependencies.cjs|javascript-scope.cjs)
             fail "Upstream tool conflicts with application script: bin/$name" ;;
     esac
     cp -R "$file" bin/

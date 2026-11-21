@@ -30,10 +30,14 @@ module.exports = defineConfig({
             } else {
                 require('@cypress/code-coverage/task')(on, config);
                 const {captureHtml} = require('./bin/html-validation.cjs');
+                const {startAttempt, finishAttempt, recordJavascript} = require('./bin/test-attempts.cjs');
                 const {recordXmlBrowserEvidence} = require('./bin/xml-browser-evidence.cjs');
                 const {loadUiBrowserScope} = require('./bin/xml-ui-browser-scope.cjs');
                 config.expose.xmlUiScope = loadUiBrowserScope(config.expose.coverageRun);
                 on('task', {
+                    mageLensAttempt: ({event, ...attempt}) => event === 'start'
+                        ? startAttempt({runner: 'cypress', ...attempt}) : finishAttempt(attempt),
+                    mageLensAttemptJavascript: recordJavascript,
                     recordXmlBrowserEvidence,
                     recordAdminMenuNavigation(observations) {
                         observations.forEach(recordXmlBrowserEvidence);

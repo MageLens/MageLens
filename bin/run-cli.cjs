@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {createInterface} = require('node:readline');
 const {discover, files} = require('./project.cjs');
 const {setTransport, tests} = require('../cli/support.cjs');
+const {newAttemptId, startAttempt, finishAttempt} = require('./test-attempts.cjs');
 
 function cliSpecs() {
     const {modules, roots} = discover();
@@ -27,10 +28,11 @@ async function runCli(send) {
         // Serialize commands so each response goes to the test that requested it.
         let pending = Promise.resolve();
         let transportError;
+        let attempt;
         setTransport(request => {
             const response = pending.then(async () => {
                 if (transportError) throw transportError;
-                send(request.tool + '\t' + JSON.stringify({run, ...request}) + '\n');
+                send(request.tool + '\t' + JSON.stringify({run, attempt, ...request}) + '\n');
                 const {value, done} = await responses.next();
                 assert.ok(!done, 'The PHP command relay disconnected');
                 const result = JSON.parse(value);
@@ -46,11 +48,17 @@ async function runCli(send) {
                 const before = tests.length;
                 require(path.resolve(file));
                 assert.ok(tests.length > before, `CLI spec registered no tests: ${file}`);
+                for (const entry of tests.slice(before)) entry.spec = file;
             }
             results.totalTests = tests.length;
-            for (const {title, runTest} of tests) {
+            for (const {title, spec, runTest} of tests) {
+                // Commands are serialized, so each one runs inside the attempt that requested it.
+                attempt = newAttemptId();
+                startAttempt({id: attempt, runner: 'cli', spec, test: [title]});
+                let outcome = 'failed';
                 try {
                     await runTest();
+                    outcome = 'passed';
                     results.totalPassed++;
                     results.tests.push({title, status: 'passed'});
                     console.error(`  PASS ${title}`);
@@ -58,6 +66,10 @@ async function runCli(send) {
                     results.totalFailed++;
                     results.tests.push({title, status: 'failed'});
                     console.error(`  FAIL ${title}\n${error?.stack || error}`);
+                } finally {
+                    // Commands that the test did not wait for still belong to its attempt.
+                    await pending;
+                    finishAttempt({id: attempt, outcome});
                 }
             }
             await pending;

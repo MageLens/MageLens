@@ -162,10 +162,7 @@ describe('Blog Admin and publishing', () => {
         if (f.navigation) {
             const entry = name => `[data-ui-id="menu-magelens-adminnavigation-${name}"]`;
             cy.get(entry('inherited-posts')).should('not.exist');
-            cy.clearCookies({log: false});
-            cy.setCookie('application_coverage', f.run, {
-                domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
-            });
+            cy.mageLensClearSessionCookies();
             login(f.navigation.user, f.navigation.password);
             cy.get(entry('inherited-posts') + ' > a').should('exist');
             cy.get(entry('inherited-categories') + ' > a').should('exist');

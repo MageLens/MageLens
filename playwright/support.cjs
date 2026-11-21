@@ -13,6 +13,8 @@ const {captureHtml} = require('../bin/html-validation.cjs');
 const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
 const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
 const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
+const {newAttemptId, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
+const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
@@ -54,7 +56,17 @@ function withCoverage(base = playwright.test) {
                 }
             });
         },
-        context: async ({context, baseURL}, use) => {
+        // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
+        coverageAttempt: [async ({}, use, testInfo) => {
+            const id = newAttemptId();
+            startAttempt({id, runner: 'playwright', spec: path.relative(testInfo.config.rootDir, testInfo.file),
+                test: testInfo.titlePath.slice(1), retry: testInfo.retry, project: testInfo.project.name, worker: testInfo.workerIndex});
+            try { await use(id); }
+            finally { finishAttempt({id, outcome: testInfo.status}); }
+        }, {auto: true}],
+        // Template records carry the attempt ID where the package keeps fixture metadata.
+        templateCoverageOptions: async ({coverageAttempt}, use) => use({outputDir: 'coverage/raw/templates', metadata: {attempt: coverageAttempt}}),
+        context: async ({context, baseURL, coverageAttempt}, use) => {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
@@ -65,8 +77,9 @@ function withCoverage(base = playwright.test) {
                 `if (window === window.top && location.origin === ${JSON.stringify(new URL(baseURL).origin)}) {
                     (${observeAdminMenuNavigation})(window, () => '${menuBinding}', window.${menuBinding});
                 }`});
-            await context.addCookies([{name: 'application_coverage', value: run.id,
-                domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
+            const cookie = {domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true};
+            await context.addCookies([{name: 'application_coverage', value: run.id, ...cookie},
+                {name: 'application_coverage_attempt', value: coverageAttempt, ...cookie}]);
             const snapshots = new Map();
             const uiCandidates = new Map();
             const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
@@ -107,6 +120,7 @@ function withCoverage(base = playwright.test) {
                 fs.mkdirSync('.nyc_output', {recursive: true});
                 fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
                 checkAdminDependencies();
+                recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
             }
         }
     });

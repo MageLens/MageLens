@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -35,8 +35,18 @@ function applicationPhpTokenLines(string $source): array
 function applicationPhpReportData(array $scope, array $merged, array $sourceHashes, string $testId,
     string $sourceRoot = '/source', string $runtimeRoot = '/var/www/html'): CodeCoverage
 {
+    return applicationPhpReportDataByTest($scope, [$testId => $merged], $sourceHashes, $sourceRoot, $runtimeRoot);
+}
+
+/**
+ * The same report with the hits of each test kept apart: lineCoverage() lists the tests that
+ * executed each line, and executable ranges are expanded exactly as in the aggregate report.
+ */
+function applicationPhpReportDataByTest(array $scope, array $byTest, array $sourceHashes,
+    string $sourceRoot = '/source', string $runtimeRoot = '/var/www/html'): CodeCoverage
+{
     $filter = new Filter;
-    $raw = [];
+    $originals = [];
     $allowed = [];
     foreach (array_keys($scope) as $runtimeFile) {
         if (!str_starts_with($runtimeFile, $runtimeRoot . '/')) {
@@ -51,11 +61,17 @@ function applicationPhpReportData(array $scope, array $merged, array $sourceHash
         }
         $filter->includeFile($original);
         $allowed[$original] = applicationPhpTokenLines(file_get_contents($original));
-        if (array_key_exists($runtimeFile, $merged)) $raw[$original] = $merged[$runtimeFile];
+        $originals[$runtimeFile] = $original;
     }
     $coverage = new CodeCoverage((new Selector)->forLineCoverage($filter), $filter);
     $coverage->includeUncoveredFiles();
-    $coverage->append(RawCodeCoverageData::fromLineCoverage($raw), $testId);
+    foreach ($byTest as $testId => $merged) {
+        $raw = [];
+        foreach ($originals as $runtimeFile => $original) {
+            if (array_key_exists($runtimeFile, $merged)) $raw[$original] = $merged[$runtimeFile];
+        }
+        $coverage->append(RawCodeCoverageData::fromLineCoverage($raw), (string) $testId);
+    }
     // php-code-coverage expands executable ranges, including T_INLINE_HTML.
     // Filter after expansion and discovery, so neither can reintroduce markup.
     $data = $coverage->getData();

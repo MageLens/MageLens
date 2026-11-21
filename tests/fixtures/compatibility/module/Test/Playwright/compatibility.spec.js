@@ -46,6 +46,12 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
         }
         await page.goto('/customer/account/login/');
         await expect(page.locator('#email')).toBeVisible();
+        // The request is still running when this test ends; closing the page aborts only the browser side.
+        const sent = page.waitForRequest('**/coverageprobe/index/late');
+        await page.evaluate(() => { fetch('/coverageprobe/index/late').catch(() => {}); });
+        await sent;
+        // Like the Cypress spec, give the request time to reach PHP before the page closes.
+        await page.waitForTimeout(500);
     });
 });
 test('starts the next test with fresh state', async ({page, context, baseURL, mageLensValidateHtml}) => {
@@ -369,7 +375,7 @@ test('starts the next test with fresh state', async ({page, context, baseURL, ma
         await expect(page.locator('[data-layout-structure="ui-acl-blog"]')).toHaveText('ui-acl-blog');
         await runUiJourney(page, admin, true);
         await page.goto('/');
-        await page.context().clearCookies();
+        await context.clearCookies({name: /^(?!application_coverage(?:_attempt)?$)/});
         const fixture = admin.fixtures();
         await admin.login(page, fixture.readerUser, fixture.readerPassword);
         await expect(page.locator('[data-layout-structure="acl-dashboard"]')).toHaveText('acl-dashboard');

@@ -23,6 +23,10 @@ function startFamilyDeclaration(item) {
     item.effectStates = Object.fromEntries(item.effects.map(type => [type, item.supported ? 'uncovered' : 'unmeasured']));
 }
 
+function countsAsFamilyCoverage(outcome) {
+    return !limitations.has(outcome) && outcome !== 'failed';
+}
+
 function observeFamilyEffect(item, event, evidence) {
     assert.deepEqual(Object.keys(event).sort(), ['area', 'hits', 'id', 'outcome', 'reason', 'type']);
     assert.ok(item.effects.includes(event.type), 'Undeclared XML family effect');
@@ -32,7 +36,7 @@ function observeFamilyEffect(item, event, evidence) {
     if (limited) assert.ok(typeof event.reason === 'string' && safeReason.test(event.reason) && event.reason.trim());
     else assert.equal(event.reason, null);
     Object.assign(evidence, {area: event.area, outcome: event.outcome, reason: event.reason});
-    const covered = !limited && event.outcome !== 'failed';
+    const covered = countsAsFamilyCoverage(event.outcome);
     if (covered) item.effectStates[event.type] = 'covered';
     return covered;
 }
@@ -52,4 +56,4 @@ function familyOutcomes(item) {
     });
 }
 
-module.exports = {startFamilyDeclaration, observeFamilyEffect, familyWarnings, familyOutcomes};
+module.exports = {startFamilyDeclaration, observeFamilyEffect, familyWarnings, familyOutcomes, countsAsFamilyCoverage};

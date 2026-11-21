@@ -3,8 +3,10 @@
 // License: see LICENSE in the repository root.
 
 require('./javascript-coverage');
+const {currentAttempt, setAttempt} = require('./attempt');
 const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/cypress');
-registerTemplateCoverage({outputDir: 'coverage/raw/templates'});
+// Template records carry the attempt ID where the package supports record metadata.
+registerTemplateCoverage({outputDir: 'coverage/raw/templates', metadata: () => ({attempt: currentAttempt()})});
 
 const {disablePageTransitions, installCypressAdminDependencies, observeAdminMenuNavigation} = require('../../bin/browser-navigation.cjs');
 const {installUiBrowserObserver} = require('../../bin/xml-ui-browser.cjs');
@@ -34,25 +36,44 @@ Cypress.on('window:before:load', win => {
     }
 });
 
-beforeEach(() => {
+beforeEach(function () {
+    // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+    cy.task('mageLensAttempt', {event: 'start', id, spec: Cypress.spec.relative,
+        test: Cypress.currentTest.titlePath, retry: this.currentTest.currentRetry()}, {log: false}).then(() => setAttempt(id));
     // With test isolation disabled, a surviving page emits no new load event.
     cy.window({log: false}).then(win => {
         if (win.__mageLensUiEffects) uiDocuments.add(win.__mageLensUiEffects);
     });
     menuTest = {scope: crypto.randomUUID(), observations: []};
     installCypressAdminDependencies();
-    const run = Cypress.expose('coverageRun');
-    expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
-    // Avoid intercepting multipart bodies: header mutation can corrupt binary uploads.
-    cy.setCookie('application_coverage', run, {
-        domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true
-    });
+    setCoverageCookies(id);
+});
+afterEach(function () {
+    const attempt = currentAttempt();
+    if (!attempt) return;
+    // Mocha leaves the state unset on an attempt that will be retried.
+    cy.task('mageLensAttempt', {event: 'finish', id: attempt, outcome: this.currentTest.state || 'failed'}, {log: false});
+    setAttempt(null);
 });
 
 afterEach(() => {
     const observations = menuTest?.observations;
     menuTest = null;
     if (observations?.length) cy.task('recordAdminMenuNavigation', observations, {log: false});
+});
+
+function setCoverageCookies(attempt) {
+    const run = Cypress.expose('coverageRun');
+    expect(run, 'current PHP collection token').to.match(/^[a-f0-9]{32}$/);
+    // Avoid intercepting multipart bodies: header mutation can corrupt binary uploads.
+    const cookie = {domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true};
+    cy.setCookie('application_coverage', run, cookie);
+    return cy.setCookie('application_coverage_attempt', attempt, cookie);
+}
+
+Cypress.Commands.add('mageLensClearSessionCookies', () => {
+    return cy.clearCookies({log: false}).then(() => setCoverageCookies(currentAttempt()));
 });
 
 // Captures the HTML source of the current page for the validation report; see docs/coverage.md#html-validation.
