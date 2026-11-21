@@ -69,8 +69,12 @@ async function main() {
         await verifyPage('html-validation/index.html');
         await verify('html-validation/results.json');
     }
-    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json',
-        'report.sqlite', 'schema.sql']) await verify(file);
+    for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json']) await verify(file);
+    // The default coverage run writes no database; the E2E coverage run asks for it with --include-machine-report.
+    for (const file of ['report.sqlite', 'schema.sql']) {
+        if (bundledBlog) assert.equal(fs.existsSync(path.join('coverage', file)), false, `${file} without --include-machine-report`);
+        else await verify(file);
+    }
     const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8')).id;
     const raw = path.posix.join('raw/php', run);
     const record = fs.readdirSync(path.join('coverage', raw)).find(file => file.endsWith('.json'));
