@@ -312,6 +312,7 @@ Custom routers, no-route fallbacks, SOAP, asynchronous and bulk REST, GraphQL an
 | `template` | `dom-presence` | A template; hit when it entered a tested document. |
 | `xml` | `lines` | A supported XML configuration line. |
 | `xml` | `observers`, `plugins`, `preferences`, `virtual-types`, `arguments`, `lifecycles` | A declaration in one eligible configuration area. |
+| `xml` | `layout` | A layout declaration whose effects are measured; layout files have no line records. |
 
 A metric is the pair of `source_type` and `metric`: PHP `lines` and XML `lines` are different metrics. Metrics have different denominators, so never add or compare their totals. `record_key` identifies a unit within its file and metric for the sources of this run: a line number, the collector's statement, function or branch identifier, or `<declaration>@<area>` for XML declarations. Keys of a file can change when the file changes, so compare runs by file and line only for unchanged sources (`commit_sha`). A file or metric without eligible units has no rows. A collector with status `collected` and no hits has uncovered code; `not_collected` means there is no data, which is not 0%. `schema_version` and `PRAGMA user_version` increase when a table, column, view or documented value is removed, renamed or changes meaning; additions keep the version.
 

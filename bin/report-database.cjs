@@ -85,8 +85,9 @@ function* templateUnits(templates) {
 
 function* xmlUnits(xml) {
     for (const file of xml.files) {
-        // DI declaration files are measured per declaration and area, not per line.
-        if (file.family !== 'plugins') {
+        // As in the XML report: DI declaration files count per declaration and area, layout files per
+        // declaration, and neither per line.
+        if (!['plugins', 'layout'].includes(file.family)) {
             for (const [line, outcome] of Object.entries(file.lines)) {
                 if (outcome.state !== 'unmeasured') {
                     yield {type: 'line', source: 'xml', metric: 'lines', key: line, file: file.path, start: Number(line), end: Number(line), hits: outcome.hits};
@@ -94,6 +95,10 @@ function* xmlUnits(xml) {
             }
         }
         for (const item of file.declarations) {
+            if (item.family === 'layout' && item.state !== 'unmeasured') {
+                yield {type: 'declaration', source: 'xml', metric: 'layout', key: item.id, file: file.path,
+                    start: item.startLine, end: item.endLine, hits: item.state === 'covered' && item.hits};
+            }
             for (const [area, outcome] of Object.entries(item.areas || {})) {
                 if (outcome.status === 'eligible') {
                     yield {type: 'declaration', source: 'xml', metric: xmlMetrics[item.family], key: `${item.id}@${area}`, file: file.path,
@@ -113,11 +118,12 @@ const attributionUnits = {
     },
     // Template ids are unique across statements, functions and branches of one template.
     templates: unit => ['statements', 'functions', 'branches'].map(metric => ['template', metric, unit]),
-    // Area-specific declarations are records of their own; config reads and field renders count on the lines they span.
-    xml: (unit, declarations) => unit.includes('@') ? Object.values(xmlMetrics).map(metric => ['xml', metric, unit]) : declarationLines(declarations, unit)
+    // Area-specific DI and observer declarations and layout declarations are records of their own.
+    xml: unit => [...Object.values(xmlMetrics).map(metric => ['xml', metric, unit]), ['xml', 'layout', unit.split('@')[0]]]
 };
-// The XML report also counts area-specific declarations on the lines they span, except in plugin files.
-const attributionLines = {xml: (unit, declarations) => unit.includes('@') ? declarationLines(declarations, unit.split('@')[0]) : []};
+// The XML report also counts declarations on the lines they span, except in plugin and layout files; families
+// measured by effects (ACL, menus, routes, cron, Web API, UI components) count only there.
+const attributionLines = {xml: (unit, declarations) => declarationLines(declarations, unit.split('@')[0])};
 function declarationLines(declarations, id) {
     assert.ok(declarations.has(id), `Attributed XML declaration missing from the XML report: ${id}`);
     const {start, end} = declarations.get(id);
@@ -148,13 +154,11 @@ function writeAttribution(database, directory, run, xml) {
         for (const [sourceFile, units] of Object.entries(attribution.files)) {
             for (const [unit, owners] of Object.entries(units)) {
                 const find = keys => keys.map(([source, metric, key]) => findRecord.get(sourceFile, source, metric, key)).filter(Boolean);
-                let matches = find(attributionUnits[collector](unit, xmlLines));
-                // A config read or field render owns every measured line of its declaration.
-                if (collector === 'xml' && !unit.includes('@')) matches = matches.filter(record => record.covered);
-                else assert.ok(matches.length <= 1, `Attributed ${collector} unit with several records: ${sourceFile} ${unit}`);
-                assert.ok(matches.length, `Attributed ${collector} unit without a covered record: ${sourceFile} ${unit}`);
-                for (const record of matches) assert.ok(record.covered, `Attributed ${collector} unit that the report shows as uncovered: ${sourceFile} ${unit}`);
+                const matches = find(attributionUnits[collector](unit, xmlLines));
                 const lines = find(attributionLines[collector]?.(unit, xmlLines) || []).filter(record => record.covered);
+                assert.ok(matches.length <= 1, `Attributed ${collector} unit with several records: ${sourceFile} ${unit}`);
+                assert.ok(matches.length || lines.length, `Attributed ${collector} unit without a covered record: ${sourceFile} ${unit}`);
+                for (const record of matches) assert.ok(record.covered, `Attributed ${collector} unit that the report shows as uncovered: ${sourceFile} ${unit}`);
                 for (const record of [...matches, ...lines]) {
                     for (const [owner, hits] of Object.entries(owners)) {
                         // PHP records whether a line ran, not how often.
@@ -209,7 +213,7 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
             {id: 'unsupported-scripts', count: templateLimitations.scripts.length, description: 'Inline scripts that cannot be instrumented; they have no records.'},
             {id: 'unmapped-generated-scripts', count: templateLimitations.generated.length, description: 'PHP-generated script fragments without a static source mapping; they have no records.'}
         ], ['templates/coverage-summary.json']);
-        manifest('xml', 'collected', 'Runtime config value consumption and Admin field rendering (metric lines); observer registrations and DI declarations per configuration area (metrics observers, plugins, preferences, virtual-types, arguments, lifecycles).', [
+        manifest('xml', 'collected', 'XML lines whose declarations took effect: config reads, Admin field renders and the effects of ACL, menu, route, cron, Web API and UI component declarations (metric lines); observer registrations and DI declarations per configuration area (metrics observers, plugins, preferences, virtual-types, arguments, lifecycles); layout declarations with observed effects (metric layout).', [
             {id: 'measurement-warnings', count: xml.warnings.length, description: 'Unsupported or ambiguous XML is unmeasured and has no records; see warnings in xml/coverage.json.'}
         ], ['xml/coverage.json']);
         writeAttribution(database, directory, run, xml);
@@ -222,7 +226,7 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
             ['template', 'executable-lines', templates.lines], ['template', 'dom-presence', {total: templates.summary.eligible, covered: templates.summary.covered}],
             ['template', 'statements', templates.statements], ['template', 'functions', templates.functions], ['template', 'branches', templates.branches],
             ['xml', 'lines', xml], ['xml', 'observers', xml.observers], ['xml', 'plugins', xml.plugins], ['xml', 'preferences', xml.preferences],
-            ['xml', 'virtual-types', xml.virtualTypes], ['xml', 'arguments', xml.arguments], ['xml', 'lifecycles', xml.lifecycles]
+            ['xml', 'virtual-types', xml.virtualTypes], ['xml', 'arguments', xml.arguments], ['xml', 'lifecycles', xml.lifecycles], ['xml', 'layout', xml.layout ?? {total: 0, covered: 0}]
         ];
         for (const [source, metric, summary] of expected) {
             const stored = totals.find(row => row.source_type === source && row.metric === metric) || {total: 0, covered: 0};

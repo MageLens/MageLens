@@ -291,6 +291,35 @@ test('XML attribution owns every line a declaration spans and adds counts of dec
         [['config.xml', '5', 1], ['events.xml', '10', 1], ['events.xml', '9', 1], ['events.xml', 'observer-1@frontend', 1]]);
 });
 
+test('layout declarations and effect-measured declarations load like the XML report counts them', t => {
+    const fixture = reports(t, 1);
+    const xmlFile = `${fixture.root}/coverage/xml/coverage.json`;
+    const xml = JSON.parse(fs.readFileSync(xmlFile, 'utf8'));
+    // Layout counts per declaration and never per line; an ACL resource counts on its lines, observed per area.
+    xml.files.push({path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', family: 'layout', lines: {4: {hits: 2, state: 'covered'}},
+        declarations: [{id: 'block-1', family: 'layout', startLine: 4, endLine: 4, state: 'covered', hits: 2},
+            {id: 'block-2', family: 'layout', startLine: 5, endLine: 5, state: 'unmeasured', hits: 0}]},
+        {path: 'app/code/Acme/Shop/etc/acl.xml', family: 'acl', lines: {9: {hits: 3, state: 'covered'}},
+            declarations: [{id: 'resource-1', family: 'acl', effects: ['acl-check'], startLine: 9, endLine: 9, hits: 3}]});
+    Object.assign(xml, {covered: 2, total: 2, layout: {covered: 1, total: 1}});
+    fs.writeFileSync(xmlFile, JSON.stringify(xml));
+    fs.mkdirSync(`${fixture.root}/coverage/attribution`);
+    attribution(fixture, files => {
+        files.xml['app/code/Acme/Shop/view/frontend/layout/cart.xml'] = {'block-1': {0: 2}};
+        files.xml['app/code/Acme/Shop/etc/acl.xml'] = {'resource-1@adminhtml': {1: 3}};
+        return files;
+    });
+    const result = fixture.run(['--include-machine-report']);
+    assert.equal(result.status, 0, result.stderr);
+    const query = database(t, fixture);
+    assert.deepEqual(query("SELECT file_path, metric, record_key FROM records WHERE file_path LIKE '%cart.xml' OR file_path LIKE '%acl.xml' ORDER BY 1, 2"), [
+        {file_path: 'app/code/Acme/Shop/etc/acl.xml', metric: 'lines', record_key: '9'},
+        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'layout', record_key: 'block-1'}]);
+    assert.deepEqual(query("SELECT file_path, metric, record_key, test_name, hit_count FROM record_attempts WHERE file_path LIKE '%cart.xml' OR file_path LIKE '%acl.xml' ORDER BY 1"), [
+        {file_path: 'app/code/Acme/Shop/etc/acl.xml', metric: 'lines', record_key: '9', test_name: 'cart › removes', hit_count: 3},
+        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'layout', record_key: 'block-1', test_name: 'cart › adds', hit_count: 2}]);
+});
+
 test('attribution of another run cannot be loaded', t => {
     const fixture = reports(t, 1);
     fs.mkdirSync(`${fixture.root}/coverage/attribution`);
