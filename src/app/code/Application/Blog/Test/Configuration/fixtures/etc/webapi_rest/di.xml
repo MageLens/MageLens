@@ -12,4 +12,10 @@ License: see LICENSE in the repository root.
     <type name="Application\Blog\Model\JournalPluginSubject">
         <plugin name="rest_probe" type="Application\Blog\Plugin\JournalWarm" sortOrder="50"/>
     </type>
+    <type name="Application\Blog\Model\ApiAreaProbe">
+        <plugin name="magelens_rest_cache" type="Application\Blog\Plugin\RestCache"/>
+    </type>
+    <type name="Magento\Webapi\Controller\Rest\SynchronousRequestProcessor">
+        <plugin name="magelens_rest_after_processor" type="Application\Blog\Plugin\RestCache"/>
+    </type>
 </config>

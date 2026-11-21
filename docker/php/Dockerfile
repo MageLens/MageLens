@@ -11,12 +11,19 @@ RUN php -r 'if (PHP_VERSION !== $argv[1]) { fwrite(STDERR, "Unexpected PHP versi
 ARG PIE_VERSION
 ARG PCOV_VERSION
 ARG OPENTELEMETRY_VERSION
+ARG OPENTELEMETRY_SHA256
 # Current supported installation mechanism, pinned to the fork's release.
 RUN curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 "https://github.com/php/pie/releases/download/${PIE_VERSION}/pie.phar" -o /usr/local/bin/pie \
     && chmod +x /usr/local/bin/pie \
     && pie install "magelens/pcov:${PCOV_VERSION}" --no-interaction \
     && php -r 'if (phpversion("pcov") !== getenv("PCOV_VERSION") || !function_exists("pcov\\export") || extension_loaded("xdebug")) exit(1);'
-RUN pecl install "opentelemetry-${OPENTELEMETRY_VERSION}" \
+# The upstream release asset contains the same tarball distributed by PECL.
+RUN curl -fsSL --retry 4 --retry-max-time 120 --connect-timeout 20 --max-time 60 \
+        "https://github.com/open-telemetry/opentelemetry-php-instrumentation/releases/download/${OPENTELEMETRY_VERSION}/opentelemetry-pecl.zip" -o /tmp/opentelemetry.zip \
+    && unzip -p /tmp/opentelemetry.zip "opentelemetry-${OPENTELEMETRY_VERSION}.tgz" > /tmp/opentelemetry.tgz \
+    && echo "$OPENTELEMETRY_SHA256  /tmp/opentelemetry.tgz" | sha256sum -c - \
+    && pecl install /tmp/opentelemetry.tgz \
+    && rm /tmp/opentelemetry.tgz /tmp/opentelemetry.zip \
     && docker-php-ext-enable opentelemetry \
     && php -r 'if (phpversion("opentelemetry") !== getenv("OPENTELEMETRY_VERSION") || !function_exists("OpenTelemetry\\Instrumentation\\hook")) exit(1);'
 RUN mkdir /opt/pcov-tools \

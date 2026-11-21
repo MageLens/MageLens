@@ -197,7 +197,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
             {subject, method, phase, state});
         return callback.hits;
     };
-    assert.deepEqual(result.plugins, {total: 62, covered: 22, hook: true});
+    assert.deepEqual(result.plugins, {total: 70, covered: 25, hook: true});
     assert.deepEqual([global.journal_shared.startLine, global.journal_shared.endLine], [9, 10]);
     assert.equal(global.journal_shared.registration.target, subject + 'Interface');
     assert.deepEqual([global.journal_duplicate.startLine, global.journal_duplicate.endLine], [14, 14]);

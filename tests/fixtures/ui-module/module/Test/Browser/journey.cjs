@@ -13,7 +13,7 @@ const grid = 'table[data-role=grid]';
 const gridHead = `${grid} thead th`;
 const columnLabels = [
     'Untouched column', 'Equal column', 'PHP replacement', 'Before prepare replacement',
-    'Equal PHP column', 'After prepare replacement', 'Module theme label',
+    'Equal PHP column', 'After prepare replacement', 'Module theme label', 'Serialized replacement',
 ];
 const rows = `${grid} tbody tr.data-row td:first-child`;
 const input = 'input[name=untouched]';
@@ -24,6 +24,31 @@ const proofDirectory = 'coverage/ui-browser-proof';
 const button = name => `button[data-index=${name}]`;
 const responseId = /^[a-f0-9]{32}$/;
 const testValue = 'Browser fixture edit';
+const initialDisabled = 'magelens_ui_probe_host.magelens_ui_probe_host.host_fields.initial_disabled';
+const replacementButton = 'button[data-probe-replacement]';
+
+function registerReplacement(identity, win = window) {
+    return new Promise((resolve, reject) => {
+        win.requirejs(['uiRegistry', 'ko', 'Magento_Ui/js/form/components/button'], (registry, ko, Button) => {
+            try {
+                if (registry.get(identity)) throw new Error('The client-disabled XML button was instantiated');
+                const replacement = new Button({name: identity, actions: [{targetName: identity, actionName: 'mark'}]});
+                const node = win.document.createElement('button');
+                node.type = 'button';
+                node.textContent = 'Replacement action';
+                node.dataset.probeReplacement = '';
+                node.setAttribute('data-bind', 'click: action');
+                replacement.mark = () => { node.dataset.invoked = 'true'; };
+                registry.set(identity, replacement);
+                win.document.querySelector('input[name=untouched]').insertAdjacentElement('afterend', node);
+                ko.applyBindings(replacement, node);
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        }, reject);
+    });
+}
 
 function documentResponse(win = window) {
     return win.performance.getEntriesByType('navigation')[0]?.serverTiming
@@ -55,4 +80,4 @@ const formEffects = [
 ];
 
 module.exports = {parent, menu, listingEffects, formEffects, columns, fields, provider, gridHead, columnLabels, rows,
-    input, readOnly, button, initialValue, readOnlyValue, proofDirectory, responseId, documentResponse, uiRequest, testValue};
+    input, readOnly, button, initialValue, readOnlyValue, proofDirectory, responseId, documentResponse, uiRequest, testValue, initialDisabled, replacementButton, registerReplacement};

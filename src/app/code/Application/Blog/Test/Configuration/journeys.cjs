@@ -40,6 +40,7 @@ const routingJourneys = [
     ['GET', '/alternatecatalogue/index/catalogue', 200, {route: '0123'}],
     ['GET', '/350/index/catalogue', 200, {route: 'collisionwinner'}],
     ['GET', '/rest/default/V1/magelens/area-probe/free', 200, [...result('REST label'), 'variable-route']],
+    ['GET', '/rest/default/V1/magelens/area-probe/cached', 200, ['cached-response']],
     ['GET', '/rest/default/V1/magelens/area-probe/restricted', 401],
     ['PUT', '/rest/default/V1/magelens/area-probe', 404]
 ];

@@ -79,5 +79,10 @@ License: see LICENSE in the repository root.
                 <label>Module theme label</label>
             </settings>
         </column>
+        <column name="after_configuration" sortOrder="90">
+            <settings>
+                <label>Original serialized label</label>
+            </settings>
+        </column>
     </columns>
 </listing>

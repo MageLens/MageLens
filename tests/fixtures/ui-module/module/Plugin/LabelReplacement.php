@@ -23,6 +23,14 @@ final class LabelReplacement
         $column->setData('config', $config);
     }
 
+    public function afterGetConfiguration(Column $column, array $config): array
+    {
+        if ($column->getName() === 'after_configuration') {
+            $config['label'] = 'Serialized replacement';
+        }
+        return $config;
+    }
+
     public function afterPrepare(Column $column): void
     {
         if ($column->getName() !== 'after_prepare') return;

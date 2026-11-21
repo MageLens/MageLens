@@ -45,11 +45,11 @@ final class Xml
 
     public static function document(string $source): \DOMDocument
     {
-        if (preg_match('/<!DOCTYPE|<!ENTITY/i', $source)) throw new \RuntimeException('XML entities and DTDs are unsupported');
         $previous = libxml_use_internal_errors(true);
         try {
             $dom = new \DOMDocument();
             if (!$dom->loadXML($source, LIBXML_NONET)) throw new \RuntimeException('Malformed XML');
+            if ($dom->doctype !== null) throw new \RuntimeException('XML entities and DTDs are unsupported');
             return $dom;
         } finally { libxml_clear_errors(); libxml_use_internal_errors($previous); }
     }

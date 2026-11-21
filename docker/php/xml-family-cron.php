@@ -21,9 +21,6 @@ final class CronFamily
     {
         if (!str_ends_with($path, '/etc/crontab.xml')) return null;
         $dom = Xml::document($bytes);
-        if ($dom->documentElement->tagName !== 'config'
-            || $dom->documentElement->getAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'noNamespaceSchemaLocation')
-                !== 'urn:magento:module:Magento_Cron:etc/crontab.xsd') return [];
         return self::inventory($path, $bytes, $dom);
     }
 
@@ -119,7 +116,7 @@ final class CronFamily
                 continue;
             }
 
-            $receiver = ObserverManifest::nativeClass($data->getInstanceType($data->getPreference($instance)));
+            $receiver = NativeCall::implementation($data->getInstanceType($data->getPreference($instance)));
             if (!method_exists($receiver, $method)) {
                 self::limit($item, 'The configured callback has no concrete public method');
                 continue;

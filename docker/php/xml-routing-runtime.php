@@ -26,6 +26,8 @@ use Magento\Webapi\Controller\Rest\Router\Route as RestRoute;
 use Magento\Webapi\Controller\Rest\SynchronousRequestProcessor;
 use Magento\Webapi\Model\Rest\Config as RestConfig;
 
+require_once __DIR__ . '/xml-native-call.php';
+
 final class RoutingRuntime
 {
     private \WeakMap $actions;
@@ -115,7 +117,7 @@ final class RoutingRuntime
                     if ($class !== RestController::class) return;
                     [$request] = self::properties($controller, RestController::class, ['_request']);
                     $this->rest[] = ['request' => $request, 'routes' => new \WeakMap(), 'policies' => new \WeakMap(),
-                        'allowed' => [], 'selected' => null, 'service' => null, 'entered' => false, 'processors' => 0];
+                        'allowed' => [], 'processors' => []];
                 },
                 function ($controller, array $params, $result, ?\Throwable $error, string $class): void {
                     if ($class === RestController::class) array_pop($this->rest);
@@ -123,11 +125,13 @@ final class RoutingRuntime
             [SynchronousRequestProcessor::class, 'process',
                 function ($processor, array $params, string $class): void {
                     $index = array_key_last($this->rest);
-                    if ($index !== null && $class === SynchronousRequestProcessor::class) $this->rest[$index]['processors']++;
+                    if ($index !== null && $class === SynchronousRequestProcessor::class) {
+                        $this->rest[$index]['processors'][] = ['owner' => $processor, 'selected' => null, 'service' => null, 'entered' => false];
+                    }
                 },
                 function ($processor, array $params, $result, ?\Throwable $error, string $class): void {
                     $index = array_key_last($this->rest);
-                    if ($index !== null && $class === SynchronousRequestProcessor::class) $this->rest[$index]['processors']--;
+                    if ($index !== null && $class === SynchronousRequestProcessor::class) array_pop($this->rest[$index]['processors']);
                 }],
             [RestRouter::class, 'match',
                 function ($router, array $params, string $class): void {
@@ -160,26 +164,29 @@ final class RoutingRuntime
             [InputParamsResolver::class, 'getRoute', null,
                 function ($resolver, array $params, $result, ?\Throwable $error): void {
                     $index = array_key_last($this->rest);
-                    if ($index === null || $this->rest[$index]['processors'] === 0 || $error || !$result instanceof RestRoute) return;
+                    $processor = array_key_last($this->rest[$index]['processors'] ?? []);
+                    if ($processor === null || $error || !$result instanceof RestRoute) return;
                     if (self::calledBy('getRoute', SynchronousRequestProcessor::class, 'process')) {
-                        $this->rest[$index]['selected'] = $this->rest[$index]['routes'][$result] ?? null;
+                        $this->rest[$index]['processors'][$processor]['selected'] = $this->rest[$index]['routes'][$result] ?? null;
                     }
                 }],
             [RestRoute::class, 'getServiceMethod', null,
                 function ($route, array $params, $result, ?\Throwable $error): void {
                     $index = array_key_last($this->rest);
-                    if ($index === null || $error || !self::calledBy('getServiceMethod', SynchronousRequestProcessor::class, 'process')) return;
-                    $selected = $this->rest[$index]['selected'];
+                    $processor = array_key_last($this->rest[$index]['processors'] ?? []);
+                    if ($processor === null || $error || !self::calledBy('getServiceMethod', SynchronousRequestProcessor::class, 'process')) return;
+                    $selected = $this->rest[$index]['processors'][$processor]['selected'];
                     if ($selected === null || $selected['method'] === $result) return;
                     Recorder::familyEvidence($selected['id'], 'webapi-handler-entered', 'webapi_rest', 'displaced',
                         'Runtime code changed the selected REST service method');
-                    $this->rest[$index]['selected'] = null;
+                    $this->rest[$index]['processors'][$processor]['selected'] = null;
                 }],
             [ObjectManagerInterface::class, 'get', null,
                 function ($manager, array $params, $result, ?\Throwable $error): void {
                     $index = array_key_last($this->rest);
-                    if ($index === null || $error || !is_object($result)) return;
-                    $selected = $this->rest[$index]['selected'];
+                    $processor = array_key_last($this->rest[$index]['processors'] ?? []);
+                    if ($processor === null || $error || !is_object($result)) return;
+                    $selected = $this->rest[$index]['processors'][$processor]['selected'];
                     if ($selected === null || !self::calledBy('get', SynchronousRequestProcessor::class, 'process')) return;
                     if ($selected['service'] !== $params[0]) {
                         Recorder::familyEvidence($selected['id'], 'webapi-handler-entered', 'webapi_rest', 'displaced',
@@ -192,7 +199,7 @@ final class RoutingRuntime
                             'The native service instance does not match the prepared implementation');
                         return;
                     }
-                    $this->rest[$index]['service'] = $result;
+                    $this->rest[$index]['processors'][$processor]['service'] = $result;
                 }],
         ];
     }
@@ -390,12 +397,15 @@ final class RoutingRuntime
     private function restHandler($subject, string $class, string $method, ?\Throwable $error, string $file, int $line): void
     {
         $index = array_key_last($this->rest);
-        if ($index === null) return;
-        $request =& $this->rest[$index];
-        $target = $request['selected'];
-        if ($target === null || $request['entered'] || $request['service'] !== $subject || $target['handler'] !== $class
-            || $target['method'] !== $method || !isset($request['allowed'][$target['id']])) return;
-        $request['entered'] = true;
+        $processor = array_key_last($this->rest[$index]['processors'] ?? []);
+        if ($processor === null) return;
+        $frame =& $this->rest[$index]['processors'][$processor];
+        $target = $frame['selected'];
+        if ($target === null || $frame['entered'] || $frame['service'] !== $subject || $target['handler'] !== $class
+            || $target['method'] !== $method || !isset($this->rest[$index]['allowed'][$target['id']])
+            || !NativeCall::matches($subject, $class, $method, $frame['owner'], SynchronousRequestProcessor::class, 'process',
+                '$outputData = call_user_func_array([$service, $serviceMethodName], $inputParams);')) return;
+        $frame['entered'] = true;
         $this->handlerEntry([$target['id']], 'webapi-handler-entered', 'webapi_rest', $error, $file, $line);
     }
 

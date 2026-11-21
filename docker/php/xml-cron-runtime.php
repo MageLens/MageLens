@@ -20,6 +20,8 @@ use Magento\Framework\DataObject;
 use N98\Magento\Command\System\Cron\AbstractCronCommand;
 use N98\Magento\Command\System\Cron\RunCommand;
 
+require_once __DIR__ . '/xml-native-call.php';
+
 final class CronRuntime
 {
     private array $constructors = [];
@@ -29,7 +31,6 @@ final class CronRuntime
     private array $execution = [];
     private array $direct = [];
     private array $callbacks = [];
-    private array $callSites = [];
     private \WeakMap $origins;
     private \WeakMap $latest;
     private \ReflectionProperty $observerConfig;
@@ -291,14 +292,14 @@ final class CronRuntime
         $execution = end($this->execution);
         $direct = end($this->direct);
         $schedule = $args[0] ?? null;
-        if (!self::native($schedule, Schedule::class)) return;
+        if (!self::native($schedule, Schedule::class) || str_ends_with($class, '\\Interceptor')) return;
         if (isset($execution['target']) && $execution['schedule'] === $schedule
-            && $this->atCallSite($subject, $method, $execution['owner'], Observer::class, '_runJob',
+            && NativeCall::matches($subject, $class, $method, $execution['owner'], Observer::class, '_runJob',
                 'call_user_func_array($callback, [$schedule]);')) {
             $frame = &$this->execution[array_key_last($this->execution)];
         } elseif (isset($direct['target']) && $subject === $direct['receiver']
             && self::identifier($this->scheduleData($schedule)['job_code'] ?? null) === $direct['code']
-            && $this->atCallSite($subject, $method, $direct['owner'], RunCommand::class, 'execute',
+            && NativeCall::matches($subject, $class, $method, $direct['owner'], RunCommand::class, 'execute',
                 '$model->{$jobConfig[\'method\']}($schedule);')) {
             $frame = &$this->direct[array_key_last($this->direct)];
         } else {
@@ -306,8 +307,8 @@ final class CronRuntime
         }
         $target = $frame['target'];
         if (isset($frame['claimed']) || $method !== $target['callback'] || !self::native($subject, $target['receiver'])
-            || !in_array($class, [$target['declaring'], $target['receiver'] . '\\Interceptor'], true)) return;
-        // A compiled interceptor can notify more than one hook for the same call.
+            || $class !== $target['declaring']) return;
+        // Attribute the first body entered by this dispatch.
         $frame['claimed'] = true;
         $this->callbacks[array_key_last($this->callbacks)] = ['id' => $target['id'], 'outcome' => $frame['outcome']];
     }
@@ -325,25 +326,9 @@ final class CronRuntime
         Recorder::familyEvidence($id, 'cron-handler-completed', 'crontab', ...($outcome ?? [$error ? 'failed' : 'completed']));
     }
 
-    private function callSite(string $class, string $method, string $statement): ?array
-    {
-        $key = $class . '::' . $method;
-        if (!array_key_exists($key, $this->callSites)) {
-            $function = new \ReflectionMethod($class, $method);
-            $file = $function->getFileName();
-            $lines = is_string($file) ? file($file, FILE_IGNORE_NEW_LINES) : false;
-            $matched = [];
-            if ($lines !== false) for ($line = $function->getStartLine(); $line <= $function->getEndLine(); $line++) {
-                if (trim($lines[$line - 1]) === $statement) $matched[] = $line;
-            }
-            $this->callSites[$key] = count($matched) === 1 ? [$file, $matched[0]] : null;
-        }
-        return $this->callSites[$key];
-    }
-
     private function atScheduleCallSite(object $owner): bool
     {
-        $site = $this->callSite(Observer::class, 'saveSchedule', '$valid = $schedule->trySchedule();');
+        $site = NativeCall::site(Observer::class, 'saveSchedule', '$valid = $schedule->trySchedule();');
         if ($site === null) return false;
         // Observe the native expression evaluator inside a Schedule interceptor, if present.
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 30);
@@ -352,26 +337,6 @@ final class CronRuntime
                 || $frame['function'] !== 'saveSchedule') continue;
             $callee = $trace[$index - 1] ?? [];
             return ($callee['file'] ?? null) === $site[0] && ($callee['line'] ?? null) === $site[1];
-        }
-        return false;
-    }
-
-    private function atCallSite(
-        object $subject, string $callback, object $owner, string $class, string $method, string $statement
-    ): bool {
-        $site = $this->callSite($class, $method, $statement);
-        if ($site === null) return false;
-        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS | DEBUG_BACKTRACE_PROVIDE_OBJECT, 12);
-        foreach ($trace as $index => $frame) {
-            if (($frame['object'] ?? null) !== $subject || $frame['function'] !== $callback) continue;
-            $caller = $trace[$index + 1] ?? [];
-            // PHP may expose the native call_user_func_array trampoline as its own frame.
-            if (!isset($caller['class']) && ($caller['function'] ?? null) === 'call_user_func_array') {
-                $frame = $caller;
-                $caller = $trace[$index + 2] ?? [];
-            }
-            return ($caller['object'] ?? null) === $owner && ($caller['class'] ?? null) === $class
-                && $caller['function'] === $method && ($frame['file'] ?? null) === $site[0] && ($frame['line'] ?? null) === $site[1];
         }
         return false;
     }

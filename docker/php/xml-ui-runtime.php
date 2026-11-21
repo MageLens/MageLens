@@ -12,6 +12,7 @@ use Laminas\Http\PhpEnvironment\Response as NativeResponse;
 use Laminas\Stdlib\Message;
 use Magento\Framework\HTTP\PhpEnvironment\Response;
 use Magento\Framework\DataObject;
+use Magento\Framework\Phrase;
 use Magento\Framework\View\Element\UiComponent\Context;
 use Magento\Framework\View\Element\UiComponent\DataProvider\DataProviderInterface;
 use Magento\Framework\View\Element\UiComponentFactory;
@@ -33,6 +34,8 @@ final class UiRuntime
     private \WeakMap $components;
     private \WeakMap $labels;
     private \WeakMap $roots;
+    private \WeakMap $serializedLabels;
+    private array $serializations = [];
     private int $fieldPreparations = 0;
     private array $scripts = [];
     private ?\WeakReference $sending = null;
@@ -42,6 +45,7 @@ final class UiRuntime
         $this->components = new \WeakMap();
         $this->labels = new \WeakMap();
         $this->roots = new \WeakMap();
+        $this->serializedLabels = new \WeakMap();
     }
 
     public function hooks(): array
@@ -57,6 +61,20 @@ final class UiRuntime
             [DataObject::class, 'unsetData', null, $this->labelWrite(...)],
             [DataObject::class, 'offsetSet', null, $this->labelWrite(...)],
             [DataObject::class, 'offsetUnset', null, $this->labelWrite(...)],
+            [Result::class, 'appendLayoutConfiguration',
+                function ($subject, array $params, string $class): void {
+                    if ($class === Result::class) $this->serializations[] = new \WeakMap();
+                },
+                function ($subject, array $params, $result, ?\Throwable $error, string $class): void {
+                    if ($class !== Result::class) return;
+                    $labels = array_pop($this->serializations);
+                    if (!$error) $this->serializedLabels[$subject] = $labels;
+                }],
+            [Phrase::class, 'jsonSerialize', null,
+                function ($phrase, array $params, $result, ?\Throwable $error): void {
+                    $labels = end($this->serializations);
+                    if ($labels && !$error && is_string($result)) $labels[$phrase] = $result;
+                }],
             [Result::class, '__toString', null, $this->serialized(...)],
             [NativeResponse::class, 'sendContent', $this->sending(...), $this->sent(...)],
             [AbstractComponent::class, 'prepare', null, $this->prepared(...)],
@@ -349,6 +367,8 @@ final class UiRuntime
         $component = (new \ReflectionProperty(Result::class, 'component'))->getValue($subject);
         $root = $this->roots[$component] ?? null;
         if ($root === null) return;
+        $serializedLabels = $this->serializedLabels[$subject] ?? null;
+        unset($this->serializedLabels[$subject]);
         if (!preg_match(self::CONFIG_SCRIPT, $result, $match)) return;
         $fingerprint = hash('sha256', $match[0]);
         $items = [];
@@ -365,7 +385,15 @@ final class UiRuntime
                 $loss = $labelComponent !== null && $labelComponent === self::componentAt($component, $item['segments'])
                     ? $this->labelLoss($labelComponent)
                     : ['ambiguous', 'The serialized UI path no longer points to the original native component'];
-                if ($loss === null && !array_key_exists('label', $node['config'] ?? [])) continue;
+                if ($loss === null) {
+                    $label = $this->labels[$labelComponent]->label;
+                    // Observe the native serialization of a translated label without invoking its renderer again.
+                    $expected = $label instanceof Phrase ? ($serializedLabels[$label] ?? null) : $label;
+                    if ($label instanceof Phrase && $expected === null || !array_key_exists('label', $node['config'] ?? [])
+                        || $node['config']['label'] !== $expected) {
+                        $loss = ['displaced', 'The serialized label differs from the tracked native component label'];
+                    }
+                }
             }
             if ($loss === null && !isset($node['type'])) continue;
             $items[$item['id']] = [$item, $loss];

@@ -66,7 +66,8 @@ function merge(manifest, records, sources, browserObservations = []) {
     const limitedHandles = new Map();
     const layoutTotals = {total: 0, covered: 0, hook: layoutHook, limitations: []};
     const layoutMeasurement = [...declarations.values()].some(({item}) => item.family === 'layout' && item.supported);
-    assert.ok(!layoutMeasurement || layoutHook, 'No functioning XML layout hook observed');
+    assert.ok(!layoutMeasurement || layoutHook || records.every(record => record.layoutRequired === false),
+        'No functioning XML layout hook observed');
     const requestLimitations = new Set();
     const requests = [];
     const commands = new Map();
@@ -112,7 +113,8 @@ function merge(manifest, records, sources, browserObservations = []) {
         const observations = [...record.events.map(event => ({event})), ...(browser.get(record) || [])];
         for (const {event, evidence: browserEvidence} of observations) {
             assert.ok(Boolean(browserEvidence) === browserEffects.has(event.type), 'Unexpected browser XML observation origin');
-            const {item, source} = declarations.get(event.id) || {};
+            const declaration = declarations.get(event.id);
+            const {item, source} = declaration ?? {};
             assert.ok(item?.supported || (item?.family === 'layout' && item.layout.kind === 'file-selection'), 'Unknown or unmeasured XML evidence');
             assert.ok(Number.isSafeInteger(event.hits) && event.hits > 0);
             const evidence = {run: record.run, request: record.request, type: event.type, ...browserEvidence};
@@ -204,10 +206,14 @@ function merge(manifest, records, sources, browserObservations = []) {
                 evidence.requestedScope = event.requestedScope;
             }
             if (covers && (item.family !== 'layout' || countsAsLayoutCoverage(event.type))) item.hits += event.hits;
-            const sameEvidence = previous => item.family === 'layout'
-                ? previous.type === evidence.type && previous.area === evidence.area && previous.theme === evidence.theme
-                : JSON.stringify(previous) === JSON.stringify(evidence);
-            if (!item.evidence.some(sameEvidence)) item.evidence.push(evidence);
+            const key = item.family === 'layout'
+                ? JSON.stringify([evidence.type, evidence.area, evidence.theme])
+                : JSON.stringify(evidence);
+            const evidenceKeys = declaration.evidenceKeys ??= new Set();
+            if (!evidenceKeys.has(key)) {
+                evidenceKeys.add(key);
+                item.evidence.push(evidence);
+            }
             events.push(event);
         }
         const limitations = [...new Set(record.layoutLimitations || [])].sort().map(key => layoutLimitations[key]);

@@ -114,6 +114,7 @@ function exercise(UiComponentFactory $factory): array
         'before_equal' => 'Equal PHP column',
         'after_prepare' => 'After prepare replacement',
         'theme_label' => 'Composer Admin theme label',
+        'after_configuration' => 'Serialized replacement',
     ];
     foreach (array_keys($expectedLabels) as $name) {
         verify($columns->getComponent($name) instanceof Column, 'Native default column class not applied');
@@ -128,6 +129,8 @@ function exercise(UiComponentFactory $factory): array
 
     prepareTree($listing);
     prepareTree($form);
+    verify($columns->getComponent('after_configuration')->getData('config')['label'] === 'Original serialized label',
+        'The after plugin must leave the native component label intact');
     $labels = [];
     foreach (array_keys($expectedLabels) as $name) {
         $label = $columns->getComponent($name)->getConfiguration()['label'];

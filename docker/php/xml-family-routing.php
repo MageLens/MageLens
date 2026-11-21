@@ -133,7 +133,7 @@ final class RoutingFamily
             $implementation = $di->getInstanceType($di->getPreference($service));
             $handler = null;
             if (method_exists($implementation, $method)) {
-                $callback = new \ReflectionMethod(ObserverManifest::nativeClass($implementation), $method);
+                $callback = new \ReflectionMethod(NativeCall::implementation($implementation), $method);
                 if ($callback->isPublic() && !$callback->isAbstract() && !$callback->isStatic()) $handler = $callback->class;
             }
             $webapi[$verb][$url] = ['id' => $item['id'], 'binding' => RoutingRuntime::webSignature(

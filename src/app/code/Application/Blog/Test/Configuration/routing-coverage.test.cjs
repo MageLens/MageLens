@@ -119,10 +119,12 @@ test('keeps synchronous REST selection, permission, and handler entry distinct',
     const variable = source(file, 'GET /V1/magelens/area-probe/:scenario', 12, ':scenario');
     const denied = source(file, 'GET /V1/magelens/area-probe/restricted', 16, '/restricted');
     const unused = source(file, 'GET /V1/magelens/area-probe/unused', 20, '/unused');
+    const cached = source(file, 'GET /V1/magelens/area-probe/cached', 24, '/cached');
     const success = ['webapi-handler-entered/entered', 'webapi-match/matched', 'webapi-permission/allowed'];
     for (const [suffix, item, expected] of [
         ['', exact, success], ['/free', variable, success],
-        ['/restricted', denied, ['webapi-match/matched', 'webapi-permission/denied']]
+        ['/restricted', denied, ['webapi-match/matched', 'webapi-permission/denied']],
+        ['/cached', cached, ['webapi-match/matched', 'webapi-permission/allowed']]
     ]) {
         const seen = events(new RegExp('/V1/magelens/area-probe' + suffix + '$'), 'GET');
         assert.deepEqual(stages(seen, item.id), expected);

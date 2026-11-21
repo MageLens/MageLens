@@ -33,4 +33,13 @@ License: see LICENSE in the repository root.
         <history_failure_lifetime>60</history_failure_lifetime>
         <use_separate_process>0</use_separate_process>
     </group>
+    <group id="magelens_interceptor_probe">
+        <schedule_generate_every>15</schedule_generate_every>
+        <schedule_ahead_for>0</schedule_ahead_for>
+        <schedule_lifetime>15</schedule_lifetime>
+        <history_cleanup_every>10</history_cleanup_every>
+        <history_success_lifetime>60</history_success_lifetime>
+        <history_failure_lifetime>60</history_failure_lifetime>
+        <use_separate_process>0</use_separate_process>
+    </group>
 </config>
