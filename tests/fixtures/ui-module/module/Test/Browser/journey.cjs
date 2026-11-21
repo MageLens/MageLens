@@ -40,7 +40,7 @@ function registerReplacement(identity, win = window) {
                 node.setAttribute('data-bind', 'click: action');
                 replacement.mark = () => { node.dataset.invoked = 'true'; };
                 registry.set(identity, replacement);
-                win.document.body.append(node);
+                win.document.querySelector('input[name=untouched]').insertAdjacentElement('afterend', node);
                 ko.applyBindings(replacement, node);
                 resolve();
             } catch (error) {
