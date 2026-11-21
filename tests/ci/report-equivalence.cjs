@@ -6,7 +6,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
+const {familyOutcomes} = require('../../bin/xml-family-report.cjs');
 const {isDeepStrictEqual} = require('node:util');
+const {layoutEvents, countsAsLayoutCoverage} = require('../../bin/report-xml.cjs');
 const digest = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n')).digest('hex');
 const sort = values => values.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en'));
 const read = (directory, file) => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
@@ -110,6 +112,8 @@ function snapshot(directory) {
     });
     const javascript = read(directory, 'js/coverage-final.json');
     assert.deepEqual(Object.keys(groups).sort(), Object.keys(files(Object.entries(javascript), () => true)).sort(), 'Incomplete JavaScript source inventory');
+    assert.ok(xml.layout || !array(xml.files).some(file => file.declarations.some(item => item.family === 'layout')),
+        'Missing layout coverage summary');
     const result = {
         schema: 1, run: run.id,
         metrics: Object.fromEntries(['php', 'js', 'templates', 'xml'].map(key => [key, summary.metrics[key].percent])),
@@ -120,6 +124,8 @@ function snapshot(directory) {
             virtualTypes: {total: count(xml.virtualTypes?.total ?? 0), covered: count(xml.virtualTypes?.covered ?? 0)},
             arguments: {total: count(xml.arguments?.total ?? 0), covered: count(xml.arguments?.covered ?? 0)},
             lifecycles: {total: count(xml.lifecycles?.total ?? 0), covered: count(xml.lifecycles?.covered ?? 0)},
+            layout: {total: count(xml.layout?.total ?? 0), covered: count(xml.layout?.covered ?? 0),
+                limitations: sort(array(xml.layout?.limitations ?? []).map(digest))},
             warnings: sort(array(xml.warnings).map(item => [fileKey(item.path), item.declaration || null, item.area || null, digest(item.reason)])),
             files: files(array(xml.files).map(file => [file.path, file]), file => ({
                 source: file.sourceFingerprint, reason: digest(file.reason || ''),
@@ -128,6 +134,11 @@ function snapshot(directory) {
                     id: item.id, path: digest(item.path), scope: [item.declaredScope.type, digest(item.declaredScope.code)],
                     range: [item.startLine, item.endLine], supported: item.supported, effective: item.effective,
                     state: item.state, reason: digest(item.reason || ''),
+                    ...(item.family === 'layout' ? {
+                        layout: [item.layout.kind, item.layout.fileType, item.layout.ordinal, digest(item.layout.element),
+                            digest(item.layout.handle), digest(item.layout.instruction), digest(item.layout.attribute || ''),
+                            digest(item.layout.selection || ''), digest(item.layout.destination || '')]
+                    } : {}),
                     ...(item.family === 'events' ? {
                         registration: [digest(item.registration.event), digest(item.registration.observer)],
                         areas: sort(Object.entries(object(item.areas)).map(([area, outcome]) =>
@@ -157,7 +168,14 @@ function snapshot(directory) {
                             ...(item.binding.argument ? [digest(item.binding.argument), ...(item.binding.items || []).map(digest)] : [])],
                         lifecycleAreas: diAreas(item.areas)
                     } : {}),
-                    evidence: sort([...new Set(item.evidence.map(event => JSON.stringify(event.type === 'observer-execute'
+                    ...(item.effects ? {
+                        family: item.family, familyOutcome: item.outcome ?? null,
+                        familyEffects: sort(familyOutcomes(item).map(({type, state, outcomes}) =>
+                            [type, state, sort(outcomes.map(({area, outcome, reason}) => [area, outcome, digest(reason ?? '')]))]))
+                    } : {}),
+                    evidence: item.effects ? [] : sort([...new Set(item.evidence.map(event => JSON.stringify(item.family === 'layout'
+                        ? [event.type, event.area, digest(event.theme)]
+                        : event.type === 'observer-execute'
                         ? [event.type, event.area, digest(event.registration.event), digest(event.registration.observer)]
                         : event.type === 'plugin-execute'
                             ? [event.type, event.area, digest(event.registration.target), digest(event.registration.name), ...pluginIdentity(event.callback)]
@@ -205,10 +223,54 @@ function validateSnapshot(value, run, summary) {
     const virtualTotals = {total: 0, covered: 0};
     const argumentTotals = {total: 0, covered: 0};
     const lifecycleTotals = {total: 0, covered: 0};
+    const layoutTotals = {total: 0, covered: 0};
+    let hasLayout = false;
     for (const file of Object.values(value.xml.files)) {
         assert.match(file.source, /^[a-f0-9]{64}$/);
         object(file.lines);
         for (const item of array(file.declarations)) {
+            if (item.layout) {
+                hasLayout = true;
+                const [kind, fileType, ordinal, ...identity] = array(item.layout);
+                assert.ok(Object.hasOwn(layoutEvents, kind) || ['instruction', 'attribute', 'schema-hint'].includes(kind));
+                if (kind === 'schema-hint') {
+                    assert.equal(item.state, 'unmeasured', 'Schema hints cannot receive runtime coverage');
+                    assert.deepEqual(item.evidence, [], 'Schema hints cannot receive runtime evidence');
+                }
+                assert.ok(['page', 'generic', 'wireframe', 'custom', 'registry', 'page-types'].includes(fileType));
+                count(ordinal);
+                assert.equal(identity.length, 6);
+                for (const part of identity) assert.match(part, /^[a-f0-9]{64}$/);
+                for (const [effect, area, theme] of array(item.evidence)) {
+                    assert.ok(Object.hasOwn(layoutEvents, kind) && layoutEvents[kind].includes(effect), 'Unexpected layout effect');
+                    assert.ok(['frontend', 'adminhtml'].includes(area));
+                    assert.match(theme, /^[a-f0-9]{64}$/);
+                }
+                const observedEffect = item.evidence.some(([effect]) => countsAsLayoutCoverage(effect));
+                assert.equal(item.state === 'covered', item.supported && observedEffect,
+                    'Layout coverage requires an eligible native effect; creation and selection facts cannot substitute for rendering');
+                if (item.state !== 'unmeasured') layoutTotals.total++;
+                if (item.state === 'covered') layoutTotals.covered++;
+            }
+            if (item.familyEffects) {
+                assert.ok(['ui-component', 'routes', 'webapi', 'acl', 'menu', 'cron'].includes(item.family));
+                assert.match(item.id, /^[a-f0-9]{64}$/);
+                assert.ok(item.familyOutcome === null || ['ambiguous', 'displaced', 'cache-only', 'disabled', 'unsupported'].includes(item.familyOutcome));
+                assert.equal(new Set(array(item.familyEffects).map(row => row[0])).size, item.familyEffects.length);
+                for (const [effect, state, outcomes] of item.familyEffects) {
+                    assert.match(effect, /^[a-z]+(?:-[a-z]+)+$/);
+                    assert.ok(['covered', 'uncovered', 'unmeasured'].includes(state));
+                    for (const [area, outcome, reason] of array(outcomes)) {
+                        assert.ok(['global', 'frontend', 'adminhtml', 'webapi_rest', 'graphql', 'crontab'].includes(area));
+                        assert.ok(['observed', 'allowed', 'denied', 'matched', 'entered', 'completed', 'failed',
+                            'ambiguous', 'displaced', 'cache-only', 'disabled'].includes(outcome));
+                        assert.match(reason, /^[a-f0-9]{64}$/);
+                    }
+                    const covered = outcomes.some(([, outcome]) =>
+                        ['observed', 'allowed', 'denied', 'matched', 'entered', 'completed'].includes(outcome));
+                    assert.equal(state, item.supported ? (covered ? 'covered' : 'uncovered') : 'unmeasured');
+                }
+            }
             if (item.plugin) {
                 assert.equal(array(item.plugin).length, 2);
                 for (const part of item.plugin) assert.match(part, /^[a-f0-9]{64}$/);
@@ -290,6 +352,10 @@ function validateSnapshot(value, run, summary) {
     assert.deepEqual(value.xml.virtualTypes ?? {total: 0, covered: 0}, virtualTotals, 'Incomplete virtual type coverage inventory');
     assert.deepEqual(value.xml.arguments ?? {total: 0, covered: 0}, argumentTotals, 'Incomplete constructor argument coverage inventory');
     assert.deepEqual(value.xml.lifecycles ?? {total: 0, covered: 0}, lifecycleTotals, 'Incomplete object lifetime coverage inventory');
+    assert.ok(value.xml.layout || !hasLayout, 'Missing layout coverage summary');
+    const {limitations: layoutLimitations, ...layoutSummary} = value.xml.layout ?? {...layoutTotals, limitations: []};
+    assert.deepEqual(layoutSummary, layoutTotals, 'Incomplete layout coverage inventory');
+    for (const reason of array(layoutLimitations)) assert.match(reason, /^[a-f0-9]{64}$/);
     totals(value.php.totals);
     for (const lines of Object.values(value.php.files)) for (const [line, covered] of Object.entries(object(lines))) {
         assert.match(line, /^[1-9]\d*$/, 'Invalid PHP line');
@@ -310,10 +376,56 @@ function validateSnapshot(value, run, summary) {
         for (const key of ['lineSummary', 'statementSummary', 'functionSummary', 'branchSummary']) totals(file.totals[key]);
     }
 }
+function comparableXml(xml, platform) {
+    // Native Admin theme names are platform run metadata. Keep the actual
+    // contexts in each artifact and normalize only the expected native name
+    // for this platform. Every source, effect and other context stays intact.
+    const native = {magento: 'adminhtml/Magento/backend', mageos: 'adminhtml/MageOS/m137-admin-theme'}[platform];
+    if (!native) return xml;
+    const expected = digest(native);
+    const normalized = digest('adminhtml/platform-native');
+    const result = structuredClone(xml);
+    for (const file of Object.values(result.files)) {
+        for (const item of file.declarations) {
+            if (!item.layout) continue;
+            for (const evidence of item.evidence) {
+                if (evidence[1] === 'adminhtml' && evidence[2] === expected) evidence[2] = normalized;
+            }
+            sort(item.evidence);
+        }
+    }
+    return result;
+}
+function sharedLayout(xml) {
+    const result = {};
+    for (const [path, file] of Object.entries(xml.files)) {
+        // The qualification harness configures this vendor root only for Hyvä.
+        // The independently exercised local store themes are shared fixtures.
+        if (path.startsWith('vendor/hyva-themes/magento2-default-theme-csp/')) continue;
+        const declarations = file.declarations.filter(item => item.layout)
+            .map(({id, path, scope, range, supported, layout}) => ({id, path, scope, range, supported, layout}));
+        if (declarations.length) result[path] = {source: file.source, declarations: sort(declarations)};
+    }
+    return result;
+}
+
 function compareThemes(reports, expected) {
     const errors = [];
     const expectedIds = expected.map(entry => entry.id).sort();
     if (!isDeepStrictEqual(reports.map(report => report.id).sort(), expectedIds)) errors.push('Missing, unexpected or duplicate matrix reports');
+    const sharedLayoutDifferences = [];
+    if (reports.length) {
+        const baseline = sharedLayout(reports[0].snapshot.xml);
+        for (const report of reports.slice(1)) {
+            const actual = sharedLayout(report.snapshot.xml);
+            for (const file of [...new Set([...Object.keys(baseline), ...Object.keys(actual)])].sort()) {
+                if (!isDeepStrictEqual(baseline[file], actual[file])) {
+                    sharedLayoutDifferences.push({case: report.id, file, ...details(baseline[file], actual[file])});
+                }
+            }
+        }
+    }
+    if (sharedLayoutDifferences.length) errors.push(`Shared layout: ${sharedLayoutDifferences.length} source or declaration differences`);
     const themes = {};
     for (const theme of ['luma', 'hyva']) {
         const entries = reports.filter(report => report.theme === theme);
@@ -322,7 +434,8 @@ function compareThemes(reports, expected) {
         const baseline = entries[0];
         for (const report of entries.slice(1)) {
             for (const section of ['metrics', 'php', 'js', 'templates', 'xml']) {
-                const left = baseline.snapshot[section], right = report.snapshot[section];
+                const left = section === 'xml' ? comparableXml(baseline.snapshot.xml, baseline.platform) : baseline.snapshot[section];
+                const right = section === 'xml' ? comparableXml(report.snapshot.xml, report.platform) : report.snapshot[section];
                 if (isDeepStrictEqual(left, right)) continue;
                 if (section === 'metrics') differences.push({case: report.id, section});
                 else {
@@ -337,7 +450,7 @@ function compareThemes(reports, expected) {
         themes[theme] = {baseline: baseline?.id, expectedCases: required.length, completedCases: entries.length, differences};
         if (entries.length !== required.length || differences.length) errors.push(`${theme}: ${entries.length}/${required.length} reports, ${differences.length} coverage differences`);
     }
-    return {passed: errors.length === 0, errors, themes};
+    return {passed: errors.length === 0, errors, themes, sharedLayoutDifferences};
 }
 function details(left, right) {
     let total = 0;

@@ -21,6 +21,7 @@
     "istanbul-lib-instrument": "6.0.3",
     "istanbul-lib-report": "3.0.1",
     "istanbul-reports": "3.2.0",
+    "mustache": "4.2.0",
     "nyc": "18.0.0"
   },
   "overrides": {

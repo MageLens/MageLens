@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {familyOutcomes} = require('./xml-family-report.cjs');
 const {isShareablePath} = require('./share-report-source.cjs');
 
 function counts({covered, total}) {
@@ -85,8 +86,34 @@ function shareReportData(coverageDir) {
     if (Object.hasOwn(summary.metrics, 'xml')) {
         const xml = read('xml/coverage.json');
         if (xml.run !== run.id || xml.complete !== true) throw new Error('Incomplete or stale XML coverage.');
-        const xmlFiles = xml.files.map(entry => row(entry.path, /\.xml$/, entry));
+        const xmlFiles = xml.files.map(entry => {
+            const file = row(entry.path, /\.xml$/, entry);
+            const declarations = entry.declarations?.filter(item => item.effects) ?? [];
+            if (declarations.length) {
+                file.fingerprint = entry.sourceFingerprint;
+                file.declarations = declarations.map(item => ({
+                    family: item.family, identity: item.path, start: item.startLine, end: item.endLine, state: item.state,
+                    outcome: item.outcome, reason: item.reason, effects: familyOutcomes(item)
+                }));
+            }
+            return file;
+        });
         sections.push({...section('XML configuration lines', xml, xmlFiles), warningCount: warningCount(xml.warnings)});
+        if (xml.layout) {
+            const layoutFiles = xml.files.filter(entry => entry.family === 'layout');
+            let unmeasured = 0;
+            const layoutRows = layoutFiles.map(entry => {
+                const declarations = entry.declarations.filter(item => item.family === 'layout');
+                const applicable = declarations.filter(item => item.state !== 'unmeasured');
+                unmeasured += declarations.length - applicable.length;
+                return row(entry.path, /\.xml$/, {
+                    covered: applicable.filter(item => item.state === 'covered').length,
+                    total: applicable.length,
+                });
+            });
+            sections.push({...section('Layout XML declarations', xml.layout, layoutRows),
+                warningCount: unmeasured + warningCount(xml.layout.limitations)});
+        }
     }
     return sections;
 }

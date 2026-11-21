@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.layout.fragment" htmlTag="div" htmlId="layout-fragment" output="1">
+        <block name="magelens.layout.fragment-marker" template="MageLens_Compatibility::layout-structure.phtml"/>
+    </container>
+</layout>

@@ -42,7 +42,8 @@ if ($active === false || !hash_equals(trim($active), $token)) {
     fclose($collectionLock);
     return;
 }
-$record = '/coverage/raw/php/' . $token . '/' . ($commandId ?? bin2hex(random_bytes(16)));
+$requestId = $commandId ?? bin2hex(random_bytes(16));
+$record = '/coverage/raw/php/' . $token . '/' . $requestId;
 if (!function_exists('pcov\\export')) {
     file_put_contents($record . '.error', 'VitaliyBoyko PCOV native export is unavailable');
     return;
@@ -54,6 +55,10 @@ try {
 } catch (Throwable) {
     file_put_contents($record . '.error', 'Cannot initialize XML runtime hooks');
     return;
+}
+if ($commandId === null) {
+    header('X-MageLens-Response: ' . $requestId);
+    header('Server-Timing: magelens-response;desc="' . $requestId . '"', false);
 }
 pcov\start();
 // Retain the shared lock until process shutdown. Reporting takes an exclusive

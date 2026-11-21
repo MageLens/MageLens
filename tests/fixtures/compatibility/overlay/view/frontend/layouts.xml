@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<page_layouts xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/PageLayout/etc/layouts.xsd">
+    <layout id="magelens_registry_override"><label>Registry overlay</label></layout>
+    <layout id="magelens_registry_equal"><label>Registry equal</label></layout>
+    <layout id="magelens_registry_empty"><label/></layout>
+    <layout id="magelens_registry_cdata"><label><![CDATA[]]></label></layout>
+    <layout id="magelens_registry_mixed"><label>Ignored prefix<![CDATA[overlay middle]]> ignored suffix</label></layout>
+    <layout id="magelens_registry_cdata_equal"><label><![CDATA[Registry CDATA equal]]></label></layout>
+</page_layouts>

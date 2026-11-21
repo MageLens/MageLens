@@ -13,6 +13,9 @@ const directory = process.env.MAGELENS_XML_ACCEPTANCE_DIR || 'coverage';
 const read = file => JSON.parse(fs.readFileSync(path.join(directory, file)));
 const config = 'app/code/Application/Blog/etc/config.xml';
 const system = 'app/code/Application/Blog/etc/adminhtml/system.xml';
+const layoutFixtureDi = 'app/code/MageLens/Compatibility/etc/frontend/di.xml';
+const cacheDispatchSubject = 'Magento\\PageCache\\Model\\App\\FrontController\\BuiltinPlugin';
+const cachePluginName = 'magelens_layout_cache_fixture';
 const prefix = 'application_blog/display/';
 function report() {
     const value = read('xml/coverage.json');
@@ -32,7 +35,15 @@ function declaration(result, file, key, type = 'default', code = '', family = nu
 function request(result, name) {
     const requests = result.requests.filter(entry => entry.case === name);
     assert.equal(requests.length, 1, `Expected exactly one real request for ${name}`);
-    return requests[0];
+    const [record] = requests;
+    const bridge = declaration(result, layoutFixtureDi, `${cacheDispatchSubject}/${cachePluginName}`, 'frontend', '', 'plugins');
+    const [dispatch, ...events] = record.events.filter(event => !event.type.startsWith('route-'));
+    // The cache fixture's native frontend dispatch runs before the Blog probe.
+    assert.deepEqual(dispatch, {
+        id: bridge.id, type: 'plugin-execute', area: 'frontend', name: cachePluginName,
+        callback: {subject: cacheDispatchSubject, method: 'aroundDispatch', phase: 'before'}, hits: 1,
+    }, name);
+    return {...record, events};
 }
 test('reports original XML bytes and nested directory/source HTML with no structural credit', () => {
     const result = report();
@@ -179,7 +190,7 @@ test('reports original DI registrations and the actual frontend and Admin plugin
             {subject, method, phase, state});
         return callback.hits;
     };
-    assert.deepEqual(result.plugins, {total: 50, covered: 16, hook: true});
+    assert.deepEqual(result.plugins, {total: 50 + 4, covered: 16 + 3, hook: true});
     assert.deepEqual([global.journal_shared.startLine, global.journal_shared.endLine], [9, 10]);
     assert.equal(global.journal_shared.registration.target, subject + 'Interface');
     assert.deepEqual([global.journal_duplicate.startLine, global.journal_duplicate.endLine], [14, 14]);
@@ -276,8 +287,8 @@ test('reports preference resolution by native binding and original configuration
 
 test('reports only factory-resolved virtual types and applied constructor arguments', () => {
     const result = report();
-    assert.deepEqual(result.virtualTypes, {total: 18, covered: 9, hook: true});
-    assert.deepEqual(result.arguments, {total: 43, covered: 19, hook: true});
+    assert.deepEqual(result.virtualTypes, {total: 18 + 2, covered: 9 + 2, hook: true});
+    assert.deepEqual(result.arguments, {total: 43 + 14, covered: 19 + 14, hook: true});
     assert.deepEqual(result.lifecycles, {total: 6, covered: 4, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
@@ -324,18 +335,45 @@ test('reports only factory-resolved virtual types and applied constructor argume
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
     assert.match(html, /Virtual type usage/);
     assert.match(html, /Constructor argument usage/);
-    assert.match(html, /9\/18 eligible declaration–area pairs resolved/);
-    assert.match(html, /19\/43 eligible declaration–area pairs applied/);
+    assert.match(html, /11\/20 eligible declaration–area pairs resolved/);
+    assert.match(html, /33\/57 eligible declaration–area pairs applied/);
     assert.match(html, /4\/6 eligible declaration–area pairs applied/);
+});
+
+test('reports the additional frontend DI declarations for the layout fixtures', () => {
+    const result = report();
+    const file = result.files.find(entry => entry.path === layoutFixtureDi);
+    const fixture = family => file.declarations.filter(item => item.family === family);
+    assert.deepEqual(fixture('plugins').map(item => [item.path, item.areas.frontend.state]), [
+        ['MageLens\\Compatibility\\Block\\LayoutTemplateValueIntercepted/magelens_template_value_unused', 'uncovered'],
+        ['Magento\\Framework\\View\\Layout\\GeneratorPool/magelens_layout_move_mutation', 'covered'],
+        [`${cacheDispatchSubject}/${cachePluginName}`, 'covered'],
+        [`Magento\\Framework\\App\\PageCache\\Kernel/${cachePluginName}`, 'covered'],
+    ]);
+    assert.deepEqual(fixture('virtual-types').map(item => [item.path, item.areas.frontend.state]), [
+        ['MageLensCompatibilityIsolatedLayout', 'covered'],
+        ['MageLensCompatibilityIsolatedLayoutFactory', 'covered'],
+    ]);
+    const expectedArguments = [
+        'MageLensCompatibilityIsolatedLayout/isIsolated',
+        'MageLensCompatibilityIsolatedLayoutFactory/instanceName',
+        ...['Dynamic', 'Cachepage', 'Shared', 'Database', 'Renderfailure', 'Propertyownership', 'Dependencies',
+            'References', 'Templatevalues', 'Actionfailure', 'Grammar', 'Moves']
+            .map(controller => `MageLens\\Compatibility\\Controller\\${controller}\\Index/layouts`),
+    ];
+    assert.deepEqual(fixture('arguments').map(item => [item.path, item.areas.frontend.state]),
+        expectedArguments.map(argument => [argument, 'covered']));
 });
 
 test('attributes real REST and GraphQL calls to their own DI and observer sources', () => {
     const result = report();
     const root = 'app/code/Application/Blog/etc/';
     const model = 'Application\\Blog\\Model\\Journal';
-    for (const [area, name, other] of [
-        ['webapi_rest', 'rest_probe', 'graphql'],
-        ['graphql', 'graphql_probe', 'webapi_rest']
+    for (const [area, name, other, paths] of [
+        ['webapi_rest', 'rest_probe', 'graphql', [
+            '/rest/default/V1/magelens/area-probe', '/rest/default/V1/magelens/area-probe/free'
+        ]],
+        ['graphql', 'graphql_probe', 'webapi_rest', ['/graphql']]
     ]) {
         const file = root + area + '/di.xml';
         const eventFile = root + area + '/events.xml';
@@ -347,13 +385,20 @@ test('attributes real REST and GraphQL calls to their own DI and observer source
         const expected = [[binding, 8, 8, 'preference-resolved'], [alias, 9, 11, 'virtual-type-resolved'],
             [label, 10, 10, 'argument-applied'], [plugin, 13, 13, 'plugin-execute'], [observer, 9, 9, 'observer-execute']];
         const requests = result.requests.filter(entry => entry.events.some(event => event.id === binding.id));
-        assert.equal(requests.length, 1, `One recorded request resolved the ${area} fixture binding`);
-        const [record] = requests;
-        const events = record.events;
         const selected = new Set(expected.map(([item]) => item.id));
-        assert.deepEqual(events.filter(event => selected.has(event.id)).map(event => [event.id, event.type, event.area, event.hits]).sort(),
-            expected.map(([item, , , kind]) => [item.id, kind, area, 1]).sort());
-        assert.ok(events.every(event => !event.area || event.area === area), 'Only the native API area supplies fixture evidence');
+        const outcomes = expected.map(([item, , , kind]) => [item.id, kind, area, 1]).sort();
+        const observedPaths = requests.map(({id, events}) => {
+            assert.match(id, /^[a-f0-9]{32}$/);
+            const request = read(path.join('raw', 'php', result.run, id + '.json'));
+            assert.equal(request.run, result.run);
+            assert.equal(request.method, 'GET');
+            assert.equal(request.status, 200);
+            assert.deepEqual(events.filter(event => selected.has(event.id)).map(event => [event.id, event.type, event.area, event.hits]).sort(),
+                outcomes);
+            assert.ok(events.every(event => !event.area || event.area === area), 'Only the native API area supplies fixture evidence');
+            return new URL(request.uri, 'https://application.invalid').pathname;
+        });
+        assert.deepEqual(observedPaths.sort(), paths, `Exact native ${area} requests resolved the fixture binding`);
         for (const [item, start, end] of expected) {
             assert.deepEqual([item.startLine, item.endLine], [start, end]);
             assert.equal(item.areas[area].state, 'covered');

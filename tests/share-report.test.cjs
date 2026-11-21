@@ -102,6 +102,30 @@ test('the default export contains only file paths and projected results, includi
     assert.equal(fs.existsSync(path.join(report.root, 'coverage/share-with-source.html')), false);
 });
 
+test('the export counts layout declarations and withholds their runtime evidence', t => {
+    const report = fixture(t);
+    const config = JSON.parse(report.read('xml/coverage.json'));
+    const layout = moduleRoot + '/view/frontend/layout/fixture.xml';
+    const source = '<page><body><block name="fixture"/></body></page>';
+    report.write('src/' + layout, source);
+    const run = JSON.parse(report.read('run.json'));
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    run.sources['src/' + layout] = sourceHash;
+    report.artifact('run.json', run);
+    const declarations = ['covered', 'uncovered', 'unmeasured'].map(state => ({
+        family: 'layout', state, evidence: [{type: privateMarker}], reason: privateMarker,
+    }));
+    config.files.push({path: layout, family: 'layout', declarations, covered: 0, total: 0, sourceHash});
+    config.layout = {covered: 1, total: 2, limitations: [privateMarker]};
+    report.artifact('xml/coverage.json', config);
+    const result = report.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = report.read('share.html');
+    assert.match(html, /Layout XML declarations<\/th><td>1<\/td><td>2<\/td><td>50\.00%<\/td>/);
+    assert.match(html, /Measurement warnings: 2\./);
+    assert.doesNotMatch(html, new RegExp(privateMarker));
+});
+
 test('opting into source escapes the original and keeps runtime data out of both exports', t => {
     const report = fixture(t);
     const clean = report.run();
@@ -274,4 +298,29 @@ test('opt-in declines modified and symlinked originals, even if the symlink targ
     assert.equal(symlinked.status, 1);
     assert.match(symlinked.stderr, /Symlinked coverage source is unsupported/);
     assert.equal(fs.existsSync(path.join(report.root, 'coverage/share-with-source.html')), false);
+});
+
+test('offline XML family details retain effects and omit request and browser data', t => {
+    const report = fixture(t);
+    const measurement = JSON.parse(report.read('xml/coverage.json'));
+    const [file] = measurement.files;
+    file.sourceFingerprint = file.sourceHash;
+    file.declarations.push({id: 'a'.repeat(64), path: 'configuration.<field>', family: 'ui-component', startLine: 1, endLine: 1,
+        supported: true, state: 'covered', effects: ['ui-delivered', 'ui-rendered'],
+        effectStates: {'ui-delivered': 'covered', 'ui-rendered': 'uncovered'},
+        evidence: [
+            {type: 'ui-delivered', area: 'adminhtml', outcome: 'observed', request: privateMarker, reason: null},
+            {type: 'ui-delivered', area: 'adminhtml', outcome: 'cache-only', reason: 'Unknown <origin>'}
+        ],
+        request: privateMarker, configuration: privateMarker});
+    report.artifact('xml/coverage.json', measurement);
+    for (const [args, output] of exportModes) {
+        const result = report.run(...args);
+        assert.equal(result.status, 0, result.stderr);
+        const html = report.read(output);
+        assert.match(html, /configuration\.&lt;field&gt;/);
+        assert.match(html, /ui-delivered · covered\s*<ul>\s*<li>adminhtml · observed<\/li>\s*<li>adminhtml · cache-only · Unknown &lt;origin&gt;<\/li>\s*<\/ul>/);
+        assert.match(html, /ui-rendered.*uncovered/s);
+        assert.doesNotMatch(html, /<field>|<origin>|PRIVATE_RUNTIME_VALUE/);
+    }
 });

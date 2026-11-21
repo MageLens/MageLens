@@ -11,18 +11,60 @@ final class Recorder
 {
     private static ?array $manifest = null;
     private static array $events = [];
+    private static array $menuLinks = [];
     private static array $errors = [];
     private static array $fieldSources = [];
     private static array $accessors = [];
     private static bool $busy = false;
     private static bool $readHook = false;
     private static bool $renderHook = false;
+    private static ?LayoutCoverage $layout = null;
+    private static int $layoutEventCount = 0;
+    private static ?LayoutReferenceCoverage $references = null;
+    private static ?LayoutArgumentNames $argumentNames = null;
 
     public static function start(string $run): void
     {
         self::$manifest = json_decode(file_get_contents('/coverage/xml-collector.json'), true, flags: JSON_THROW_ON_ERROR);
         if (self::$manifest['run'] !== $run) throw new \RuntimeException('Stale XML manifest');
     }
+    public static function familyTargets(): array
+    {
+        return self::$manifest['familyTargets'] ?? [];
+    }
+
+    public static function familyFailure(): void
+    {
+        self::$errors[] = 'Cannot attribute native XML family effect';
+    }
+
+    public static function familyEvidence(
+        string $id,
+        string $type,
+        string $area,
+        string $outcome = 'observed',
+        ?string $reason = null
+    ): void {
+        $limited = in_array($outcome, FamilyEvidence::LIMITATIONS, true);
+        if (!in_array($type, self::$manifest['familyContracts'][$id] ?? [], true)
+            || !in_array($area, Xml::AREAS, true)
+            || ($limited ? $reason === null || trim($reason) === '' : $reason !== null)
+            || !$limited && !in_array($outcome, FamilyEvidence::OBSERVATIONS, true)) {
+            throw new \RuntimeException('Invalid XML family evidence');
+        }
+        $key = implode("\0", [$id, $type, $area, $outcome, $reason]);
+        self::$events[$key] ??= compact('id', 'type', 'area', 'outcome', 'reason') + ['hits' => 0];
+        self::$events[$key]['hits']++;
+    }
+
+    public static function menuLink(string $id, string $selector, string $targetHash): void
+    {
+        $link = compact('selector', 'targetHash');
+        // A declaration with differing emissions in one response cannot be
+        // assigned a unique native destination by the browser observer.
+        self::$menuLinks[$id] = array_key_exists($id, self::$menuLinks) && self::$menuLinks[$id] !== $link ? null : $link;
+    }
+
     public static function observerTargets(): array
     {
         return self::$manifest['observers'] ?? [];
@@ -58,6 +100,51 @@ final class Recorder
             'requested' => $requested, 'hits' => 0];
         self::$events[$key]['hits']++;
     }
+    public static function layoutHooks(): array
+    {
+        [self::$layout, $hooks] = LayoutCoverage::register(self::$manifest['layoutSources'] ?? []);
+        return array_map(static fn(array $hook): array => [$hook[0], $hook[1],
+            LayoutRuntimeHooks::wrap($hook[2]), LayoutRuntimeHooks::wrap($hook[3])], $hooks);
+    }
+
+    public static function layout(string $id, string $type, array $context): void
+    {
+        self::layoutEvent($id, $type, $context);
+        $name = self::$argumentNames?->related($id, $type);
+        if ($name !== null) self::layoutEvent($name[0], $name[1], $context);
+        foreach (self::$references?->related($id, $type, $context) ?? [] as $source) {
+            $key = "$source\0$type\0{$context['area']}\0{$context['theme']}";
+            // Reference ancestors summarize each effect once per request. The
+            // originating declaration retains its complete native frequency.
+            if (isset(self::$events[$key])) continue;
+            self::layoutEvent($source, $type, $context);
+        }
+    }
+
+    private static function layoutEvent(string $id, string $type, array $context): void
+    {
+        $key = "$id\0$type\0{$context['area']}\0{$context['theme']}";
+        if (!isset(self::$events[$key])) {
+            if (self::$layoutEventCount >= 32768) {
+                self::$errors['layout-event-limit'] = 'Layout evidence exceeded 32768 distinct events in one request';
+                return;
+            }
+            self::$layoutEventCount++;
+        }
+        self::$events[$key] ??= ['id' => $id, 'type' => $type, ...$context, 'hits' => 0];
+        self::$events[$key]['hits']++;
+    }
+
+    public static function layoutArgumentNames(?LayoutArgumentNames $names): void
+    {
+        self::$argumentNames = $names;
+    }
+
+    public static function layoutReferences(?LayoutReferenceCoverage $references): void
+    {
+        self::$references = $references;
+    }
+
     public static function mutation(): void
     {
         if (self::$manifest) self::$errors[] = 'Configuration changed during collection';
@@ -202,9 +289,11 @@ final class Recorder
         }
         $data = ['run' => self::$manifest['run'], 'manifest' => self::$manifest['id'], 'readHook' => self::$readHook,
             'renderHook' => self::$renderHook, 'observerHook' => $checkDi && Observers::finish(), 'events' => array_values(self::$events)];
+        if (self::$menuLinks) $data['menuLinks'] = array_filter(self::$menuLinks);
         [$data['pluginHook'], $data['ambiguousPlugins']] = $checkDi && class_exists(Plugins::class, false) ? Plugins::finish() : [false, []];
         $data['preferenceHook'] = $checkDi && class_exists(Preferences::class, false) && Preferences::finish();
         $data['diUsageHooks'] = $checkDi && class_exists(DiUsage::class, false) ? DiUsage::finish() : [];
+        [$data['layoutHook'], $data['layoutSourceTrace'], $data['layoutLimitations'], $data['layoutScopedLimitations']] = self::$layout?->finish() ?? [false, false, [], []];
         return $data;
     }
 }

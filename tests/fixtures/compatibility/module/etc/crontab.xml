@@ -9,8 +9,29 @@ License: see LICENSE in the repository root.
         <job name="magelens_probe" instance="MageLens\Compatibility\Cli\Jobs" method="run">
             <schedule>* * * * *</schedule>
         </job>
+        <job name="magelens_failing_probe" instance="MageLens\Compatibility\Cli\Jobs" method="fail">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="magelens_never_probe" instance="MageLens\Compatibility\Cli\Jobs" method="run">
+            <schedule>* * * * *</schedule>
+        </job>
+    </group>
+    <group id="magelens_generated_probe">
+        <job name="magelens_generated_probe" instance="MageLens\Compatibility\Cli\Jobs" method="runGenerated">
+            <schedule>* * * * *</schedule>
+        </job>
     </group>
     <group id="magelens_magerun_probe">
         <job name="magelens_magerun_probe" instance="MageLens\Compatibility\Cli\Jobs" method="runNamed"/>
+        <job name="456" instance="MageLens\Compatibility\Cli\CronWorker" method="Execute"/>
+    </group>
+    <group id="123">
+        <job name="123" instance="MageLens\Compatibility\Cli\CronWorker" method="Execute">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="0123" instance="MageLens\Compatibility\Cli\VirtualCronWorker" method="execute">
+            <schedule>* * * * *</schedule>
+        </job>
+        <job name="magelens_scoped_probe" instance="MageLens\Compatibility\Cli\ScopedCronWorker" method="execute"/>
     </group>
 </config>

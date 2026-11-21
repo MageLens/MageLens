@@ -6,10 +6,12 @@
  */
 declare(strict_types=1);
 require_once __DIR__ . '/xml-data.php';
+require_once __DIR__ . '/xml-family-evidence.php';
+require_once __DIR__ . '/xml-layout-manifest.php';
 require_once __DIR__ . '/xml-observer-manifest.php';
 require_once __DIR__ . '/xml-plugin-manifest.php';
 require_once __DIR__ . '/xml-preference-manifest.php';
-use MageLens\XmlCoverage\{Xml, ObserverManifest, PluginManifest, PreferenceManifest};
+use MageLens\XmlCoverage\{Xml, FamilyEvidence, LayoutManifest, ObserverManifest, PluginManifest, PreferenceManifest};
 
 function xmlFingerprint($om): string
 {
@@ -29,23 +31,33 @@ function xmlFingerprint($om): string
 function prepareXmlManifests($om, array $run): array
 {
     $files = []; $ids = []; $providers = [];
+    $registrar = $om->get(\Magento\Framework\Component\ComponentRegistrar::class);
+    $themeAreas = Xml::registeredThemeAreas($registrar->getPaths(\Magento\Framework\Component\ComponentRegistrar::THEME), BP);
     foreach ($run['sources'] as $source => $hash) {
         if (!str_ends_with($source, '.xml') || preg_match('~/(Test|Setup|node_modules|tailwind)/~', $source)) continue;
         $path = substr($source, 4);
         $bytes = file_get_contents('/source/' . $path);
         if (hash('sha256', $bytes) !== $hash) throw new RuntimeException('XML source changed after preparation');
-        $family = match (true) {
+        $layoutProvider = LayoutManifest::provider($path, $themeAreas);
+        $inventory = FamilyEvidence::inventory($path, $bytes, $themeAreas);
+        $family = $inventory['family'] ?? match (true) {
             (bool) preg_match('~/etc/config\.xml$~', $path) => 'config',
             (bool) preg_match('~/etc/adminhtml/system\.xml$~', $path) => 'system',
             (bool) preg_match('~/etc/(?:[^/]+/)?events\.xml$~', $path) => 'events',
             (bool) preg_match('~/etc/(?:[^/]+/)?di\.xml$~', $path) => 'plugins',
+            $layoutProvider !== null => 'layout',
             default => null,
         };
-        $declarations = $family ? Xml::declarations($path, $bytes, $family) : [];
+        $declarations = $inventory['declarations'] ?? match ($family) {
+            'layout' => LayoutManifest::declarations($path, $bytes, $layoutProvider),
+            null => [],
+            default => Xml::declarations($path, $bytes, $family),
+        };
         if ($family === 'plugins') foreach (['preferences', 'virtual-types', 'arguments', 'lifecycles'] as $diFamily) {
             $declarations = array_merge($declarations, Xml::declarations($path, $bytes, $diFamily));
         }
         $files[$path] = ['path' => $path, 'sourceHash' => $hash, 'family' => $family,
+            ...($family === 'layout' ? ['layoutProvider' => $layoutProvider] : []),
             'reason' => $declarations ? null : 'Unsupported XML family, location or schema', 'declarations' => $declarations];
         if ($family === 'config') foreach ($declarations as $item) $ids[$item['id']] = true;
     }
@@ -97,7 +109,7 @@ function prepareXmlManifests($om, array $run): array
         $isModular = in_array($class, [\Magento\Config\App\Config\Source\ModularConfigSource::class,
             \Magento\Config\App\Config\Source\ModularConfigSource::class . '\\Interceptor'], true);
         if ($isModular && $om->get(\Magento\Framework\Interception\PluginListInterface::class)->getNext(\Magento\Config\App\Config\Source\ModularConfigSource::class, 'get')) $isModular = false;
-        $data = $isModular ? $modular : Xml::mask($source->get() ?? []);
+        $data = $isModular ? $modular : Xml::maskConfiguration($source->get() ?? []);
         $symbolic = array_replace_recursive($symbolic, $data);
     }
     // Use the platform preprocessor and fallback for scope inheritance, including
@@ -105,7 +117,9 @@ function prepareXmlManifests($om, array $run): array
     $symbolic = $om->get(\Magento\Framework\App\Config\PreProcessorComposite::class)->process($symbolic);
     $symbolic = $om->get(\Magento\Store\Model\Config\Processor\Fallback::class)->process($symbolic);
     $origins = [];
-    foreach (Xml::leaves($symbolic) as $key => $id) if (is_string($id) && isset($ids[$id])) $origins[$key] = $id;
+    foreach (Xml::leaves($symbolic) as $key => $id) {
+        if (!Xml::transformedThemePath($key) && is_string($id) && isset($ids[$id])) $origins[$key] = $id;
+    }
     ksort($origins);
 
     // Compare observed cached values against a fresh read through the platform's
@@ -129,6 +143,7 @@ function prepareXmlManifests($om, array $run): array
     $fieldHashes = [];
     $effectiveIds = array_fill_keys(array_values($origins), true);
     foreach ($files as $path => &$file) foreach ($file['declarations'] as &$item) {
+        if ($file['family'] === 'layout' || isset($item['effects'])) continue;
         if ($file['family'] === 'config' && !isset($providers[BP . '/' . $path])) {
             $item['supported'] = false; $item['reason'] = 'Not consumed by the installed initial configuration reader';
         }
@@ -168,6 +183,8 @@ function prepareXmlManifests($om, array $run): array
     [$plugins, $pluginProviders] = PluginManifest::prepare($om, $files, array_keys($run['sources']), snapshots: $snapshots, areas: $areas);
     $providers += $snapshots[3] ?? [];
     $providers += $pluginProviders;
+    [$familyTargets, $familyProviders, $familyContracts] = FamilyEvidence::prepare($om, $files);
+    $providers += $familyProviders;
     ksort($providers); ksort($files);
     // Public method shape guards. Unsupported versions fail preparation explicitly.
     foreach ([\Magento\Framework\App\Config::class => ['getValue', 'isSetFlag'],
@@ -183,9 +200,12 @@ function prepareXmlManifests($om, array $run): array
             'observers' => $observers,
             'plugins' => $plugins,
             'preferences' => $preferences,
+            'layoutSources' => LayoutManifest::targets($files),
             'scopes' => $scopes,
             'scopeCodes' => $scopeCodes,
             'fieldHashes' => $fieldHashes,
+            'familyTargets' => $familyTargets,
+            'familyContracts' => $familyContracts,
         ],
         [
             'schemaVersion' => 1,

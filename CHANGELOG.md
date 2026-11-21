@@ -17,6 +17,7 @@ License: see LICENSE in the repository root.
 - Add opt-in HTML validation for Cypress and Playwright tests. `mageLensValidateHtml` captures the HTML source of the current page, including signed-in pages. Captures are validated after the tests finish without affecting their result, and the combined report lists the findings in a separate Reports section with a dedicated report in `coverage/html-validation/`. ([#67](https://github.com/MageLens/MageLens/issues/67))
 - Add per-test coverage attribution. Every Cypress, Playwright and CLI test attempt, including each retry, gets an attempt ID that PHP, JavaScript and template collection record, and `coverage/attribution/` lists the attempts that executed each covered PHP line, JavaScript and template counter and XML declaration. Shared setup stays unattributed, and attribution is checked against the aggregate reports. ([#72](https://github.com/MageLens/MageLens/issues/72))
 - Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
+- Fix host-side integration and static checks on macOS with the system bash 3.2: `bin/build-php-image` no longer reads its Dockerfile fragment through a command substitution that bash 3.2 cannot parse, and static checks also parse bash scripts with `/bin/bash`, which is bash 3.2 on macOS hosts. ([#71](https://github.com/MageLens/MageLens/issues/71))
 
 Rerun installation with your saved platform, theme and runner selections to install the XML collector extension, then regenerate reports with `./bin/run-coverage`.
 

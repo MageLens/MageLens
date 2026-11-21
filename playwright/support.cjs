@@ -8,12 +8,16 @@ const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
 const {withTemplateCoverage} = require('@magelens/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
-const {disablePageTransitions, installPlaywrightAdminDependencies} = require('../bin/browser-navigation.cjs');
+const {disablePageTransitions, installPlaywrightAdminDependencies, observeAdminMenuNavigation} = require('../bin/browser-navigation.cjs');
 const {captureHtml} = require('../bin/html-validation.cjs');
+const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
+const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
+const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
 const {newAttemptId, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
 const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+        recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
         browserIdentity: [async ({browser}, use, testInfo) => {
             testInfo.annotations.push({type: 'magelens-browser', description: JSON.stringify({
                 name: testInfo.project.use.channel, version: browser.version()
@@ -66,15 +70,27 @@ function withCoverage(base = playwright.test) {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
+            await context.addInitScript(installUiBrowserObserver, loadUiBrowserScope(run.id));
+            const menuBinding = '__magelensMenu' + randomUUID().replaceAll('-', '');
+            await context.exposeBinding(menuBinding, (_source, evidence) => { recordXmlBrowserEvidence(evidence); });
+            await context.addInitScript({content:
+                `if (window === window.top && location.origin === ${JSON.stringify(new URL(baseURL).origin)}) {
+                    (${observeAdminMenuNavigation})(window, () => '${menuBinding}', window.${menuBinding});
+                }`});
             const cookie = {domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true};
             await context.addCookies([{name: 'application_coverage', value: run.id, ...cookie},
                 {name: 'application_coverage_attempt', value: coverageAttempt, ...cookie}]);
             const snapshots = new Map();
+            const uiCandidates = new Map();
             const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
-            await context.exposeBinding(binding, (_source, snapshot) => snapshots.set(snapshot.id, snapshot.coverage));
+            await context.exposeBinding(binding, (_source, snapshot) => {
+                snapshots.set(snapshot.id, snapshot.coverage);
+                for (const entry of snapshot.ui) uiCandidates.set(JSON.stringify(entry), entry);
+            });
             await context.addInitScript(({binding}) => {
                 const id = crypto.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2);
-                const publish = () => window[binding]({id, coverage: window.__coverage__ || {}});
+                const publish = () => window[binding]({id, coverage: window.__coverage__ || {},
+                    ui: window.__mageLensUiEffects?.snapshot() ?? []});
                 window[binding + '_flush'] = publish;
                 setInterval(() => publish().catch(() => {}), 250);
                 addEventListener('pagehide', () => publish().catch(() => {}));
@@ -98,6 +114,7 @@ function withCoverage(base = playwright.test) {
                 for (const page of context.pages()) await flush(page);
                 context.off('page', track);
                 for (const [page, close] of closeMethods) page.close = close;
+                for (const entry of uiCandidates.values()) recordXmlBrowserEvidence({...entry, candidate: true});
                 const coverage = createCoverageMap({});
                 for (const snapshot of snapshots.values()) coverage.merge(snapshot);
                 fs.mkdirSync('.nyc_output', {recursive: true});

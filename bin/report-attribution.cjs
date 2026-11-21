@@ -10,6 +10,8 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const {isCoverageExcluded} = require('./project.cjs');
 const {mergeCounters} = require('./javascript-attempts.cjs');
+const {countsAsFamilyCoverage} = require('./xml-family-report.cjs');
+const {countsAsLayoutCoverage} = require('./xml-report/layout/index.cjs');
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const files = (directory, extension) => fs.existsSync(directory)
@@ -149,19 +151,23 @@ function xml(index, run) {
     }
     const declarations = new Map(report.files.flatMap(file => file.declarations.map(item => [item.id, {file: file.path, item}])));
     const result = units();
+    const totals = new Map();
     const stats = {unit: 'XML declaration, counted per runtime observation', records: report.requests.length, unattributedRecords: 0};
     for (const request of report.requests) {
         assert.ok(owners.has(request.id), `XML request without a PHP record: ${request.id}`);
         const owner = owners.get(request.id);
         if (owner === unattributed) stats.unattributedRecords++;
-        // Area-specific declarations (observers, plugins, DI) count per area, as in the XML report.
-        for (const event of request.events) result.add(declarations.get(event.id).file, event.area ? `${event.id}@${event.area}` : event.id, owner, event.hits);
+        for (const event of request.events) {
+            const {file, item} = declarations.get(event.id);
+            if (item.family === 'layout' && !countsAsLayoutCoverage(event.type)) continue;
+            if (item.effects && !countsAsFamilyCoverage(event.outcome)) continue;
+            const unit = event.area ? `${event.id}@${event.area}` : event.id;
+            result.add(file, unit, owner, event.hits);
+            totals.set(event.id, (totals.get(event.id) || 0) + event.hits);
+        }
     }
-    const json = result.toJSON();
     for (const {file, item} of declarations.values()) {
-        const total = Object.entries(json[file] || {}).filter(([unit]) => unit === item.id || unit.startsWith(`${item.id}@`))
-            .flatMap(([, owners]) => Object.values(owners)).reduce((sum, hits) => sum + hits, 0);
-        assert.equal(total, item.hits || 0, `XML attribution differs from the report: ${file} ${item.id}`);
+        assert.equal(totals.get(item.id) || 0, item.hits || 0, `XML attribution differs from the report: ${file} ${item.id}`);
     }
     return {result, stats};
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <referenceBlock name="123" template="MageLens_Compatibility::layout-names-override.phtml"/>
+    <referenceContainer name="300" htmlClass="numeric-effective"/>
+</layout>

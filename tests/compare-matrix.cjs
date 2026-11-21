@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const {execFileSync} = require('node:child_process');
+const {snapshot, compareThemes} = require('./ci/report-equivalence.cjs');
+const {snapshotFile, readProjection} = require('./ci/report-artifact.cjs');
 const directories = process.argv.slice(2);
 assert.equal(directories.length, 8, 'Supply the eight coverage directories from one installation matrix');
 const normalize = file => file.slice(file.indexOf('app/code/'));
@@ -28,6 +30,7 @@ function javascriptLines(coverage) {
         return [file, hits];
     }));
 }
+const themeReports = [];
 const runs = directories.map(directory => {
     const read = file => JSON.parse(fs.readFileSync(path.join(directory, file)));
     execFileSync(process.execPath, [path.join(__dirname, 'verify-scenarios.cjs'), directory], {stdio: 'inherit'});
@@ -45,7 +48,13 @@ const runs = directories.map(directory => {
     const templateHits = Object.fromEntries(templates.templates.filter(entry => blog(entry.path)).sort((a, b) => a.path.localeCompare(b.path)).map(entry =>
         [entry.path, entry.statements.map(statement => ({start: statement.start, syntax: statement.syntax, covered: statement.hits > 0}))]));
     const sharedPhp = lines(php, file => blog(file) && !/\/templates\/blog(?:-hyva)?\.phtml$/.test(file));
-    const sharedXml = Object.fromEntries(Object.entries(read('xml/coverage-summary.json').files).filter(([file]) => blog('/' + file)));
+    const complete = fs.existsSync(path.join(directory, snapshotFile))
+        ? readProjection(directory, snapshotFile) : JSON.parse(JSON.stringify(snapshot(directory)));
+    themeReports.push({id: [platform, theme, runner].join('-'), platform, theme, snapshot: complete});
+    // The legacy comparison spans both storefronts. Layout effects, including
+    // template origins, belong in the complete same-theme comparison below.
+    const sharedXml = Object.fromEntries(Object.entries(complete.xml.files)
+        .filter(([file, entry]) => blog('/' + file) && !entry.declarations.some(item => item.layout)));
     const sharedJs = lines(js, file => blog(file) && file.includes('/view/adminhtml/'));
     assert.ok(Object.keys(sharedPhp).length > 10 && Object.keys(sharedJs).length >= 2, 'Missing shared application sources');
     return {platform, version: installation.version, theme, runner, directory, passedTests: read(`${runner}-results.json`).totalPassed, metrics: read('summary.json').metrics,
@@ -73,12 +82,15 @@ for (const platform of ['magento', 'mageos']) {
         compare(`${platform}/${theme} templates: Cypress vs Playwright`, left.templateHits, right.templateHits);
     }
 }
-const output = {passed: differences.length === 0, runs: runs.map(({platform, version, theme, runner, directory, passedTests, metrics, sharedPhp, sharedJs}) => ({
+const complete = compareThemes(themeReports, themeReports);
+const output = {passed: differences.length === 0 && complete.passed, runs: runs.map(({platform, version, theme, runner, directory, passedTests, metrics, sharedPhp, sharedJs}) => ({
     platform, version, theme, runner, directory, passedTests, metrics,
     shared: {php: totals(sharedPhp), adminJavaScript: totals(sharedJs)}
 })), differences};
 const target = process.env.MAGELENS_MATRIX_REPORT || '.runtime/e2e/matrix-comparison.json';
 fs.mkdirSync(path.dirname(target), {recursive: true});
 fs.writeFileSync(target, JSON.stringify(output, null, 2) + '\n');
-assert.equal(differences.length, 0, `Coverage outcomes differ; inspect ${target}`);
+const themeTarget = path.join(path.dirname(target), 'theme-report-comparison.json');
+fs.writeFileSync(themeTarget, JSON.stringify(complete, null, 2) + '\n');
+assert.ok(output.passed, `Coverage outcomes differ; inspect ${target} and ${themeTarget}`);
 console.log(`Verified equivalent scenarios and covered source lines across all eight modes. Comparison: ${target}`);

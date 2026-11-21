@@ -16,7 +16,9 @@ mkdir -p "$ROOT/.runtime"
 generated="$ROOT/.runtime/php-base.Dockerfile"
 # Install the same probe from Blackfire's versioned Debian packages. The
 # release API can return an HTML gateway error instead of a probe archive.
-blackfireInstall=$(cat <<'DOCKERFILE'
+# read, not $(cat ...): bash 3.2 (macOS /bin/bash) misparses the case patterns in a
+# here-document inside a command substitution. read returns 1 at the end of input.
+IFS= read -r -d '' blackfireInstall <<'DOCKERFILE' || true
 RUN set -eu; \
     arch=$(dpkg --print-architecture); \
     case "$arch" in \
@@ -33,7 +35,8 @@ RUN set -eu; \
     php -d extension=blackfire.so --ri blackfire >/dev/null; \
     rm -rf /tmp/blackfire /tmp/blackfire.deb
 DOCKERFILE
-)
+[[ -n $blackfireInstall ]] || fail 'Could not read the Blackfire installation step.'
+blackfireInstall=${blackfireInstall%$'\n'}
 for pin in BLACKFIRE_VERSION BLACKFIRE_AMD64_SHA256 BLACKFIRE_ARM64_SHA256; do
     blackfireInstall=${blackfireInstall//@$pin@/${!pin}}
 done
@@ -53,6 +56,10 @@ awk -v expected="$expected" -v image="$PHP_IMAGE" -v composer="$COMPOSER_VERSION
     /--version=[0-9]+\.[0-9]+\.[0-9]+ --install-dir=\/usr\/local\/bin --filename=composer$/ {
         sub(/--version=[0-9]+\.[0-9]+\.[0-9]+/, "--version=" composer)
         composerInstallations++
+    }
+    /^COPY conf\/[[:alnum:].-]+\.(ini|conf) / {
+        # A restrictive host umask can make checked-out settings root-only.
+        sub(/^COPY /, "COPY --chmod=0644 ")
     }
     /^RUN pecl channel-update pecl.php.net && pecl install \\$/ {
         # PECL can return success for a batch when one package was not installed.

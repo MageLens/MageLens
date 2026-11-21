@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Backend:etc/menu.xsd">
+    <menu>
+        <add id="MageLens_UiProbe::screens" title="UI probe" module="MageLens_UiProbe"
+             sortOrder="15" resource="Magento_Backend::admin"/>
+        <add id="MageLens_UiProbe::listing" title="Probe listing" module="MageLens_UiProbe" sortOrder="10"
+             parent="MageLens_UiProbe::screens" resource="Magento_Backend::admin"
+             action="magelens_ui_probe/index/listing"/>
+        <add id="MageLens_UiProbe::form" title="Probe form" module="MageLens_UiProbe" sortOrder="20"
+             parent="MageLens_UiProbe::screens" resource="Magento_Backend::admin"
+             action="magelens_ui_probe/index/form"/>
+    </menu>
+</config>

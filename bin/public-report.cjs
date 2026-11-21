@@ -10,7 +10,7 @@ const path = require('node:path');
 const reportDirectories = ['php', 'js', 'js-application', 'js-libraries', 'templates', 'xml', 'html-validation'];
 const downloads = new Set([
     'index.html', 'summary.json', 'javascript-summary.json', 'javascript-scope.json',
-    'php/clover.xml', 'php/line-coverage.json', 'templates/coverage-summary.json', 'xml/coverage.json',
+    'php/clover.xml', 'php/line-coverage.json', 'templates/coverage-summary.json', 'xml/coverage.json', 'xml/report.css',
     'html-validation/results.json',
     ...['cypress', 'playwright', 'php', 'js', 'templates'].map(name => `badges/${name}.svg`),
     ...['_js/source-view.js', '_js/coverage-table.js', '_css/custom.css', '_css/style.css'].map(name => `php/${name}`),

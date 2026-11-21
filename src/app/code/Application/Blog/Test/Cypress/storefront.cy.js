@@ -9,6 +9,11 @@ describe('Blog storefront', () => {
         const f = fixtures();
         cy.intercept('GET', '**/Application_Blog/template/theme-note.html*').as('themeNote');
         visitBlog(f.query);
+        if (Cypress.expose('hyvaCsp')) {
+            get('blog').should('have.class', 'coverage-blog');
+        } else {
+            get('blog').find(`div[data-bind^="scope:"][data-bind*="'coverageBlog'"]`).should('have.length', 1);
+        }
         if (f.themePaths[0] === 'Application/coverage') {
             cy.get('[data-cy="theme-note"]', {timeout: Cypress.config('pageLoadTimeout')})
                 .should('contain', 'Ideas, engineering');

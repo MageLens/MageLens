@@ -73,6 +73,29 @@ test('attribution lists the attempts that executed each unit and keeps shared wo
     assert.deepEqual(JSON.parse(fs.readFileSync('coverage/attribution/index.json', 'utf8')), JSON.parse(JSON.stringify(summary)));
 });
 
+test('XML attribution counts the same coverage events as the XML report', t => {
+    const layout = 'app/code/Acme/Shop/view/frontend/layout/cart.xml';
+    const cron = 'app/code/Acme/Shop/etc/crontab.xml';
+    const fixture = workspace(t, data => {
+        const report = data['coverage/xml/coverage.json'];
+        report.files.push(
+            {path: layout, declarations: [{id: 'layout', family: 'layout', hits: 2}]},
+            {path: cron, declarations: [{id: 'cron', family: 'cron', effects: ['cron-callback-entered'], hits: 1}]}
+        );
+        report.requests[0].events.push(
+            {id: 'layout', type: 'layout-argument-applied', area: 'frontend', hits: 2},
+            {id: 'layout', type: 'layout-argument-application-unconfirmed', area: 'frontend', hits: 3},
+            {id: 'cron', type: 'cron-callback-entered', outcome: 'entered', area: 'crontab', hits: 1},
+            {id: 'cron', type: 'cron-callback-entered', outcome: 'failed', area: 'crontab', hits: 1},
+            {id: 'cron', type: 'cron-callback-entered', outcome: 'ambiguous', area: 'crontab', hits: 1}
+        );
+    });
+    writeAttribution();
+    const {files} = fixture.read('xml');
+    assert.deepEqual(files[layout], {'layout@frontend': {0: 2}});
+    assert.deepEqual(files[cron], {'cron@crontab': {0: 1}});
+});
+
 test('a run without test attempts writes no attribution', t => {
     workspace(t, data => { for (const file of Object.keys(data)) if (file.startsWith('coverage/raw/attempts/')) delete data[file]; });
     assert.equal(writeAttribution(), null);

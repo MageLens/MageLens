@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<page_types xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_types.xsd">
+    <type id="magelens_page_type_fixture" label="Page type base"/>
+    <type id="magelens_page_type_equal" label="Page type equal"/>
+</page_types>
