@@ -12,6 +12,7 @@ use Magento\Framework\App\AreaList;
 use Magento\Framework\App\Bootstrap;
 use Magento\Framework\App\State;
 use Magento\Framework\Component\ComponentRegistrar;
+use Magento\Framework\Data\Form\FormKey;
 use Magento\Framework\View\DesignInterface;
 use Magento\Framework\View\Element\UiComponentFactory;
 use Magento\Framework\View\Element\UiComponentInterface;
@@ -182,23 +183,30 @@ if ($collector) {
     );
 }
 $om = Bootstrap::create(BP, $_SERVER)->getObjectManager();
+$clearFixtureCache = $mode === '--clear-fixture-cache';
+$theme = null;
+if (!$clearFixtureCache) {
+    foreach (['Magento/backend', 'MageLens/ui-proof', 'MageLens/ui-composer-proof'] as $path) {
+        $theme = $om->create(\Magento\Theme\Model\Theme::class, ['data' => [
+            'area' => Area::AREA_ADMINHTML, 'theme_path' => $path, 'parent_theme' => $theme,
+        ]]);
+    }
+    // Select the disposable theme before the Admin area enables the Mage-OS theme switcher.
+    $om->get(DesignInterface::class)->setDesignTheme($theme, Area::AREA_ADMINHTML);
+}
 $om->get(State::class)->setAreaCode(Area::AREA_ADMINHTML);
-$om->get(\Magento\Store\Model\StoreManagerInterface::class)->setCurrentStore("admin");
+$om->get(\Magento\Store\Model\StoreManagerInterface::class)->setCurrentStore('admin');
 $om->get(AreaList::class)->getArea(Area::AREA_ADMINHTML)->load(Area::PART_CONFIG);
-if (in_array('--clear-fixture-cache', $argv, true)) {
+if ($clearFixtureCache) {
     $cache = $om->get(\Magento\Framework\Config\CacheInterface::class);
     foreach (['listing', 'form', 'unopened', 'provider_throws', 'provider_catches'] as $screen) {
         $cache->remove(\Magento\Ui\Config\Data::CACHE_ID . '_magelens_ui_probe_' . $screen);
     }
     exit;
 }
-$parent = null;
-foreach (['Magento/backend', 'MageLens/ui-proof', 'MageLens/ui-composer-proof'] as $path) {
-    $parent = $om->create(\Magento\Theme\Model\Theme::class, ['data' => [
-        'area' => Area::AREA_ADMINHTML, 'theme_path' => $path, 'parent_theme' => $parent,
-    ]]);
-}
-$om->get(DesignInterface::class)->setDesignTheme($parent, Area::AREA_ADMINHTML);
+verify($om->get(DesignInterface::class)->getDesignTheme() === $theme, 'Native Admin design did not retain the fixture theme');
+// Use the same session input to native Admin URL signing when comparing the full markup.
+$om->get(FormKey::class)->set('MageLensFixture1');
 $result = exercise($om->get(UiComponentFactory::class));
 if ($collector) {
     \MageLens\XmlCoverage\verifyUiEvidence($files, $mode, $argv[3], false);
