@@ -86,7 +86,7 @@ test('executes a scheduled Magento cron job', async () => {
         for (const job of numericJobs.keys()) assert.deepEqual(JSON.parse((await probe('generated-schedules', job)).stdout), []);
         await probe('cold-cron-config', '123');
         await magento(numericCron);
-        for (const job of ['123', '0123']) {
+        for (const job of numericJobs.keys()) {
             assert.ok(JSON.parse((await probe('generated-schedules', job)).stdout).includes('pending'), 'Missing future row for ' + job);
         }
         await probe('delete-generated', '123');
@@ -97,6 +97,8 @@ test('executes a scheduled Magento cron job', async () => {
             assert.equal((await probe('status', schedule)).stdout.trim(), 'pending');
             due.set(schedule, {job, message});
         }
+        // Run native history cleanup with the due rows present, as on a slow browser run.
+        await probe('expire-cron-cleanup', '123');
         await probe('cold-cron-config', '123');
         await magento(numericCron);
         for (const [schedule, {job, message}] of due) {

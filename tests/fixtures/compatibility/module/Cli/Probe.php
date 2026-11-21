@@ -111,6 +111,10 @@ class Probe extends Command
             case 'cold-cron-config':
                 $this->cronConfigCache->remove('crontab_config_cache');
                 break;
+            case 'expire-cron-cleanup':
+                if (!isset(self::GENERATED_JOBS[$value])) throw new \InvalidArgumentException('Unknown probe group');
+                $this->cache->remove(ProcessCronQueueObserver::CACHE_KEY_LAST_HISTORY_CLEANUP_AT . $value);
+                break;
             case 'other-cron-groups':
                 $groups = array_map('strval', array_keys($this->cronConfig->create()->getJobs()));
                 $output->writeln(json_encode(array_values(array_diff($groups, [$value])), JSON_THROW_ON_ERROR));

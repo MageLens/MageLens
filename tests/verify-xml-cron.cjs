@@ -52,6 +52,7 @@ const numericSchedule = item('123/123#schedule', 30);
 const virtual = item('123/0123', 32);
 const leadingZeroSchedule = item('123/0123#schedule', 33);
 const scoped = item('123/magelens_scoped_probe', 35);
+const scopedSchedule = item('123/magelens_scoped_probe#schedule', 36);
 
 const seededCommand = evidence(seeded, 'handler-entered', 'entered', 'magento');
 assert.deepEqual(evidence(seeded, 'handler-completed', 'completed', 'magento'), seededCommand);
@@ -85,9 +86,11 @@ assert.ok([...numericDirectCommand].every(command => !directCommand.has(command)
 assert.equal(preferred.binding.method, 'Execute');
 const numericGeneration = evidence(numericSchedule, 'schedule-evaluated', 'observed', 'magento');
 assert.deepEqual(evidence(leadingZeroSchedule, 'schedule-evaluated', 'observed', 'magento'), numericGeneration);
+assert.deepEqual(evidence(scopedSchedule, 'schedule-evaluated', 'observed', 'magento'), numericGeneration);
 const scopedDispatch = evidence(scoped, 'handler-entered', 'entered', 'magento');
 assert.deepEqual(evidence(scoped, 'handler-completed', 'completed', 'magento'), scopedDispatch);
-assert.ok([...scopedDispatch].every(command => !numericGeneration.has(command)));
+assert.equal([...scopedDispatch].filter(command => !numericGeneration.has(command)).length, 1,
+    'The seeded scoped job must run in a separate command from schedule generation');
 for (const declaration of [preferred, virtual]) {
     const entered = evidence(declaration, 'handler-entered', 'entered', 'magento');
     assert.deepEqual(evidence(declaration, 'handler-completed', 'completed', 'magento'), entered);
