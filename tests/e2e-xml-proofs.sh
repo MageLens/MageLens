@@ -61,6 +61,8 @@ prove_stock_admin_layout() (
     ./bin/runner node bin/report-xml.cjs
     cp coverage/xml/coverage.json "$artifacts/stock-admin-xml.json"
     ./bin/runner node tests/verify-layout-admin.cjs coverage/xml/coverage.json adminhtml/MageOS/m137-admin-theme
+    # The following native proofs install their own collector manifests.
+    find coverage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 )
 
 run_xml_proofs() {
