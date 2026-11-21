@@ -23,7 +23,7 @@ const versionFromTag = tag => tag.startsWith('v') ? tag.slice(1) : tag;
 
 const FIRST_PREBUILT_VERSION = '1.9.0';
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RETENTION_WINDOW_MS = 90 * DAY_MS;
+const RETENTION_WINDOW_MS = 1096 * DAY_MS; // Three full years even when the interval includes a leap day.
 const MINIMUM_RELEASES_RETAINED = 5;
 const GRACE_PERIOD_MS = 14 * DAY_MS;
 const RETIREMENT_GRACE_PERIOD_MS = 14 * DAY_MS;

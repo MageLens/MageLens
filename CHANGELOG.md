@@ -8,6 +8,9 @@ License: see LICENSE in the repository root.
 
 ## 1.10.0 - Unreleased
 
+- Extend prebuilt image retention from 90 days to at least three years so older Magento installations can reuse the tooling images published with their MageLens release.
+- Update the shared Chrome for Testing browser to 158.0.8127.36 with verified x64 and ARM64 archives and its stable-channel security fixes.
+- Update PHP to 8.4.28 with a verified multi-platform base image for FPM request-smuggling and memory-safety security fixes.
 - Add a separate XML configuration coverage report in `coverage/xml/` for scoped `config.xml` reads and rendered `system.xml` fields, preserving source directories and identifying measurement limitations.
 - Report executed HTTP `events.xml` observer registrations by area, with original source links and explicit override and measurement statuses.
 - Report HTTP `di.xml` plugin callback execution by phase and configuration area, with links to the original registrations.
