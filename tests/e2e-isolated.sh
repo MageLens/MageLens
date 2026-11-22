@@ -207,9 +207,9 @@ fi
     run_xml_proofs "$theme" "$platform" "$mode"
     run_ui_component_proofs
     ./bin/runner node --test tests/verify-routing-native.cjs
-    # Original-source fixture assertions need fresh native layout interpretation.
-    # Registry proofs separately verify warm cache zero-hit provenance boundaries.
-    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
+    # Rendering fixtures need to execute through both HTML cache boundaries.
+    # Collected HTTP requests already isolate the native layout cache.
+    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable block_html full_page
     coverage_options=()
     if [[ "$mode" == production ]]; then
         ./bin/deploy-production
@@ -231,7 +231,7 @@ fi
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
-    MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage "${coverage_options[@]}" | tee .runtime/coverage-run.log
+    MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage ${coverage_options[@]+"${coverage_options[@]}"} | tee .runtime/coverage-run.log
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs

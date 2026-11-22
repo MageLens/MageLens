@@ -16,7 +16,7 @@ const templates = read('coverage/templates/coverage-summary.json');
 const xml = read('coverage/xml/coverage.json');
 assert.equal(xml.run, run.id);
 assert.equal(xml.complete, true);
-assert.ok(Number.isFinite(xml.percent) && xml.percent >= 0 && xml.percent <= 100, 'Invalid XML coverage percentage');
+assert.equal(xml.percent, xml.total ? xml.covered / xml.total * 100 : null, 'Invalid XML coverage percentage');
 assert.equal(xml.sourcesUnchanged, true);
 assert.deepEqual(xml.collectorErrors, []);
 const runner = run.runner || 'cypress';

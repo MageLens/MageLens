@@ -48,7 +48,9 @@ test('XML HTML preserves nested directories, source anchors, escaping and line c
         assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /<html/);
     }
     const source = fs.readFileSync(path.join(root, manifest.files[0].path + '.html'), 'utf8');
-    assert.match(source, /id="L2" class="line covered"/);
+    assert.match(source, /id="L2" class="line partial"/);
+    assert.match(source, /aria-label="Breadcrumb".*href="index.html">etc<\/a>/s);
+    assert.match(source, /Original source.*<details><summary>Declaration details/s);
     assert.match(source, /&lt;script&gt;unsafe/);
     assert.doesNotMatch(source, /<script>unsafe/);
 });
@@ -110,7 +112,7 @@ test('observer coverage counts eligible registrations independently in each HTTP
     assert.throws(() => merge(manifest, [{...healthy, events: [event]}], sources), /does not match effective provenance/);
 });
 
-test('plugin counts use declaration areas and keep line totals independent', t => {
+test('plugin counts use declaration areas and count each measured source line once', t => {
     const {manifest, record, sources} = fixture();
     const file = 'app/code/Acme/Blog/etc/di.xml';
     const source = Buffer.from('<config>\n<type>\n<plugin\n name="shared"/>\n</type>\n</config>');
@@ -137,7 +139,7 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     const report = merge(manifest, [{...healthy, events: [...record.events, hit],
         ambiguousPlugins: {plugin: {frontend: {[key(after)]: true}}}}], sources);
     const [item] = report.files[1].declarations;
-    assert.deepEqual([report.covered, report.total], [1, 1]);
+    assert.deepEqual([report.covered, report.total], [3, 3]);
     assert.deepEqual(report.plugins, {total: 2, covered: 1, hook: true});
     assert.deepEqual(Object.values(item.areas.frontend.callbacks).map(({method, phase, state}) => [method, phase, state]),
         [['save', 'before', 'covered'], ['save', 'after', 'uncovered'], ['unused', 'before', 'uncovered']]);
@@ -151,7 +153,7 @@ test('plugin counts use declaration areas and keep line totals independent', t =
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-plugin-report-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     writeReport(report, sources, root);
-    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /1\/2 eligible plugin registrations/);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /Plugin registrations by area<\/th><td>1\/2 \(50\.00%\)/);
     const html = fs.readFileSync(path.join(root, file + '.html'), 'utf8');
     assert.match(html, /#L3.*Acme\\Concrete::save · before · covered/s);
     assert.match(html, /Acme\\Concrete::stream · around · unmeasured · Generator callback bodies execute on iteration/);
@@ -204,10 +206,10 @@ test('preference reports validate effective routes and publish healthy zero-hit 
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-preference-report-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     writeReport(result, sources, root);
-    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /1\/2 eligible declaration–area pairs resolved/);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /Preferences by area<\/th><td>1\/2 \(50\.00%\)/);
     assert.match(fs.readFileSync(path.join(root, file + '.html'), 'utf8'), /id="L3" class="line covered"/);
     writeReport(zero, sources, root);
-    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /0\/2 eligible declaration–area pairs resolved/);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /Preferences by area<\/th><td>0\/2 \(0\.00%\)/);
 });
 
 test('virtual and constructor usage require live evidence and preserve independent totals and source highlights', t => {
@@ -242,7 +244,7 @@ test('virtual and constructor usage require live evidence and preserve independe
     assert.equal(report.files[1].lines[2].state, 'covered');
     assert.equal(report.files[1].lines[3].state, 'uncovered');
     assert.equal(report.files[1].lines[4], undefined);
-    assert.equal(report.files[1].total, 0);
+    assert.deepEqual([report.files[1].covered, report.files[1].total], [1, 2]);
     assert.throws(() => merge(manifest, [{...healthy, diUsageHooks: {'virtual-types': true}}], sources), /constructor argument usage hook/);
     assert.throws(() => merge(manifest, [{...healthy, events: [{...resolution, requested: 'AcmeType'}]}], sources), /factory route/);
     const applied = {id: 'argument', type: 'argument-applied', area: 'frontend', requested: 'AcmeAlias', hits: 3};
@@ -256,11 +258,12 @@ test('virtual and constructor usage require live evidence and preserve independe
     t.after(() => fs.rmSync(output, {recursive: true, force: true}));
     writeReport(report, sources, output);
     const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
-    assert.match(index, /Virtual type usage/);
-    assert.match(index, /Constructor argument usage/);
-    assert.match(index, /\$items\[&quot;nested&quot;\]\[&quot;key&quot;\]/);
-    assert.match(index, /Object lifetime usage/);
-    assert.match(index, /New instance/);
+    assert.match(index, /Virtual type usage by area<\/th><td>1\/1 \(100\.00%\)/);
+    assert.match(index, /Constructor argument usage by area<\/th><td>0\/2 \(0\.00%\)/);
+    assert.match(index, /Object lifetime usage by area<\/th><td>0\/1 \(0\.00%\)/);
+    const html = fs.readFileSync(path.join(output, file + '.html'), 'utf8');
+    assert.match(html, /\$items\[&quot;nested&quot;\]\[&quot;key&quot;\]/);
+    assert.match(html, /New instance/);
 });
 
 test('layout reports validate effects and keep superseded and zero-hit declarations visible', () => {
@@ -293,6 +296,7 @@ test('layout reports validate effects and keep superseded and zero-hit declarati
     assert.throws(() => merge(manifest, [{...rest, layoutRequired: true}], sources), /No functioning XML layout hook/);
     const empty = merge(manifest, [healthy], sources);
     assert.deepEqual(empty.layout, {total: 2, covered: 0, hook: true, limitations: []});
+    assert.deepEqual([empty.covered, empty.total], [1, 3]);
     assert.deepEqual(empty.files[1].declarations.map(item => item.state), ['uncovered', 'uncovered']);
     const context = {area: 'frontend', theme: 'frontend/Acme/theme', hits: 1};
     const block = {id: 'created', type: 'layout-block-created', ...context};
@@ -302,7 +306,7 @@ test('layout reports validate effects and keep superseded and zero-hit declarati
     assert.deepEqual(actual.layout, {total: 1, covered: 1, hook: true, limitations: []});
     assert.deepEqual(actual.files[1].declarations.map(item => item.state), ['covered', 'unmeasured']);
     assert.equal(actual.files[1].declarations[1].evidence[0].type, overridden.type);
-    assert.equal(actual.files[1].total, 0);
+    assert.deepEqual([actual.files[1].covered, actual.files[1].total], [1, 1]);
     for (const invalid of [{...block, type: 'layout-template-executed'}, {...block, id: 'unknown'},
         {...block, theme: 'incorrect'}, {...block, unexpectedValue: 'private'}]) {
         assert.throws(() => merge(manifest, [{...current, events: [invalid]}], sources));
@@ -1066,12 +1070,15 @@ test('a multiline layout attribute anchors and highlights only its lexical lines
     const common = {family: 'layout', supported: true, declaredScope: {type: 'frontend', code: ''}};
     const layout = {element: 'untouched', ordinal: 1, handle: 'range', fileType: 'generic', instruction: 'block'};
     manifest.files.push({path, sourceHash, family: 'layout', declarations: [
+        {...common, id: 'wrapper', path: '/layout', supported: false, reason: 'Internal file selection diagnostic',
+            startLine: 1, endLine: 7, highlightEndLine: 1, layout: {...layout, kind: 'file-selection'}},
         {...common, id: 'named', path: '/layout/block/@name', startLine: 3, endLine: 3, layout: {...layout, kind: 'position-name'}},
         {...common, id: 'template', path: '/layout/block/@template', startLine: 4, endLine: 5, layout: {...layout, kind: 'template'}},
     ]});
     manifest.layoutSources = {[path]: {hash: sourceHash, targets: {1: {ids: {'position-name': 'named', template: 'template'}}}}};
     sources[path] = source;
     const result = merge(manifest, [{...record, layoutHook: true, events: [
+        ...record.events,
         {id: 'template', type: 'layout-template-executed', hits: 1, area: 'frontend', theme: 'frontend/Acme/theme'},
     ]}], sources);
     const output = fs.mkdtempSync(os.tmpdir() + '/magelens-layout-ranges-');
@@ -1083,7 +1090,14 @@ test('a multiline layout attribute anchors and highlights only its lexical lines
     const asset = require('node:path').resolve(output, require('node:path').dirname(path), stylesheet);
     assert.equal(asset, require('node:path').join(output, 'report.css'));
     assert.match(fs.readFileSync(asset, 'utf8'), /\.covered\s*\{/);
-    assert.match(fs.readFileSync(output + '/index.html', 'utf8'), /<link rel="stylesheet" href="report.css">/);
+    const index = fs.readFileSync(output + '/index.html', 'utf8');
+    assert.match(index, /<link rel="stylesheet" href="report.css">/);
+    assert.match(index, /3\/4 \(75\.00%\)<\/td><td>1<\/td><td>2<\/td>/);
+    const directory = fs.readFileSync(require('node:path').join(output, require('node:path').dirname(path), 'index.html'), 'utf8');
+    assert.match(directory, /range\.xml\.html.*2\/3 \(66\.67%\)<\/td><td>1<\/td><td>1<\/td>/);
+    assert.match(html, /Line coverage<\/strong> 2\/3 \(66\.67%\) · 1 uncovered · 1 unmeasured/);
+    assert.doesNotMatch(html, /Internal file selection diagnostic|href="#L1">\/layout/);
+    assert.match(fs.readFileSync(output + '/coverage.json', 'utf8'), /Internal file selection diagnostic/);
     assert.match(html, /href="#L4">\/layout\/block\/@template<\/a><small>.*lines 4–5/);
     assert.match(html, /id="L2" class="line neutral"/);
     assert.match(html, /id="L3" class="line uncovered"/);

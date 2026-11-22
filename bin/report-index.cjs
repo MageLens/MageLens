@@ -22,7 +22,8 @@ function templateLimitations(templates) {
 function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation}) {
     const runner = run.runner === 'playwright' ? 'Playwright' : 'Cypress';
     const reports = [
-        ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines', description: `Runtime config value consumption and Admin field rendering. ${xml.warnings?.length || 0} measurement warnings; unsupported XML remains unmeasured.`}] : []),
+        ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines',
+            description: 'Observed runtime effects from configuration and layout XML. Unmeasured lines are outside the percentage.'}] : []),
         {key: 'php', covered: php.covered, total: php.total, unit: 'lines',
             description: 'Executable PHP lines from HTTP requests and Magento CLI commands.'},
         {key: 'js', covered: js.total.statements.covered, total: js.total.statements.total, unit: 'statements',

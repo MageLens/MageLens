@@ -234,7 +234,7 @@ test('reports preference resolution by native binding and original configuration
     assert.deepEqual(result.preferences, {total: 59, covered: 9, hook: true});
     const root = 'app/code/Application/Blog/etc/';
     const globalFile = result.files.find(file => file.path === root + 'di.xml');
-    assert.deepEqual([globalFile.covered, globalFile.total], [0, 0]);
+    assert.deepEqual([globalFile.covered, globalFile.total], [20, 30]);
     assert.equal(globalFile.lines[30].state, 'covered');
     const model = 'Application\\Blog\\Model\\Journal';
     const bind = (name, scope = 'global') => declaration(result,
@@ -287,9 +287,12 @@ test('reports preference resolution by native binding and original configuration
             expected.map(([item, requested, hits]) => [item.id, model + requested, hits]).sort());
     }
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
-    assert.match(html, /Preference usage/);
-    assert.match(html, /9\/59 eligible declaration–area pairs resolved/);
-    assert.match(html, /href="app\/code\/Application\/Blog\/etc\/di.xml.html#L21"/);
+    assert.match(html, /Preferences by area<\/th><td>9\/59 \(15\.25%\)<\/td>/);
+    const listing = fs.readFileSync(path.join(directory, 'xml', root, 'index.html'), 'utf8');
+    assert.match(listing, /href="di\.xml\.html">di\.xml<\/a>.*20\/30 \(66\.67%\)/);
+    const source = fs.readFileSync(path.join(directory, 'xml', globalFile.path + '.html'), 'utf8');
+    assert.match(source, /id="L21" class="line covered"/);
+    assert.match(source, /<a href="#L21"><code>Application\\<wbr>Blog\\<wbr>Model\\<wbr>JournalFirst<\/code><\/a>/);
 });
 
 test('reports only factory-resolved virtual types and applied constructor arguments', () => {
@@ -340,11 +343,9 @@ test('reports only factory-resolved virtual types and applied constructor argume
             expected.map(([item, type]) => [item.id, model + type, 1]).sort());
     }
     const html = fs.readFileSync(path.join(directory, 'xml/index.html'), 'utf8');
-    assert.match(html, /Virtual type usage/);
-    assert.match(html, /Constructor argument usage/);
-    assert.match(html, /13\/32 eligible declaration–area pairs resolved/);
-    assert.match(html, /33\/57 eligible declaration–area pairs applied/);
-    assert.match(html, /4\/6 eligible declaration–area pairs applied/);
+    assert.match(html, /Virtual type usage by area<\/th><td>13\/32 \(40\.63%\)<\/td>/);
+    assert.match(html, /Constructor argument usage by area<\/th><td>33\/57 \(57\.89%\)<\/td>/);
+    assert.match(html, /Object lifetime usage by area<\/th><td>4\/6 \(66\.67%\)<\/td>/);
 });
 
 test('reports the frontend DI declarations for the routing and layout fixtures', () => {
