@@ -24,7 +24,8 @@ function reports(t, covered, runner = 'cypress') {
     const totals = {covered, total: 1};
     // One eligible unit per metric, covered or not, in the shapes the collectors export.
     const areas = {frontend: {status: 'eligible', hits: covered}, adminhtml: {status: 'unsupported', hits: 0}};
-    json('coverage/xml/coverage.json', {run: 'fixture', covered, total: 1, percent, complete: true, sourcesUnchanged: true, collectorErrors: [],
+    // Since the XML report counts lines in every file, the di.xml line is part of the XML line total.
+    json('coverage/xml/coverage.json', {run: 'fixture', covered: covered * 2, total: 2, percent, complete: true, sourcesUnchanged: true, collectorErrors: [],
         observers: totals, plugins: totals, preferences: totals, virtualTypes: totals, arguments: totals, lifecycles: totals, warnings: [],
         files: [{path: 'app/code/Acme/Shop/etc/config.xml', family: 'config', declarations: [{id: 'config-1', family: 'config', startLine: 5, endLine: 5}],
             lines: {5: {hits: covered, state: covered ? 'covered' : 'uncovered'}, 6: {hits: 0, state: 'unmeasured'}}},
@@ -256,9 +257,10 @@ test('the coverage database loads test attribution with each collector\'s hit se
     assert.deepEqual(query('SELECT r.source_type, r.metric, r.record_key, u.hit_count FROM unattributed_hits u JOIN records r USING (record_id) ORDER BY r.source_type'), [
         {source_type: 'php', metric: 'lines', record_key: '12', hit_count: null},
         {source_type: 'template', metric: 'branches', record_key: 'script:1:b:0', hit_count: 1}]);
-    assert.deepEqual(query("SELECT metric, record_key FROM record_attempts WHERE source_type = 'xml' ORDER BY metric"), [
-        'arguments', 'lifecycles', 'lines', 'observers', 'plugins', 'preferences', 'virtual-types'].map(metric =>
-        ({metric, record_key: metric === 'lines' ? '5' : `declaration-${['observers', 'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles'].indexOf(metric)}@frontend`})));
+    // di.xml line 3 is owned through the observer declaration that starts there.
+    assert.deepEqual(query("SELECT metric, record_key FROM record_attempts WHERE source_type = 'xml' ORDER BY metric, record_key"), [
+        'arguments', 'lifecycles', 'lines', 'lines', 'observers', 'plugins', 'preferences', 'virtual-types'].map((metric, index) =>
+        ({metric, record_key: metric === 'lines' ? ['3', '5'][index - 2] : `declaration-${['observers', 'plugins', 'preferences', 'virtual-types', 'arguments', 'lifecycles'].indexOf(metric)}@frontend`})));
 });
 
 test('XML attribution owns every line a declaration spans and adds counts of declarations sharing a line', t => {
@@ -269,7 +271,7 @@ test('XML attribution owns every line a declaration spans and adds counts of dec
     xml.files[0].declarations.push({id: 'config-2', family: 'config', startLine: 5, endLine: 5});
     xml.files.push({path: 'app/code/Acme/Shop/etc/events.xml', family: 'events', lines: {9: {hits: 3, state: 'covered'}, 10: {hits: 3, state: 'covered'}},
         declarations: [{id: 'observer-1', family: 'events', startLine: 9, endLine: 10, areas: {frontend: {status: 'eligible', hits: 3}}}]});
-    Object.assign(xml, {covered: 3, total: 3, observers: {covered: 2, total: 2}});
+    Object.assign(xml, {covered: 4, total: 4, observers: {covered: 2, total: 2}});
     fs.writeFileSync(xmlFile, JSON.stringify(xml));
     fs.mkdirSync(`${fixture.root}/coverage/attribution`);
     attribution(fixture, files => {
@@ -295,13 +297,13 @@ test('layout declarations and effect-measured declarations load like the XML rep
     const fixture = reports(t, 1);
     const xmlFile = `${fixture.root}/coverage/xml/coverage.json`;
     const xml = JSON.parse(fs.readFileSync(xmlFile, 'utf8'));
-    // Layout counts per declaration and never per line; an ACL resource counts on its lines, observed per area.
+    // Layout counts per declaration and on its lines; an ACL resource counts on its lines, observed per area.
     xml.files.push({path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', family: 'layout', lines: {4: {hits: 2, state: 'covered'}},
         declarations: [{id: 'block-1', family: 'layout', startLine: 4, endLine: 4, state: 'covered', hits: 2},
             {id: 'block-2', family: 'layout', startLine: 5, endLine: 5, state: 'unmeasured', hits: 0}]},
         {path: 'app/code/Acme/Shop/etc/acl.xml', family: 'acl', lines: {9: {hits: 3, state: 'covered'}},
             declarations: [{id: 'resource-1', family: 'acl', effects: ['acl-check'], startLine: 9, endLine: 9, hits: 3}]});
-    Object.assign(xml, {covered: 2, total: 2, layout: {covered: 1, total: 1}});
+    Object.assign(xml, {covered: 4, total: 4, layout: {covered: 1, total: 1}});
     fs.writeFileSync(xmlFile, JSON.stringify(xml));
     fs.mkdirSync(`${fixture.root}/coverage/attribution`);
     attribution(fixture, files => {
@@ -314,10 +316,12 @@ test('layout declarations and effect-measured declarations load like the XML rep
     const query = database(t, fixture);
     assert.deepEqual(query("SELECT file_path, metric, record_key FROM records WHERE file_path LIKE '%cart.xml' OR file_path LIKE '%acl.xml' ORDER BY 1, 2"), [
         {file_path: 'app/code/Acme/Shop/etc/acl.xml', metric: 'lines', record_key: '9'},
-        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'layout', record_key: 'block-1'}]);
-    assert.deepEqual(query("SELECT file_path, metric, record_key, test_name, hit_count FROM record_attempts WHERE file_path LIKE '%cart.xml' OR file_path LIKE '%acl.xml' ORDER BY 1"), [
+        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'layout', record_key: 'block-1'},
+        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'lines', record_key: '4'}]);
+    assert.deepEqual(query("SELECT file_path, metric, record_key, test_name, hit_count FROM record_attempts WHERE file_path LIKE '%cart.xml' OR file_path LIKE '%acl.xml' ORDER BY 1, 2"), [
         {file_path: 'app/code/Acme/Shop/etc/acl.xml', metric: 'lines', record_key: '9', test_name: 'cart › removes', hit_count: 3},
-        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'layout', record_key: 'block-1', test_name: 'cart › adds', hit_count: 2}]);
+        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'layout', record_key: 'block-1', test_name: 'cart › adds', hit_count: 2},
+        {file_path: 'app/code/Acme/Shop/view/frontend/layout/cart.xml', metric: 'lines', record_key: '4', test_name: 'cart › adds', hit_count: 2}]);
 });
 
 test('attribution of another run cannot be loaded', t => {
@@ -377,6 +381,7 @@ test('the coverage database stores every eligible unit once and only positive ob
         ['statement', 'template', 'statements', 'binding:1', 'app/code/Acme/Shop/view/frontend/templates/cart.phtml', 'Acme_Shop', 4, 4, 2],
         ['declaration', 'xml', 'arguments', 'declaration-4@frontend', 'app/code/Acme/Shop/etc/di.xml', 'Acme_Shop', 7, 8, 1],
         ['declaration', 'xml', 'lifecycles', 'declaration-5@frontend', 'app/code/Acme/Shop/etc/di.xml', 'Acme_Shop', 8, 9, 1],
+        ['line', 'xml', 'lines', '3', 'app/code/Acme/Shop/etc/di.xml', 'Acme_Shop', 3, 3, 1],
         ['line', 'xml', 'lines', '5', 'app/code/Acme/Shop/etc/config.xml', 'Acme_Shop', 5, 5, 1],
         ['declaration', 'xml', 'observers', 'declaration-0@frontend', 'app/code/Acme/Shop/etc/di.xml', 'Acme_Shop', 3, 4, 1],
         ['declaration', 'xml', 'plugins', 'declaration-1@frontend', 'app/code/Acme/Shop/etc/di.xml', 'Acme_Shop', 4, 5, 1],
@@ -394,8 +399,10 @@ test('uncovered units stay in the coverage database as records without hits', t 
     assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     assert.deepEqual(query('SELECT COUNT(*) AS records FROM records UNION ALL SELECT COUNT(*) FROM hits UNION ALL SELECT COUNT(*) FROM uncovered_records'),
-        [{records: 16}, {records: 0}, {records: 16}]);
-    assert.ok(query('SELECT total, covered, percent FROM metric_totals').every(row => row.total === 1 && row.covered === 0 && row.percent === 0));
+        [{records: 17}, {records: 0}, {records: 17}]);
+    // One eligible unit per metric, except XML lines: config.xml and di.xml each have one.
+    assert.ok(query('SELECT source_type, metric, total, covered, percent FROM metric_totals')
+        .every(row => row.total === (row.source_type === 'xml' && row.metric === 'lines' ? 2 : 1) && row.covered === 0 && row.percent === 0));
     assert.deepEqual(query("SELECT file_path, start_line, end_line FROM uncovered_records WHERE source_type = 'php'"),
         [{file_path: 'app/code/Acme/Shop/Model/Cart.php', start_line: 12, end_line: 12}]);
     assert.deepEqual(query("SELECT collector, status FROM manifest WHERE collector = 'php'"), [{collector: 'php', status: 'collected'}],

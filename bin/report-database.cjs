@@ -85,13 +85,10 @@ function* templateUnits(templates) {
 
 function* xmlUnits(xml) {
     for (const file of xml.files) {
-        // As in the XML report: DI declaration files count per declaration and area, layout files per
-        // declaration, and neither per line.
-        if (!['plugins', 'layout'].includes(file.family)) {
-            for (const [line, outcome] of Object.entries(file.lines)) {
-                if (outcome.state !== 'unmeasured') {
-                    yield {type: 'line', source: 'xml', metric: 'lines', key: line, file: file.path, start: Number(line), end: Number(line), hits: outcome.hits};
-                }
+        // As in the XML report, every file has measured lines; DI and layout declarations also count on their own.
+        for (const [line, outcome] of Object.entries(file.lines)) {
+            if (outcome.state !== 'unmeasured') {
+                yield {type: 'line', source: 'xml', metric: 'lines', key: line, file: file.path, start: Number(line), end: Number(line), hits: outcome.hits};
             }
         }
         for (const item of file.declarations) {
@@ -121,8 +118,8 @@ const attributionUnits = {
     // Area-specific DI and observer declarations and layout declarations are records of their own.
     xml: unit => [...Object.values(xmlMetrics).map(metric => ['xml', metric, unit]), ['xml', 'layout', unit.split('@')[0]]]
 };
-// The XML report also counts declarations on the lines they span, except in plugin and layout files; families
-// measured by effects (ACL, menus, routes, cron, Web API, UI components) count only there.
+// The XML report also counts every declaration on the lines it spans; families measured by effects
+// (ACL, menus, routes, cron, Web API, UI components) count only there.
 const attributionLines = {xml: (unit, declarations) => declarationLines(declarations, unit.split('@')[0])};
 function declarationLines(declarations, id) {
     assert.ok(declarations.has(id), `Attributed XML declaration missing from the XML report: ${id}`);
