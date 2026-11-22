@@ -8,8 +8,10 @@ declare(strict_types=1);
 namespace MageLens\PreferenceProof;
 
 use MageLens\XmlCoverage\{PreferenceManifest, Preferences, Recorder};
-use Magento\Framework\App\Area;
+use Magento\Framework\App\{Area, AreaList};
 use Magento\Framework\App\ObjectManager as AppObjectManager;
+use Magento\Framework\App\ObjectManagerFactory;
+use Magento\Framework\App\State;
 use Magento\Framework\App\ObjectManager\ConfigCache;
 use Magento\Framework\App\ObjectManager\ConfigLoader;
 use Magento\Framework\App\ObjectManager\Environment\Developer as Environment;
@@ -20,6 +22,7 @@ use Magento\Framework\Interception\ObjectManager\Config\Developer as Config;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer;
 use Magento\Framework\Serialize\Serializer\Serialize;
 use Magento\Framework\Serialize\SerializerInterface;
+use Magento\Indexer\Console\Command\AbstractIndexerCommand;
 use function OpenTelemetry\Instrumentation\hook;
 
 require __DIR__ . '/xml-preference-hook-proof.php';
@@ -36,7 +39,7 @@ $prepared = [];
 $expected = new Config();
 $expectedPreferences = new \ReflectionProperty(Config::class, '_preferences');
 $expectedVirtualTypes = new \ReflectionProperty(Config::class, '_virtualTypes');
-foreach (['global', 'frontend'] as $area) {
+foreach (['global', 'frontend', 'adminhtml'] as $area) {
     $delta = $reader->read($area);
     // The extension instruments a function when first called. Build the
     // expected maps before registration without invoking Config::extend().
@@ -48,7 +51,7 @@ foreach (['global', 'frontend'] as $area) {
         [$edges, $terminal, $resolved] = PreferenceManifest::resolve($type, $expected->getPreferences(), $expected->getVirtualTypes());
         if ($edges && $resolved !== null) {
             $routes[$type] = ['terminal' => $terminal, 'resolved' => $resolved, 'ids' => array_map(
-                static fn($edge) => $area === 'frontend' && $edge === First::class ? 'area-first' : $tracked[$edge], $edges)];
+                static fn($edge) => $area !== 'global' && $edge === First::class ? 'area-first' : $tracked[$edge], $edges)];
         }
     }
     $prepared[$area] = ['delta' => PreferenceManifest::deltaHash($delta), 'config' => PreferenceManifest::configHash($expected), 'routes' => $routes];
@@ -65,9 +68,14 @@ $boot = static function () use ($loader, $cache): array {
         public function hasPlugins($type) { return false; }
         public function initialize($classDefinitions = []) {}
     };
-    $shared = [ConfigLoader::class => $loader, ConfigCache::class => new ConfigCache($cache),
-        ScopeInterface::class => (new \ReflectionClass(Scope::class))->newInstanceWithoutConstructor(),
-        SerializerInterface::class => new Serialize(), Interception::class => $interception];
+    $areas = (new \ReflectionClass(AreaList::class))->newInstanceWithoutConstructor();
+    (new \ReflectionProperty(AreaList::class, '_areas'))->setValue($areas, ['adminhtml' => []]);
+    $scope = new Scope($areas);
+    $state = new State($scope);
+    (new \ReflectionProperty(State::class, 'areaList'))->setValue($state, $areas);
+    $shared = [ConfigLoader::class => $loader, ConfigCache::class => new ConfigCache($cache), ScopeInterface::class => $scope,
+        SerializerInterface::class => new Serialize(), Interception::class => $interception,
+        State::class => $state, \Magento\Framework\ObjectManager\ConfigLoaderInterface::class => $loader];
     $manager = new AppObjectManager($factory, $config, $shared);
     $factory->setObjectManager($manager);
     $environment = (new \ReflectionClass(Environment::class))->newInstanceWithoutConstructor();
@@ -86,6 +94,24 @@ $applyFrontend = static function ($manager) use ($loader): void {
 if ($mode === 'warm') {
     $loader->load('global');
     $loader->load('frontend');
+}
+if ($mode === 'indexer') {
+    $factory = new class($boot) extends ObjectManagerFactory {
+        public function __construct(private \Closure $boot) {}
+        public function create(array $arguments) { return ($this->boot)()[0]; }
+    };
+    $command = new class($factory) extends AbstractIndexerCommand {
+        public function manager() { return $this->getObjectManager(); }
+    };
+    $manager = $command->manager();
+    check($manager->get(First::class)::class === Override::class, 'Indexer manager loads Admin DI');
+    check($manager->create(First::class)::class === Override::class, 'Indexer manager uses Admin preference on create');
+    check(Preferences::finish(), 'Native indexer DI load must preserve collection');
+    $events = array_values((new \ReflectionProperty(Recorder::class, 'events'))->getValue());
+    check(count($events) === 1 && $events[0]['id'] === 'area-first' && $events[0]['area'] === 'adminhtml'
+        && $events[0]['hits'] === 2, 'Native indexer DI uses the Admin origin');
+    echo "indexer passed\n";
+    exit;
 }
 if (in_array($mode, ['stale-removed', 'stale-retained'], true)) {
     $stale = $reader->read('global');

@@ -145,9 +145,11 @@ final class Recorder
         self::$references = $references;
     }
 
-    public static function mutation(): void
+    public static function mutation(string $path): void
     {
-        if (self::$manifest) self::$errors[] = 'Configuration changed during collection';
+        if (Xml::configurationAffects(self::$manifest['paths'] ?? [], $path)) {
+            self::$errors['configuration-mutation'] = 'Configuration changed during collection';
+        }
     }
     private static function scope($scope, $code): array
     {

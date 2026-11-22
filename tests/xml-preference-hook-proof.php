@@ -92,7 +92,7 @@ $resolver = new class implements FileResolverInterface {
                     . $preference(Virtual::class, 'ProofVirtual') . "<virtualType name='ProofVirtual' type='" . Shared::class . "'/>"
                     . $preference(Outer::class, Nested::class) . $preference(Failing::class, Throws::class)),
             ],
-            'frontend' => ['second-module/etc/frontend/di.xml' => $wrap($preference(First::class, Override::class))],
+            'frontend', 'adminhtml' => ['second-module/etc/' . $scope . '/di.xml' => $wrap($preference(First::class, Override::class))],
             default => [],
         };
     }

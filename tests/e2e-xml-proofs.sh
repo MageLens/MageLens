@@ -98,7 +98,7 @@ run_xml_proofs() {
         xml_proof xml-di-usage-hook-proof.php /var/www/html/vendor "$di_usage_case"
     done
     xml_proof xml-compiled-di-hook-proof.php
-    for preference_case in cold warm stale-removed stale-retained stale-mutation broken-hook; do
+    for preference_case in cold warm indexer stale-removed stale-retained stale-mutation broken-hook; do
         xml_proof xml-preferences.test.php /var/www/html/vendor "$preference_case"
     done
     if [[ "$platform" == mageos ]]; then

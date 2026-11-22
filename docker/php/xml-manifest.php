@@ -13,12 +13,14 @@ require_once __DIR__ . '/xml-plugin-manifest.php';
 require_once __DIR__ . '/xml-preference-manifest.php';
 use MageLens\XmlCoverage\{Xml, FamilyEvidence, LayoutManifest, ObserverManifest, PluginManifest, PreferenceManifest};
 
-function xmlFingerprint($om): string
+function xmlFingerprint($om, array $files): string
 {
     $resource = $om->get(\Magento\Framework\App\ResourceConnection::class);
     $db = $resource->getConnection();
-    $data = [];
-    foreach (['core_config_data' => 'config_id', 'store' => 'store_id', 'store_website' => 'website_id'] as $table => $id) {
+    $paths = Xml::configurationPaths($files);
+    $rows = $db->fetchAll($db->select()->from($resource->getTableName('core_config_data'))->order('config_id'));
+    $data = ['core_config_data' => array_values(array_filter($rows, static fn($row) => Xml::configurationAffects($paths, $row['path'])))];
+    foreach (['store' => 'store_id', 'store_website' => 'website_id'] as $table => $id) {
         $data[$table] = $db->fetchAll($db->select()->from($resource->getTableName($table))->order($id));
     }
     foreach (['app/etc/config.php', 'app/etc/env.php', 'composer.lock'] as $file) $data[$file] = hash_file('sha256', BP . '/' . $file);
@@ -215,7 +217,7 @@ function prepareXmlManifests($om, array $run): array
             'runtime' => ['php' => PHP_VERSION, 'opentelemetry' => phpversion('opentelemetry')],
             'providers' => $providers,
             'valueHashes' => $valueHashes,
-            'configuration' => xmlFingerprint($om),
+            'configuration' => xmlFingerprint($om, $files),
         ]
     );
 }
@@ -227,7 +229,7 @@ function xmlManifestPayloads(array $shared, array $report): array
     $manifest['id'] = $id;
     $collector = $shared + [
         'id' => $id,
-        'paths' => ['' => true],
+        'paths' => Xml::configurationPaths($report['files']),
         'fields' => [],
         'originScopes' => [],
         'valueHashes' => [],
@@ -235,14 +237,7 @@ function xmlManifestPayloads(array $shared, array $report): array
 
     foreach ($report['files'] as $file) {
         foreach ($file['declarations'] as $item) {
-            if (!$item['supported']) continue;
-            if ($item['family'] === 'config') {
-                $parts = explode('/', $item['path']);
-                while ($parts) {
-                    $collector['paths'][implode('/', $parts)] = true;
-                    array_pop($parts);
-                }
-            } elseif ($item['family'] === 'system') {
+            if ($item['supported'] && $item['family'] === 'system') {
                 $collector['fields'][$item['path']] = [$item['id']];
             }
         }

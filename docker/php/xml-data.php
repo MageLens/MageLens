@@ -110,6 +110,36 @@ final class Xml
         return $result;
     }
 
+    public static function configurationPaths(array $files): array
+    {
+        // Theme selection also controls layout and source scope.
+        $leaves = ['design/theme' => true];
+        foreach ($files as $file) foreach ($file['declarations'] as $item) {
+            if ($item['family'] === 'config' && $item['supported']) $leaves[$item['path']] = true;
+        }
+        $paths = ['' => false];
+        foreach ($leaves as $path => $unused) {
+            $paths[$path] = true;
+            while (($separator = strrpos($path, '/')) !== false) {
+                $path = substr($path, 0, $separator);
+                $paths[$path] ??= false;
+            }
+        }
+        return $paths;
+    }
+
+    public static function configurationAffects(array $paths, string $path): bool
+    {
+        $path = trim($path, '/');
+        if (isset($paths[$path])) return true;
+        // A descendant can replace a scalar XML leaf with a subtree.
+        while (($separator = strrpos($path, '/')) !== false) {
+            $path = substr($path, 0, $separator);
+            if (!empty($paths[$path])) return true;
+        }
+        return false;
+    }
+
     public static function canonical(array $data): string
     {
         ksort($data);

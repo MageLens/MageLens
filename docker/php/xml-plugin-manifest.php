@@ -169,8 +169,14 @@ final class PluginManifest
 
     public static function signature(array $registrations): string
     {
-        foreach ($registrations as &$plugin) {
-            $plugin = array_filter($plugin, static fn($key) => !str_starts_with($key, self::ORIGIN), ARRAY_FILTER_USE_KEY);
+        // Magento can retain a disabled inherited registration in a compiled
+        // list even when a cold replay omits it. Neither dispatches a callback.
+        foreach ($registrations as $name => $plugin) {
+            if (!empty($plugin['disabled'])) {
+                unset($registrations[$name]);
+                continue;
+            }
+            $registrations[$name] = array_filter($plugin, static fn($key) => !str_starts_with($key, self::ORIGIN), ARRAY_FILTER_USE_KEY);
         }
         return hash('sha256', Xml::canonical($registrations));
     }

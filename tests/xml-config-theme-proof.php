@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 require '/var/www/html/app/bootstrap.php';
-require dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php') . '/xml-data.php';
+require dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php') . '/xml-manifest.php';
 use MageLens\XmlCoverage\Xml;
 
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();
@@ -40,4 +40,28 @@ try {
     echo "Verified original theme preprocessing and explicit unmeasured provenance through XML and external providers.\n";
 } finally {
     restore_error_handler();
+}
+
+$files = [['declarations' => [['family' => 'config', 'supported' => true, 'path' => 'magelens_test/display/title']]]];
+$resource = $objects->get(\Magento\Framework\App\ResourceConnection::class);
+$db = $resource->getConnection();
+$table = $resource->getTableName('core_config_data');
+$db->beginTransaction();
+try {
+    $original = xmlFingerprint($objects, $files);
+    $write = static function (string $path) use ($db, $table): void {
+        $db->insertOnDuplicate($table, ['scope' => 'default', 'scope_id' => 0, 'path' => $path, 'value' => 'probe']);
+    };
+    $write('magelens_test/display/runtime_state');
+    if (xmlFingerprint($objects, $files) !== $original) throw new RuntimeException('Unrelated database configuration changed XML provenance');
+    foreach (['magelens_test/display/title/nested', 'magelens_test/display', 'magelens_test/display/title', 'design/theme/ua_regexp'] as $path) {
+        $write($path);
+        if (xmlFingerprint($objects, $files) === $original) throw new RuntimeException("Relevant database configuration escaped fingerprinting at $path");
+        // The writes are transactional, including restoring any existing row.
+        $db->rollBack();
+        $db->beginTransaction();
+    }
+    echo "Verified the database fingerprint tracks XML configuration and theme selection without unrelated runtime state.\n";
+} finally {
+    $db->rollBack();
 }

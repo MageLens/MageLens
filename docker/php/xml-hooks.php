@@ -75,7 +75,9 @@ function startXmlHooks(string $run): void
             }];
     }
     foreach (['save', 'delete'] as $method) $hooks[] = ['Magento\\Framework\\App\\Config\\Storage\\Writer', $method,
-        static function ($subject, array $params) { Recorder::mutation(); }, null];
+        null, static function ($subject, array $params, $result, ?Throwable $error) {
+            if (!$error) Recorder::mutation((string) $params[0]);
+        }];
     $hooks = array_merge($hooks, Observers::hooks(Recorder::observerTargets()), Plugins::hooks(Recorder::pluginTargets()),
         Preferences::hooks(Recorder::preferenceTargets()), Recorder::layoutHooks(), FamilyEvidence::hooks(Recorder::familyTargets(), $run));
     foreach ($hooks as [$class, $method, $pre, $post]) {
