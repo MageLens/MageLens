@@ -53,8 +53,10 @@ try {
         $db->insertOnDuplicate($table, ['scope' => 'default', 'scope_id' => 0, 'path' => $path, 'value' => 'probe']);
     };
     $write('magelens_test/display/runtime_state');
+    $write('admin/system_admin_design/runtime_state');
     if (xmlFingerprint($objects, $files) !== $original) throw new RuntimeException('Unrelated database configuration changed XML provenance');
-    foreach (['magelens_test/display/title/nested', 'magelens_test/display', 'magelens_test/display/title', 'design/theme/ua_regexp'] as $path) {
+    foreach (['magelens_test/display/title/nested', 'magelens_test/display', 'magelens_test/display/title', 'design/theme/ua_regexp',
+        'admin/system_admin_design/active_theme'] as $path) {
         $write($path);
         if (xmlFingerprint($objects, $files) === $original) throw new RuntimeException("Relevant database configuration escaped fingerprinting at $path");
         // The writes are transactional, including restoring any existing row.

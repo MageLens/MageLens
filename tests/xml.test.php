@@ -138,9 +138,14 @@ $path = $headings[0]['path'];
 ]);
 checkXml($collector['id'] === $report['id'] && $collector['observers'] === $report['observers'],
     'Report and collector share the same manifest identity and observer registrations');
-checkXml($collector['paths'] === ['' => false, 'design/theme' => true, 'design' => false, $path => true,
-    'application_blog/display' => false, 'application_blog' => false],
+checkXml($collector['paths'] === ['' => false, 'design/theme' => true, 'design' => false,
+    'admin/system_admin_design/active_theme' => true, 'admin/system_admin_design' => false, 'admin' => false,
+    $path => true, 'application_blog/display' => false, 'application_blog' => false],
     'Collector distinguishes supported configuration paths and theme selection from their ancestors');
+checkXml(Xml::configurationAffects($collector['paths'], 'admin/system_admin_design/active_theme')
+    && Xml::configurationAffects($collector['paths'], 'admin/system_admin_design')
+    && !Xml::configurationAffects($collector['paths'], 'admin/system_admin_design/runtime_state'),
+    'The Mage-OS Admin theme source is guarded without an inventoried declaration, including ancestor writes');
 checkXml($collector['fields'][$fields[0]['path']] === [$fields[0]['id']] && !isset($collector['fields'][$fields[1]['path']]),
     'Collector includes supported fields only');
 checkXml($collector['originScopes'] === ['default' => [$path => 'default-id'], 'stores/reading' => [$path => 'store-id']]

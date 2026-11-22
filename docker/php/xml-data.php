@@ -112,8 +112,9 @@ final class Xml
 
     public static function configurationPaths(array $files): array
     {
-        // Theme selection also controls layout and source scope.
-        $leaves = ['design/theme' => true];
+        // Theme selection controls layout and source scope even when the
+        // Mage-OS Admin theme switcher's config.xml is outside measured roots.
+        $leaves = ['design/theme' => true, 'admin/system_admin_design/active_theme' => true];
         foreach ($files as $file) foreach ($file['declarations'] as $item) {
             if ($item['family'] === 'config' && $item['supported']) $leaves[$item['path']] = true;
         }

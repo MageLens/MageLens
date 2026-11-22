@@ -78,7 +78,7 @@ namespace Magento\Config\Model\Config\Structure\Element {
 }
 namespace {
     require __DIR__ . '/../docker/php/xml-hooks.php';
-    use MageLens\XmlCoverage\Recorder;
+    use MageLens\XmlCoverage\{Recorder, Xml};
     function verifyHook(bool $condition, string $message): void { if (!$condition) throw new \RuntimeException($message); }
     @mkdir('/coverage');
     $manifest = ['run' => 'test', 'id' => 'manifest', 'paths' => ['journal/title' => true, 'journal/disabled' => true],
@@ -91,8 +91,10 @@ namespace {
         $manifest['originScopes']['default']['journal/' . $leaf] = $leaf;
         $manifest['valueHashes']['default']['journal/' . $leaf] = hash('sha256', json_encode('1'));
     }
-    $manifest['paths']['journal'] = false;
-    $manifest['paths'][''] = false;
+    $manifest['paths'] = Xml::configurationPaths([['declarations' => array_map(
+        static fn(string $path) => ['family' => 'config', 'supported' => true, 'path' => $path],
+        array_keys($manifest['paths'])
+    )]]);
     foreach (['UK_English', 'uk_english'] as $code) {
         $manifest['originScopes']['stores/' . $code] = ['journal/title' => 'mixed-title'];
         $manifest['valueHashes']['stores/' . $code] = ['journal/title' => hash('sha256', json_encode('1'))];
@@ -178,6 +180,7 @@ namespace {
     $writer = new \Magento\Framework\App\Config\Storage\Writer();
     $writer->save('journal/runtime_state', '1');
     $writer->delete('journal/runtime_state', 'stores', 1);
+    $writer->save('admin/system_admin_design/runtime_state', '1');
     try { $writer->save('journal/title', null); throw new \RuntimeException('Write exception suppressed'); }
     catch (\LogicException $exception) { verifyHook($exception->getMessage() === 'write failed', 'Writer exception preserved'); }
     Recorder::finish();
@@ -188,5 +191,15 @@ namespace {
     $writer->delete('journal');
     try { Recorder::finish(); throw new \LogicException('Ancestor mutation accepted'); }
     catch (\RuntimeException $exception) { verifyHook(str_contains($exception->getMessage(), 'changed'), 'Ancestor mutation fails measurement'); }
+    foreach (['save', 'delete'] as $method) {
+        (new \ReflectionProperty(Recorder::class, 'errors'))->setValue(null, []);
+        $path = 'admin/system_admin_design/active_theme';
+        if ($method === 'save') $writer->save($path, 'Magento/backend');
+        else $writer->delete($path);
+        try { Recorder::finish(); throw new \LogicException("Admin theme $method accepted"); }
+        catch (\RuntimeException $exception) {
+            verifyHook(str_contains($exception->getMessage(), 'changed'), 'Mage-OS Admin theme selection is guarded without a measured declaration');
+        }
+    }
     echo "Native OpenTelemetry callbacks with PCOV loaded preserve source, results, flags and exceptions; decorated Admin fields retain strict source validation.\n";
 }
