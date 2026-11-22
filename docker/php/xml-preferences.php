@@ -22,6 +22,7 @@ use Magento\Framework\ObjectManager\Config\Compiled as CompiledConfig;
 use Magento\Framework\ObjectManager\Factory\Compiled as CompiledFactory;
 use Magento\Framework\ObjectManager\Factory\Dynamic\Developer as DeveloperFactory;
 use Magento\Framework\ObjectManager\ObjectManager;
+use Magento\Indexer\Console\Command\AbstractIndexerCommand;
 use N98\Magento\Command\System\Cron\RunCommand as MageRunCron;
 
 final class Preferences
@@ -123,6 +124,7 @@ final class Preferences
             [Cron::class, 'launch'] => 'cron',
             [StaticResource::class, 'launch'] => 'static',
             [Area::class, '_initConfig'] => 'area',
+            [AbstractIndexerCommand::class, 'getObjectManager'] => PHP_SAPI === 'cli' ? 'indexer' : null,
             // The pinned MageRun command applies the native crontab DI loader directly.
             [MageRunCron::class, 'execute'] => PHP_SAPI === 'cli' ? 'magerun-cron' : null,
             default => null,
@@ -135,7 +137,8 @@ final class Preferences
         self::$loaded = null;
         $extended = self::$extended?->get();
         self::$extended = null;
-        if (!$loaded || $loaded[0] !== $site || !is_string($loaded[1])) {
+        if (!$loaded || $loaded[0] !== $site || !is_string($loaded[1])
+            || ($site === 'indexer' && $loaded[1] !== Area::AREA_ADMINHTML)) {
             self::$broken = true;
             return;
         }

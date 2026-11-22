@@ -323,6 +323,16 @@ $expected['targets'] += array_intersect_key($streamTargets, $streamRegistrations
 (new \ReflectionProperty(PluginList::class, 'pluginListGenerator'))->setValue($list, $generator);
 PluginManifest::validateList($list, [$subject => $expected], [$data, [], []]); // cold
 PluginManifest::validateList($list, [$subject => $expected], [$data, $inherited, $processed]); // warm
+$compiled = $inherited;
+$compiled[$subject]['disabled-in-parent'] = ['instance' => Before::class, 'disabled' => true, 'sortOrder' => 90];
+PluginManifest::validateList($list, [$subject => $expected], [$data, $compiled, $processed]);
+$compiled[$subject]['disabled-in-parent']['disabled'] = false;
+try {
+    PluginManifest::validateList($list, [$subject => $expected], [$data, $compiled, $processed]);
+    throw new \LogicException('Unexpected enabled registration accepted');
+} catch (\RuntimeException $error) {
+    check(str_contains($error->getMessage(), 'registrations differ'), 'An enabled registration must still match XML provenance');
+}
 $stale = $processed;
 unset($stale[$subject . '_reject___self']); // selectable, but absent from the cached chain
 try {
