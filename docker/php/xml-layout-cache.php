@@ -7,6 +7,8 @@
 declare(strict_types=1);
 namespace MageLens\XmlCoverage;
 
+use Magento\Framework\App\Cache\State;
+use Magento\Framework\App\Cache\Type\AccessProxy;
 use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Framework\View\Layout;
 use Magento\Framework\View\Layout\ScheduledStructure;
@@ -14,6 +16,27 @@ use Magento\Framework\View\Model\Layout\Merge;
 
 final class LayoutCacheCoverage
 {
+    public static function isolateLayoutCache(): void
+    {
+        // Only the native layout cache's reads and writes are bypassed. Cache
+        // state and maintenance operations continue to see the real setting.
+        if (!\OpenTelemetry\Instrumentation\hook(State::class, 'isEnabled', null, self::layoutCacheEnabled(...))) {
+            throw new \RuntimeException('Cannot initialize request-local layout cache isolation');
+        }
+    }
+
+    private static function layoutCacheEnabled($state, array $params, $enabled, ?\Throwable $error, string $class): mixed
+    {
+        if ($error || $class !== State::class || !$enabled || ($params[0] ?? null) !== 'layout') return $enabled;
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
+        if (($trace[2]['class'] ?? null) === AccessProxy::class && ($trace[2]['function'] ?? null) === '_isEnabled'
+            && ($trace[3]['class'] ?? null) === AccessProxy::class
+            && in_array($trace[3]['function'], ['test', 'load', 'save'], true)) {
+            return false;
+        }
+        return $enabled;
+    }
+
     private array $loadingPages = [];
     private int $loadingPagesOverflow = 0;
     private array $loadingHtml = [];

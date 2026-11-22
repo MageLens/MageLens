@@ -45,6 +45,18 @@ test('a report from a different run cannot publish passing badges', t => {
     assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
 });
 
+test('the main report uses N/A when XML has no measured lines', t => {
+    const fixture = reports(t, 1);
+    const file = 'coverage/xml/coverage.json';
+    const xml = JSON.parse(fs.readFileSync(path.join(fixture.root, file)));
+    fixture.json(file, {...xml, covered: 0, total: 0, percent: null});
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = fs.readFileSync(path.join(fixture.root, 'coverage/index.html'), 'utf8');
+    assert.match(html, /href="xml\/index.html"[^>]*>XML configuration lines[\s\S]*?<td><strong>N\/A<\/strong><\/td>/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/summary.json'))).metrics.xml.percent, null);
+});
+
 test('unsupported template directives remain visible when scripts and browser tests pass', t => {
     const fixture = reports(t, 1);
     const file = `${fixture.root}/coverage/templates/coverage-summary.json`;

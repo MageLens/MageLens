@@ -4,7 +4,6 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {countsAsLayoutCoverage} = require('../bin/report-xml.cjs');
 
 const firstRun = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const warm = JSON.parse(fs.readFileSync('coverage/xml/coverage.json', 'utf8'));
@@ -15,18 +14,17 @@ assert.equal(warm.complete, true);
 assert.equal(warm.sourcesUnchanged, true);
 assert.deepEqual(warm.collectorErrors, []);
 
-const declarations = new Set(warm.files
-    .filter(file => /\/Application\/Blog\/view\/frontend\/layout\/blog_(?:index_index|post_view)\.xml$/.test(file.path))
-    .flatMap(file => file.declarations.map(item => item.id)));
-assert.ok(declarations.size > 0, 'Original storefront layout inventory is missing');
-const affected = warm.files.flatMap(file => file.declarations).filter(item => declarations.has(item.id));
-assert.ok(affected.some(item => item.state === 'unmeasured' && /cache|confirmed trace/.test(item.reason || '')),
-    'Cached storefront handles have no scoped declaration limitation');
-const requests = warm.requests.filter(request => request.layoutLimitations?.some(reason =>
-    /merged handle update|layout schedule from cache|full-page cache lookup/.test(reason)));
-assert.ok(requests.length, 'Warm repeat observed no cached layout execution');
-for (const request of requests) {
-    const fresh = request.events.filter(event => declarations.has(event.id) && countsAsLayoutCoverage(event.type));
-    assert.deepEqual(fresh, [], `Cached request ${request.id} inferred fresh storefront XML effects`);
+for (const report of [firstRun, warm]) {
+    for (const handle of ['blog_index_index', 'blog_post_view']) {
+        const file = report.files.find(item => item.path === `app/code/Application/Blog/view/frontend/layout/${handle}.xml`);
+        assert.ok(file, `Missing original source for ${handle}`);
+        for (const [kind, event] of [['block', 'layout-block-rendered'], ['template', 'layout-template-executed'],
+            ['argument', 'layout-argument-applied']]) {
+            const item = file.declarations.find(entry => entry.layout?.kind === kind);
+            assert.equal(item?.state, 'covered', `${handle}/${kind} in run ${report.run}`);
+            assert.ok(item.evidence.some(entry => entry.run === report.run && entry.type === event),
+                `Missing current-run native ${event} for ${handle}`);
+        }
+    }
 }
-console.log(`Verified warm publication run identity and zero fresh storefront effects across ${requests.length} cached requests.`);
+console.log('Verified current-run block, template and argument effects on both default and warm storefront runs.');

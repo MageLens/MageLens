@@ -11,8 +11,9 @@ const {createHash} = require('node:crypto');
 const {layoutEvents, layoutDecisions, layoutObservations, layoutLimitations, countsAsLayoutCoverage} = require('./xml-report/layout/index.cjs');
 const {BLOG_CONFIGURATION_ROUTE, WARM_REQUEST_SUFFIX, XML_REQUEST_METADATA} = require('./xml-report/regex.cjs');
 const {assertSourcePath, readSources} = require('./xml-report/source-files.cjs');
+const {escapeHtml: escape} = require('./report-index.cjs');
+const {formatPercent} = require('./badges.cjs');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const escape = text => String(text).replace(/[&<>"']/g, value => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[value]));
 const callbackKey = ({subject, method, phase}) => hash(JSON.stringify([subject, method, phase]));
 function pluginCallback(item, area, key) {
     assert.equal(item?.family, 'plugins');
@@ -293,7 +294,7 @@ function merge(manifest, records, sources, browserObservations = []) {
                 file.lines[line] = {hits, state: supported ? (hits ? 'covered' : 'uncovered') : 'unmeasured'};
             }
         }
-        const lines = ['plugins', 'layout'].includes(file.family) ? [] : Object.values(file.lines).filter(line => line.state !== 'unmeasured');
+        const lines = Object.values(file.lines).filter(line => line.state !== 'unmeasured');
         file.total = lines.length; file.covered = lines.filter(line => line.hits > 0).length;
     }
     layoutTotals.limitations = [...requestLimitations].sort().map(key => layoutLimitations[key]);
@@ -302,15 +303,30 @@ function merge(manifest, records, sources, browserObservations = []) {
     return {schemaVersion: 1, run: manifest.run, manifest: manifest.id, complete: true, sourcesUnchanged: true,
         collectorErrors: [], observers: {...observerTotals, hook: observerHook}, plugins: {...pluginTotals, hook: pluginHook},
         preferences: {...preferenceTotals, hook: preferenceHook}, layout: layoutTotals,
-        ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])), total, covered, percent: total ? covered / total * 100 : 0, warnings, files, requests};
+        ...Object.fromEntries(Object.entries(diFamilies).map(([family, details]) => [details.key, diTotals[family]])),
+        total, covered, percent: total ? covered / total * 100 : null, warnings, files, requests};
 }
 const stylesheet = 'report.css';
-function page(title, body, stylesheetPrefix = '') {
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${stylesheetPrefix}${stylesheet}"></head><body><h1>${escape(title)}</h1>${body}</body></html>`;
+const encodedPath = source => source.split('/').map(encodeURIComponent).join('/');
+function page(source, body, isFile = false) {
+    const parts = source ? source.split('/') : [];
+    const parents = isFile ? parts.slice(0, -1) : parts;
+    const prefix = '../'.repeat(parents.length);
+    const breadcrumbs = parents.map((name, index) => !isFile && index === parents.length - 1
+        ? `<span aria-current="page">${escape(name)}</span>`
+        : `<a href="${'../'.repeat(parents.length - index - 1)}index.html">${escape(name)}</a>`);
+    if (isFile) breadcrumbs.push(`<span aria-current="page">${escape(parts.at(-1))}</span>`);
+    const root = source ? `<a href="${prefix}index.html">All XML files</a>` : '<span aria-current="page">All XML files</span>';
+    const title = source || 'XML configuration coverage';
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escape(title)}</title><link rel="stylesheet" href="${prefix}${stylesheet}"></head>
+<body><nav aria-label="Breadcrumb"><a href="${prefix}../index.html">Coverage report</a> / ${[root, ...breadcrumbs].join(' / ')}</nav>
+<main><h1>${escape(title)}</h1>${body}</main></body></html>`;
 }
 
 function sourceHref(file, line, prefix = '') {
-    return prefix + file.split('/').map(encodeURIComponent).join('/') + '.html#L' + line;
+    return prefix + encodedPath(file) + '.html#L' + line;
 }
 function lineLabel({startLine, endLine}) {
     return startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
@@ -346,22 +362,6 @@ function preferenceAreas(item, files, prefix) {
     }).join('');
     return `<ul class="preference-areas">${content}</ul>`;
 }
-function preferenceSection(result, files) {
-    const {covered, total} = result.preferences;
-    const declarations = result.files.flatMap(file => file.declarations
-        .filter(item => item.family === 'preferences').map(item => {
-            const href = sourceHref(file.path, item.startLine);
-            return `<li>${typeName(item.binding.requested)} → ${typeName(item.binding.replacement)}
-                <small><a href="${escape(href)}">${escape(file.path)} · ${lineLabel(item)}</a></small>
-                ${preferenceAreas(item, files, '')}</li>`;
-        }));
-    const content = declarations.length
-        ? `<p>${covered}/${total} eligible declaration–area pairs resolved. Each eligible area counts once. Source highlights summarize all areas and sit outside the XML line totals.</p>
-            ${total ? '' : '<p>All inventoried preferences are unmeasured in the supported areas.</p>'}
-            <ul class="preference-list">${declarations.join('')}</ul>`
-        : '<p>No preference declarations found in the XML source inventory.</p>';
-    return `<section class="preferences" aria-labelledby="preference-usage"><h2 id="preference-usage">Preference usage</h2>${content}</section>`;
-}
 function bindingLabel(item, linkedType = value => value) {
     const binding = item.binding;
     if (binding.declaringType) {
@@ -373,34 +373,61 @@ function bindingLabel(item, linkedType = value => value) {
     }
     return linkedType(typeName(binding.requested)) + (binding.replacement ? ' → ' + typeName(binding.replacement) : '');
 }
-function diSections(result, files) {
-    return Object.entries(diFamilies).map(([family, details]) => {
-        const {covered, total} = result[details.key] ?? {covered: 0, total: 0};
-        const rows = result.files.flatMap(file => file.declarations.filter(item => item.family === family).map(item =>
-            `<li>${bindingLabel(item)}<small><a href="${escape(sourceHref(file.path, item.startLine))}">${escape(file.path)} · ${lineLabel(item)}</a></small>
-                ${preferenceAreas(item, files, '')}</li>`));
-        const content = rows.length
-            ? `<p>${covered}/${total} eligible declaration–area pairs ${details.action}. These pairs sit outside the XML line totals.</p>
-                ${total ? '' : '<p>All inventoried declarations are unmeasured in the supported areas.</p>'}
-                <ul class="preference-list">${rows.join('')}</ul>`
-            : '<p>No matching declarations in the XML source inventory.</p>';
-        return `<section class="preferences" aria-labelledby="${family}-usage"><h2 id="${family}-usage">${details.title}</h2>${content}</section>`;
-    }).join('');
+function coverageLabel({covered, total}) {
+    return total ? `${covered}/${total} (${formatPercent(covered / total * 100)})` : 'N/A';
+}
+function directoryRow(label, {covered, total, unmeasured}, href) {
+    const percent = total ? covered / total * 100 : 0;
+    const level = percent >= 90 ? 'high' : percent >= 50 ? 'medium' : 'low';
+    const bar = total ? `<span class="bar" aria-hidden="true"><span style="width:${percent.toFixed(2)}%"></span></span>` : '';
+    const name = href ? `<a href="${escape(href)}">${escape(label)}</a>` : escape(label);
+    return `<tr${href ? '' : ' class="total"'}><th scope="row">${name}</th><td class="metric ${total ? level : 'neutral'}">${bar}${coverageLabel({covered, total})}</td><td>${total - covered}</td><td>${unmeasured}</td></tr>`;
+}
+function reportDetails(result) {
+    const metrics = [
+        ['Layout declarations', result.layout],
+        ['Observer registrations by area', result.observers],
+        ['Plugin registrations by area', result.plugins],
+        ['Preferences by area', result.preferences],
+        ...Object.values(diFamilies).map(({key, title}) => [`${title} by area`, result[key]]),
+    ].filter(([, metric]) => metric?.total);
+    const rows = metrics.map(([label, metric]) => `<tr><th scope="row">${label}</th><td>${coverageLabel(metric)}</td></tr>`).join('');
+    const breakdown = rows ? `<details><summary>Coverage by declaration type</summary>
+<table><thead><tr><th scope="col">Type</th><th scope="col">Covered</th></tr></thead><tbody>${rows}</tbody></table></details>` : '';
+    return `${breakdown}<p><a href="coverage.json">Coverage data (JSON)</a></p>`;
+}
+function sourceTable(file, source) {
+    const partial = new Set();
+    for (const item of file.declarations.filter(item => item.state === 'uncovered')) {
+        for (let line = item.startLine; line <= (item.highlightEndLine ?? item.endLine); line++) {
+            if (file.lines[line].state === 'covered') partial.add(line);
+        }
+    }
+    const rows = source.toString().split(/\r?\n/).map((text, index) => {
+        const line = index + 1;
+        const evidence = file.lines[line];
+        const state = partial.has(line) ? 'partial' : evidence?.state || 'neutral';
+        const hits = state === 'neutral' || state === 'unmeasured' ? '' : evidence.hits;
+        return `<tr id="L${line}" class="line ${state}" data-state="${state}"><td class="number"><a href="#L${line}">${line}</a></td><td class="hits">${hits}</td><td class="code">${escape(text)}</td></tr>`;
+    }).join('\n');
+    return `<div class="scroll"><table class="source"><thead><tr><th scope="col">Line</th><th scope="col">Hits</th><th scope="col">Original source</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function writeReport(result, sources, directory = 'coverage/xml') {
     fs.mkdirSync(directory, {recursive: true});
     fs.copyFileSync(path.join(__dirname, 'xml-report', stylesheet), path.join(directory, stylesheet));
-    const directories = new Map([['', new Map()]]);
+    const directories = new Map();
+    function getDirectory(name) {
+        if (!directories.has(name)) directories.set(name, {entries: new Map(), covered: 0, total: 0, unmeasured: 0});
+        return directories.get(name);
+    }
+    getDirectory('');
     const files = new Set(result.files.map(file => file.path));
     for (const file of result.files) {
         const target = path.join(directory, file.path + '.html');
         fs.mkdirSync(path.dirname(target), {recursive: true});
-        const lines = sources[file.path].toString().split('\n').map((text, index) => {
-            const line = index + 1, state = file.lines[line]?.state || 'neutral';
-            return `<span id="L${line}" class="line ${state}" data-state="${state}"><a href="#L${line}">${line}</a> ${escape(text)}</span>`;
-        }).join('');
         const prefix = '../'.repeat(file.path.split('/').length - 1);
-        const details = file.declarations.map(item => {
+        const details = file.declarations.filter(item => item.family !== 'layout' ||
+            item.supported || !['file-selection', 'schema-hint', 'instruction'].includes(item.layout.kind)).map(item => {
             if (item.effects) {
                 const effects = familyOutcomes(item).map(({type, state, outcomes}) =>
                     `<small>${escape(type)} · ${escape(state)}${outcomes.map(({area, outcome, reason}) =>
@@ -413,10 +440,9 @@ function writeReport(result, sources, directory = 'coverage/xml') {
                     <small>Original ${lineLabel(item)}</small></td><td>${preferenceAreas(item, files, prefix)}</td></tr>`;
             }
             if (item.family === 'layout') {
-                const {element, handle, fileType, selection, destination} = item.layout;
                 const outcomes = item.evidence.map(event =>
                     `<small>${escape(event.type.replace(/^layout-/, '').replaceAll('-', ' '))}${layoutObservations.has(event.type) ? ' · observed fact' : ''} · ${escape(event.theme)}</small>`).join('');
-                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(selection || element)}${destination ? ' → ' + escape(destination) : ''} · ${escape(handle)} · ${escape(fileType)} · ${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}<small>${escape(item.reason || '')}</small></td></tr>`;
+                return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${lineLabel(item)}</small></td><td>${escape(item.state)}${outcomes}${item.reason ? '<small>' + escape(item.reason) + '</small>' : ''}</td></tr>`;
             }
             const outcomes = item.areas
                 ? Object.entries(item.areas).map(([area, outcome]) => {
@@ -428,23 +454,38 @@ function writeReport(result, sources, directory = 'coverage/xml') {
             const type = {events: 'Observer execution', plugins: 'Plugin execution'}[item.family] || item.state;
             return `<tr><td><a href="#L${item.startLine}">${escape(item.path)}</a><small>${escape(item.declaredScope.type)} ${escape(item.declaredScope.code)} · lines ${item.startLine}–${item.endLine}</small></td><td>${escape(type)}${outcomes}</td></tr>`;
         }).join('');
-        fs.writeFileSync(target, page(file.path, `<p><a href="index.html">Directory</a> · ${file.family === 'plugins' ? 'DI declarations by area' : file.family === 'layout' ? 'Layout declarations' : `${file.covered}/${file.total} supported lines covered`}</p><p>${escape(file.reason || '')}</p><table${file.family === 'plugins' ? ' class="di-details"' : ''}>${details}</table><pre>${lines}</pre>`, prefix));
-        let parent = path.posix.dirname(file.path);
-        if (!directories.has(parent)) directories.set(parent, new Map());
-        directories.get(parent).set(path.posix.basename(file.path) + '.html', {label: path.posix.basename(file.path), file});
-        while (parent !== '.') {
-            const child = path.posix.basename(parent), ancestor = path.posix.dirname(parent);
-            const key = ancestor === '.' ? '' : ancestor;
-            if (!directories.has(key)) directories.set(key, new Map());
-            directories.get(key).set(child + '/index.html', {label: child + '/'});
-            parent = ancestor;
+        const unmeasured = Object.values(file.lines).filter(line => line.state === 'unmeasured').length;
+        const measurement = file.reason ? `<p>${escape(file.reason)}</p>` : '';
+        const diagnostics = details ? `<details><summary>Declaration details</summary><div class="scroll"><table>
+<thead><tr><th scope="col">Declaration</th><th scope="col">Outcome</th></tr></thead><tbody>${details}</tbody></table></div></details>` : '';
+        fs.writeFileSync(target, page(file.path, `<p><strong>Line coverage</strong> ${coverageLabel(file)} · ${file.total - file.covered} uncovered · ${unmeasured} unmeasured</p>
+${measurement}${sourceTable(file, sources[file.path])}
+<p class="legend"><span class="covered">Covered</span> <span class="uncovered">Uncovered</span> <span class="partial">Some declarations missed</span> <span class="unmeasured">Unmeasured</span></p>
+${diagnostics}`, true));
+        const parts = file.path.split('/');
+        const filename = parts.pop();
+        getDirectory(parts.join('/')).entries.set(encodeURIComponent(filename) + '.html', {
+            label: filename, counts: {covered: file.covered, total: file.total, unmeasured}
+        });
+        for (;;) {
+            const current = getDirectory(parts.join('/'));
+            current.covered += file.covered;
+            current.total += file.total;
+            current.unmeasured += unmeasured;
+            if (!parts.length) break;
+            const child = parts.pop();
+            getDirectory(parts.join('/')).entries.set(encodeURIComponent(child) + '/index.html', {label: child + '/', counts: current});
         }
     }
-    for (const [name, entries] of directories) {
-        const rows = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([href, entry]) => `<tr><td><a href="${escape(href)}">${escape(entry.label)}</a></td><td>${entry.file && entry.file.family !== 'layout' ? `${entry.file.covered}/${entry.file.total}` : ''}</td></tr>`).join('');
-        const top = name ? '<p><a href="../index.html">Parent directory</a></p>' : `<p>${result.covered}/${result.total} supported lines covered (${result.percent.toFixed(2)}%). <a href="coverage.json">JSON</a></p><p>${result.observers.covered}/${result.observers.total} eligible observer registrations executed across areas.</p><p>${result.plugins.covered}/${result.plugins.total} eligible plugin registrations executed across areas. Each declaration contributes once per eligible area; its source highlight summarizes all areas and is excluded from line totals.</p><p>${result.layout.covered}/${result.layout.total} eligible layout declarations with observed effects. Block creation and template selection are retained as facts; their declarations require native block rendering or template execution for coverage. ${result.layout.limitations.map(escape).join(' ')}</p><p>Green: observed during a config read, Admin field render, observer execution, plugin execution or DI usage. Red: eligible and unobserved. Grey: unmeasured. XML loading grants no credit. Section/group wrappers are neutral. ${result.warnings.length} measurement warnings; inspect source details and JSON.</p>`;
+    for (const [name, counts] of directories) {
+        const rows = [...counts.entries].sort(([, a], [, b]) => a.label.localeCompare(b.label))
+            .map(([href, entry]) => directoryRow(entry.label, entry.counts, href)).join('');
         fs.mkdirSync(path.join(directory, name), {recursive: true});
-        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name || 'XML configuration coverage', top + `<table>${rows}</table>` + (name ? '' : preferenceSection(result, files) + diSections(result, files)), name ? '../'.repeat(name.split('/').length) : ''));
+        fs.writeFileSync(path.join(directory, name, 'index.html'), page(name, `
+<div class="scroll"><table><thead><tr><th scope="col">Directory / file</th><th scope="col">Line coverage</th><th scope="col">Uncovered</th><th scope="col">Unmeasured</th></tr></thead>
+<tbody>${directoryRow('Total', counts)}${rows}</tbody></table></div>
+<p class="muted">A line counts as covered when at least one declaration on it was observed. Unmeasured lines are outside the percentage. N/A means the file or directory has no measured lines.</p>
+${name ? '' : reportDetails(result)}`));
     }
     fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
 }

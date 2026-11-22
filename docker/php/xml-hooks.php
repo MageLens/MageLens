@@ -38,14 +38,14 @@ require_once __DIR__ . '/xml-layout-argument-names.php';
 require_once __DIR__ . '/xml-layout-registry.php';
 require_once __DIR__ . '/xml-layout-assets.php';
 require_once __DIR__ . '/xml-layout-cache.php';
-use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences, FamilyEvidence};
+use MageLens\XmlCoverage\{Recorder, Observers, Plugins, Preferences, FamilyEvidence, LayoutCacheCoverage};
 
 function startXmlHooks(string $run): void
 {
     if (!function_exists('OpenTelemetry\\Instrumentation\\hook')) throw new RuntimeException('XML collection requires the pinned OpenTelemetry hook extension; rerun installation');
     Recorder::start($run);
-    // Register before bootstrap/autoload. No application arguments, exceptions or
-    // return values are changed. No spans, SDK, exporters or network calls exist.
+    if (PHP_SAPI === 'fpm-fcgi') LayoutCacheCoverage::isolateLayoutCache();
+    // Observation hooks preserve application arguments, exceptions and return values.
     $hooks = [
         ['Magento\\Config\\App\\Config\\Type\\System', 'get', null,
             static function ($subject, array $params, $result, ?Throwable $error, string $class) {

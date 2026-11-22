@@ -42,12 +42,9 @@ prove_stock_admin_layout() (
     cleanup_stock_admin() {
         local result=$?
         ./bin/application-compose exec -T phpfpm php /application/docker/php/collection.php stop || result=1
-        ./bin/application-compose exec -T phpfpm php bin/magento cache:enable layout || result=1
         exit "$result"
     }
     trap cleanup_stock_admin EXIT
-    # Login can warm the theme's package cache before the Blog request.
-    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout
     ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config
     ./bin/application-compose exec -T phpfpm php /application/docker/php/theme-scope.php > .runtime/active-themes.json
     ./bin/runner node bin/prepare.cjs --theme-roots .runtime/active-themes.json

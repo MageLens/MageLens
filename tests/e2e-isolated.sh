@@ -207,9 +207,9 @@ fi
     run_xml_proofs "$theme" "$platform" "$mode"
     run_ui_component_proofs
     ./bin/runner node --test tests/verify-routing-native.cjs
-    # Original-source fixture assertions need fresh native layout interpretation.
-    # Registry proofs separately verify warm cache zero-hit provenance boundaries.
-    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable layout block_html full_page
+    # Rendering fixtures need to execute through both HTML cache boundaries.
+    # Collected HTTP requests already isolate the native layout cache.
+    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable block_html full_page
     coverage_options=()
     if [[ "$mode" == production ]]; then
         ./bin/deploy-production
