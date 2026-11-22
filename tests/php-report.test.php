@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -122,6 +122,26 @@ PHTML;
     }
     $reported = (int) $node->project->metrics['statements'];
     check($reported === array_sum(array_map('count', $data)), 'Clover denominator differs from filtered data');
+    // Per-test data expands lines exactly as the aggregate does, and lists the tests of each line.
+    $only = $root . '/runtime/app/code/Fixture/only.php';
+    $byTestData = applicationPhpReportDataByTest($scope, ['first' => [$mixed => $raw[$mixed]], 'second' => [$only => $raw[$only]],
+        'unattributed' => [$mixed => $raw[$mixed]]], $hashes, $root . '/original', $root . '/runtime')->getData();
+    $byTest = $byTestData->lineCoverage();
+    foreach ($data as $file => $fileLines) {
+        foreach ($fileLines as $line => $tests) {
+            check((($byTest[$file][$line] ?? []) !== []) === ($tests !== []), "Per-test data differs from the aggregate at $file:$line");
+        }
+    }
+    $testIds = $byTestData->testIds();
+    $testsOf = static fn(array $tests): array => array_map(static fn(int $index): string => $testIds[$index], array_keys($tests));
+    check($testsOf($byTest[$root . '/original/app/code/Fixture/mixed.phtml'][$matchLines[0]]) === ['first', 'unattributed'],
+        'Per-test data lost the tests of a line');
+    check($testsOf($byTest[$root . '/original/app/code/Fixture/only.php'][2]) === ['second'], 'Per-test data mixed up files');
+    // Native manifest records carry executed lines only; their per-test data covers the same lines.
+    $executed = array_filter($raw[$mixed], static fn(int $hit): bool => $hit > 0);
+    $hitOnly = applicationPhpReportDataByTest($scope, ['first' => [$mixed => $executed]], $hashes, $root . '/original', $root . '/runtime')
+        ->getData()->lineCoverage()[$root . '/original/app/code/Fixture/mixed.phtml'];
+    check(array_keys(array_filter($hitOnly)) === array_keys(array_filter($lines)), 'Hit-only records cover different lines');
     $tokens = applicationPhpTokenLines("<?php\r\n/* comment */\r\necho 'yes';\r\n?>\r\n<script>never()</script>");
     check(array_keys($tokens) === [3], 'CRLF/comment/tag handling is incorrect');
     file_put_contents($root . '/original/app/code/Fixture/mixed.phtml', $source . "\n<?php echo 'changed'; ?>");

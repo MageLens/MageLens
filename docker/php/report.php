@@ -28,6 +28,8 @@ if (applicationIdentity()['identity']['id'] !== $state['identity']['id']) {
     throw new RuntimeException('Deployment changed during the suite. Rerun coverage against stable sources and configuration.');
 }
 $merged = [];
+// Hits per test attempt (docs/coverage.md#test-attempts); 'unattributed' collects records without an attempt.
+$byAttempt = [];
 $requests = [];
 $commands = [];
 foreach ($records as $path) {
@@ -39,9 +41,12 @@ foreach ($records as $path) {
     if ($record['php_version_id'] !== PHP_VERSION_ID || $record['environment_id'] !== $state['identity']['id']) {
         throw new RuntimeException('Record runtime/deployment identity mismatch');
     }
+    $owner = $metadata['attempt'] ?? 'unattributed';
     foreach ($record['records'] as $file => $lines) {
         foreach ($lines as $line => $hit) {
             $merged[$file][$line] = max($merged[$file][$line] ?? -1, $hit);
+            // Only executed lines matter for attribution; expansion spreads executed lines only.
+            if ($hit > 0) $byAttempt[$owner][$file][$line] = 1;
         }
     }
     unset($metadata['xml']);
@@ -97,6 +102,19 @@ file_put_contents('/coverage/php/coverage-summary.json', json_encode([
     'cache' => array_count_values(array_column([...$requests, ...$commands], 'cache')),
     'undiscovered' => array_values(array_diff(array_keys($state['scope']), array_keys($merged))),
 ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");
+if (glob('/coverage/raw/attempts/*.json')) {
+    // The attempts that executed each covered line, for coverage/attribution/ (bin/report-attribution.cjs).
+    $attribution = [];
+    $byTest = applicationPhpReportDataByTest($state['scope'], $byAttempt, $runData['sources'])->getData();
+    // Line data is keyed by test index; `tests` maps the indexes to attempt IDs, so each ID is stored once.
+    foreach ($byTest->lineCoverage() as $file => $hits) {
+        foreach ($hits as $line => $tests) {
+            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_keys($tests);
+        }
+    }
+    file_put_contents('/coverage/php/attribution.json', json_encode(['tests' => (object) $byTest->testIds(),
+        'lines' => (object) $attribution], JSON_THROW_ON_ERROR) . "\n");
+}
 file_put_contents('/coverage/php/merged-lines.json', json_encode($merged, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 $lines = [];
 foreach ($coverage->getData()->lineCoverage() as $file => $hits) {

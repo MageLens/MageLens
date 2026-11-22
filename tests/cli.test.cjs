@@ -12,7 +12,7 @@ const {spawnSync} = require('node:child_process');
 function suite(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cli-tests-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-    for (const file of ['bin/cli-relay', 'bin/run-cli.cjs', 'bin/project.cjs', 'cli/support.cjs']) {
+    for (const file of ['bin/cli-relay', 'bin/run-cli.cjs', 'bin/project.cjs', 'bin/test-attempts.cjs', 'bin/javascript-attempts.cjs', 'cli/support.cjs']) {
         fs.mkdirSync(path.join(root, path.dirname(file)), {recursive: true});
         fs.copyFileSync(path.join(__dirname, '..', file), path.join(root, file));
     }
@@ -53,7 +53,9 @@ const {test, magento} = require('../../../../../../../cli/support.cjs');
 test('module command', async () => {
     const args = ['cron:run', '--group=example', 'literal spaces " and $'];
     const result = await magento(args, {timeout: 7500});
-    assert.deepEqual(JSON.parse(result.stdout), {run: 'a'.repeat(32), tool: 'magento', args, timeout: 7500});
+    const {attempt, ...request} = JSON.parse(result.stdout);
+    assert.match(attempt, /^[a-f0-9]{32}$/);
+    assert.deepEqual(request, {run: 'a'.repeat(32), tool: 'magento', args, timeout: 7500});
     process.stdout.write('Test diagnostics go to stderr.\\n');
 });
 `);
@@ -79,6 +81,86 @@ test('vendor command', () => magento(['list']));
     const results = fixture.results();
     assert.equal(results.totalPassed, 3);
     assert.equal(results.commands, 3);
+});
+
+test('each CLI test is one attempt and its commands carry that attempt', t => {
+    const fixture = suite(t);
+    fixture.write('cli/e2e/attempts.test.cjs', `
+const fs = require('node:fs');
+const {test, magento} = require('../support.cjs');
+const sent = [];
+test('runs two commands', async () => {
+    sent.push(JSON.parse((await magento(['list'])).stdout).attempt);
+    sent.push(JSON.parse((await magento(['cache:status'])).stdout).attempt);
+});
+test('fails after a command', async () => {
+    sent.push(JSON.parse((await magento(['list'])).stdout).attempt);
+    fs.writeFileSync('coverage/sent.json', JSON.stringify(sent));
+    throw new Error('expected failure');
+});
+`);
+    const result = fixture.run();
+    assert.equal(result.status, 1, result.stderr || result.error?.message);
+    const sent = JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/sent.json'), 'utf8'));
+    assert.equal(sent[0], sent[1]);
+    assert.notEqual(sent[1], sent[2]);
+    const attempts = fs.readdirSync(path.join(fixture.root, 'coverage/raw/attempts'))
+        .map(file => JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/raw/attempts', file), 'utf8')));
+    assert.deepEqual(attempts.map(attempt => [attempt.id, attempt.runner, attempt.spec, attempt.test, attempt.retry, attempt.outcome]).sort(),
+        [[sent[0], 'cli', 'cli/e2e/attempts.test.cjs', ['runs two commands'], 0, 'passed'],
+            [sent[2], 'cli', 'cli/e2e/attempts.test.cjs', ['fails after a command'], 0, 'failed']].sort());
+    assert.ok(attempts.every(attempt => attempt.run === 'a'.repeat(32) && attempt.finishedAt));
+});
+
+test('a command that its test did not wait for keeps that test attempt', t => {
+    const fixture = suite(t);
+    fixture.write('cli/e2e/unawaited.test.cjs', `
+const fs = require('node:fs');
+const {test, magento} = require('../support.cjs');
+const sent = [];
+const record = result => sent.push(JSON.parse(result.stdout).attempt);
+test('fails while a second command is queued', async () => {
+    magento(['list']);
+    magento(['cache:status']).then(record);
+    throw new Error('fails before its commands finish');
+});
+test('runs next', async () => {
+    record(await magento(['list']));
+    fs.writeFileSync('coverage/sent.json', JSON.stringify(sent));
+});
+`);
+    assert.equal(fixture.run().status, 1);
+    const sent = JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/sent.json'), 'utf8'));
+    const attempts = Object.fromEntries(fs.readdirSync(path.join(fixture.root, 'coverage/raw/attempts'))
+        .map(file => JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/raw/attempts', file), 'utf8')))
+        .map(attempt => [attempt.test[0], attempt]));
+    assert.deepEqual(sent, [attempts['fails while a second command is queued'].id, attempts['runs next'].id]);
+    assert.deepEqual([attempts['fails while a second command is queued'].outcome, attempts['runs next'].outcome], ['failed', 'passed']);
+});
+
+test('a command chained after an unawaited command keeps the attempt of the test that started the chain', t => {
+    const fixture = suite(t);
+    fixture.write('cli/e2e/chain.test.cjs', `
+const fs = require('node:fs');
+const {test, magento} = require('../support.cjs');
+const sent = {};
+const record = name => result => { sent[name] = JSON.parse(result.stdout).attempt; };
+test('starts a chain', () => {
+    magento(['list']).then(record('first')).then(() => magento(['cache:status'])).then(record('chained'));
+});
+test('runs next', async () => {
+    record('next')(await magento(['list']));
+    // The chained command is sent once the first one has answered; wait for it, bounded.
+    for (let wait = 0; !sent.chained && wait < 150; wait++) await new Promise(resolve => setTimeout(resolve, 20));
+    fs.writeFileSync('coverage/sent.json', JSON.stringify(sent));
+});
+`);
+    assert.equal(fixture.run().status, 0);
+    const sent = JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/sent.json'), 'utf8'));
+    const attempts = Object.fromEntries(fs.readdirSync(path.join(fixture.root, 'coverage/raw/attempts'))
+        .map(file => JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/raw/attempts', file), 'utf8')))
+        .map(attempt => [attempt.test[0], attempt.id]));
+    assert.deepEqual(sent, {first: attempts['starts a chain'], chained: attempts['starts a chain'], next: attempts['runs next']});
 });
 
 test('CLI relay keeps projects without CLI specs working and rejects a spec that registers no tests', t => {

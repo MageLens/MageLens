@@ -53,16 +53,18 @@ describe('Magento storefront coverage compatibility', {testIsolation: false}, ()
         cy.get('#email').should('be.visible');
         admin.login();
         openForm(admin, true).then(response => { formNavigation = response; });
+        // The request is still running when this test ends; leaving the page aborts only the browser side.
+        cy.window().then(win => new Cypress.Promise(resolve => {
+            win.fetch('/coverageprobe/index/late').catch(() => {});
+            win.setTimeout(resolve, 500);
+        }));
     });
     it('starts the next test with fresh state', () => {
         resetForm(formNavigation, true);
         cy.log('Restore pristine session state and validate rendered HTML');
         cy.clearLocalStorage();
         cy.window({log: false}).then(win => win.sessionStorage.clear());
-        cy.clearCookies({log: false});
-        cy.setCookie('application_coverage', Cypress.expose('coverageRun'), {
-            domain: new URL(Cypress.config('baseUrl')).hostname, path: '/', sameSite: 'lax', httpOnly: true, log: false
-        });
+        cy.mageLensClearSessionCookies();
         cy.visit('/coverageprobe/');
         cy.get('[data-cy="inline-probe"]').should('have.text', 'inline-ready');
         cy.window().its('magelensChildScript').should('equal', 'child-ready');
@@ -402,12 +404,17 @@ describe('Magento storefront coverage compatibility', {testIsolation: false}, ()
         cy.log('Verify native grid loading and sorting');
         openGrid(admin, true);
         cy.visit('/');
-        cy.clearCookies();
+        cy.mageLensClearSessionCookies();
         const fixture = admin.fixtures();
         admin.login(fixture.readerUser, fixture.readerPassword);
         cy.get('[data-layout-structure="acl-dashboard"]').should('have.text', 'acl-dashboard');
         cy.get('[data-layout-structure="acl-blog"], [data-layout-structure="acl-alias"]').should('not.exist');
         cy.get('[data-layout-structure="ui-acl-dashboard"]').should('have.text', 'ui-acl-dashboard');
         cy.get('[data-layout-structure="ui-acl-blog"]').should('not.exist');
+    });
+    // Shared cleanup after the last test runs without a test attempt.
+    after(() => {
+        // The fixture page is visited by every runner, so the request adds no runner-specific coverage.
+        cy.request('/coverageprobe/?shared-cleanup=1');
     });
 });

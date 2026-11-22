@@ -178,6 +178,35 @@ The call captures the page's HTML and returns no result. Captures are validated 
 
 After a successful run, the combined report lists HTML validation in a separate **Reports** section and links to `coverage/html-validation/index.html`. That report shows every audit with its page, test and spec, and each finding's severity, rule, message, response line and column, or states that no issues were found. `coverage/html-validation/results.json` contains the same data. The captured responses stay in the private `coverage/raw/html-validation/` directory and are not published with the report. Existing installations must rerun installation with their saved platform, theme and runner flags to install the validator.
 
+## Test attempts
+
+Each attempt of a test, including every retry, gets a random 32-character attempt ID when it starts: in the Cypress support file, the Playwright `context` fixture and the CLI suite. The runner writes the attempt's test identity once to `coverage/raw/attempts/<attempt ID>.json`: runner, spec, title path below the spec, retry number, Playwright project and worker, start and finish time, and the runner's outcome. A failed attempt keeps its record when a retry follows.
+
+Browser tests send the ID in the `application_coverage_attempt` cookie next to `application_coverage`; custom HTTP clients can send the `X-Application-Coverage-Attempt` header instead. CLI tests pass it to their commands. Each PHP request or command record stores the ID as `attempt`, with its start time as `startedAt`. Requests without an ID, such as shared setup in another browser context or a Cypress `after()` hook (the attempt cookie is cleared when each test finishes), are stored with `attempt: null` and stay unattributed. CLI commands keep the attempt of the test whose code requested them, also from `.then()` continuations that run after the test returned. Test files are named relative to the project root in every runner, whatever the Playwright `testDir` is. The JavaScript counters of each attempt's pages are also written, with only the statements, functions and branches that ran, to `coverage/raw/javascript-attempts/<attempt ID>.json`, keyed by Istanbul file path and not filtered by the report exclusions. Aggregate coverage is unchanged: it does not read attempt IDs or these counters. The two fields also appear in the request and command lists of the private `coverage/php/coverage-summary.json`.
+
+The PHP collector is part of the PHP image: an existing installation writes these two fields only after rerunning installation with its saved platform, theme and runner flags. These records are private run data under `coverage/raw/` and are not published with the reports.
+
+## Per-test attribution
+
+After the reports, `bin/report-attribution.cjs` combines the attempt records into `coverage/attribution/`. It is private run data like `coverage/raw/` and is not published.
+
+| File | Contents |
+| --- | --- |
+| `index.json` | The run's attempts in start order, and per collector: status, unit, record counts, attributed and unattributed units |
+| `php.json` | Covered PHP lines from `coverage/php/line-coverage.json` |
+| `javascript.json` | Statement (`s:<id>`), function (`f:<id>`) and branch path (`b:<id>:<path>`) counters of the JavaScript report, by file below `src/` |
+| `templates.json` | Template statement, function and branch counters of the template report |
+| `xml.json` | Covered XML declarations by runtime observation, per configuration area when the observation includes one (`<declaration>@<area>`), from the requests and commands of the XML report |
+
+The collector files map each file and unit to its owners: the position of an attempt in `index.json`, or `unattributed`, with hit counts. PHP lines count 1 per owner, because PCOV records whether a line ran, not how often. A unit can belong to several attempts and to unattributed work at the same time. Uncovered units are not listed.
+
+- Every attributed unit is checked against the aggregate report of its collector, and every covered unit has an owner. A difference stops the run before reports are published.
+- PHP lines are expanded per attempt exactly as in the PHP report. A request that starts after its attempt finished keeps the attempt and is counted as `lateRecords`.
+- Template records that carry their attempt ID are attributed to it; Cypress and Playwright pass the ID as the template package's record `metadata` where the installed package keeps it. The ID must belong to an attempt of the same spec, title path, retry and project. Other records are matched by spec, title path, retry and project. Two attempts with the same identity, such as Cypress tests with duplicate titles, cannot be told apart that way: their records are counted as `ambiguousRecords` and stay unattributed.
+- XML hits belong to the attempt of the PHP request or command associated with the evidence.
+- Attribution shows which code ran during a test attempt. It does not show that the test checked the result of that code.
+
+
 ## Use your project
 
 For a Cypress installation, follow the [source setup instructions](../README.md#work-with-the-source), then add scenarios in `cypress/e2e/**/*.cy.js` or a module's `Test/Cypress/**/*.cy.js`. All matching scenarios run with `./bin/run-coverage`.

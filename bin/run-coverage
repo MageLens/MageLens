@@ -146,5 +146,5 @@ say 'Running shared Magento CLI tests'
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
 dc exec -T phpfpm php /application/docker/php/xml-manifest.php check
-dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/report-xml.cjs && node bin/finalize.cjs "$@"' sh ${readme_options[@]+"${readme_options[@]}"}
+dc exec -T runner sh -c 'node bin/report-browser.cjs && node bin/report-xml.cjs && node bin/report-attribution.cjs && node bin/finalize.cjs "$@"' sh ${readme_options[@]+"${readme_options[@]}"}
 report_ready=1

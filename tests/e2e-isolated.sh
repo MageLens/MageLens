@@ -242,6 +242,7 @@ fi
     ./bin/runner node tests/verify-cli-coverage.cjs
     ./bin/runner node tests/verify-xml-cron.cjs
     ./bin/runner node tests/verify-ui-browser-coverage.cjs
+    ./bin/runner node tests/verify-attempts.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
     for layout_check in tests/verify-layout-*.cjs; do
