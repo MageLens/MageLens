@@ -280,26 +280,35 @@ fi
     # A failed test must not prevent coverage publication. This runs after the compared report
     # is saved, with one disposable spec in place of the acceptance specs, which are restored after.
     specs=.runtime/acceptance-specs
-    mkdir -p "$specs"
-    find src/app/code -type d \( -path '*/Test/Cypress' -o -path '*/Test/Playwright' \) -prune -print > "$specs.list"
-    while read -r directory; do mkdir -p "$specs/$(dirname "$directory")"; mv "$directory" "$specs/$directory"; done < "$specs.list"
     failed_spec=cypress/e2e/failed-run.cy.js
     [[ "$runner" != playwright ]] || failed_spec=playwright/e2e/failed-run.spec.js
+    mkdir -p "$specs"
+    find src/app/code -type d \( -path '*/Test/Cypress' -o -path '*/Test/Playwright' \) -prune -print > "$specs.list"
+    restore_acceptance_specs() {
+        rm -f "$failed_spec"
+        while read -r directory; do
+            [[ ! -e "$specs/$directory" ]] || mv "$specs/$directory" "$directory"
+        done < "$specs.list"
+    }
+    # Also restore after a failure, so a workspace kept for debugging shows the acceptance specs.
+    trap restore_acceptance_specs EXIT
+    while read -r directory; do mkdir -p "$specs/$(dirname "$directory")"; mv "$directory" "$specs/$directory"; done < "$specs.list"
     mkdir -p "$(dirname "$failed_spec")"
     cp "tests/fixtures/failed-run/$(basename "$failed_spec")" "$failed_spec"
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
+    # Unchanged sources keep the deployed production assets current, so no --refresh-assets.
     # The expected non-zero exit must not end this pipefail script.
-    if MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage ${coverage_options[@]+"${coverage_options[@]}"} 2>&1 | tee .runtime/coverage-run.log; then
+    if MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage 2>&1 | tee .runtime/coverage-run.log; then
         fail 'A coverage run with a failed test must exit non-zero.'
     fi
     cp .runtime/coverage-run.log "$artifacts/coverage-failed-run.log"
     grep -qxF "Tests failed in the $runner suite. The reports include their results." .runtime/coverage-run.log \
-        || fail 'The failed run must name only the failed browser suite.'
+        || fail 'The failed run must publish its reports and name only the failed browser suite.'
     # No acceptance spec audits HTML in this run.
     ./bin/runner node tests/verify-report-publication.cjs bundled-blog
     ./bin/runner node tests/verify-failed-run.cjs
-    rm "$failed_spec"
-    while read -r directory; do mv "$specs/$directory" "$directory"; done < "$specs.list"
+    restore_acceptance_specs
+    trap - EXIT
     if [[ -n "${MAGELENS_E2E_RESULT_FILE:-}" ]]; then printf '%s\n' "$artifacts/$runner/coverage" > "$MAGELENS_E2E_RESULT_FILE"; fi
 ) 2>&1 | tee "$artifacts/run.log"
 printf 'PASS: isolated %s/%s/%s installation and PHP/JavaScript/template coverage.\n' "$platform" "$theme" "$runner"
