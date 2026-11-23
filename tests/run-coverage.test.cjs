@@ -54,11 +54,13 @@ dc() {
             interrupt) return 130 ;;
             terminate) return 143 ;;
             signal) kill -INT $$; return 1 ;;
+            term-signal) sh -c 'sleep 0.2; kill -TERM $PPID; sleep 5' </dev/null >/dev/null 2>&1; return 1 ;;
         esac ;;
     esac
 }
 `);
     setup(directory);
+    const started = Date.now();
     const result = spawnSync('bash', ['bin/run-coverage', ...args], {
         cwd: directory, encoding: 'utf8', env: {...process.env, TEST_FAILURE: failure},
     });
@@ -70,7 +72,7 @@ dc() {
     const published = fs.lstatSync(link, {throwIfNoEntry: false})?.isSymbolicLink() === true && fs.readlinkSync(link) === '../../../coverage/.site';
     assert.equal(/Open the combined coverage report:|http:\/\/custom/.test(result.stdout), published);
     if (published) assert.ok(result.status === 0 || /Tests failed in the/.test(result.stderr), result.stderr);
-    return {...result, calls, directory};
+    return {...result, calls, directory, duration: Date.now() - started};
 }
 
 for (const runner of ['cypress', 'playwright']) {
@@ -107,9 +109,10 @@ test(`${runner}: publishes complete reports after cleanup`, t => {
     assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080\/shop\/media\/coverage\/index.html/);
     assert.doesNotMatch(result.stdout, /Local report:/);
     assert.ok(result.calls.lastIndexOf('project-hooks.php cleanup') < result.calls.indexOf('report-url.php'));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.directory, 'coverage/suite-status.json'))), {[runner]: 0, cli: 0});
 });
 
-for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
+for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'term-signal', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
     test(`${runner}: ${failure} failure leaves no public report or success URL`, t => {
         const result = workflow(t, [], failure, false, runner, '6', directory => {
             fs.mkdirSync(path.join(directory, 'src/pub/media'), {recursive: true});
@@ -123,8 +126,10 @@ for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'p
             assert.ok(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), 'Failed cleanup must retain the recovery marker');
             assert.doesNotMatch(result.calls, /report-url.php/, 'Failed cleanup must prevent publication');
         }
-        if (['interrupt', 'terminate', 'signal'].includes(failure)) {
-            assert.equal(result.status, failure === 'terminate' ? 143 : 130, result.stderr);
+        if (['interrupt', 'terminate', 'signal', 'term-signal'].includes(failure)) {
+            // TERM is not trapped: it ends the run through the EXIT cleanup without waiting for the running suite.
+            if (failure === 'term-signal') assert.ok(result.duration < 3000 && (result.status === 143 || result.signal === 'SIGTERM'), `${result.status} ${result.signal} ${result.duration}ms`);
+            else assert.equal(result.status, failure === 'terminate' ? 143 : 130, result.stderr);
             assert.doesNotMatch(result.calls, /cli-relay|report.php|finalize.cjs/, 'An interrupted run must not continue');
         }
         if (failure === 'url') assert.doesNotMatch(result.calls, /app test -r/, 'Invalid URL must stop publication');
@@ -200,6 +205,8 @@ for (const [failure, suites] of [['tests', `the ${runner} suite`], ['cli', 'the 
         assert.equal(fs.readlinkSync(path.join(result.directory, 'src/pub/media/coverage')), '../../../coverage/.site');
         assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080/);
         assert.match(result.stderr, new RegExp(`Tests failed in ${suites}\\. The reports include their results\\.`));
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.directory, 'coverage/suite-status.json'))),
+            {[runner]: failure === 'cli' ? 0 : 23, cli: failure === 'tests' ? 0 : 1});
         assert.equal(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), false);
     });
 }
