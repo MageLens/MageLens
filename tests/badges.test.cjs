@@ -5,7 +5,7 @@
 const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {replaceBadgeSection, badge, cypressBadge} = require(projectFile('bin/badges.cjs'));
+const {replaceBadgeSection, badge, cypressBadge, testOutcome} = require(projectFile('bin/badges.cjs'));
 
 test('badge refresh preserves all README content outside the managed region', () => {
     const start = '<!-- coverage-badges:start -->';
@@ -34,13 +34,25 @@ test('SVG values derive from the supplied report and invalid metrics are rejecte
     }
 });
 
-test('Cypress badge derives its rate and status from complete test results', () => {
+test('Cypress badge derives its rate and status from executed tests only', () => {
     const results = {totalTests: 8, totalPassed: 8, totalFailed: 0, totalPending: 0, totalSkipped: 0};
     assert.match(cypressBadge(results), /100% \(8\/8\) - Passed/);
     assert.match(cypressBadge({...results, totalPassed: 6, totalFailed: 2}), /75% \(6\/8\) - Failed/);
-    assert.match(cypressBadge({...results, totalPassed: 7, totalSkipped: 1}), /87\.5% \(7\/8\) - Incomplete/);
+    assert.match(cypressBadge({...results, totalPassed: 7, totalSkipped: 1}), /100% \(7\/7\) - Passed/);
+    assert.match(cypressBadge({...results, totalPassed: 5, totalFailed: 1, totalPending: 2}), /83\.33% \(5\/6\) - Failed/);
     assert.match(cypressBadge({...results, status: 'failed'}), /Failed/);
     assert.throws(() => cypressBadge({...results, totalTests: 9}), /Invalid/);
     assert.throws(() => cypressBadge({...results, totalSkipped: undefined}), /Invalid/);
     assert.throws(() => cypressBadge({...results, totalTests: 0, totalPassed: 0}), /Invalid/);
+    assert.throws(() => cypressBadge({...results, totalPassed: 0, totalSkipped: 8}), /Invalid/);
+});
+
+test('test outcomes list the failed tests and ignore skipped and pending ones', () => {
+    const tests = [{title: 'a', status: 'passed'}, {title: 'b', status: 'failed'}, {title: 'c', status: 'timedOut'},
+        {title: 'd', status: 'interrupted'}, {title: 'e', status: 'skipped'}, {title: 'f', status: 'pending'}];
+    assert.deepEqual(testOutcome({totalTests: 6, totalPassed: 1, totalFailed: 3, totalPending: 1, totalSkipped: 1, tests}),
+        {status: 'failed', passed: 1, failed: 3, failedTests: ['b', 'c', 'd']});
+    assert.deepEqual(testOutcome({totalTests: 0, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0}),
+        {status: 'passed', passed: 0, failed: 0, failedTests: []});
+    assert.throws(() => testOutcome({totalTests: 1, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0}), /Invalid/);
 });

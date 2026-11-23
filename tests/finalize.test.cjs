@@ -121,20 +121,45 @@ for (const runner of ['cypress', 'playwright']) {
         assert.match(readme, /Full .* run: `fixture`/);
         assert.doesNotMatch(readme, /Coverage has not completed/);
     });
-    for (const counts of [{totalPassed: 0, totalFailed: 1}, {totalPassed: 0, totalSkipped: 1}, {totalPassed: 0, totalPending: 1}]) {
-        test(`${runner}: unsuccessful tests leave opted-in README pending without badges`, t => {
-            const fixture = reports(t, 1, runner);
-            const file = path.join(fixture.root, 'README.md');
-            const pending = '<!-- coverage-badges:start -->\nCoverage has not completed for the current run.\n<!-- coverage-badges:end -->';
-            fs.writeFileSync(file, pending);
-            const resultsFile = `${fixture.root}/coverage/${runner}-results.json`;
-            const results = JSON.parse(fs.readFileSync(resultsFile));
-            fs.writeFileSync(resultsFile, JSON.stringify({...results, ...counts}));
-            assert.notEqual(fixture.run(['--update-readme']).status, 0);
-            assert.equal(fs.readFileSync(file, 'utf8'), pending);
-            assert.ok(!fs.existsSync(`${fixture.root}/coverage/badges`));
-        });
-    }
+    const label = runner === 'cypress' ? 'Cypress' : 'Playwright';
+    test(`${runner}: failed tests publish coverage, a failed badge and the failed test titles`, t => {
+        const fixture = reports(t, 1, runner);
+        const file = path.join(fixture.root, 'README.md');
+        fs.writeFileSync(file, '<!-- coverage-badges:start -->\nCoverage has not completed for the current run.\n<!-- coverage-badges:end -->');
+        fixture.json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 4, totalPassed: 2, totalFailed: 1, totalPending: 0, totalSkipped: 1,
+            tests: [{title: 'opens <the> cart', status: 'passed'}, {title: 'checks out', status: 'failed'}, {title: 'pays', status: 'passed'}, {title: 'ships', status: 'skipped'}]});
+        const result = fixture.run(['--update-readme']);
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stderr, new RegExp(`Failed ${label} tests \\(1 of 3\\):\\n  - checks out`));
+        const summary = JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`));
+        assert.deepEqual(summary.tests, {[runner]: {status: 'failed', passed: 2, failed: 1, failedTests: ['checks out']},
+            cli: {status: 'passed', passed: 0, failed: 0, failedTests: []}});
+        assert.equal(summary.metrics.php.percent, 100, 'A failed test does not change coverage');
+        const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+        assert.match(html, new RegExp(`<span class="status failed">${label} failed · 2/3 tests</span>`));
+        assert.match(html, new RegExp(`Failed ${label} tests:</strong> 1 of 3\\.</p>\\n<ul><li>checks out</li></ul>`));
+        assert.doesNotMatch(html, /CLI (passed|failed)/);
+        assert.match(fs.readFileSync(`${fixture.root}/coverage/badges/${runner}.svg`, 'utf8'), /66\.67% \(2\/3\) - Failed/);
+        assert.match(fs.readFileSync(file, 'utf8'), new RegExp(`\\[!\\[${label}: 2/3 passed\\]\\(coverage/badges/${runner}\\.svg\\)`));
+    });
+    test(`${runner}: skipped and pending tests are not counted`, t => {
+        const fixture = reports(t, 1, runner);
+        fixture.json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 4, totalPassed: 2, totalFailed: 0, totalPending: 1, totalSkipped: 1});
+        const result = fixture.run(['--update-readme']);
+        assert.equal(result.status, 0, result.stderr);
+        assert.doesNotMatch(result.stderr, /Failed/);
+        assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).tests[runner], {status: 'passed', passed: 2, failed: 0, failedTests: []});
+        assert.match(fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8'), new RegExp(`<span class="status passed">${label} passed · 2/2 tests</span>`));
+        assert.match(fs.readFileSync(`${fixture.root}/coverage/badges/${runner}.svg`, 'utf8'), /100% \(2\/2\) - Passed/);
+        assert.match(fs.readFileSync(`${fixture.root}/README.md`, 'utf8'), new RegExp(`${label}: 2/2 passed`));
+    });
+    test(`${runner}: a run without an executed test publishes nothing`, t => {
+        const fixture = reports(t, 1, runner);
+        fixture.json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 2, totalPassed: 0, totalFailed: 0, totalPending: 1, totalSkipped: 1});
+        assert.notEqual(fixture.run().status, 0);
+        assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
+        assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`));
+    });
 }
 
 for (const runner of ['cypress', 'playwright']) {
@@ -163,16 +188,29 @@ for (const runner of ['cypress', 'playwright']) {
         });
     }
 }
-test('CLI results require current coverage for every command and a fully passing suite', t => {
+test('CLI results require the current run and coverage for every command', t => {
     const fixture = reports(t, 1);
     const file = 'coverage/cli-results.json';
     const results = {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0};
-    for (const change of [{run: 'stale'}, {totalPending: 1}, {totalSkipped: 1}, {totalFailed: 1}, {commands: 1}]) {
+    for (const change of [{run: 'stale'}, {commands: 1}, {totalTests: 2}]) {
         fixture.json(file, {...results, ...change});
         assert.notEqual(fixture.run().status, 0);
-        assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`) ||
-            !fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8').includes('CLI passed'));
+        assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`));
     }
+});
+
+test('a failed CLI test is reported next to the passing browser suite', t => {
+    const fixture = reports(t, 1);
+    fixture.json('coverage/cli-results.json', {run: 'fixture', totalTests: 2, totalPassed: 1, totalFailed: 1, totalPending: 0, totalSkipped: 0, commands: 0,
+        tests: [{title: 'reindexes', status: 'passed'}, {title: 'cleans <cache>', status: 'failed'}]});
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Failed CLI tests \(1 of 2\):\n  - cleans <cache>/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).tests.cli, {status: 'failed', passed: 1, failed: 1, failedTests: ['cleans <cache>']});
+    const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+    assert.match(html, /<span class="status passed">Cypress passed · 1\/1 tests<\/span>\n<span class="status failed">CLI failed · 1\/2 tests<\/span>/);
+    assert.match(html, /<ul><li>cleans &lt;cache&gt;<\/li><\/ul>/);
+    assert.match(fs.readFileSync(`${fixture.root}/coverage/badges/cypress.svg`, 'utf8'), /- Passed/);
 });
 
 test('a run without mageLensValidateHtml invocations is shown as not audited', t => {

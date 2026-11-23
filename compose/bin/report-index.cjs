@@ -19,7 +19,7 @@ function templateLimitations(templates) {
     };
 }
 
-function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation}) {
+function writeIndex({run, generatedAt, metrics, php, js, templates, xml, outcomes, htmlValidation}) {
     const runner = run.runner === 'playwright' ? 'Playwright' : 'Cypress';
     const reports = [
         ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines',
@@ -56,6 +56,12 @@ function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, 
 <th scope="row">HTML validation<small>HTML source of the pages for which a test called mageLensValidateHtml.</small></th>
 <td colspan="2">Not run<small>No test called mageLensValidateHtml, so no page was audited.</small></td>
 </tr>`;
+    // Test outcomes are shown apart from the coverage metrics: failed tests do not change coverage.
+    const suites = Object.entries(outcomes).map(([key, outcome]) => ({name: key === 'cli' ? 'CLI' : runner, ...outcome}))
+        .filter(suite => suite.passed + suite.failed);
+    const statuses = suites.map(suite => `<span class="status ${suite.status}">${suite.name} ${suite.status} · ${suite.passed}/${suite.passed + suite.failed} tests</span>`).join('\n');
+    const failedTests = suites.filter(suite => suite.status === 'failed').map(suite => `<p class="note"><strong>Failed ${suite.name} tests:</strong> ${suite.failed} of ${suite.passed + suite.failed}.</p>
+${suite.failedTests.length ? `<ul>${suite.failedTests.map(title => `<li>${escapeHtml(title)}</li>`).join('')}</ul>` : ''}`).join('\n');
     fs.writeFileSync('coverage/index.html', `<!doctype html>
 <html lang="en">
 <head>
@@ -70,6 +76,7 @@ main { max-width: 1080px; margin: 64px auto; padding: 0 24px; }
 h1 { margin: 12px 0; font-size: clamp(28px, 5vw, 40px); letter-spacing: -.03em; }
 p { line-height: 1.6; }
 .status { display: inline-block; padding: 6px 12px; border-radius: 20px; background: #dcefe8; color: #17523c; font-size: 14px; font-weight: 600; }
+.status.failed { background: #fbe4e1; color: #8c2415; }
 .intro { color: #465d6c; margin-bottom: 32px; }
 .reports { overflow-x: auto; border: 1px solid #d6dfe5; border-radius: 12px; background: white; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -93,10 +100,10 @@ code { overflow-wrap: anywhere; }
 </head>
 <body>
 <main>
-<span class="status">${runner} passed · ${tests.totalPassed}/${tests.totalTests} tests</span>
-${cli.totalTests ? `<span class="status">CLI passed · ${cli.totalPassed}/${cli.totalTests} tests</span>` : ''}
+${statuses}
 <h1>MageLens coverage report</h1>
 <p class="intro">PHP, JavaScript, browser-template and XML configuration coverage from the same ${runner} run. Open a report to inspect individual files.</p>
+${failedTests}
 <div class="reports">
 <table>
 <caption>Coverage overview</caption>
