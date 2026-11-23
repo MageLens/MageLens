@@ -31,7 +31,7 @@ Run the selected browser suite and shared CLI tests, then create fresh coverage 
   --refresh-cache   Clean Magento caches (for example after layout/config changes)
   --refresh-assets  Clear published static assets and Magento caches
   --restart-php     Restart PHP-FPM before the run
-  --update-readme   Mark README badges pending, then update them after successful validation
+  --update-readme   Mark README badges pending, then update them after the reports are validated
   --include-machine-report Also write the SQLite coverage database (coverage/report.sqlite)
   --runner=cypress|playwright Assert the installed runner (defaults to saved selection)
   --help            Show this help
@@ -106,9 +106,21 @@ cleanup() {
     elif [[ -L "$report_link" && "$(readlink "$report_link")" == "$report_target" ]]; then
         rm -f "$report_link"
     fi
+    if [[ -n "$failed_suites" ]]; then
+        printf '\nTests failed in the %s. The reports include their results.\n' "$failed_suites" >&2
+        (( result )) || result=1
+    fi
     exit "$result"
 }
+failed_suites=''
+record_failure() {
+    [[ "$1" != 130 && "$1" != 143 ]] || exit "$1"
+    failed_suites+="${failed_suites:+ and the }$2"
+}
 trap cleanup EXIT
+# An interrupted run publishes nothing, even when a suite exits normally after the signal.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 cleanup_hooks
 # Older running containers need the new report mount and static location.
 dc exec -T app sh -c 'test -d /var/www/coverage && grep -q "location ^~ /media/coverage/" /etc/nginx/conf.d/default.conf' \
@@ -143,9 +155,10 @@ fi
 dc exec -T phpfpm php /application/docker/php/manifest.php
 dc exec -T phpfpm php /application/docker/php/collection.php start
 say "Running the full $runner suite (preparation: ${SECONDS}s)"
-dc exec -T runner node "$browser_script"
+# A failed suite does not stop the remaining tests or the reports; the run still exits non-zero.
+dc exec -T runner node "$browser_script" || record_failure "$?" "$runner suite"
 say 'Running shared Magento CLI tests'
-"$ROOT/bin/cli-relay"
+"$ROOT/bin/cli-relay" || record_failure "$?" 'CLI suite'
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
 dc exec -T phpfpm php /application/docker/php/xml-manifest.php check

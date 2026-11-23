@@ -21,7 +21,7 @@ function workflow(t, args = [], failure = '', interrupted = false, runner = 'cyp
     if (interrupted) fs.writeFileSync(path.join(directory, '.runtime/hooks-active'), '');
     fs.writeFileSync(path.join(directory, 'bin/cli-relay'), `#!/usr/bin/env bash
 echo cli-relay >> calls
-[[ "$TEST_FAILURE" != cli ]]
+[[ "$TEST_FAILURE" != cli && "$TEST_FAILURE" != both ]]
 `, {mode: 0o755});
     fs.writeFileSync(path.join(directory, 'bin/common'), `
 set -euo pipefail
@@ -38,7 +38,7 @@ dc() {
         *public-report.cjs) [[ "$TEST_FAILURE" != staging ]] || return 1; node bin/public-report.cjs ;;
         *project-hooks.php\\ cleanup) [[ "$TEST_FAILURE" != cleanup ]] || return 1 ;;
         *prepare.cjs*) rm -rf coverage; mkdir coverage; test ! -L src/pub/media/coverage ;;
-        *report-browser.cjs*) [[ "$TEST_FAILURE" != browser-report && "$TEST_FAILURE" != xml-report && "$TEST_FAILURE" != finalize ]] || return 1
+        *report-browser.cjs*) [[ "$TEST_FAILURE" != browser-report && "$TEST_FAILURE" != xml-report && "$TEST_FAILURE" != finalize && "$TEST_FAILURE" != tests+finalize ]] || return 1
             printf '<html>current</html>' > coverage/index.html; echo '{}' > coverage/summary.json ;;
         *theme-scope.php) echo '[]' ;;
         *project-hooks.php\\ prepare) echo '{}' ;;
@@ -49,7 +49,12 @@ dc() {
         *app\\ test*) [[ "$TEST_FAILURE" != publish ]] || return 1 ;;
         *app\\ sh*) [[ "$TEST_FAILURE" != mount ]] || return 1 ;;
         *run-browser.cjs\\ --warmup|*run-playwright.cjs\\ --warmup) [[ "$TEST_FAILURE" != warmup ]] || return 124 ;;
-        *run-browser.cjs|*run-playwright.cjs) [[ "$TEST_FAILURE" != tests ]] || return 23 ;;
+        *run-browser.cjs|*run-playwright.cjs) case "$TEST_FAILURE" in
+            tests|both|tests+finalize) return 23 ;;
+            interrupt) return 130 ;;
+            terminate) return 143 ;;
+            signal) kill -INT $$; return 1 ;;
+        esac ;;
     esac
 }
 `);
@@ -60,7 +65,11 @@ dc() {
     const calls = fs.existsSync(path.join(directory, 'calls')) ? fs.readFileSync(path.join(directory, 'calls'), 'utf8') : '';
     assert.equal(fs.existsSync(path.join(directory, '.runtime/workflow.lock')), false);
     assert.equal(fs.existsSync(path.join(directory, 'coverage/.active-run')), false);
-    if (result.status !== 0) assert.doesNotMatch(result.stdout, /Open the combined coverage report:|http:\/\/custom/);
+    // The success URL is printed exactly when the report is published, including after failed tests.
+    const link = path.join(directory, 'src/pub/media/coverage');
+    const published = fs.lstatSync(link, {throwIfNoEntry: false})?.isSymbolicLink() === true && fs.readlinkSync(link) === '../../../coverage/.site';
+    assert.equal(/Open the combined coverage report:|http:\/\/custom/.test(result.stdout), published);
+    if (published) assert.ok(result.status === 0 || /Tests failed in the/.test(result.stderr), result.stderr);
     return {...result, calls, directory};
 }
 
@@ -100,7 +109,7 @@ test(`${runner}: publishes complete reports after cleanup`, t => {
     assert.ok(result.calls.lastIndexOf('project-hooks.php cleanup') < result.calls.indexOf('report-url.php'));
 });
 
-for (const failure of ['mount', 'warmup', 'tests', 'cli', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
+for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
     test(`${runner}: ${failure} failure leaves no public report or success URL`, t => {
         const result = workflow(t, [], failure, false, runner, '6', directory => {
             fs.mkdirSync(path.join(directory, 'src/pub/media'), {recursive: true});
@@ -114,7 +123,10 @@ for (const failure of ['mount', 'warmup', 'tests', 'cli', 'php-report', 'xml-pro
             assert.ok(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), 'Failed cleanup must retain the recovery marker');
             assert.doesNotMatch(result.calls, /report-url.php/, 'Failed cleanup must prevent publication');
         }
-        if (failure === 'cli') assert.doesNotMatch(result.calls, /report.php|finalize.cjs/);
+        if (['interrupt', 'terminate', 'signal'].includes(failure)) {
+            assert.equal(result.status, failure === 'terminate' ? 143 : 130, result.stderr);
+            assert.doesNotMatch(result.calls, /cli-relay|report.php|finalize.cjs/, 'An interrupted run must not continue');
+        }
         if (failure === 'url') assert.doesNotMatch(result.calls, /app test -r/, 'Invalid URL must stop publication');
     });
 }
@@ -174,13 +186,29 @@ test(`${runner}: refreshes run only when requested`, t => {
     assert.doesNotMatch(cache.calls, /refresh-assets.sh/);
 });
 
-test(`${runner}: failed tests close collection and clean fixtures without publishing reports`, t => {
-    const result = workflow(t, [], 'tests', true, runner);
-    assert.equal(result.status, 23, result.stderr);
-    assert.equal((result.calls.match(/project-hooks.php cleanup/g) || []).length, 2, 'Recover interrupted fixtures and clean current fixtures');
-    assert.equal((result.calls.match(/collection.php stop/g) || []).length, 2);
-    assert.doesNotMatch(result.calls, /report.php|finalize.cjs/);
-    assert.equal(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), false);
+for (const [failure, suites] of [['tests', `the ${runner} suite`], ['cli', 'the CLI suite'], ['both', `the ${runner} suite and the CLI suite`]]) {
+    test(`${runner}: failed tests in ${suites} still run every suite and publish reports, then fail the run`, t => {
+        const result = workflow(t, ['--update-readme'], failure, true, runner);
+        assert.equal(result.status, 1, result.stderr);
+        assert.equal((result.calls.match(/project-hooks.php cleanup/g) || []).length, 2, 'Recover interrupted fixtures and clean current fixtures');
+        assert.equal((result.calls.match(/collection.php stop/g) || []).length, 2);
+        const ordered = [`runner node bin/${runner === 'cypress' ? 'run-browser' : 'run-playwright'}.cjs\n`, 'cli-relay', 'report.php',
+            'finalize.cjs "$@" sh --update-readme', 'project-hooks.php cleanup', 'report-url.php'];
+        for (let index = 1; index < ordered.length; index++) {
+            assert.ok(result.calls.lastIndexOf(ordered[index - 1]) < result.calls.lastIndexOf(ordered[index]), `${ordered[index - 1]} must precede ${ordered[index]}`);
+        }
+        assert.equal(fs.readlinkSync(path.join(result.directory, 'src/pub/media/coverage')), '../../../coverage/.site');
+        assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080/);
+        assert.match(result.stderr, new RegExp(`Tests failed in ${suites}\\. The reports include their results\\.`));
+        assert.equal(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), false);
+    });
+}
+
+test(`${runner}: report failures after failed tests still leave no public report`, t => {
+    const result = workflow(t, [], 'tests+finalize', false, runner);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(fs.existsSync(path.join(result.directory, 'src/pub/media/coverage')), false);
+    assert.match(result.stderr, /Tests failed in the/);
 });
 
 test(`${runner}: warm-up timeout cleans hooks before collection and does not run tests or reports`, t => {
