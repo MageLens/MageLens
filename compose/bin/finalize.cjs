@@ -31,6 +31,7 @@ for (const results of [tests, cli]) assert.equal(results.run, run.id);
 // Test outcomes are reported separately from coverage; failed tests do not block publication.
 const outcomes = {[runner]: testOutcome(tests), cli: testOutcome(cli)};
 const exits = read('coverage/suite-status.json');
+assert.equal(exits.run, run.id);
 for (const [suite, results] of [[runner, tests], ['cli', cli]]) {
     const name = suite === 'cli' ? 'CLI' : label;
     // Without a failed test, a failed suite status means a runner error, which publishes nothing.

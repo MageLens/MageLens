@@ -10,6 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
+const runId = '0123456789abcdef0123456789abcdef';
 function workflow(t, args = [], failure = '', interrupted = false, runner = 'cypress', installedVersion = '6', setup = () => {}) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-workflow-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
@@ -37,7 +38,8 @@ dc() {
         *report-url.php) [[ "$TEST_FAILURE" != url ]] || return 1; echo 'http://custom.test:8080/shop/media/coverage/index.html' ;;
         *public-report.cjs) [[ "$TEST_FAILURE" != staging ]] || return 1; node bin/public-report.cjs ;;
         *project-hooks.php\\ cleanup) [[ "$TEST_FAILURE" != cleanup ]] || return 1 ;;
-        *prepare.cjs*) rm -rf coverage; mkdir coverage; test ! -L src/pub/media/coverage ;;
+        *prepare.cjs*) rm -rf coverage; mkdir coverage; test ! -L src/pub/media/coverage
+            printf '{\\n  "id": "%s",\\n  "runner": "${runner}"\\n}' "$RUN_ID" > coverage/run.json ;;
         *report-browser.cjs*) [[ "$TEST_FAILURE" != browser-report && "$TEST_FAILURE" != xml-report && "$TEST_FAILURE" != finalize && "$TEST_FAILURE" != tests+finalize ]] || return 1
             printf '<html>current</html>' > coverage/index.html; echo '{}' > coverage/summary.json ;;
         *theme-scope.php) echo '[]' ;;
@@ -46,15 +48,15 @@ dc() {
         *collection.php\\ stop) rm -f coverage/.active-run ;;
         *report.php) [[ "$TEST_FAILURE" != php-report ]] || return 1 ;;
         *xml-manifest.php\\ check) [[ "$TEST_FAILURE" != xml-provenance ]] || return 1 ;;
-        *app\\ test*) [[ "$TEST_FAILURE" != publish ]] || return 1 ;;
+        *app\\ test*) [[ "$TEST_FAILURE" != publish && "$TEST_FAILURE" != tests+publish ]] || return 1 ;;
         *app\\ sh*) [[ "$TEST_FAILURE" != mount ]] || return 1 ;;
         *run-browser.cjs\\ --warmup|*run-playwright.cjs\\ --warmup) [[ "$TEST_FAILURE" != warmup ]] || return 124 ;;
         *run-browser.cjs|*run-playwright.cjs) case "$TEST_FAILURE" in
-            tests|both|tests+finalize) return 23 ;;
+            tests|both|tests+finalize|tests+publish) return 23 ;;
             interrupt) return 130 ;;
             terminate) return 143 ;;
             signal) kill -INT $$; return 1 ;;
-            term-signal) sh -c 'sleep 0.2; kill -TERM $PPID; sleep 5' </dev/null >/dev/null 2>&1; return 1 ;;
+            term-signal) sh -c 'echo $$ > term-child; sleep 0.2; kill -TERM $PPID; sleep 30' </dev/null >/dev/null 2>&1; return 1 ;;
         esac ;;
     esac
 }
@@ -62,8 +64,11 @@ dc() {
     setup(directory);
     const started = Date.now();
     const result = spawnSync('bash', ['bin/run-coverage', ...args], {
-        cwd: directory, encoding: 'utf8', env: {...process.env, TEST_FAILURE: failure},
+        cwd: directory, encoding: 'utf8', env: {...process.env, TEST_FAILURE: failure, RUN_ID: runId},
     });
+    const child = path.join(directory, 'term-child');
+    // The suite child outlives a script ended by TERM; stop it.
+    if (fs.existsSync(child)) try { process.kill(Number(fs.readFileSync(child, 'utf8'))); } catch {}
     const calls = fs.existsSync(path.join(directory, 'calls')) ? fs.readFileSync(path.join(directory, 'calls'), 'utf8') : '';
     assert.equal(fs.existsSync(path.join(directory, '.runtime/workflow.lock')), false);
     assert.equal(fs.existsSync(path.join(directory, 'coverage/.active-run')), false);
@@ -109,7 +114,7 @@ test(`${runner}: publishes complete reports after cleanup`, t => {
     assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080\/shop\/media\/coverage\/index.html/);
     assert.doesNotMatch(result.stdout, /Local report:/);
     assert.ok(result.calls.lastIndexOf('project-hooks.php cleanup') < result.calls.indexOf('report-url.php'));
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.directory, 'coverage/suite-status.json'))), {[runner]: 0, cli: 0});
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.directory, 'coverage/suite-status.json'))), {run: runId, [runner]: 0, cli: 0});
 });
 
 for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'term-signal', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
@@ -128,7 +133,7 @@ for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 't
         }
         if (['interrupt', 'terminate', 'signal', 'term-signal'].includes(failure)) {
             // TERM is not trapped: it ends the run through the EXIT cleanup without waiting for the running suite.
-            if (failure === 'term-signal') assert.ok(result.duration < 3000 && (result.status === 143 || result.signal === 'SIGTERM'), `${result.status} ${result.signal} ${result.duration}ms`);
+            if (failure === 'term-signal') assert.ok(result.duration < 15000 && (result.status === 143 || result.signal === 'SIGTERM'), `${result.status} ${result.signal} ${result.duration}ms`);
             else assert.equal(result.status, failure === 'terminate' ? 143 : 130, result.stderr);
             assert.doesNotMatch(result.calls, /cli-relay|report.php|finalize.cjs/, 'An interrupted run must not continue');
         }
@@ -206,16 +211,17 @@ for (const [failure, suites] of [['tests', `the ${runner} suite`], ['cli', 'the 
         assert.match(result.stdout, /Open the combined coverage report: http:\/\/custom.test:8080/);
         assert.match(result.stderr, new RegExp(`Tests failed in ${suites}\\. The reports include their results\\.`));
         assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.directory, 'coverage/suite-status.json'))),
-            {[runner]: failure === 'cli' ? 0 : 23, cli: failure === 'tests' ? 0 : 1});
+            {run: runId, [runner]: failure === 'cli' ? 0 : 23, cli: failure === 'tests' ? 0 : 1});
         assert.equal(fs.existsSync(path.join(result.directory, '.runtime/hooks-active')), false);
     });
 }
 
-test(`${runner}: report failures after failed tests still leave no public report`, t => {
-    const result = workflow(t, [], 'tests+finalize', false, runner);
+for (const failure of ['tests+finalize', 'tests+publish']) test(`${runner}: ${failure} failure after failed tests says that no report was published`, t => {
+    const result = workflow(t, [], failure, false, runner);
     assert.equal(result.status, 1, result.stderr);
     assert.equal(fs.existsSync(path.join(result.directory, 'src/pub/media/coverage')), false);
-    assert.match(result.stderr, /Tests failed in the/);
+    assert.match(result.stderr, /Tests failed in the (cypress|playwright) suite\. No report was published\./);
+    assert.doesNotMatch(result.stderr, /include their results/);
 });
 
 test(`${runner}: warm-up timeout cleans hooks before collection and does not run tests or reports`, t => {

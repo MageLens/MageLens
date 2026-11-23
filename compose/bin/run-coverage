@@ -101,13 +101,19 @@ cleanup() {
         publish_report || { printf 'Cannot publish the coverage report through pub/media. Local reports remain in coverage/.\n' >&2; result=1; }
     fi
     rmdir "$ROOT/.runtime/workflow.lock" || result=1
+    local published=0
     if (( result == 0 && report_ready )); then
         printf '\nOpen the combined coverage report: %s\n' "$report_url"
+        published=1
     elif [[ -L "$report_link" && "$(readlink "$report_link")" == "$report_target" ]]; then
         rm -f "$report_link"
     fi
     if [[ -n "$failed_suites" ]]; then
-        printf '\nTests failed in the %s. The reports include their results.\n' "$failed_suites" >&2
+        if (( published )); then
+            printf '\nTests failed in the %s. The reports include their results.\n' "$failed_suites" >&2
+        else
+            printf '\nTests failed in the %s. No report was published.\n' "$failed_suites" >&2
+        fi
         (( result )) || result=1
     fi
     exit "$result"
@@ -163,7 +169,9 @@ cli_status=0
 "$ROOT/bin/cli-relay" || cli_status=$?
 (( cli_status == 0 )) || record_failure "$cli_status" 'CLI suite'
 # Finalization checks each suite's published test outcome against its exit status.
-printf '{"%s":%d,"cli":%d}\n' "$runner" "$browser_status" "$cli_status" > coverage/suite-status.json
+run_id=$(sed -n 's/^  "id": "\([0-9a-f]\{32\}\)",$/\1/p' coverage/run.json)
+[[ -n "$run_id" ]] || fail 'Cannot read the current run ID from coverage/run.json.'
+printf '{"run":"%s","%s":%d,"cli":%d}\n' "$run_id" "$runner" "$browser_status" "$cli_status" > coverage/suite-status.json
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php
 dc exec -T phpfpm php /application/docker/php/xml-manifest.php check
