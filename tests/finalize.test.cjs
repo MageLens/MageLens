@@ -51,6 +51,7 @@ function reports(t, covered, runner = 'cypress') {
             branches: [{id: 'script:1:b:0', hits: covered}], scripts: []}]});
     json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0});
     json('coverage/cli-results.json', {run: 'fixture', totalTests: 0, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0});
+    json('coverage/suite-status.json', {[runner]: 0, cli: 0});
     return {root, json, run: (args = []) => spawnSync(process.execPath, [projectFile('bin/finalize.cjs'), ...args], {cwd: root, encoding: 'utf8'})};
 }
 
@@ -128,6 +129,7 @@ for (const runner of ['cypress', 'playwright']) {
         fs.writeFileSync(file, '<!-- coverage-badges:start -->\nCoverage has not completed for the current run.\n<!-- coverage-badges:end -->');
         fixture.json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 4, totalPassed: 2, totalFailed: 1, totalPending: 0, totalSkipped: 1,
             tests: [{title: 'opens <the> cart', status: 'passed'}, {title: 'checks out', status: 'failed'}, {title: 'pays', status: 'passed'}, {title: 'ships', status: 'skipped'}]});
+        fixture.json('coverage/suite-status.json', {[runner]: 1, cli: 0});
         const result = fixture.run(['--update-readme']);
         assert.equal(result.status, 0, result.stderr);
         assert.match(result.stderr, new RegExp(`Failed ${label} tests \\(1 of 3\\):\\n  - checks out`));
@@ -156,9 +158,29 @@ for (const runner of ['cypress', 'playwright']) {
     test(`${runner}: a run without an executed test publishes nothing`, t => {
         const fixture = reports(t, 1, runner);
         fixture.json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 2, totalPassed: 0, totalFailed: 0, totalPending: 1, totalSkipped: 1});
-        assert.notEqual(fixture.run().status, 0);
+        const result = fixture.run();
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, new RegExp(`No ${label} test was executed`));
         assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
         assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`));
+    });
+    // A suite status that disagrees with its failed tests is a runner error, not a test failure.
+    const counts = {run: 'fixture', totalTests: 2, totalPassed: 2, totalFailed: 0, totalPending: 0, totalSkipped: 0};
+    for (const [name, results, exits] of [
+        ['a failed suite without a failed test', counts, {[runner]: 1, cli: 0}],
+        ['a failed run status without a failed test', {...counts, status: runner === 'cypress' ? 'failed' : 'timedout'}, {[runner]: 0, cli: 0}],
+        ['a failed test in a suite that exited successfully', {...counts, totalPassed: 1, totalFailed: 1}, {[runner]: 0, cli: 0}],
+        ['a failed CLI suite without a failed test', counts, {[runner]: 0, cli: 1}],
+        ['a missing suite status', counts, {cli: 0}]
+    ]) test(`${runner}: ${name} publishes nothing`, t => {
+        const fixture = reports(t, 1, runner);
+        fixture.json(`coverage/${runner}-results.json`, results);
+        fixture.json('coverage/suite-status.json', exits);
+        const result = fixture.run(['--update-readme']);
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /suite ended with exit status/);
+        for (const file of ['summary.json', 'index.html', 'badges']) assert.ok(!fs.existsSync(`${fixture.root}/coverage/${file}`), file);
+        assert.equal(fs.readFileSync(`${fixture.root}/README.md`, 'utf8'), '<!-- coverage-badges:start -->\n<!-- coverage-badges:end -->');
     });
 }
 
@@ -203,6 +225,7 @@ test('a failed CLI test is reported next to the passing browser suite', t => {
     const fixture = reports(t, 1);
     fixture.json('coverage/cli-results.json', {run: 'fixture', totalTests: 2, totalPassed: 1, totalFailed: 1, totalPending: 0, totalSkipped: 0, commands: 0,
         tests: [{title: 'reindexes', status: 'passed'}, {title: 'cleans <cache>', status: 'failed'}]});
+    fixture.json('coverage/suite-status.json', {cypress: 0, cli: 1});
     const result = fixture.run();
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, /Failed CLI tests \(1 of 2\):\n  - cleans <cache>/);

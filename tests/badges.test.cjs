@@ -55,4 +55,7 @@ test('test outcomes list the failed tests and ignore skipped and pending ones', 
     assert.deepEqual(testOutcome({totalTests: 0, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0}),
         {status: 'passed', passed: 0, failed: 0, failedTests: []});
     assert.throws(() => testOutcome({totalTests: 1, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0}), /Invalid/);
+    const passed = {totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0};
+    for (const status of ['passed', 'finished', undefined]) assert.equal(testOutcome({...passed, status}).status, 'passed', status);
+    for (const status of ['failed', 'timedout', 'interrupted']) assert.equal(testOutcome({...passed, status}).status, 'failed', status);
 });

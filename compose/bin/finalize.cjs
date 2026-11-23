@@ -28,9 +28,16 @@ const label = runner === 'playwright' ? 'Playwright' : 'Cypress';
 const tests = read(`coverage/${runner}-results.json`);
 const cli = read('coverage/cli-results.json');
 for (const results of [tests, cli]) assert.equal(results.run, run.id);
-assert.ok(tests.totalTests > 0);
 // Test outcomes are reported separately from coverage; failed tests do not block publication.
 const outcomes = {[runner]: testOutcome(tests), cli: testOutcome(cli)};
+const exits = read('coverage/suite-status.json');
+for (const [suite, results] of [[runner, tests], ['cli', cli]]) {
+    const name = suite === 'cli' ? 'CLI' : label;
+    // Without a failed test, a failed suite status means a runner error, which publishes nothing.
+    assert.ok((exits[suite] !== 0) === (results.totalFailed > 0) && (outcomes[suite].status === 'failed') === (results.totalFailed > 0),
+        `The ${name} suite ended with exit status ${exits[suite]} and run status ${results.status ?? 'none'} but reported ${results.totalFailed} failed tests`);
+}
+assert.ok(outcomes[runner].passed + outcomes[runner].failed > 0, `No ${label} test was executed`);
 assert.equal(php.run, run.id);
 assert.ok(php.requests.length > 0, 'No current-run PHP requests were collected');
 assert.equal(php.commands.length, cli.commands, 'Missing or extra current-run CLI PHP coverage');

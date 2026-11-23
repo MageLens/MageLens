@@ -58,7 +58,7 @@ function testOutcome(results) {
         counts.slice(1).reduce((sum, count) => sum + count, 0) !== results.totalTests) {
         throw new Error('Invalid test result counts');
     }
-    const failed = results.totalFailed > 0 || results.failures > 0 || results.status === 'failed';
+    const failed = results.totalFailed > 0 || results.failures > 0 || ![undefined, 'passed', 'finished'].includes(results.status);
     return {status: failed ? 'failed' : 'passed', passed: results.totalPassed, failed: results.totalFailed,
         failedTests: (results.tests || []).filter(test => ['failed', 'timedOut', 'interrupted'].includes(test.status)).map(test => test.title)};
 }
