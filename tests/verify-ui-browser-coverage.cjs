@@ -4,10 +4,11 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 const {listingEffects, formEffects, fields, columns, provider, proofDirectory, responseId, initialDisabled} =
     require('./fixtures/ui-module/module/Test/Browser/journey.cjs');
 
-const result = JSON.parse(fs.readFileSync('coverage/xml/coverage.json'));
+const result = readXmlJson('coverage/xml/coverage.json', {omit: ['requests']});
 assert.equal(result.complete, true);
 assert.equal(result.sourcesUnchanged, true);
 assert.deepEqual(result.collectorErrors, []);

@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 const source = report.files.find(file => file.path.endsWith('/layout/coverageprobe_propertyownership_data_direct.xml'));
 assert.ok(source, 'Missing direct-data fixture');
 const arguments = source.declarations.filter(item => item.layout.kind === 'argument');

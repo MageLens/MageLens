@@ -6,6 +6,23 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ $# == 1 || ( $# == 2 && "$2" == --cypress-regressions ) ]] || { echo "Usage: $0 RUNNER_IMAGE [--cypress-regressions]" >&2; exit 1; }
+# Exercise the packaged bootstrap and lockfile with an unprivileged UID even when the host user is root.
+docker run --rm --network none --user 65534:65534 --workdir /tmp --env HOME=/tmp --entrypoint node "$1" -e '
+    const fs = require("node:fs");
+    const bootstrap = "/opt/magelens/sync-node-modules.cjs";
+    fs.accessSync(bootstrap, fs.constants.R_OK);
+    const {synchronize} = require(bootstrap);
+    const bundled = "/opt/magelens-dependencies";
+    const root = fs.mkdtempSync("/tmp/magelens-node-modules-");
+    try {
+        for (const name of ["package-lock.json", "package.json", ".runtime"]) {
+            fs.cpSync(`${bundled}/${name}`, `${root}/${name}`, {recursive: true});
+        }
+        require("node:assert/strict").equal(synchronize(root, bundled), "bundled");
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+'
 container="magelens-runner-check-$$"
 cleanup() {
     local result=$?
@@ -37,21 +54,6 @@ ready() {
     return 1
 }
 ready
-# Exercise the packaged bootstrap and lockfile as the same non-root user as Compose.
-docker exec "$container" node -e '
-    const fs = require("node:fs");
-    const {synchronize} = require("/opt/magelens/sync-node-modules.cjs");
-    const bundled = "/opt/magelens-dependencies";
-    const root = fs.mkdtempSync("/tmp/magelens-node-modules-");
-    try {
-        for (const name of ["package.json", "package-lock.json", ".runtime"]) {
-            fs.cpSync(`${bundled}/${name}`, `${root}/${name}`, {recursive: true});
-        }
-        require("node:assert/strict").equal(synchronize(root, bundled), "bundled");
-    } finally {
-        fs.rmSync(root, {recursive: true, force: true});
-    }
-'
 # Starting a second desktop must not remove a live server's lock or socket.
 if docker exec "$container" bash /opt/magelens/desktop.sh; then
     echo 'A second desktop unexpectedly started on an occupied display.' >&2

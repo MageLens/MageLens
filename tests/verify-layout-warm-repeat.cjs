@@ -4,9 +4,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 
-const firstRun = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const warm = JSON.parse(fs.readFileSync('coverage/xml/coverage.json', 'utf8'));
+const firstRun = readXmlJson(process.argv[2], {omit: ['requests']});
+const warm = readXmlJson('coverage/xml/coverage.json', {omit: ['requests']});
 const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8'));
 assert.notEqual(run.id, firstRun.run, 'Warm repeat reused a prior run ID');
 assert.equal(warm.run, run.id);

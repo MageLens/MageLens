@@ -3,11 +3,11 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 
 const theme = process.argv[3] || 'adminhtml/Magento/backend';
 assert.ok(['adminhtml/Magento/backend', 'adminhtml/MageOS/m137-admin-theme'].includes(theme));
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 const screens = [['index', 'application.blog.manage']];
 if (theme === 'adminhtml/Magento/backend') screens.push(['edit', 'application.blog.edit']);
 for (const [handle, block] of screens) {
