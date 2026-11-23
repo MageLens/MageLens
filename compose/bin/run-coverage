@@ -169,8 +169,8 @@ cli_status=0
 "$ROOT/bin/cli-relay" || cli_status=$?
 (( cli_status == 0 )) || record_failure "$cli_status" 'CLI suite'
 # Finalization checks each suite's published test outcome against its exit status.
-run_id=$(sed -n 's/^  "id": "\([0-9a-f]\{32\}\)",$/\1/p' coverage/run.json)
-[[ -n "$run_id" ]] || fail 'Cannot read the current run ID from coverage/run.json.'
+run_id=$(dc exec -T runner node -p "require('./coverage/run.json').id") || run_id=''
+[[ "$run_id" =~ ^[0-9a-f]{32}$ ]] || fail 'Cannot read the current run ID from coverage/run.json.'
 printf '{"run":"%s","%s":%d,"cli":%d}\n' "$run_id" "$runner" "$browser_status" "$cli_status" > coverage/suite-status.json
 say 'Generating coverage reports'
 dc exec -T phpfpm php /application/docker/php/report.php

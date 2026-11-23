@@ -39,7 +39,8 @@ dc() {
         *public-report.cjs) [[ "$TEST_FAILURE" != staging ]] || return 1; node bin/public-report.cjs ;;
         *project-hooks.php\\ cleanup) [[ "$TEST_FAILURE" != cleanup ]] || return 1 ;;
         *prepare.cjs*) rm -rf coverage; mkdir coverage; test ! -L src/pub/media/coverage
-            printf '{\\n  "id": "%s",\\n  "runner": "${runner}"\\n}' "$RUN_ID" > coverage/run.json ;;
+            printf '{"runner":"${runner}","sources":{},"id":"%s"}' "$RUN_ID" > coverage/run.json ;;
+        exec\\ -T\\ runner\\ node\\ -p\\ *) [[ "$TEST_FAILURE" != run-id ]] || return 1; shift 3; "$@" ;;
         *report-browser.cjs*) [[ "$TEST_FAILURE" != browser-report && "$TEST_FAILURE" != xml-report && "$TEST_FAILURE" != finalize && "$TEST_FAILURE" != tests+finalize ]] || return 1
             printf '<html>current</html>' > coverage/index.html; echo '{}' > coverage/summary.json ;;
         *theme-scope.php) echo '[]' ;;
@@ -56,7 +57,7 @@ dc() {
             interrupt) return 130 ;;
             terminate) return 143 ;;
             signal) kill -INT $$; return 1 ;;
-            term-signal) sh -c 'echo $$ > term-child; sleep 0.2; kill -TERM $PPID; sleep 30' </dev/null >/dev/null 2>&1; return 1 ;;
+            term-signal) sh -c 'echo $$ > term-child; sleep 0.2; kill -TERM $PPID; exec sleep 30' </dev/null >/dev/null 2>&1; return 1 ;;
         esac ;;
     esac
 }
@@ -117,7 +118,7 @@ test(`${runner}: publishes complete reports after cleanup`, t => {
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.directory, 'coverage/suite-status.json'))), {run: runId, [runner]: 0, cli: 0});
 });
 
-for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'term-signal', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
+for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 'term-signal', 'run-id', 'php-report', 'xml-provenance', 'browser-report', 'xml-report', 'finalize', 'cleanup', 'url', 'staging', 'publish']) {
     test(`${runner}: ${failure} failure leaves no public report or success URL`, t => {
         const result = workflow(t, [], failure, false, runner, '6', directory => {
             fs.mkdirSync(path.join(directory, 'src/pub/media'), {recursive: true});
@@ -137,6 +138,7 @@ for (const failure of ['mount', 'warmup', 'interrupt', 'terminate', 'signal', 't
             else assert.equal(result.status, failure === 'terminate' ? 143 : 130, result.stderr);
             assert.doesNotMatch(result.calls, /cli-relay|report.php|finalize.cjs/, 'An interrupted run must not continue');
         }
+        if (failure === 'run-id') assert.match(result.stderr, /Cannot read the current run ID/);
         if (failure === 'url') assert.doesNotMatch(result.calls, /app test -r/, 'Invalid URL must stop publication');
     });
 }
