@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -24,8 +24,6 @@ if [[ "${2:-}" == --cypress-regressions ]]; then
 fi
 docker run -d --name "$container" --init --user "$(id -u):$(id -g)" \
     --env HOME=/tmp --env DISPLAY=:107 --env CYPRESS_BASE_URL=https://storefront.invalid --shm-size=1g \
-    --mount "type=bind,source=$PWD/docker/runner/desktop.sh,target=/opt/magelens/desktop.sh,readonly" \
-    --mount "type=bind,source=$PWD/docker/runner/healthcheck.cjs,target=/opt/magelens/healthcheck.cjs,readonly" \
     ${mounts[@]+"${mounts[@]}"} "$1" >/dev/null
 ready() {
     local state
@@ -39,6 +37,21 @@ ready() {
     return 1
 }
 ready
+# Exercise the packaged bootstrap and lockfile as the same non-root user as Compose.
+docker exec "$container" node -e '
+    const fs = require("node:fs");
+    const {synchronize} = require("/opt/magelens/sync-node-modules.cjs");
+    const bundled = "/opt/magelens-dependencies";
+    const root = fs.mkdtempSync("/tmp/magelens-node-modules-");
+    try {
+        for (const name of ["package.json", "package-lock.json", ".runtime"]) {
+            fs.cpSync(`${bundled}/${name}`, `${root}/${name}`, {recursive: true});
+        }
+        require("node:assert/strict").equal(synchronize(root, bundled), "bundled");
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+'
 # Starting a second desktop must not remove a live server's lock or socket.
 if docker exec "$container" bash /opt/magelens/desktop.sh; then
     echo 'A second desktop unexpectedly started on an occupied display.' >&2

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {readXmlJson} = require('./xml-report/json.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const {familyOutcomes} = require('./xml-family-report.cjs');
@@ -31,14 +32,13 @@ function section(label, totals, files) {
 
 function shareReportData(coverageDir) {
     const directory = fs.realpathSync(coverageDir);
-    function read(name) {
+    function read(name, parse = file => JSON.parse(fs.readFileSync(file, 'utf8'))) {
         const file = path.join(directory, name);
         if (fs.realpathSync(file) !== file || !fs.statSync(file).isFile()) {
             throw new Error('Expected a regular coverage report file.');
         }
-        const content = fs.readFileSync(file, 'utf8');
         try {
-            return JSON.parse(content);
+            return parse(file);
         } catch {
             throw new Error(`Invalid JSON in ${name}.`);
         }
@@ -84,7 +84,7 @@ function shareReportData(coverageDir) {
                 + warningCount(templates.scripts?.unsupported) + warningCount(templates.scripts?.generated)}
     ];
     if (Object.hasOwn(summary.metrics, 'xml')) {
-        const xml = read('xml/coverage.json');
+        const xml = read('xml/coverage.json', file => readXmlJson(file, {omit: ['requests']}));
         if (xml.run !== run.id || xml.complete !== true) throw new Error('Incomplete or stale XML coverage.');
         const xmlFiles = xml.files.map(entry => {
             const file = row(entry.path, /\.xml$/, entry);

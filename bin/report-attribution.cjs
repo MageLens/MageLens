@@ -5,6 +5,7 @@
 // Writes coverage/attribution/ from the test attempt records of a finished run
 // (docs/coverage.md#per-test-attribution). Every attributed unit is checked against the
 // aggregate reports, so attribution can never claim execution that the reports do not show.
+const {readXmlJson} = require('./xml-report/json.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -143,7 +144,7 @@ function templates(attempts, index) {
 }
 
 function xml(index, run) {
-    const report = read('coverage/xml/coverage.json');
+    const report = readXmlJson('coverage/xml/coverage.json');
     // The XML report names each request after its PHP record: the record file for HTTP, the command ID for CLI.
     const owners = new Map();
     for (const file of files(`coverage/raw/php/${run}`, '.json')) {
