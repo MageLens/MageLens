@@ -79,9 +79,9 @@ By default, the test installs Luma with Cypress using the versions in `dependenc
 
 Each invocation has its own Compose project, image tags, database, credentials, and source. Ports default to **18080**, **18443**, and **16080**. Override `MAGELENS_TEST_PORT`, `MAGELENS_TEST_HTTPS_PORT`, and `MAGELENS_TEST_VIEW_PORT` when those ports are occupied or when running tests concurrently.
 
-Reports, screenshots, and logs are retained under `.runtime/e2e/<project>/`, including `coverage/index.html`. Containers, named volumes, and temporary source are removed on success, failure, or a handled interruption. A failed Docker cleanup retains the temporary workspace and reports its location. Built images and Docker build cache remain available for subsequent runs. Forced process termination may require manual cleanup of that test's project.
+Reports, screenshots, and logs are retained under `.runtime/e2e/<project>/`, including `coverage/index.html`. Containers, named volumes, images named after the test's Compose project, and temporary source are removed on success, failure, or a handled interruption. A failed Docker cleanup retains the temporary workspace and those images and reports the workspace location. Shared base and service images and the Docker build cache remain available for subsequent runs. Forced process termination may require manual cleanup of that test's project.
 
-For focused local investigation, `MAGELENS_E2E_KEEP_ON_FAILURE=1` retains a failed test's workspace and running services. The failure output includes its location and Compose cleanup command; remove that temporary directory after stopping its services and volumes.
+For focused local investigation, `MAGELENS_E2E_KEEP_ON_FAILURE=1` retains a failed test's workspace, running services and images. The failure output includes its location and the commands that stop its services and remove its volumes and images; remove that temporary directory afterwards.
 
 Layout CLI proofs in a retained disposable workspace use the harness’s `-d auto_prepend_file=/application/docker/php/e2e/xml-layout-early-hooks.php` option. It installs native observers before application bootstrap; later collector subscribers use the shared dispatcher. The capability tests deliberately omit that prelude to verify that late installation blocks publication.
 
