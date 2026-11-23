@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json');
 const requests = report.requests.filter(request => request.layoutLimitations?.some(reason => reason.includes('could execute application serialization')));
 assert.ok(requests.length, 'Missing native opaque-action measurement limitation');
 for (const request of requests) {

@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 const base = report.files.find(file => file.path === 'app/code/MageLens/Compatibility/view/frontend/layouts.xml');
 const overlay = report.files.find(file => file.path === 'app/code/MageLens/LayoutOverlay/view/frontend/layouts.xml');
 function label(file, id) {

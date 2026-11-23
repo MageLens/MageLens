@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 for (const handle of ['coverageprobe_index_index', 'coverageprobe_layout_nested', 'coverageprobe_layout_dynamic', 'coverageprobe_fragment_index']) {
     const file = report.files.find(file => file.path.endsWith(`/layout/${handle}.xml`));
     const root = file?.declarations.find(item => item.node === (handle === 'coverageprobe_fragment_index' ? '/layout' : '/page'));

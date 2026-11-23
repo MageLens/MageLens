@@ -20,12 +20,14 @@ ARG CHROME_VERSION
 ARG CHROME_LINUX_X64_SHA256
 ARG CHROME_LINUX_ARM64_SHA256
 COPY docker/runner/ /opt/magelens/
-RUN bash /opt/magelens/install-desktop.sh curl unzip ca-certificates
+RUN chmod -R a+rX /opt/magelens \
+    && bash /opt/magelens/install-desktop.sh curl unzip ca-certificates
 ENV DISPLAY=:99 MAGELENS_RUNNER=playwright
 WORKDIR /workspace
-COPY package.json package-lock.json ./
+COPY --chmod=0644 package.json package-lock.json ./
 COPY .runtime/template-package/ .runtime/
-RUN npm ci --ignore-scripts --no-audit --no-fund \
+RUN chmod -R a+rX .runtime \
+    && npm ci --ignore-scripts --no-audit --no-fund \
     && npx --no-install playwright install-deps chromium \
     && bash /opt/magelens/install-chrome.sh \
     && rm -rf /var/lib/apt/lists/*
@@ -43,16 +45,19 @@ ARG CHROME_VERSION
 ARG CHROME_LINUX_X64_SHA256
 ARG CHROME_LINUX_ARM64_SHA256
 COPY docker/runner/ /opt/magelens/
-RUN bash /opt/magelens/install-desktop.sh curl unzip ca-certificates \
+RUN chmod -R a+rX /opt/magelens \
+    && bash /opt/magelens/install-desktop.sh curl unzip ca-certificates \
     libgtk-3-0 libgbm1 libasound2 libnss3 libatk-bridge2.0-0 libxss1 libxtst6 libnotify4 \
     && bash /opt/magelens/install-chrome.sh \
     && bash /opt/magelens/install-cypress-dictionary.sh
 ENV CYPRESS_CACHE_FOLDER=/opt/cypress DISPLAY=:99 MAGELENS_RUNNER=cypress
 COPY --from=cypress-source /output/ /opt/cypress/
 WORKDIR /workspace
-COPY package.json package-lock.json ./
+COPY --chmod=0644 package.json package-lock.json ./
 COPY .runtime/template-package/ .runtime/
-RUN CYPRESS_INSTALL_BINARY=0 npm ci --no-audit --no-fund && chmod -R a+rwX /opt/cypress
+RUN chmod -R a+rX .runtime \
+    && CYPRESS_INSTALL_BINARY=0 npm ci --no-audit --no-fund \
+    && chmod -R a+rwX /opt/cypress
 RUN mkdir /opt/magelens-dependencies \
     && cp package.json package-lock.json /opt/magelens-dependencies/ \
     && cp -a .runtime /opt/magelens-dependencies/ \

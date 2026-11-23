@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {readXmlJson} = require('./xml-report/json.cjs');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const {sourceHashes} = require('./prepare.cjs');
@@ -13,7 +14,7 @@ const run = read('coverage/run.json');
 const php = read('coverage/php/coverage-summary.json');
 const js = read('coverage/js/coverage-summary.json');
 const templates = read('coverage/templates/coverage-summary.json');
-const xml = read('coverage/xml/coverage.json');
+const xml = readXmlJson('coverage/xml/coverage.json', {omit: ['files', 'requests']});
 assert.equal(xml.run, run.id);
 assert.equal(xml.complete, true);
 assert.equal(xml.percent, xml.total ? xml.covered / xml.total * 100 : null, 'Invalid XML coverage percentage');

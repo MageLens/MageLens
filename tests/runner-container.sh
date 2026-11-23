@@ -1,11 +1,28 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ $# == 1 || ( $# == 2 && "$2" == --cypress-regressions ) ]] || { echo "Usage: $0 RUNNER_IMAGE [--cypress-regressions]" >&2; exit 1; }
+# Exercise the packaged bootstrap and lockfile with an unprivileged UID even when the host user is root.
+docker run --rm --network none --user 65534:65534 --workdir /tmp --env HOME=/tmp --entrypoint node "$1" -e '
+    const fs = require("node:fs");
+    const bootstrap = "/opt/magelens/sync-node-modules.cjs";
+    fs.accessSync(bootstrap, fs.constants.R_OK);
+    const {synchronize} = require(bootstrap);
+    const bundled = "/opt/magelens-dependencies";
+    const root = fs.mkdtempSync("/tmp/magelens-node-modules-");
+    try {
+        for (const name of ["package-lock.json", "package.json", ".runtime"]) {
+            fs.cpSync(`${bundled}/${name}`, `${root}/${name}`, {recursive: true});
+        }
+        require("node:assert/strict").equal(synchronize(root, bundled), "bundled");
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+'
 container="magelens-runner-check-$$"
 cleanup() {
     local result=$?
@@ -24,8 +41,6 @@ if [[ "${2:-}" == --cypress-regressions ]]; then
 fi
 docker run -d --name "$container" --init --user "$(id -u):$(id -g)" \
     --env HOME=/tmp --env DISPLAY=:107 --env CYPRESS_BASE_URL=https://storefront.invalid --shm-size=1g \
-    --mount "type=bind,source=$PWD/docker/runner/desktop.sh,target=/opt/magelens/desktop.sh,readonly" \
-    --mount "type=bind,source=$PWD/docker/runner/healthcheck.cjs,target=/opt/magelens/healthcheck.cjs,readonly" \
     ${mounts[@]+"${mounts[@]}"} "$1" >/dev/null
 ready() {
     local state

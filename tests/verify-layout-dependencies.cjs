@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 for (const name of ['native', 'resolver_hook', 'context_hook', 'engine_hook', 'resolver_magic',
     'context_magic', 'engine_magic', 'resolver_redeclared', 'lock_magic', 'lock_shadow']) {
     const file = report.files.find(file => file.path.endsWith(`/layout/coverageprobe_dependencies_${name}.xml`));

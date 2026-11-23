@@ -3,9 +3,9 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 const directory = 'app/code/MageLens/Compatibility/view/frontend/layout';
 for (const [handle, element, state, effect] of [
     ['coverageprobe_layout_structure', 'magelens.layout.removed', 'covered', 'layout-removal-applied'],
