@@ -8,6 +8,7 @@ const {createHash, randomBytes} = require('node:crypto');
 const {setBadgeSection} = require('./badges.cjs');
 const {discover, files, writeRuntime, writeChanged, nginxConfig, withThemeRoots, isCoverageExcluded, readCoverageConfig} = require('./project.cjs');
 const {createJavascriptScope} = require('./javascript-scope.cjs');
+const {applyTemplateCoveragePatch} = require('../patches/template-coverage/alpine.cjs');
 const digest = value => createHash('sha256').update(value).digest('hex');
 const browserFile = file => /\.(js|html|phtml)$/.test(file) && !isCoverageExcluded(file);
 
@@ -32,12 +33,14 @@ function prepare({plain = false, runtimeOnly = false, updateReadme = false, them
     const scoped = file => project.roots.some(root => file.startsWith(`src/${root}/`));
     const selectedBrowser = Object.keys(inputs).filter(file => scoped(file) && browserFile(file));
     const javascriptScope = createJavascriptScope(Object.keys(inputs).filter(scoped));
+    const templateLibrary = path.dirname(require.resolve('@magelens/magento-template-coverage'));
+    if (!plain) applyTemplateCoveragePatch(templateLibrary);
     const cachePath = '.runtime/instrumentation.json';
     const cache = fs.existsSync(cachePath) ? JSON.parse(fs.readFileSync(cachePath)) : null;
     const signature = digest(JSON.stringify({roots: project.roots, config: readCoverageConfig(),
         sources: selectedBrowser.map(file => [file, inputs[file]]),
         tools: [__filename, require.resolve('./project.cjs'), require.resolve('./javascript-scope.cjs'), 'package-lock.json',
-            ...files(path.dirname(require.resolve('@magelens/magento-template-coverage'))).filter(file => file.endsWith('.js'))
+            ...files(templateLibrary).filter(file => file.endsWith('.js'))
         ].map(file => digest(fs.readFileSync(file)))}));
     const reuse = !plain && cache?.signature === signature
         && fs.existsSync('.runtime/template-manifest.json') && fs.existsSync('.runtime/js-baseline.json') && fs.existsSync('.runtime/javascript-scope.json')

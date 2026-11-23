@@ -29,6 +29,22 @@ function fixture(t) {
 }
 const read = file => JSON.parse(fs.readFileSync(file));
 
+test('prepared Hyvä property bindings work before attaching the coverage observer', t => {
+    const {base, write} = fixture(t);
+    const template = `${base}/view/frontend/templates/alpine.phtml`;
+    const source = '<div x-data="panel" @update-<?= $id ?>.window="update">\n<template x-for="item in items"><span x-text="item"></span></template>\n</div>';
+    write(`src/${template}`, source);
+    prepare({runtimeOnly: true, themeRoots: []});
+    const result = fs.readFileSync(`.runtime/${template}`, 'utf8');
+    assert.match(result, /x-data="panel" data-mtc-binding-\d+=""/);
+    assert.match(result, /@update-<\?= \$id \?>\.window="update" data-mtc-binding-\d+=""/);
+    assert.match(result, /x-for="item in items" data-mtc-binding-\d+=""/);
+    assert.equal(result.split('\n').length, source.split('\n').length);
+    assert.equal(fs.readFileSync(`src/${template}`, 'utf8'), source);
+    const entry = read('.runtime/template-manifest.json').templates.find(entry => entry.path === template);
+    assert.ok(entry.statements.some(statement => statement.binding === '@update-<?= $id ?>.window' && statement.start.line === 1));
+});
+
 test('repeated runs reuse browser files while resetting all execution artifacts', t => {
     const {base} = fixture(t);
     prepare({runtimeOnly: true, themeRoots: []});
