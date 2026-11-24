@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -19,14 +19,19 @@ $runData = json_decode(file_get_contents('/coverage/run.json'), true, flags: JSO
 $run = $runData['id'];
 $state = json_decode(file_get_contents('/coverage/collector.json'), true, flags: JSON_THROW_ON_ERROR);
 $records = glob("/coverage/raw/php/$run/*.pcov");
-if (!$records || glob("/coverage/raw/php/$run/*.error")) {
-    throw new RuntimeException('Missing or failed PHP collection. Inspect coverage/raw/php and PHP-FPM logs.');
+$errors = glob("/coverage/raw/php/$run/*.error");
+if (!$records || $errors) {
+    throw new RuntimeException('Missing or failed PHP collection. ' . coverageCollectionFailureSummary($errors)
+        . '. Inspect coverage/raw/php and PHP-FPM logs.');
 }
 if (applicationIdentity()['identity']['id'] !== $state['identity']['id']) {
     throw new RuntimeException('Deployment changed during the suite. Rerun coverage against stable sources and configuration.');
 }
 $merged = [];
+// Hits per test attempt (docs/coverage.md#test-attempts); 'unattributed' collects records without an attempt.
+$byAttempt = [];
 $requests = [];
+$commands = [];
 foreach ($records as $path) {
     $metadata = json_decode(file_get_contents(substr($path, 0, -5) . '.json'), true, flags: JSON_THROW_ON_ERROR);
     if ($metadata['run'] !== $run || $metadata['pcov'] !== phpversion('pcov')) {
@@ -36,12 +41,27 @@ foreach ($records as $path) {
     if ($record['php_version_id'] !== PHP_VERSION_ID || $record['environment_id'] !== $state['identity']['id']) {
         throw new RuntimeException('Record runtime/deployment identity mismatch');
     }
+    $owner = $metadata['attempt'] ?? 'unattributed';
     foreach ($record['records'] as $file => $lines) {
         foreach ($lines as $line => $hit) {
             $merged[$file][$line] = max($merged[$file][$line] ?? -1, $hit);
+            // Only executed lines matter for attribution; expansion spreads executed lines only.
+            if ($hit > 0) $byAttempt[$owner][$file][$line] = 1;
         }
     }
-    $requests[] = $metadata;
+    unset($metadata['xml']);
+    if (isset($metadata['commandId'])) {
+        $id = $metadata['commandId'];
+        $name = basename($path, '.pcov');
+        if (!preg_match('/^[a-f0-9]{32}$/D', $id)
+            || !preg_match('/^' . $id . '(?:\.[1-9][0-9]*)?$/D', $name)
+            || !is_file(dirname($path) . '/' . $id . '.pcov')) {
+            throw new RuntimeException('CLI record identifier mismatch');
+        }
+        if ($name === $id) $commands[] = $metadata;
+    } else {
+        $requests[] = $metadata;
+    }
 }
 if ($state['manifest']) {
     $result = pcov_manifest_merge($state['manifest'], $records);
@@ -56,7 +76,7 @@ if ($state['manifest']) {
     sort($files, SORT_STRING);
     if (array_diff($files, array_keys($state['scope']))) throw new RuntimeException('PHP collection contains files outside the discovered scope');
     // Unvisited files belong in the report with zero hits. A native manifest is
-    // reusable only once HTTP requests have discovered every file in its scope.
+    // reusable only once execution has discovered every file in its scope.
     if ($files === array_keys($state['scope'])) {
         // New immutable generations are published at unique paths, never overwritten.
         pcov_manifest_bootstrap($state['manifestTarget'], $state['identity']['id'], $records);
@@ -67,7 +87,7 @@ if ($state['manifest']) {
     }
 }
 $runner = ($runData['runner'] ?? 'cypress') === 'playwright' ? 'Playwright' : 'Cypress';
-$coverage = applicationPhpReportData($state['scope'], $merged, $runData['sources'], "$runner HTTP run $run");
+$coverage = applicationPhpReportData($state['scope'], $merged, $runData['sources'], "$runner run $run");
 $report = $coverage->getReport();
 (new Facade)->process($report, '/coverage/php');
 (new Clover)->process($report, '/coverage/php/clover.xml');
@@ -76,16 +96,29 @@ $covered = $report->numberOfExecutedLines();
 file_put_contents('/coverage/php/coverage-summary.json', json_encode([
     'run' => $run, 'metric' => 'lines', 'lineScope' => 'php-only', 'sourceRoot' => '/source',
     'total' => $total, 'covered' => $covered,
-    'percent' => $total ? round(100 * $covered / $total, 2) : 0, 'requests' => $requests,
+    'percent' => $total ? round(100 * $covered / $total, 2) : 0, 'requests' => $requests, 'commands' => $commands,
     'collection' => $state['manifest'] ? 'manifest' : 'full-discovery',
     'deploymentId' => $state['identity']['id'], 'manifest' => $state['manifestTarget'],
-    'cache' => array_count_values(array_column($requests, 'cache')),
+    'cache' => array_count_values(array_column([...$requests, ...$commands], 'cache')),
     'undiscovered' => array_values(array_diff(array_keys($state['scope']), array_keys($merged))),
 ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");
+if (glob('/coverage/raw/attempts/*.json')) {
+    // The attempts that executed each covered line, for coverage/attribution/ (bin/report-attribution.cjs).
+    $attribution = [];
+    $byTest = applicationPhpReportDataByTest($state['scope'], $byAttempt, $runData['sources'])->getData();
+    // Line data is keyed by test index; `tests` maps the indexes to attempt IDs, so each ID is stored once.
+    foreach ($byTest->lineCoverage() as $file => $hits) {
+        foreach ($hits as $line => $tests) {
+            if ($tests) $attribution[substr($file, strlen('/source/'))][$line] = array_keys($tests);
+        }
+    }
+    file_put_contents('/coverage/php/attribution.json', json_encode(['tests' => (object) $byTest->testIds(),
+        'lines' => (object) $attribution], JSON_THROW_ON_ERROR) . "\n");
+}
 file_put_contents('/coverage/php/merged-lines.json', json_encode($merged, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 $lines = [];
 foreach ($coverage->getData()->lineCoverage() as $file => $hits) {
     $lines[substr($file, strlen('/source/'))] = (object) array_map(static fn(?array $tests): int => $tests ? 1 : 0, $hits);
 }
 file_put_contents('/coverage/php/line-coverage.json', json_encode($lines, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");
-printf("PHP: %d/%d lines (%.2f%%), %d HTTP records\n", $covered, $total, $total ? 100 * $covered / $total : 0, count($records));
+printf("PHP: %d/%d lines (%.2f%%), %d HTTP and %d CLI records\n", $covered, $total, $total ? 100 * $covered / $total : 0, count($requests), count($commands));

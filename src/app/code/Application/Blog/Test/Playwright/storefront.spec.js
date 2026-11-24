@@ -1,13 +1,18 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {test, expect, fixtures, headers, get, visitBlog, waitForBlog, search, fillComment, storefrontMessage} = require('./support');
+const {test, expect, fixtures, headers, get, visitBlog, waitForBlog, waitForStorefront, search, fillComment, storefrontMessage} = require('./support');
 
 test.describe('Blog storefront', () => {
     test('searches, filters, paginates, reads articles, and retains favorites', async ({page}) => {
         const f = fixtures();
         await visitBlog(page, f.query);
+        if (process.env.MAGELENS_THEME === 'hyva') {
+            await expect(get(page, 'blog')).toHaveClass(/\bcoverage-blog\b/);
+        } else {
+            await expect(get(page, 'blog').locator(`div[data-bind^="scope:"][data-bind*="'coverageBlog'"]`)).toHaveCount(1);
+        }
         if (f.themePaths[0] === 'Application/coverage') await expect(get(page, 'theme-note')).toContainText('Ideas, engineering');
         await expect(get(page, 'status')).toHaveText('8 articles');
         await expect(get(page, 'post')).toHaveCount(6);
@@ -68,6 +73,7 @@ test.describe('Blog storefront', () => {
             expect((await page.request.get('/blog/post/view/slug/' + f.prefix + slug, {headers: headers()})).status()).toBe(404);
         }
         await page.goto('/blog/post/view/slug/' + f.prefix + 'article-1');
+        await waitForStorefront(page, {lumaMessages: true});
         const action = await get(page, 'comment-form').getAttribute('action');
         // Keep the forged POST, redirect and rejection cookie in one browser navigation.
         const response = page.waitForResponse(response => response.url() === action && response.request().method() === 'POST');

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    <container name="magelens.layout.anonymous.root" htmlTag="section" htmlId="layout-anonymous" output="1">
+        <container htmlTag="div" htmlId="layout-anonymous-container" label="Anonymous fixture">
+            <block as="anonymous-child" template="MageLens_Compatibility::layout-anonymous.phtml" output="1"/>
+        </container>
+        <block name="order.middle" before="missing.order" after="order.last" template="MageLens_Compatibility::layout-order.phtml"/>
+        <block name="order.first" before="-" template="MageLens_Compatibility::layout-order.phtml"/>
+        <block name="order.last" after="-" template="MageLens_Compatibility::layout-order.phtml"/>
+    </container>
+    <block name="magelens.layout.unselected.output" output="1" template="MageLens_Compatibility::layout-order.phtml"/>
+</layout>

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalFrontendPreference"/>
+    <virtualType name="Application\Blog\Model\JournalArgumentAlias" type="Application\Blog\Model\JournalArgumentProbe">
+        <arguments><argument name="label" xsi:type="string">REST label</argument></arguments>
+    </virtualType>
+    <type name="Application\Blog\Model\JournalPluginSubject">
+        <plugin name="rest_probe" type="Application\Blog\Plugin\JournalWarm" sortOrder="50"/>
+    </type>
+    <type name="Application\Blog\Model\ApiAreaProbe">
+        <plugin name="magelens_rest_cache" type="Application\Blog\Plugin\RestCache"/>
+    </type>
+    <type name="Magento\Webapi\Controller\Rest\SynchronousRequestProcessor">
+        <plugin name="magelens_rest_after_processor" type="Application\Blog\Plugin\RestCache"/>
+    </type>
+</config>

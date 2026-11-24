@@ -1,14 +1,19 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, search, visitBlog, waitForBlog, storefrontMessage} from './support';
+import {fixtures, headers, get, search, visitBlog, waitForBlog, waitForStorefront, storefrontMessage} from './support';
 
 describe('Blog storefront', () => {
     it('searches, filters, paginates, reads articles, and retains favorites', () => {
         const f = fixtures();
         cy.intercept('GET', '**/Application_Blog/template/theme-note.html*').as('themeNote');
         visitBlog(f.query);
+        if (Cypress.expose('hyvaCsp')) {
+            get('blog').should('have.class', 'coverage-blog');
+        } else {
+            get('blog').find(`div[data-bind^="scope:"][data-bind*="'coverageBlog'"]`).should('have.length', 1);
+        }
         if (f.themePaths[0] === 'Application/coverage') {
             cy.get('[data-cy="theme-note"]', {timeout: Cypress.config('pageLoadTimeout')})
                 .should('contain', 'Ideas, engineering');
@@ -73,6 +78,7 @@ describe('Blog storefront', () => {
                 .its('status').should('equal', 404);
         }
         cy.visit('/blog/post/view/slug/' + f.prefix + 'article-1');
+        waitForStorefront({lumaMessages: true});
         get('comment-form').invoke('attr', 'action').then(url => {
             cy.intercept('POST', url).as('rejectedComment');
         });

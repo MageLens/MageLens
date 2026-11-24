@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
+    <system>
+        <section id="application_blog" translate="label" sortOrder="950" showInDefault="1" showInWebsite="1" showInStore="1">
+            <label>Journal settings</label>
+            <tab>general</tab>
+            <resource>Application_Blog::manage</resource>
+            <group id="display" translate="label" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Display</label>
+                <field id="heading" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Journal heading</label>
+                    <config_path>application_blog/display/heading</config_path>
+                </field>
+                <field id="alias_one" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>First alias</label>
+                    <config_path>application_blog/display/alias</config_path>
+                </field>
+                <field id="alias_two" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Second alias</label>
+                    <config_path>application_blog/display/alias</config_path>
+                </field>
+                <field id="hidden" translate="label" type="text" sortOrder="40" showInDefault="0" showInWebsite="0" showInStore="0">
+                    <label>Never rendered</label>
+                </field>
+            </group>
+        </section>
+        <section id="application_blog_editorial" translate="label" sortOrder="960" showInDefault="1" showInWebsite="1" showInStore="1">
+            <label>Editorial settings</label>
+            <tab>general</tab>
+            <resource>Application_Blog::manage</resource>
+            <group id="unused" translate="label" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Unused</label>
+                <field id="unused" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Unvisited field</label>
+                </field>
+            </group>
+        </section>
+    </system>
+</config>

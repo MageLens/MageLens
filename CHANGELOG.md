@@ -6,13 +6,35 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
-## 1.9.4 - 2026-11-14
+## 1.10.0 - Unreleased
 
+- Extend prebuilt image retention from 90 days to at least three years so older Magento installations can reuse the tooling images published with their MageLens release.
+- Update the shared Chrome for Testing browser to 158.0.8127.36 with verified x64 and ARM64 archives and its stable-channel security fixes.
+- Update PHP to 8.4.28 with a verified multi-platform base image for FPM request-smuggling and memory-safety security fixes.
+- Add a separate XML configuration coverage report in `coverage/xml/` for scoped `config.xml` reads and rendered `system.xml` fields, preserving source directories and identifying measurement limitations.
+- Report executed HTTP `events.xml` observer registrations by area, with original source links and explicit override and measurement statuses.
+- Report HTTP `di.xml` plugin callback execution by phase and configuration area, with links to the original registrations.
+- Report HTTP `di.xml` preference, virtual type, constructor argument and object lifetime usage in developer and production modes. Use `./bin/deploy-production` to record compiled DI provenance before collecting production coverage.
+- Report DI and observer usage for authorized REST and GraphQL requests by Magento configuration area.
+- Add Blog Journal settings scenarios for Cypress and Playwright to exercise configuration consumption across default, website and store scopes.
+- Add opt-in HTML validation for Cypress and Playwright tests. `mageLensValidateHtml` captures the HTML source of the current page, including signed-in pages. Captures are validated after the tests finish without affecting their result, and the combined report lists the findings in a separate Reports section with a dedicated report in `coverage/html-validation/`. ([#67](https://github.com/MageLens/MageLens/issues/67))
+- Add per-test coverage attribution. Every Cypress, Playwright and CLI test attempt, including each retry, gets an attempt ID that PHP, JavaScript and template collection record, and `coverage/attribution/` lists the attempts that executed each covered PHP line, JavaScript and template counter and XML declaration. Shared setup stays unattributed, and attribution is checked against the aggregate reports. ([#72](https://github.com/MageLens/MageLens/issues/72))
+- Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
+- Fix host-side integration and static checks on macOS with the system bash 3.2: `bin/build-php-image` no longer reads its Dockerfile fragment through a command substitution that bash 3.2 cannot parse, and static checks also parse bash scripts with `/bin/bash`, which is bash 3.2 on macOS hosts. ([#71](https://github.com/MageLens/MageLens/issues/71))
+
+Rerun installation with your saved platform, theme and runner selections to install the XML collector extension, then regenerate reports with `./bin/run-coverage`.
+
+## 1.9.4 - 2026-11-16
+
+- Open the combined coverage report from the URL printed after a successful run. MageLens publishes it through Magento's `pub/media`. ([#52](https://github.com/MageLens/MageLens/pull/52))
+- Retain prebuilt images for the latest release, releases from the last 90 days, the five most recent releases, and pinned releases. Installers supporting the expiration protocol fall back to a source build when a release is confirmed expired. ([#45](https://github.com/MageLens/MageLens/pull/45))
 - Update Composer in the PHP image to 2.11.2 for archive extraction and credential-handling security fixes.
 - Update browser runner runtimes to Node.js 24.22.3 with the November security fixes; install Cypress’s required system libraries on the official multiarch Node base.
 - Update the shared Chrome for Testing browser to 157.0.8103.78 with verified x64 and ARM64 archives and the latest security fixes.
 - Update PHP code coverage to 14.5.2 to correct nested match executable lines and merged match coverage.
 - Update Cypress to 16.3.0 for cookie interception fixes and faster runner startup, retaining source fixes and all eleven runner regressions.
+
+For an existing installation, back up application data and rerun `./install.sh` with your saved platform, theme and runner flags to update dependencies and enable report publication, then run `./bin/run-coverage`.
 
 ## 1.9.3 - 2026-11-09
 

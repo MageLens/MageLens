@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -9,23 +9,25 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function reports(t, covered) {
+function reports(t, covered, runner = 'cypress') {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-finalize-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const json = (file, data) => fs.writeFileSync(path.join(root, file), JSON.stringify(data));
     const percent = covered * 100;
-    for (const type of ['php', 'js', 'templates']) {
+    for (const type of ['php', 'js', 'templates', 'xml']) {
         fs.mkdirSync(`${root}/coverage/${type}`, {recursive: true});
         fs.writeFileSync(`${root}/coverage/${type}/index.html`, '<html></html>');
     }
     fs.writeFileSync(`${root}/README.md`, '<!-- coverage-badges:start -->\n<!-- coverage-badges:end -->');
     fs.writeFileSync(`${root}/coverage/.active-run`, 'fixture');
-    json('coverage/run.json', {id: 'fixture', sources: {}});
-    json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}]});
+    json('coverage/xml/coverage.json', {run: 'fixture', covered, total: 1, percent, complete: true, sourcesUnchanged: true, collectorErrors: []});
+    json('coverage/run.json', {id: 'fixture', runner, sources: {}});
+    json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}], commands: []});
     json('coverage/js/coverage-summary.json', {total: {statements: {covered, total: 1, pct: percent}}});
     json('coverage/templates/coverage-summary.json', {schemaVersion: 2, lines: {covered, total: 1, percent}, templates: [], summary: {covered, eligible: 1, percent}});
-    json('coverage/cypress-results.json', {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0});
-    return {root, run: () => spawnSync(process.execPath, [path.join(__dirname, '../bin/finalize.cjs')], {cwd: root, encoding: 'utf8'})};
+    json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0});
+    json('coverage/cli-results.json', {run: 'fixture', totalTests: 0, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0});
+    return {root, json, run: (args = []) => spawnSync(process.execPath, [path.join(__dirname, '../bin/finalize.cjs'), ...args], {cwd: root, encoding: 'utf8'})};
 }
 
 for (const covered of [0, 1]) test(`publishes valid ${covered * 100}% coverage without demo routes or files`, t => {
@@ -43,6 +45,18 @@ test('a report from a different run cannot publish passing badges', t => {
     assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
 });
 
+test('the main report uses N/A when XML has no measured lines', t => {
+    const fixture = reports(t, 1);
+    const file = 'coverage/xml/coverage.json';
+    const xml = JSON.parse(fs.readFileSync(path.join(fixture.root, file)));
+    fixture.json(file, {...xml, covered: 0, total: 0, percent: null});
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = fs.readFileSync(path.join(fixture.root, 'coverage/index.html'), 'utf8');
+    assert.match(html, /href="xml\/index.html"[^>]*>XML configuration lines[\s\S]*?<td><strong>N\/A<\/strong><\/td>/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.root, 'coverage/summary.json'))).metrics.xml.percent, null);
+});
+
 test('unsupported template directives remain visible when scripts and browser tests pass', t => {
     const fixture = reports(t, 1);
     const file = `${fixture.root}/coverage/templates/coverage-summary.json`;
@@ -56,4 +70,121 @@ test('unsupported template directives remain visible when scripts and browser te
     assert.match(fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8'), /Template measurement is partial.*1 unsupported directives/s);
     assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).templateLimitations.directives,
         [{path: templates.templates[0].path, reason: 'Dynamic event name at line 12'}]);
+});
+
+for (const runner of ['cypress', 'playwright']) {
+    for (const readme of ['<!-- coverage-badges:start -->\nprevious results\n<!-- coverage-badges:end -->', '# No badge markers\r\n']) {
+        test(`${runner}: default finalization preserves README and generates badges`, t => {
+            const fixture = reports(t, 1, runner);
+            const file = path.join(fixture.root, 'README.md');
+            fs.writeFileSync(file, readme);
+            const result = fixture.run();
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(fs.readFileSync(file, 'utf8'), readme);
+            for (const type of [runner, 'php', 'js', 'templates']) {
+                assert.match(fs.readFileSync(`${fixture.root}/coverage/badges/${type}.svg`, 'utf8'), /<svg/);
+            }
+        });
+    }
+    test(`${runner}: opt-in finalization replaces pending README with current results`, t => {
+        const fixture = reports(t, 1, runner);
+        const file = path.join(fixture.root, 'README.md');
+        fs.writeFileSync(file, '<!-- coverage-badges:start -->\nCoverage has not completed for the current run.\n<!-- coverage-badges:end -->');
+        const result = fixture.run(['--update-readme']);
+        assert.equal(result.status, 0, result.stderr);
+        const readme = fs.readFileSync(file, 'utf8');
+        assert.match(readme, new RegExp(`coverage/badges/${runner}\\.svg`));
+        assert.match(readme, /Full .* run: `fixture`/);
+        assert.doesNotMatch(readme, /Coverage has not completed/);
+    });
+    for (const counts of [{totalPassed: 0, totalFailed: 1}, {totalPassed: 0, totalSkipped: 1}, {totalPassed: 0, totalPending: 1}]) {
+        test(`${runner}: unsuccessful tests leave opted-in README pending without badges`, t => {
+            const fixture = reports(t, 1, runner);
+            const file = path.join(fixture.root, 'README.md');
+            const pending = '<!-- coverage-badges:start -->\nCoverage has not completed for the current run.\n<!-- coverage-badges:end -->';
+            fs.writeFileSync(file, pending);
+            const resultsFile = `${fixture.root}/coverage/${runner}-results.json`;
+            const results = JSON.parse(fs.readFileSync(resultsFile));
+            fs.writeFileSync(resultsFile, JSON.stringify({...results, ...counts}));
+            assert.notEqual(fixture.run(['--update-readme']).status, 0);
+            assert.equal(fs.readFileSync(file, 'utf8'), pending);
+            assert.ok(!fs.existsSync(`${fixture.root}/coverage/badges`));
+        });
+    }
+}
+
+for (const runner of ['cypress', 'playwright']) {
+    for (const updateReadme of [false, true]) {
+        test(`${runner}: empty executable templates publish N/A (update README: ${updateReadme})`, t => {
+            const fixture = reports(t, 1, runner);
+            const file = `${fixture.root}/coverage/templates/coverage-summary.json`;
+            const templates = JSON.parse(fs.readFileSync(file));
+            templates.lines = {total: 0, covered: 0, uncovered: 0, percent: null};
+            templates.summary = {covered: 4, eligible: 4, percent: 100};
+            fs.writeFileSync(file, JSON.stringify(templates));
+            const result = fixture.run(updateReadme ? ['--update-readme'] : []);
+            assert.equal(result.status, 0, result.stderr);
+            const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+            assert.match(html, /<strong>N\/A<\/strong><\/td>/);
+            assert.match(html, /DOM presence: 4\/4 templates \(100%\)/);
+            assert.doesNotMatch(html, /N\/A%|width:null|width:N\/A/);
+            assert.match(fs.readFileSync(`${fixture.root}/coverage/badges/templates.svg`, 'utf8'), /Template executable lines: N\/A/);
+            assert.equal(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).metrics.templates.percent, null);
+            assert.deepEqual(JSON.parse(fs.readFileSync(file)), templates);
+            assert.ok(!fs.existsSync(`${fixture.root}/coverage/.active-run`));
+            if (updateReadme) assert.match(fs.readFileSync(`${fixture.root}/README.md`, 'utf8'), /Template executable lines: N\/A\]/);
+        });
+    }
+}
+test('CLI results require current coverage for every command and a fully passing suite', t => {
+    const fixture = reports(t, 1);
+    const file = 'coverage/cli-results.json';
+    const results = {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0};
+    for (const change of [{run: 'stale'}, {totalPending: 1}, {totalSkipped: 1}, {totalFailed: 1}, {commands: 1}]) {
+        fixture.json(file, {...results, ...change});
+        assert.notEqual(fixture.run().status, 0);
+        assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`) ||
+            !fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8').includes('CLI passed'));
+    }
+});
+
+test('a run without mageLensValidateHtml invocations is shown as not audited', t => {
+    const fixture = reports(t, 1);
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+    assert.match(html, /<caption>Reports<\/caption>/);
+    assert.match(html, /HTML validation<small>.*<td colspan="2">Not run<small>No test called mageLensValidateHtml, so no page was audited\./s);
+    assert.doesNotMatch(html, /html-validation\/index\.html|0 errors/);
+    assert.ok(!fs.existsSync(`${fixture.root}/coverage/html-validation`));
+    assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).htmlValidation,
+        {audits: 0, pages: 0, errors: 0, warnings: 0, notValidated: 0});
+});
+
+test('mageLensValidateHtml captures are validated into a separate Reports section with their own report', t => {
+    const fixture = reports(t, 1);
+    const capture = {run: 'fixture', runner: 'cypress', spec: 'cypress/e2e/pages.cy.js', test: 'audits pages', status: 200, contentType: 'text/html'};
+    const document = body => `<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><title>Page</title></head><body>\n${body}\n</body></html>`;
+    fs.mkdirSync(`${fixture.root}/coverage/raw/html-validation`, {recursive: true});
+    fixture.json('coverage/raw/html-validation/1.json', {...capture, url: 'https://shop.test/clean', html: document('<p>Fine</p>')});
+    fixture.json('coverage/raw/html-validation/2.json', {...capture, url: 'https://shop.test/broken', html: document('<p id="a">One</p><p id="a">Two</p>')});
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr);
+    const html = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+    assert.match(html, /<a href="html-validation\/index\.html">HTML validation/);
+    assert.match(html, /<td>2 audits<small>2 pages<\/small><\/td>\s*<td>1 errors<small>0 warnings<\/small><\/td>/);
+    assert.doesNotMatch(html, /Not run|not validated/);
+    const report = fs.readFileSync(`${fixture.root}/coverage/html-validation/index.html`, 'utf8');
+    assert.match(report, /<code>https:\/\/shop\.test\/clean<\/code>.*No issues found\..*<code>https:\/\/shop\.test\/broken<\/code>.*Duplicate ID &quot;a&quot;.*3:25/s);
+    assert.deepEqual(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).htmlValidation,
+        {audits: 2, pages: 2, errors: 1, warnings: 0, notValidated: 0});
+});
+
+test('validation records from another run block publication', t => {
+    const fixture = reports(t, 1);
+    fs.mkdirSync(`${fixture.root}/coverage/raw/html-validation`, {recursive: true});
+    fixture.json('coverage/raw/html-validation/1.json', {run: 'stale', url: '/', status: 200, contentType: 'text/html', html: ''});
+    assert.notEqual(fixture.run().status, 0);
+    assert.ok(!fs.existsSync(`${fixture.root}/coverage/index.html`));
+    assert.ok(!fs.existsSync(`${fixture.root}/coverage/summary.json`));
 });

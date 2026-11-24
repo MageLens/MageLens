@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -24,7 +24,7 @@ function runtimeHashes(roots) {
         .map(file => [`src/${path.relative('.runtime', file)}`, digest(fs.readFileSync(file))]));
 }
 
-function prepare({plain = false, runtimeOnly = false, themeRoots} = {}) {
+function prepare({plain = false, runtimeOnly = false, updateReadme = false, themeRoots} = {}) {
     const discovered = discover();
     const project = themeRoots === undefined ? discovered : withThemeRoots(discovered, themeRoots);
     const inputs = sourceHashes(discovered.roots); // Reject symlinks before changing copies.
@@ -37,12 +37,12 @@ function prepare({plain = false, runtimeOnly = false, themeRoots} = {}) {
     const signature = digest(JSON.stringify({roots: project.roots, config: readCoverageConfig(),
         sources: selectedBrowser.map(file => [file, inputs[file]]),
         tools: [__filename, require.resolve('./project.cjs'), require.resolve('./javascript-scope.cjs'), 'package-lock.json',
-            ...files(path.dirname(require.resolve('@vitaliiboiko/magento-template-coverage'))).filter(file => file.endsWith('.js'))
+            ...files(path.dirname(require.resolve('@magelens/magento-template-coverage'))).filter(file => file.endsWith('.js'))
         ].map(file => digest(fs.readFileSync(file)))}));
     const reuse = !plain && cache?.signature === signature
         && fs.existsSync('.runtime/template-manifest.json') && fs.existsSync('.runtime/js-baseline.json') && fs.existsSync('.runtime/javascript-scope.json')
         && selectedBrowser.every(file => before[file] === cache.outputs[file]);
-    if (!plain && !runtimeOnly && cache && JSON.stringify(cache.mountRoots) !== JSON.stringify(discovered.roots)) {
+    if (!plain && cache && JSON.stringify(cache.mountRoots) !== JSON.stringify(discovered.roots)) {
         throw new Error('Source mount directories changed. Run ./install.sh before running coverage.');
     }
     for (const root of discovered.roots) fs.mkdirSync(`.runtime/${root}`, {recursive: true});
@@ -66,7 +66,7 @@ function prepare({plain = false, runtimeOnly = false, themeRoots} = {}) {
     if (!project.roots.length) throw new Error('No source found in src/app/code or selected themes');
     if (!reuse) {
         const {createInstrumenter} = require('istanbul-lib-instrument');
-        const {createManifest, instrument} = require('@vitaliiboiko/magento-template-coverage');
+        const {createManifest, instrument} = require('@magelens/magento-template-coverage');
         const manifest = createManifest({source: 'src', roots: project.roots});
         manifest.templates = manifest.templates.filter(entry => !isCoverageExcluded(entry.path));
         instrument({source: 'src', manifest, mappings: Object.fromEntries(project.roots.map(root => [root, `.runtime/${root}`]))});
@@ -95,12 +95,15 @@ function prepare({plain = false, runtimeOnly = false, themeRoots} = {}) {
     fs.mkdirSync('coverage/raw/templates', {recursive: true});
     const run = {id: randomBytes(16).toString('hex'), runner: process.env.MAGELENS_RUNNER || 'cypress', startedAt: new Date().toISOString(), roots: project.roots,
         sources: Object.fromEntries(Object.entries(inputs).filter(([file]) => scoped(file)))};
-    fs.mkdirSync(`coverage/raw/php/${run.id}`, {recursive: true, mode: 0o777});
-    fs.chmodSync(`coverage/raw/php/${run.id}`, 0o777);
+    for (const collector of ['php', 'xml-ui']) {
+        const directory = `coverage/raw/${collector}/${run.id}`;
+        fs.mkdirSync(directory, {recursive: true, mode: 0o777});
+        fs.chmodSync(directory, 0o777);
+    }
     fs.writeFileSync('coverage/run.json', JSON.stringify(run, null, 2));
     fs.writeFileSync('coverage/javascript-scope.json', JSON.stringify({run: run.id, ...JSON.parse(fs.readFileSync('.runtime/javascript-scope.json'))}, null, 2));
     fs.copyFileSync('.runtime/template-manifest.json', 'coverage/template-manifest.json');
-    setBadgeSection('Coverage has not completed for the current run.');
+    if (updateReadme) setBadgeSection('Coverage has not completed for the current run.');
     console.log(`Prepared fresh coverage run ${run.id}.`);
     if (process.env.APPLICATION_DOMAIN) console.log(`Watch tests at https://${process.env.APPLICATION_DOMAIN}:${process.env.RUNNER_VIEW_PORT || process.env.CYPRESS_VIEW_PORT || 6080}/`);
 }
@@ -108,6 +111,7 @@ function prepare({plain = false, runtimeOnly = false, themeRoots} = {}) {
 if (require.main === module) {
     const themeOption = process.argv.indexOf('--theme-roots');
     prepare({plain: process.argv.includes('--plain'), runtimeOnly: process.argv.includes('--runtime-only'),
+        updateReadme: process.argv.includes('--update-readme'),
         themeRoots: themeOption < 0 ? undefined : JSON.parse(fs.readFileSync(process.argv[themeOption + 1], 'utf8'))});
 }
 module.exports = {sourceHashes, prepare};

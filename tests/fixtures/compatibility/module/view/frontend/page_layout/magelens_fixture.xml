@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_layout.xsd">
+    <update handle="1column"/>
+    <referenceContainer name="content">
+        <container name="magelens.layout.wireframe" htmlTag="section" htmlId="layout-wireframe">
+            <block name="magelens.layout.wireframe.nested-block" cacheable="false" ttl="47" template="MageLens_Compatibility::layout-structure.phtml"/>
+            <container name="magelens.layout.wireframe.removed"/>
+        </container>
+        <container name="magelens.layout.wireframe.movable" htmlTag="div" htmlId="layout-wireframe-move"/>
+    </referenceContainer>
+    <move element="magelens.layout.wireframe.movable" destination="magelens.layout.wireframe" as="wireframe-moved" before="-"/>
+    <referenceContainer name="magelens.layout.wireframe.removed" remove="true"/>
+    <head><title>Ignored wireframe title</title><meta name="magelens-wireframe" content="ignored"/></head>
+    <body>
+        <attribute name="data-wireframe-ignored" value="ignored"/>
+        <container name="magelens.layout.wireframe.ignored-body"/>
+    </body>
+</layout>

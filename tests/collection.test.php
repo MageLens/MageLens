@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -12,6 +12,18 @@ function check(bool $condition, string $message): void
 {
     if (!$condition) throw new RuntimeException($message);
 }
+$held = coverageCollectionLock(LOCK_SH);
+$exec = proc_open([PHP_BINARY, '-r', 'echo "ready\n"; flush(); fgets(STDIN);'], [
+    0 => ['pipe', 'r'], 1 => ['pipe', 'w'],
+], $execPipes);
+check(trim(fgets($execPipes[1])) === 'ready', 'Background process did not exec');
+fclose($held);
+$probe = fopen('/pcov-state/collection.lock', 'c+');
+check(flock($probe, LOCK_EX | LOCK_NB), 'Background process inherited the collection lock');
+fclose($probe);
+fclose($execPipes[0]);
+fclose($execPipes[1]);
+check(proc_close($exec) === 0, 'Background process failed');
 $run = str_repeat('a', 32);
 file_put_contents('/coverage/run.json', json_encode(['id' => $run]));
 file_put_contents('/coverage/collector.json', '{}');
@@ -37,4 +49,10 @@ file_put_contents('/coverage/run.json', json_encode(['id' => $run]));
 startCoverageCollection();
 check(file_get_contents('/coverage/.active-run') === $run, 'Next run retained the old token');
 stopCoverageCollection();
+file_put_contents('/coverage/known.error', 'Cached Admin structure differs from current XML provenance; use --refresh-cache');
+file_put_contents('/coverage/private.error', 'Exception containing private-password and /private/shop/customer@example.test');
+$failure = coverageCollectionFailureSummary(['/coverage/known.error', '/coverage/private.error']);
+check(str_contains($failure, '2 failed request records') && str_contains($failure, 'Cached Admin structure'), 'Known collection failures must be diagnosable');
+check(str_contains($failure, 'Other collector failures: 1'), 'Unknown failures must remain visible');
+check(!str_contains($failure, 'private-password') && !str_contains($failure, 'customer@example.test') && !str_contains($failure, '/private/shop'), 'Raw collector failures must not leak private data');
 echo "PASS: reporting waits for active requests; closing is idempotent; new runs use fresh tokens.\n";

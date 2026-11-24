@@ -70,7 +70,7 @@ function prepare(root = process.cwd()) {
         let archive;
         if (key === 'templateCoverage') {
             const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
-            assert.equal(manifest.name, '@vitaliiboiko/magento-template-coverage');
+            assert.equal(manifest.name, '@magelens/magento-template-coverage');
             assert.equal(manifest.version, entry.version);
             const [packed] = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json'], source));
             assert.equal(path.basename(packed.filename), packed.filename);

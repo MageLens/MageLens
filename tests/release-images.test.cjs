@@ -216,19 +216,21 @@ test('retrying an older release cannot invoke historical cleanup in workspace', 
     assert.match(result, /trusted cleanup loaded/);
 });
 
-test('retention policy preserves minimum of five releases even when all are older than 90 days', () => {
-    const api = mockApi(retentionFixture({count: 5, ageDays: i => 100 + i * 10}));
+test('cleanup keeps the five newest releases even when all are older than three years', () => {
+    const api = mockApi(retentionFixture({count: 5, ageDays: i => 1200 + i * 10}));
     prune(api.execute, {now});
     assertDeletions(api.calls, [999]);
+    assert.ok(!api.calls.some(args => args.includes('POST')));
 });
 
-test('retention policy preserves all recent releases when more than five releases are within 90 days', () => {
-    const api = mockApi(retentionFixture({count: 7, ageDays: i => i * 10}));
+test('cleanup keeps all seven releases published within the last three years', () => {
+    const api = mockApi(retentionFixture({count: 7, ageDays: i => i * 150}));
     prune(api.execute, {now});
     assertDeletions(api.calls, [999]);
+    assert.ok(!api.calls.some(args => args.includes('POST')));
 });
 
-test('retention boundaries prune releases beyond top 5 and older than 90 days when safe', () => {
+test('cleanup prunes eligible releases older than three years after the retirement grace period', () => {
     const api = mockApi(retentionFixture({count: 7}));
     prune(api.execute, {now});
     assertDeletions(api.calls, [999]);
@@ -397,7 +399,7 @@ test('injected clock keeps young candidates and expires them at the exact 14-day
     assert.deepEqual(obsoleteVersions(versions, [], [], {now: now - 1}), [3]);
 });
 
-test('latest release remains protected outside the five newest publication dates and 90 days', () => {
+test('the latest release stays protected even outside the five newest and the three-year window', () => {
     const fixture = retentionFixture();
     const api = mockApi({...fixture, latestTag: 'v2.0.1'});
     prune(api.execute, {now});
@@ -405,17 +407,16 @@ test('latest release remains protected outside the five newest publication dates
     assert.ok(!api.calls.some(args => args.includes('POST')));
 });
 
-test('90-day retention boundary preserves an otherwise eligible release until the boundary passes', () => {
+test('a release spanning a leap day stays active through its third anniversary', () => {
     const fixture = retentionFixture();
-    fixture.releases[0].published_at = new Date(now - 90 * dayMs).toISOString();
-    // Keep five newer releases, so age is the only protection for the oldest.
-    for (let i = 1; i < fixture.releases.length; i++) fixture.releases[i].published_at = new Date(now - (90 - i) * dayMs).toISOString();
+    fixture.releases[0].published_at = '2023-06-01T00:00:00Z';
+    const anniversary = Date.parse('2026-06-01T00:00:00Z');
     const api = mockApi(fixture);
-    prune(api.execute, {now});
+    prune(api.execute, {now: anniversary});
     assert.ok(!api.calls.some(args => args.includes('POST')));
-    const expired = mockApi(fixture);
-    prune(expired.execute, {now: now + 1});
-    assert.equal(expired.calls.filter(args => args.includes('POST')).length, 1);
+    prune(api.execute, {now: anniversary + 1});
+    assert.equal(api.calls.filter(args => args.includes('POST')).length, 1);
+    assertDeletions(api.calls, [999]);
 });
 
 for (const protocol of [null, 2]) {

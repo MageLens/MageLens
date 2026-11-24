@@ -6,14 +6,21 @@
 set -euo pipefail
 export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true
 source "$(dirname "$0")/../bin/common"
+source "$(dirname "$0")/e2e-xml-proofs.sh"
 preflight
 [[ $# == 0 ]] || fail 'Usage: bash tests/e2e-isolated.sh (see tests/README.md for configuration)'
 theme=${MAGELENS_E2E_THEME:-luma}
 runner=${MAGELENS_E2E_RUNNER:-cypress}
 platform=${MAGELENS_E2E_PLATFORM:-magento}
+mode=${MAGELENS_E2E_MODE:-developer}
+focus=${MAGELENS_E2E_FOCUS:-}
 [[ "$theme" == luma || "$theme" == hyva ]] || fail 'MAGELENS_E2E_THEME must be luma or hyva (Hyva CSP).'
 [[ "$runner" == cypress || "$runner" == playwright ]] || fail 'MAGELENS_E2E_RUNNER must be cypress or playwright.'
 [[ "$platform" == magento || "$platform" == mageos ]] || fail 'MAGELENS_E2E_PLATFORM must be magento or mageos.'
+[[ "$mode" == developer || "$mode" == production ]] || fail 'MAGELENS_E2E_MODE must be developer or production.'
+if [[ -n "$focus" && ( "$focus" != default-coverage || "$platform/$theme/$runner/$mode" != magento/luma/cypress/developer ) ]]; then
+    fail 'The default-coverage focus requires the default Magento Open Source, Luma and Cypress installation.'
+fi
 install_options=()
 [[ "${MAGELENS_BUILD_FROM_SOURCE:-0}" != 1 ]] || install_options+=(--build-from-source)
 [[ "$platform" != mageos ]] || install_options+=(--mageos)
@@ -83,7 +90,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for file in bin docker patches cypress playwright tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
+for file in bin docker patches cypress playwright cli tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
     cp -a "$file" "$scratch/"
 done
 if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
@@ -93,14 +100,32 @@ if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
 fi
 mkdir -p "$scratch/docker/php/e2e"
 cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
+cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
 cp tests/php-report.test.php "$scratch/docker/php/e2e/"
+stage_xml_proofs "$scratch/docker/php/e2e"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
 mkdir -p "$scratch/src/app/code" "$scratch/src/app/design/frontend"
 cp -a src/app/code/Application "$scratch/src/app/code/"
 cp -a src/app/design/frontend/Application "$scratch/src/app/design/frontend/"
-mkdir -p "$scratch/src/app/code/MageLens"
-cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
+if [[ -z "$focus" ]]; then
+    # XML acceptance declarations/routes exist only in this disposable demo checkout.
+    cp -a src/app/code/Application/Blog/Test/Configuration/fixtures/. "$scratch/src/app/code/Application/Blog/"
+    touch "$scratch/src/app/code/Application/Blog/Test/Configuration/.enabled"
+    cp src/app/code/Application/Blog/Test/Configuration/Cypress/settings.cy.js "$scratch/src/app/code/Application/Blog/Test/Cypress/"
+    cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js "$scratch/src/app/code/Application/Blog/Test/Playwright/"
+
+    mkdir -p "$scratch/src/app/code/MageLens"
+    cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
+    cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
+    cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
+    cp -a tests/fixtures/ui-module/module "$scratch/src/app/code/MageLens/UiProbe"
+    cp -a tests/fixtures/ui-module/overlay "$scratch/src/app/code/MageLens/UiProbeOverlay"
+    mkdir -p "$scratch/src/app/design/frontend/MageLens"
+    cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
+    cp -a tests/fixtures/admin-navigation/module "$scratch/src/app/code/MageLens/AdminNavigation"
+    touch "$scratch/src/app/code/Application/Blog/Test/Navigation/.enabled"
+fi
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then
     mkdir -p "$scratch/.runtime"
     cp "$MAGELENS_TEMPLATE_COVERAGE_PACKAGE" "$scratch/.runtime/template-coverage.tgz"
@@ -138,6 +163,22 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
+    if [[ "$focus" == default-coverage ]]; then
+        ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
+        mkdir -p coverage
+        prove_blog_controllers
+        for pass in default warm; do
+            if [[ "$pass" == warm ]]; then cp coverage/xml/coverage.json .runtime/default-xml.json; fi
+            printf 'obsolete report content\n' > coverage/obsolete-publication.txt
+            MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage | tee .runtime/coverage-run.log
+            cp .runtime/coverage-run.log "$artifacts/coverage-$pass.log"
+            ./bin/runner node tests/verify-report-publication.cjs bundled-blog
+            ./bin/runner node tests/verify-scenarios.cjs coverage bundled-blog
+        done
+        ./bin/runner node tests/verify-layout-warm-repeat.cjs .runtime/default-xml.json
+        printf 'PASS: default installation coverage and warm repeat.\n'
+        exit
+    fi
     bash tests/runner-container.sh "$(./bin/application-compose images -q runner)"
     # Verify HTTPS routing through nginx, including the read-only viewer redirect.
     ./bin/application-compose exec -T phpfpm bash -c '
@@ -147,24 +188,77 @@ fi
         html=$(curl --fail --silent --show-error --insecure "${url}vnc.html")
         [[ "$html" == *noVNC* ]]
     '
+    # Use the same native Admin theme for layout evidence on both platforms.
+    if [[ "$platform" == mageos ]]; then
+        prove_stock_admin_layout "$artifacts"
+        ./bin/magento config:set admin/system_admin_design/active_theme Magento/backend
+    fi
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-installation.php "$theme" "$platform" "$PHP_VERSION"
+    if [[ "$theme" == hyva ]]; then prove_blog_controllers --hyva-cold; fi
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/prepare-layout-providers.php
+    ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-layout-schema.php
     if [[ "$platform" == mageos ]]; then
         ./bin/application-compose exec -T phpfpm test ! -f /var/www/.composer/auth.json
     fi
     ./bin/runner node tests/dependencies.test.cjs
     ./bin/application-compose exec -T -e MAGELENS_REPORT_DATA=/application/docker/php/report-data.php phpfpm \
         php -d pcov.directory=/tmp -d pcov.exclude= /application/docker/php/e2e/php-report.test.php
-    ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
+    ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/Application/Blog/Test/Configuration/merge.test.php
+    run_xml_proofs "$theme" "$platform" "$mode"
+    run_ui_component_proofs
+    ./bin/runner node --test tests/verify-routing-native.cjs
+    # Rendering fixtures need to execute through both HTML cache boundaries.
+    # Collected HTTP requests already isolate the native layout cache.
+    ./bin/application-compose exec -T phpfpm php bin/magento cache:disable block_html full_page
+    coverage_options=()
+    if [[ "$mode" == production ]]; then
+        ./bin/deploy-production
+        ./bin/application-compose exec -T phpfpm php bin/magento deploy:mode:show | grep -F 'Current application mode: production'
+        coverage_options+=(--refresh-assets)
+    fi
+    # Prepare the pinned cache through the interactive entry point before coverage.
+    ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
+    # Run from the same host as Compose (WSL on Windows), before collection starts.
+    node tests/verify-cron-native.cjs
+    ./bin/application-compose exec -T phpfpm php /var/www/html/app/code/MageLens/UiProbe/Test/MageLens/hooks.php before
+    ./bin/runner node tests/verify-ui-browser-native.cjs "$runner"
+    if [[ "$mode" == production ]]; then
+        ./bin/application-compose exec -T phpfpm php bin/magento cache:clean config
+    else
+        # The collected run publishes Admin assets from its instrumented source.
+        ./bin/application-compose exec -T phpfpm bash /application/docker/php/refresh-assets.sh
+    fi
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
-    ./bin/run-coverage | tee .runtime/coverage-run.log
+    MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage ${coverage_options[@]+"${coverage_options[@]}"} | tee .runtime/coverage-run.log
+    if [[ "$theme/$runner" == hyva/playwright ]]; then
+        ./bin/runner node --test tests/hyva-csp-no-observer.cjs
+    fi
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
+    ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs
+    ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/routing-coverage.test.cjs
     ./bin/runner node tests/verify-demo.cjs
+    ./bin/runner node tests/verify-xml-admin-navigation.cjs
     ./bin/runner node tests/verify-scenarios.cjs
+    ./bin/runner node tests/verify-cli-coverage.cjs
+    ./bin/runner node tests/verify-xml-cron.cjs
+    ./bin/runner node tests/verify-ui-browser-coverage.cjs
+    ./bin/runner node tests/verify-attempts.cjs
     ./bin/runner node tests/verify-e2e.cjs
     ./bin/runner node tests/verify-compatibility.cjs "$theme"
+    for layout_check in tests/verify-layout-*.cjs; do
+        case "$layout_check" in
+            tests/verify-layout-warm-repeat.cjs) continue ;;
+            tests/verify-layout-handles.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$platform" ;;
+            tests/verify-layout-ui-structure.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
+            tests/verify-layout-render-failures.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
+            tests/verify-layout-grammar.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$mode" ;;
+            tests/verify-layout-ownership.cjs) ./bin/runner node "$layout_check" coverage/xml/coverage.json "$theme" ;;
+            *) ./bin/runner node "$layout_check" ;;
+        esac
+    done
     if [[ "$runner" == cypress ]]; then
         ./bin/runner node tests/cypress-runtime.cjs
         ./bin/runner node tests/cypress-regressions.cjs

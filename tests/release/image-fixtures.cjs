@@ -17,7 +17,7 @@ const packageKind = endpoint => endpoint.slice(`${packagesEndpoint}/`.length).sp
 const published = {schema: 1, platform: 'linux/amd64', version: require('../../package.json').version,
     images: Object.fromEntries(kinds.map(kind => [kind, {inputs: inputs(root, kind), digest: digest('a')}]))};
 
-function retentionFixture({count = 6, ageDays = i => (count + 1 - i) * 30, protocol = expirationProtocol} = {}) {
+function retentionFixture({count = 6, ageDays = i => (count + 1 - i) * 200, protocol = expirationProtocol} = {}) {
     const releases = [], assets = {}, inventories = Object.fromEntries(kinds.map(kind => [kind, []]));
     for (let i = 1; i <= count; i++) {
         const version = `2.0.${i}`;

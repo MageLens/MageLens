@@ -1,16 +1,38 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
 
 declare(strict_types=1);
 
-// Installed only into this application's FPM SAPI. CLI setup and unrelated browser
-// requests cannot contribute to the report.
-$token = $_SERVER['HTTP_X_APPLICATION_COVERAGE'] ?? $_COOKIE['application_coverage'] ?? '';
-if (PHP_SAPI !== 'fpm-fcgi' || !is_string($token) || !preg_match('/^[a-f0-9]{32}$/D', $token)) {
+// FPM is configured at image build time. CLI collection is enabled only for
+// the specific Magento process started by the test command executor.
+$commandId = $tool = $attempt = null;
+$startedAt = $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
+if (PHP_SAPI === 'cli') {
+    $invocation = getenv('MAGELENS_CLI_COVERAGE', true);
+    if (!is_string($invocation) || !preg_match('/^([a-f0-9]{32}):([a-f0-9]{32}):(magento|magerun)$/D', $invocation, $matches)) {
+        return;
+    }
+    [, $token, $commandId, $tool] = $matches;
+    $attempt = getenv('MAGELENS_CLI_COVERAGE_ATTEMPT', true);
+    $attempt = is_string($attempt) && preg_match('/^[a-f0-9]{32}$/D', $attempt) ? $attempt : null;
+    // Child commands are outside this invocation and must not replace its record.
+    putenv('MAGELENS_CLI_COVERAGE');
+    putenv('MAGELENS_CLI_COVERAGE_ATTEMPT');
+} elseif (PHP_SAPI === 'fpm-fcgi') {
+    $token = $_SERVER['HTTP_X_APPLICATION_COVERAGE'] ?? $_COOKIE['application_coverage'] ?? '';
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{32}$/D', $token)) {
+        return;
+    }
+    // The test attempt that sent the request (docs/coverage.md#test-attempts); requests without one stay unattributed.
+    $attempt = $_SERVER['HTTP_X_APPLICATION_COVERAGE_ATTEMPT'] ?? $_COOKIE['application_coverage_attempt'] ?? null;
+    if (!is_string($attempt) || !preg_match('/^[a-f0-9]{32}$/D', $attempt)) {
+        $attempt = null;
+    }
+} else {
     return;
 }
 require_once __DIR__ . '/collection.php';
@@ -20,18 +42,35 @@ if ($active === false || !hash_equals(trim($active), $token)) {
     fclose($collectionLock);
     return;
 }
-$record = '/coverage/raw/php/' . $token . '/' . bin2hex(random_bytes(16));
+$requestId = $commandId ?? bin2hex(random_bytes(16));
+$record = '/coverage/raw/php/' . $token . '/' . $requestId;
 if (!function_exists('pcov\\export')) {
     file_put_contents($record . '.error', 'VitaliyBoyko PCOV native export is unavailable');
     return;
 }
 $state = json_decode(file_get_contents('/coverage/collector.json'), true, flags: JSON_THROW_ON_ERROR);
+require_once '/application/docker/php/xml-hooks.php';
+try {
+    startXmlHooks($token);
+} catch (Throwable) {
+    file_put_contents($record . '.error', 'Cannot initialize XML runtime hooks');
+    return;
+}
+if ($commandId === null) {
+    header('X-MageLens-Response: ' . $requestId);
+    header('Server-Timing: magelens-response;desc="' . $requestId . '"', false);
+}
 pcov\start();
-// Retain the shared lock until request shutdown. Reporting takes an exclusive
+// Retain the shared lock until process shutdown. Reporting takes an exclusive
 // lock and closes the run, without terminating or restarting the FPM worker.
-register_shutdown_function(static function () use ($record, $token, $state, $collectionLock): void {
+$initialPid = getmypid();
+register_shutdown_function(static function () use ($initialPid, $record, $token, $state, $collectionLock, $commandId, $tool, $attempt, $startedAt): void {
+    if ($commandId !== null && getmypid() !== $initialPid) {
+        $record .= '.' . getmypid();
+    }
     pcov\stop();
     try {
+        $xmlRecord = \MageLens\XmlCoverage\Recorder::finish($commandId !== null);
         $result = pcov\export($record . '.pcov', $state['manifest'], $state['identity']['id'], pcov\inclusive, array_keys($state['scope']));
         if ($result === false) {
             throw new RuntimeException('Native PCOV export failed');
@@ -41,11 +80,17 @@ register_shutdown_function(static function () use ($record, $token, $state, $col
         if (!chmod($record . '.pcov', 0644)) {
             throw new RuntimeException('Cannot make the request record readable by the reporting container');
         }
-        file_put_contents($record . '.json', json_encode([
-            'run' => $token,
+        $origin = $commandId === null ? [
             'uri' => $_SERVER['REQUEST_URI'],
             'method' => $_SERVER['REQUEST_METHOD'],
             'status' => http_response_code(),
+        ] : ['commandId' => $commandId, 'tool' => $tool];
+        file_put_contents($record . '.json', json_encode([
+            'xml' => $xmlRecord,
+            'run' => $token,
+            'attempt' => $attempt,
+            'startedAt' => DateTimeImmutable::createFromFormat('U.u', sprintf('%.6F', $startedAt))->format('Y-m-d\\TH:i:s.v\\Z'),
+            ...$origin,
             'mode' => $result['mode'],
             'cache' => $result['cache'] ?? 'bypass',
             'reason' => $result['reason'],

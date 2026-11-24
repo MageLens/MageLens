@@ -1,15 +1,23 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
+const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {createCoverageMap} = require('istanbul-lib-coverage');
-const {withTemplateCoverage} = require('@vitaliiboiko/magento-template-coverage/playwright');
+const {withTemplateCoverage} = require('@magelens/magento-template-coverage/playwright');
 const playwright = require('@playwright/test');
-const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
+const {disablePageTransitions, installPlaywrightAdminDependencies, observeAdminMenuNavigation} = require('../bin/browser-navigation.cjs');
+const {captureHtml} = require('../bin/html-validation.cjs');
+const {recordXmlBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
+const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
+const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
+const {newAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
+const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+        recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
         browserIdentity: [async ({browser}, use, testInfo) => {
             testInfo.annotations.push({type: 'magelens-browser', description: JSON.stringify({
                 name: testInfo.project.use.channel, version: browser.version()
@@ -29,17 +37,60 @@ function withCoverage(base = playwright.test) {
                 playwright.expect(errors, 'Uncaught application errors').toEqual([]);
             }
         }, {auto: true}],
-        context: async ({context, baseURL}, use) => {
+        // Captures the HTML source of the page's current URL for the validation report; see docs/coverage.md#html-validation.
+        mageLensValidateHtml: async ({}, use, testInfo) => {
+            await use(async page => {
+                // A capture problem must not fail the test that requested the audit.
+                try {
+                    const url = page.url();
+                    const capture = {runner: 'playwright', url, spec: path.relative(testInfo.config.rootDir, testInfo.file),
+                        test: testInfo.titlePath.slice(1).join(' › ')};
+                    try {
+                        const response = await page.request.get(url, {headers: {accept: 'text/html'}, maxRedirects: 0, timeout: 60000});
+                        captureHtml({...capture, status: response.status(), contentType: response.headers()['content-type'], html: await response.text()});
+                    } catch (error) {
+                        captureHtml({...capture, error: error.message.split('\n')[0]});
+                    }
+                } catch (error) {
+                    console.error('HTML validation capture failed:', error.message);
+                }
+            });
+        },
+        // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
+        coverageAttempt: [async ({}, use, testInfo) => {
+            const id = newAttemptId();
+            startAttempt({id, runner: 'playwright', spec: projectPath(testInfo.file),
+                test: testInfo.titlePath.slice(1), retry: testInfo.retry, project: testInfo.project.name, worker: testInfo.workerIndex});
+            try { await use(id); }
+            finally { finishAttempt({id, outcome: testInfo.status}); }
+        }, {auto: true}],
+        // Template records carry the attempt ID where the package keeps fixture metadata.
+        templateCoverageOptions: async ({coverageAttempt}, use) => use({outputDir: 'coverage/raw/templates', metadata: {attempt: coverageAttempt}}),
+        context: async ({context, baseURL, coverageAttempt}, use) => {
+            const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
-            await context.addCookies([{name: 'application_coverage', value: run.id,
-                domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true}]);
+            await context.addInitScript(installUiBrowserObserver, loadUiBrowserScope(run.id));
+            const menuBinding = '__magelensMenu' + randomUUID().replaceAll('-', '');
+            await context.exposeBinding(menuBinding, (_source, evidence) => { recordXmlBrowserEvidence(evidence); });
+            await context.addInitScript({content:
+                `if (window === window.top && location.origin === ${JSON.stringify(new URL(baseURL).origin)}) {
+                    (${observeAdminMenuNavigation})(window, () => '${menuBinding}', window.${menuBinding});
+                }`});
+            const cookie = {domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true};
+            await context.addCookies([{name: 'application_coverage', value: run.id, ...cookie},
+                {name: 'application_coverage_attempt', value: coverageAttempt, ...cookie}]);
             const snapshots = new Map();
+            const uiCandidates = new Map();
             const binding = '__magelensJS' + randomUUID().replaceAll('-', '');
-            await context.exposeBinding(binding, (_source, snapshot) => snapshots.set(snapshot.id, snapshot.coverage));
+            await context.exposeBinding(binding, (_source, snapshot) => {
+                snapshots.set(snapshot.id, snapshot.coverage);
+                for (const entry of snapshot.ui) uiCandidates.set(JSON.stringify(entry), entry);
+            });
             await context.addInitScript(({binding}) => {
                 const id = crypto.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2);
-                const publish = () => window[binding]({id, coverage: window.__coverage__ || {}});
+                const publish = () => window[binding]({id, coverage: window.__coverage__ || {},
+                    ui: window.__mageLensUiEffects?.snapshot() ?? []});
                 window[binding + '_flush'] = publish;
                 setInterval(() => publish().catch(() => {}), 250);
                 addEventListener('pagehide', () => publish().catch(() => {}));
@@ -63,10 +114,13 @@ function withCoverage(base = playwright.test) {
                 for (const page of context.pages()) await flush(page);
                 context.off('page', track);
                 for (const [page, close] of closeMethods) page.close = close;
+                for (const entry of uiCandidates.values()) recordXmlBrowserEvidence({...entry, candidate: true});
                 const coverage = createCoverageMap({});
                 for (const snapshot of snapshots.values()) coverage.merge(snapshot);
                 fs.mkdirSync('.nyc_output', {recursive: true});
                 fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
+                checkAdminDependencies();
+                recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
             }
         }
     });

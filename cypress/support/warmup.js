@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
 // Keep instrumented templates functional without recording coverage or a PHP token.
-const {observeExecution} = require('@vitaliiboiko/magento-template-coverage/browser');
-const {disablePageTransitions} = require('../../bin/browser-navigation.cjs');
+const {observeExecution} = require('@magelens/magento-template-coverage/browser');
+const {disablePageTransitions, installCypressAdminDependencies} = require('../../bin/browser-navigation.cjs');
 let win;
 let lastActivity = Date.now();
 let requests = new Map();
@@ -31,6 +31,7 @@ function snapshot() {
 }
 
 beforeEach(() => {
+    installCypressAdminDependencies();
     win = undefined;
     lastActivity = Date.now();
     requests = new Map();

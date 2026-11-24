@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -7,6 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {spawnSync} = require('node:child_process');
+const {Config, Parser} = require('html-validate');
 const {prepare} = require('../bin/prepare.cjs');
 const {nginxConfig} = require('../bin/project.cjs');
 const projectRoot = path.resolve(__dirname, '..');
@@ -28,6 +30,38 @@ function fixture(t) {
 }
 const read = file => JSON.parse(fs.readFileSync(file));
 
+test('prepared Hyvä property bindings work before attaching the coverage observer', async t => {
+    const {base, write} = fixture(t);
+    const template = `${base}/view/frontend/templates/alpine.phtml`;
+    const source = '<div id="panel" x-data="panel" @update-<?= $id ?>.window="update">\n<template id="loop" x-for="item in items"><span x-text="item"></span></template>\n</div>';
+    write(`src/${template}`, source);
+    prepare({runtimeOnly: true, themeRoots: []});
+    const result = fs.readFileSync(`.runtime/${template}`, 'utf8');
+    const entry = read('.runtime/template-manifest.json').templates.find(entry => entry.path === template);
+    const eventSource = '@update-<?= $id ?>.window';
+    assert.equal(result.split('\n').length, source.split('\n').length);
+    assert.equal(fs.readFileSync(`src/${template}`, 'utf8'), source);
+    assert.equal(entry.statements.find(({binding}) => binding === eventSource)?.start.line, 1);
+
+    await t.test('rendered directives and markers identify the same bindings', t => {
+        const php = spawnSync('php', ['-n'], {input: '<?php $id = 42; ?>' + result, encoding: 'utf8', timeout: 10000});
+        if (php.error?.code === 'ENOENT') return t.skip('PHP CLI unavailable');
+        assert.equal(php.status, 0, php.error?.message || php.stderr);
+        const dom = new Parser(Config.empty().resolve()).parseHtml(php.stdout);
+        const collector = read('package-lock.json').packages['node_modules/@magelens/magento-template-coverage'];
+        const legacyMarkers = ['2.1.2', '2.1.3'].includes(collector.version);
+        for (const [element, name, expression, originalName] of [
+            [dom.querySelector('#panel'), 'x-data', 'panel', 'x-data'],
+            [dom.querySelector('#panel'), '@update-42.window', 'update', eventSource],
+            [dom.querySelector('#loop'), 'x-for', 'item in items', 'x-for']
+        ]) {
+            const {id} = entry.statements.find(({binding}) => binding === originalName);
+            assert.equal(element.getAttributeValue(name), expression);
+            assert.equal(element.getAttributeValue(`data-mtc-binding-${id}`), legacyMarkers ? '' : name);
+        }
+    });
+});
+
 test('repeated runs reuse browser files while resetting all execution artifacts', t => {
     const {base} = fixture(t);
     prepare({runtimeOnly: true, themeRoots: []});
@@ -44,6 +78,27 @@ test('repeated runs reuse browser files while resetting all execution artifacts'
     assert.deepEqual([script, template].map(file => fs.statSync(file, {bigint: true}).mtimeNs), mtimes);
     const baseline = read('.runtime/js-baseline.json');
     assert.ok(Object.values(Object.values(baseline)[0].s).every(hit => hit === 0));
+});
+
+for (const readme of ['<!-- coverage-badges:start -->\nprevious results\n<!-- coverage-badges:end -->', '# Project without badge markers\r\n']) {
+    test('default preparation preserves README bytes', t => {
+        fixture(t);
+        fs.writeFileSync('README.md', readme);
+        prepare({themeRoots: []});
+        assert.equal(fs.readFileSync('README.md', 'utf8'), readme);
+    });
+}
+
+test('README updates require opt-in and full preparation', t => {
+    fixture(t);
+    const before = fs.readFileSync('README.md', 'utf8');
+    prepare({runtimeOnly: true, updateReadme: true, themeRoots: []});
+    assert.equal(fs.readFileSync('README.md', 'utf8'), before);
+    fs.writeFileSync('themes.json', '[]');
+    const result = spawnSync(process.execPath, [path.join(projectRoot, 'bin/prepare.cjs'),
+        '--theme-roots', 'themes.json', '--update-readme'], {encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(fs.readFileSync('README.md', 'utf8'), /Coverage has not completed for the current run\./);
 });
 
 test('source edits update runtime files in place without rewriting unchanged browser instrumentation', t => {
@@ -115,7 +170,7 @@ test('preparing after an older release removes instrumented Setup copies and bas
     const {createInstrumenter} = require('istanbul-lib-instrument');
     const instrumenter = createInstrumenter();
     fs.writeFileSync(`.runtime/${base}/Setup/example.js`, instrumenter.instrumentSync(original, path.resolve(source)));
-    const {createManifest, instrument} = require('@vitaliiboiko/magento-template-coverage');
+    const {createManifest, instrument} = require('@magelens/magento-template-coverage');
     const oldManifest = createManifest({source: 'src', roots: ['app/code']});
     instrument({source: 'src', manifest: oldManifest, mappings: {'app/code': '.runtime/app/code'}});
     fs.writeFileSync('.runtime/template-manifest.json', JSON.stringify(oldManifest));

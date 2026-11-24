@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <type name="Application\Blog\Model\JournalPluginSubject">
+        <plugin name="journal_disabled" disabled="true"/>
+        <plugin name="journal_frontend" type="Application\Blog\Plugin\JournalBefore" sortOrder="23"/>
+    </type>
+    <preference for="Application\Blog\Model\JournalAreaPreference" type="Application\Blog\Model\JournalFrontendPreference"/>
+    <virtualType name="Application\Blog\Model\JournalArgumentAlias" type="Application\Blog\Model\JournalArgumentProbe">
+        <arguments><argument name="label" xsi:type="string">frontend label</argument></arguments>
+    </virtualType>
+</config>

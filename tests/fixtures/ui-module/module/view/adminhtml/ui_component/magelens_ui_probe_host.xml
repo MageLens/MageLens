@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<form xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Ui:etc/ui_configuration.xsd">
+    <argument name="data" xsi:type="array">
+        <item name="js_config" xsi:type="array">
+            <item name="provider" xsi:type="string">magelens_ui_probe_host.probe_form_data_source</item>
+        </item>
+        <item name="label" xsi:type="string">MageLens UI host</item>
+        <item name="template" xsi:type="string">templates/form/collapsible</item>
+    </argument>
+    <settings>
+        <namespace>magelens_ui_probe_host</namespace>
+        <dataScope>data</dataScope>
+        <deps>
+            <dep>magelens_ui_probe_host.probe_form_data_source</dep>
+        </deps>
+    </settings>
+    <dataSource name="probe_form_data_source" component="Magento_Ui/js/form/provider">
+        <aclResource>Magento_Backend::admin</aclResource>
+        <dataProvider class="MageLens\UiProbe\Model\Provider" name="probe_form_data_source">
+            <settings>
+                <requestFieldName>id</requestFieldName>
+                <primaryFieldName>id</primaryFieldName>
+            </settings>
+        </dataProvider>
+    </dataSource>
+    <fieldset name="host_fields">
+        <settings>
+            <label>Inserted probe form</label>
+        </settings>
+        <insertForm name="inserted_form">
+            <argument name="data" xsi:type="array">
+                <item name="config" xsi:type="array">
+                    <item name="ns" xsi:type="string">magelens_ui_probe_form</item>
+                </item>
+            </argument>
+            <settings>
+                <autoRender>true</autoRender>
+                <externalProvider>magelens_ui_probe_form.probe_form_data_source</externalProvider>
+            </settings>
+        </insertForm>
+        <button name="initial_disabled" sortOrder="50">
+            <argument name="data" xsi:type="array">
+                <item name="config" xsi:type="array">
+                    <item name="title" xsi:type="string">Disabled initial button</item>
+                    <item name="componentDisabled" xsi:type="boolean">true</item>
+                    <item name="actions" xsi:type="array">
+                        <item name="0" xsi:type="array">
+                            <item name="targetName" xsi:type="string">magelens_ui_probe_host.magelens_ui_probe_host</item>
+                            <item name="actionName" xsi:type="string">reset</item>
+                        </item>
+                    </item>
+                </item>
+            </argument>
+        </button>
+    </fieldset>
+</form>

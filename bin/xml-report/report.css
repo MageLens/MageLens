@@ -1,0 +1,49 @@
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+
+/* Match the template coverage report's breadcrumbs, tables, and coverage colors. */
+body { font: 15px system-ui; margin: 24px; color: #17202a; }
+nav { padding: 14px; background: #edf0f3; border-radius: 5px; line-height: 1.7; overflow-wrap: anywhere; }
+h1 { font-size: 26px; overflow-wrap: anywhere; }
+p { max-width: 1200px; line-height: 1.6; }
+a { color: #075e67; text-underline-offset: 2px; }
+:is(a, summary):focus-visible { outline: 3px solid #075e67; }
+summary { cursor: pointer; width: fit-content; margin-bottom: 10px; }
+details { margin-block: 16px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 9px; border: 1px solid #dfe3e6; text-align: left; }
+thead th { background: #f6f8fa; }
+tbody th { font-weight: inherit; overflow-wrap: anywhere; }
+.total { font-weight: 600; }
+.metric { min-width: 175px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { display: inline-block; width: 75px; height: 12px; margin-right: 10px; overflow: hidden; border-radius: 3px; background: #e9ecef; }
+.bar span { display: block; height: 100%; background: #29a34a; }
+.low .bar span { background: #dc3545; }
+.medium .bar span { background: #ffc107; }
+.covered { background: #e0f1d7; }
+.high { background: #e0f1d7; }
+.uncovered { background: #f8dddd; }
+.low { background: #f8dddd; }
+.partial, .medium { background: #fff5cd; }
+.unmeasured { background: #edf0f3; }
+.neutral, .unmeasured, .muted { color: #59636c; }
+.muted { font-size: 13px; }
+.source { font: 13px ui-monospace, monospace; }
+.source td { padding: 3px 10px; }
+.source .number { width: 55px; }
+.source .hits { width: 80px; text-align: right; }
+.source .code { white-space: pre; tab-size: 4; }
+.line:target { outline: 2px solid #075e67; outline-offset: -2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+.legend span { padding: 3px 6px; }
+details td { overflow-wrap: anywhere; }
+small, .preference-areas span { display: block; }
+.preference-areas { list-style: none; padding: 0; margin: 0; }
+.preference-areas li { padding: 6px 10px; margin: 2px 0; }
+@media (max-width: 480px) {
+    body { margin: 16px; }
+}

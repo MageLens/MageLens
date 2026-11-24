@@ -43,7 +43,7 @@ To install a specific release, prefix the command with `MAGELENS_VERSION=v1.8.2`
 
 If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
 
-Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches a published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Linux amd64 and arm64 images are published, including native images for Apple Silicon. GHCR retains images referenced by published releases; checkouts without published images or with modified inputs build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
+Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches a published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Linux amd64 and arm64 images are published, including native images for Apple Silicon. GHCR retains prebuilt images for at least three years (1,096 days) after a MageLens release is published. The latest release, the five most recently published releases and pinned releases keep their images beyond that window. Checkouts without published images or with modified inputs build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
 
 The command above installs Magento Open Source with Luma and Cypress. Add `--mageos` to install Mage-OS instead. On Linux and Apple Silicon macOS, both platforms are tested with every storefront and browser runner combination:
 
@@ -127,9 +127,13 @@ By default, the installer adds the domain to your hosts file and uses Mark Shust
 
 PHP coverage excludes emitted HTML and inline JavaScript. Template warnings identify unsupported directives, scripts or PHP-generated output. When a warning is present, the template percentage covers only the parts MageLens can measure.
 
-After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. Each successful full run also refreshes the four SVG badges in `coverage/badges/` and the managed badge section in this README. Reports are generated locally and are ignored by Git; the badges can be committed. Archive `coverage/` to share the browsable reports.
+After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. Each successful full run also refreshes the four SVG badges in `coverage/badges/` and the managed badge section in this README. Reports are generated locally and are ignored by Git; the badges can be committed.
+
+To share coverage, run `./bin/export-coverage` and send only **`coverage/share.html`**. This standalone report contains coverage metrics and project-relative file paths. Keep the full `coverage/` directory private because it contains raw requests and test fixture data. [Export options](docs/coverage.md#reports-and-artifacts)
 
 Coverage includes PHP executable lines, whole JavaScript files, and HTML/PHTML templates with their bindings and inline scripts under `src/app/code/`, plus selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. JavaScript badges measure statements in whole `.js` files, with separate application/library reports. Inline scripts belong to template coverage, which also lists unsupported and PHP-generated script fragments. See [JavaScript coverage configuration](docs/coverage.md#javascript-coverage).
+
+Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](docs/coverage.md#html-validation).
 
 Read the [coverage guide](docs/coverage.md) for report semantics, collection details, and adding tests and fixtures.
 
@@ -163,17 +167,19 @@ This is the single place to choose the main dependency versions:
 | [PCOV fork](https://github.com/MageLens/PCOV) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |
+| n98-magerun2 for CLI tests | `MAGERUN_VERSION` / `MAGERUN_SHA256` |
 | Hyvä CSP theme | `HYVA_VERSION` |
 | Cypress JavaScript coverage adapter | `CYPRESS_CODE_COVERAGE_VERSION` |
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |
 | Istanbul report CLI (nyc) | `NYC_VERSION` |
+| [HTML validation](docs/coverage.md#html-validation) engine (html-validate) | `HTML_VALIDATE_VERSION` |
 | [Magento template coverage](https://github.com/MageLens/MagentoTemplateCoverage) | `TEMPLATE_COVERAGE_VERSION` |
 | Cypress runner's Node and browser system dependencies | `RUNNER_IMAGE` |
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
 
 Use exact release versions and keep values quoted. `RUNNER_IMAGE` is an image with a version tag. `PHP_IMAGE` uses `php:X.Y.Z-fpm-bookworm`, optionally pinned with `@sha256:<digest>`. Choose a PHP version supported by both the selected Mark Shust release and your platform. The defaults pair Magento Open Source 2.4.9 and Mage-OS 4.0.0, which share the same Magento foundation.
 
-The PHP image uses PIE 1.5.5 to install PCOV 2.1.2, including the [PIE installer security fix](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67). After updating MageLens, rerun the installer with your existing platform, theme and runner flags to rebuild the PHP image.
+The PHP image uses PIE 1.5.5 to install PCOV 2.1.3, including the [PIE installer security fix](https://github.com/php/pie/security/advisories/GHSA-4538-pqqf-mv67). After updating MageLens, rerun the installer with your existing platform, theme and runner flags to rebuild the PHP image.
 
 The installer updates `package.json` and `package-lock.json` for your selected runner and coverage tools. You do not need to install Cypress or Playwright separately. Hyvä upgrades also require a matching package list in `docker/php/hyva-packages.json` for the selected `HYVA_VERSION`.
 

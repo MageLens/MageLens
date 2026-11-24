@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="MageLens\Compatibility\Cli\CronWorker" type="MageLens\Compatibility\Cli\PreferredCronWorker"/>
+    <virtualType name="MageLens\Compatibility\Cli\VirtualCronWorker" type="MageLens\Compatibility\Cli\VirtualCronWorkerTarget"/>
+    <virtualType name="MageLens\Compatibility\Cli\ScopedCronWorker" type="MageLens\Compatibility\Cli\VirtualCronWorkerTarget"/>
+    <type name="MageLens\Compatibility\Cli\PreferredCronWorker">
+        <plugin name="magelens_cron_worker_message" type="MageLens\Compatibility\Plugin\CronWorkerMessage"/>
+    </type>
+    <type name="MageLens\Compatibility\Cli\Jobs">
+        <plugin name="magelens_cron_interceptor" type="MageLens\Compatibility\Plugin\CronInterceptor"/>
+    </type>
+    <type name="Magento\Framework\Console\CommandList">
+        <arguments>
+            <argument name="commands" xsi:type="array">
+                <item name="magelens_probe" xsi:type="object">MageLens\Compatibility\Cli\Probe</item>
+            </argument>
+        </arguments>
+    </type>
+</config>

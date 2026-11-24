@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -14,5 +14,7 @@ for (const file of files) {
     else if (/\.(cjs|mjs|js)$/.test(file)) command = ['node', '--check'];
     else if (/\.(php|phtml)$/.test(file) || file.endsWith('.php.sample')) command = ['php', '-l'];
     if (command) { execFileSync(command[0], [...command.slice(1), file], {stdio: 'pipe'}); count++; }
+    // macOS ships bash 3.2 as /bin/bash; scripts must also parse there.
+    if (command?.[0] === 'bash' && fs.existsSync('/bin/bash')) execFileSync('/bin/bash', ['-n', file], {stdio: 'pipe'});
 }
 console.log(`Syntax checked ${count} tracked scripts.`);

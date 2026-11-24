@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <block class="Magento\Framework\View\Element\Template" name="magelens.layout.mutation.direct" template="MageLens_Compatibility::layout-mutation.phtml">
+            <arguments><argument name="value" xsi:type="string">xml-value</argument></arguments>
+        </block>
+    </body>
+</page>

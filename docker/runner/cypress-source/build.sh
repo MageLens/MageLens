@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -29,6 +29,8 @@ yarn install --frozen-lockfile --network-concurrency 4
 export PATH="$PWD/node_modules/.bin:$PATH"
 # The Docker stage restricts CPU affinity to two CPUs. Cypress's standard binary
 # builder derives its worker count from that affinity, including build-prod.
+# The patch serializes workspace build targets because component packages
+# rewrite the CLI manifest and its generated declarations share that package.
 node -e 'const fs=require("fs"); const p=require("./package.json"); p.version=process.argv[1]; fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$version"
 yarn lerna run build --stream --concurrency 2
 yarn workspace @packages/network-interception test run --maxWorkers=2 --minWorkers=1

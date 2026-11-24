@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -6,6 +6,8 @@
 // after window:load, and its Admin Prototype library changes Array#toJSON.
 // The standard browser hook's deep comparison can collapse distinct empty maps.
 // Use the maintained plugin's merge/report tasks with plain snapshots instead.
+const {sparseCounters} = require('../../bin/javascript-attempts.cjs');
+const {currentAttempt} = require('./attempt');
 let pages = new Set();
 
 before(() => cy.task('resetCoverage', {isInteractive: Cypress.config('isInteractive')}, {log: false}));
@@ -16,11 +18,15 @@ Cypress.on('window:before:load', win => {
     pages.add(coverage);
 });
 afterEach(() => {
+    const attempt = currentAttempt();
     for (const coverage of pages) {
         if (Object.keys(coverage).length) {
             // Clone into the test runner's realm before serializing. This keeps
             // branch arrays as arrays despite Prototype's legacy toJSON method.
-            cy.task('combineCoverage', JSON.stringify(structuredClone(coverage)), {log: false});
+            const snapshot = structuredClone(coverage);
+            cy.task('combineCoverage', JSON.stringify(snapshot), {log: false});
+            // The same page counters, kept per test attempt; see docs/coverage.md#test-attempts.
+            if (attempt) cy.task('mageLensAttemptJavascript', {id: attempt, counters: sparseCounters(snapshot)}, {log: false});
         }
     }
 });

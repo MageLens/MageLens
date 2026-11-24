@@ -21,15 +21,17 @@ const browserVersions = {
     PLAYWRIGHT_VERSION: '1.64.1',
     CYPRESS_VERSION: '16.2.0', TEMPLATE_COVERAGE_VERSION: '1.5.2',
     CYPRESS_CODE_COVERAGE_VERSION: '4.1.0', ISTANBUL_LIB_COVERAGE_VERSION: '3.2.3',
-    ISTANBUL_LIB_INSTRUMENT_VERSION: '6.0.4', NYC_VERSION: '18.0.1'
+    ISTANBUL_LIB_INSTRUMENT_VERSION: '6.0.4', NYC_VERSION: '18.0.1', HTML_VALIDATE_VERSION: '11.21.0',
+    MUSTACHE_VERSION: '4.2.0'
 };
 const browserPackages = {
     ISTANBUL_LIB_REPORT_VERSION: 'istanbul-lib-report',
     ISTANBUL_REPORTS_VERSION: 'istanbul-reports',
     PLAYWRIGHT_VERSION: '@playwright/test',
-    CYPRESS_VERSION: 'cypress', TEMPLATE_COVERAGE_VERSION: '@vitaliiboiko/magento-template-coverage',
+    CYPRESS_VERSION: 'cypress', TEMPLATE_COVERAGE_VERSION: '@magelens/magento-template-coverage',
     CYPRESS_CODE_COVERAGE_VERSION: '@cypress/code-coverage', ISTANBUL_LIB_COVERAGE_VERSION: 'istanbul-lib-coverage',
-    ISTANBUL_LIB_INSTRUMENT_VERSION: 'istanbul-lib-instrument', NYC_VERSION: 'nyc'
+    ISTANBUL_LIB_INSTRUMENT_VERSION: 'istanbul-lib-instrument', NYC_VERSION: 'nyc', HTML_VALIDATE_VERSION: 'html-validate',
+    MUSTACHE_VERSION: 'mustache'
 };
 const select = (content, values) => Object.entries(values).reduce((text, [key, value]) =>
     text.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: \"${value}\"`), content);
@@ -102,6 +104,8 @@ test('dependency YAML rejects missing, duplicate, unknown and unsafe values', t 
         select(yaml, {CHROME_VERSION: 'latest'}),
         select(yaml, {CHROME_VERSION: '156.0.8078'}),
         select(yaml, {CHROME_LINUX_X64_SHA256: '1234'}),
+        select(yaml, {OPENTELEMETRY_SHA256: '1234'}),
+        yaml.replace(/^OPENTELEMETRY_SHA256:.*\n/m, ''),
         yaml.replace(/^CHROME_LINUX_ARM64_SHA256:.*\n/m, ''),
         yaml.replace(/^MAGEOS_VERSION:.*\n/m, ''),
         yaml.replace(/^PHP_IMAGE:.*\n/m, ''),
@@ -150,7 +154,8 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args, recipe: fs.readF
     assert.equal(calls.length, 1);
     assert.equal(calls[0].recipe, original.toString()
         .replace('FROM php:8.4-fpm-bookworm AS base', `FROM ${image} AS base`)
-        .replace('--version=2.9.8', `--version=${configured('COMPOSER_VERSION')}`),
+        .replace('--version=2.9.8', `--version=${configured('COMPOSER_VERSION')}`)
+        .replace('COPY conf/php.ini ', 'COPY --chmod=0644 conf/php.ini '),
         'Preserve upstream extensions, configuration and later build stages');
     assert.equal(calls[0].args.at(-1), context, 'Build with the upstream context for its configuration files');
     for (const content of [
@@ -340,7 +345,7 @@ if (args.includes('--print-viewer')) console.log('https://shop.magelens.test:608
     assert.equal(calls.some(call => call.args.includes('exec') && call.args.includes('runner') && call.args.includes('cypress') && call.args.includes('verify')), runner === 'cypress');
     assert.ok(calls.some(call => call.args.includes('--print-viewer')), 'Every runner advertises the viewer');
     assert.ok(calls.some(call => call.args.includes('/opt/magelens/browser-smoke.cjs')));
-    assert.equal(fs.readFileSync(path.join(directory, '.runtime/installed'), 'utf8'), '5\n');
+    assert.equal(fs.readFileSync(path.join(directory, '.runtime/installed'), 'utf8'), '6\n');
 });
 }
 }

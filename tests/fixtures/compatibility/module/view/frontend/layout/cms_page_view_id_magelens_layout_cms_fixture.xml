@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd" layout="magelens_fixture">
+    <head><title>XML CMS title</title></head>
+    <body>
+        <referenceContainer name="magelens.layout.wireframe">
+            <block class="Magento\Framework\View\Element\Template" name="magelens.layout.cms.xml" template="MageLens_Compatibility::layout-cms.phtml" cacheable="false">
+                <arguments>
+                    <argument name="kind" xsi:type="string">xml</argument>
+                    <argument name="value" xsi:type="string">xml-value</argument>
+                </arguments>
+            </block>
+        </referenceContainer>
+        <referenceBlock name="magelens.layout.cms.inline" template="MageLens_Compatibility::layout-cms.phtml"/>
+    </body>
+</page>

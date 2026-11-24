@@ -8,12 +8,13 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const https = require('node:https');
 
+const bundledBlog = process.argv[2] === 'bundled-blog';
 const output = fs.readFileSync('.runtime/coverage-run.log', 'utf8');
 const links = [...output.matchAll(/^Open the combined coverage report: (https?:\/\/\S+)$/gm)];
 assert.equal(links.length, 1, 'Expected exactly one successful report URL');
 const index = new URL(links[0][1]);
 const base = new URL('./', index);
-assert.equal(fs.readlinkSync('src/pub/media/coverage'), '../../../coverage');
+assert.equal(fs.readlinkSync('src/pub/media/coverage'), '../../../coverage/.site');
 
 function request(url) {
     return new Promise((resolve, reject) => {
@@ -57,16 +58,27 @@ async function verifyPage(file) {
 
 async function main() {
     await verifyPage('index.html');
-    for (const type of ['php', 'js', 'templates']) {
+    for (const type of ['php', 'js', 'templates', 'xml']) {
         await verifyPage(`${type}/index.html`);
         const entries = fs.readdirSync(`coverage/${type}`, {recursive: true});
         const nested = entries.find(file => file.endsWith('.html') && file !== 'index.html' && !file.endsWith('/index.html'));
         assert.ok(nested, `Missing nested ${type} report`);
         await verifyPage(`${type}/${nested}`);
     }
+    if (!bundledBlog) {
+        await verifyPage('html-validation/index.html');
+        await verify('html-validation/results.json');
+    }
     for (const file of ['summary.json', 'php/clover.xml', 'js/coverage-final.json', 'templates/coverage-summary.json']) await verify(file);
-    const missing = await request(new URL('obsolete-publication.txt', base));
-    assert.equal(missing.status, 404, 'Obsolete report content remains public');
+    const run = JSON.parse(fs.readFileSync('coverage/run.json', 'utf8')).id;
+    const raw = path.posix.join('raw/php', run);
+    const record = fs.readdirSync(path.join('coverage', raw)).find(file => file.endsWith('.json'));
+    assert.ok(record, 'Expected a raw HTTP request record');
+    for (const file of [path.posix.join(raw, record), 'php/coverage-summary.json', 'project-fixtures.json', 'run.json']) {
+        assert.ok(fs.statSync(path.join('coverage', file)).isFile(), `Missing private test input: ${file}`);
+        assert.equal((await request(new URL(file, base))).status, 404, 'Private report input is available over HTTP');
+    }
+    assert.equal((await request(new URL('obsolete-publication.txt', base))).status, 404, 'Obsolete report content remains public');
     console.log(`Verified ${verified.size} published report pages, assets and exports through ${index}`);
 }
 

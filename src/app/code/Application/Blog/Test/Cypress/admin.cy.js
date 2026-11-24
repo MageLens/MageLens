@@ -1,8 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-import {fixtures, headers, get, login, section, findRecord, save, remove, visitBlog, storefrontMessage} from './support';
+import {fixtures, headers, get, login, navigateAdminMenu, section, findRecord, save, remove, visitBlog, storefrontMessage} from './support';
 
 function fillPost(title, slug, category) {
     cy.get('#blog-title').clear().type(title);
@@ -159,5 +159,39 @@ describe('Blog Admin and publishing', () => {
                 headers: headers(), failOnStatusCode: false, body: {form_key: win.FORM_KEY, name: 'Forbidden', slug: f.prefix + 'forbidden', is_active: '1'}})
                 .its('status').should('equal', 403);
         });
+        if (f.navigation) {
+            const entry = name => `[data-ui-id="menu-magelens-adminnavigation-${name}"]`;
+            cy.get(entry('inherited-posts')).should('not.exist');
+            cy.mageLensClearSessionCookies();
+            login(f.navigation.user, f.navigation.password);
+            cy.get(entry('inherited-posts') + ' > a').should('exist');
+            cy.get(entry('inherited-categories') + ' > a').should('exist');
+            cy.get(entry('removed')).should('not.exist');
+            const parent = '#menu-application-blog-manage > a';
+            let clicked;
+            navigateAdminMenu(parent, entry('inherited-posts') + ' > a', link => { clicked = link.href; });
+            get('admin-new').should('contain', 'Add post');
+            cy.window({log: false}).then(win => {
+                expect(win.location.href === clicked, 'navigation matches the clicked menu entry').to.equal(true);
+            });
+            navigateAdminMenu(parent, entry('interrupted') + ' > a', link => {
+                link.addEventListener('click', event => event.preventDefault(), {once: true});
+            });
+            get('admin-new').should('contain', 'Add post');
+            // Visiting the very URL of the canceled click still earns no follow.
+            cy.get(entry('interrupted') + ' > a', {log: false}).then(link => cy.visit(link[0].href, {log: false}));
+            cy.location('pathname').should('include', '/section/comments/');
+            // Open the sibling directly. It must not inherit the preceding click.
+            cy.get(entry('inherited-categories') + ' > a', {log: false}).then(link => cy.visit(link[0].href, {log: false}));
+            get('admin-new').should('contain', 'Add category');
+            navigateAdminMenu(parent, entry('products') + ' > a', link => {
+                clicked = link.href;
+                expect(/\/catalog\/product\/index\/key\/[^/]+\//.test(new URL(clicked).pathname), 'native catalog URL includes its default action and secret key').to.equal(true);
+            });
+            cy.get('h1.page-title').should('contain', 'Products');
+            cy.window({log: false}).then(win => {
+                expect(win.location.href === clicked, 'navigation matches the clicked catalog entry').to.equal(true);
+            });
+        }
     });
 });

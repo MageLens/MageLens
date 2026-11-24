@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -29,6 +29,31 @@ module.exports = defineConfig({
                 });
             } else {
                 require('@cypress/code-coverage/task')(on, config);
+                const {captureHtml} = require('./bin/html-validation.cjs');
+                const {startAttempt, finishAttempt, recordJavascript} = require('./bin/test-attempts.cjs');
+                const {recordXmlBrowserEvidence} = require('./bin/xml-browser-evidence.cjs');
+                const {loadUiBrowserScope} = require('./bin/xml-ui-browser-scope.cjs');
+                config.expose.xmlUiScope = loadUiBrowserScope(config.expose.coverageRun);
+                on('task', {
+                    mageLensAttempt: ({event, ...attempt}) => event === 'start'
+                        ? startAttempt({runner: 'cypress', ...attempt}) : finishAttempt(attempt),
+                    mageLensAttemptJavascript: recordJavascript,
+                    recordXmlBrowserEvidence,
+                    recordAdminMenuNavigation(observations) {
+                        observations.forEach(recordXmlBrowserEvidence);
+                        return null;
+                    },
+                    recordXmlUiCandidates(entries) {
+                        for (const entry of entries) recordXmlBrowserEvidence({...entry, candidate: true});
+                        return null;
+                    }
+                });
+                // A capture problem must not fail the test that requested the audit.
+                on('task', {mageLensValidateHtml(capture) {
+                    try { captureHtml({runner: 'cypress', ...capture}); }
+                    catch (error) { console.error('HTML validation capture failed:', error.message); }
+                    return null;
+                }});
             }
             return config;
         }

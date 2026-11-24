@@ -147,7 +147,7 @@ test('service, runner and coverage entry points reuse the saved project and reje
     f.write('.runtime/docker-magento/compose/bin/stop', '#!/bin/sh\nexec bin/docker-compose stop "$@"\n');
     f.write('.runtime/docker-magento/compose/env/local.env', 'TEST=1\n');
     assert.equal(f.run('bin/expose-tools').status, 0);
-    f.write('.runtime/installed', '5\n');
+    f.write('.runtime/installed', '6\n');
     f.write('.runtime/install-profile', 'luma cypress magento\n');
     f.write('.runtime/compose-project-name', 'client-shop\n');
     for (const [script, args] of [['bin/application-compose', ['stop']], ['bin/start', []], ['bin/stop', []],
@@ -183,7 +183,7 @@ test('installer help documents project-name input and precedence without Docker'
 test('another checkout using the same project is rejected before coverage, service or installation changes', t => {
     const f = workspace(t, 'COMPOSE_PROJECT_NAME=client-shop\n');
     const other = workspace(t);
-    f.write('.runtime/installed', '5\n');
+    f.write('.runtime/installed', '6\n');
     f.write('.runtime/install-profile', 'luma cypress magento\n');
     f.write('.runtime/compose-project-name', 'client-shop\n');
     fs.mkdirSync(path.join(f.root, 'coverage'));
@@ -197,7 +197,7 @@ test('another checkout using the same project is rejected before coverage, servi
         assert.ok(result.stderr.includes(other.root));
         assert.equal(f.read('calls.jsonl'), '', 'No Compose action may reach the other application');
         assert.equal(f.read('coverage/project-fixtures.json'), '{"preserve":true}');
-        assert.equal(f.read('.runtime/installed'), '5\n');
+        assert.equal(f.read('.runtime/installed'), '6\n');
         assert.equal(f.read('.runtime/install-profile'), 'luma cypress magento\n');
         assert.equal(f.read('.env'), 'COMPOSE_PROJECT_NAME=client-shop\n');
         assert.equal(fs.existsSync(path.join(f.root, '.runtime/workflow.lock')), false);

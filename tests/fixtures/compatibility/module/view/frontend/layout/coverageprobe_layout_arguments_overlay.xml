@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="magelens.layout.arguments">
+            <action method="markArgumentAction">
+                <argument name="marker" xsi:type="string">overlay</argument>
+            </action>
+            <action method="markArgumentAction" ifconfig="magelens_layout_fixture/disabled/action">
+                <argument name="marker" xsi:type="string">equal</argument>
+            </action>
+            <action method="markArgumentAction">
+                <argument name="marker" xsi:type="string">equal</argument>
+            </action>
+            <arguments>
+                <argument name="matrix" xsi:type="array">
+                    <item name="nested" xsi:type="array">
+                        <item name="winning" xsi:type="string">second</item>
+                    </item>
+                    <item name="equal" xsi:type="string">same</item>
+                </argument>
+            </arguments>
+        </referenceBlock>
+    </body>
+</page>

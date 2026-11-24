@@ -1,6 +1,6 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
@@ -33,6 +33,8 @@ if (is_file($statePath)) {
     if ($user->getId()) $user->delete();
     $role = $om->create(\Magento\Authorization\Model\Role::class)->load($prefix . 'reader', 'role_name');
     if ($role->getId()) $role->delete();
+    if (isset($old['navigation'])) require __DIR__ . '/../Navigation/cleanup.php';
+    if (isset($old['configuration'])) require __DIR__ . '/../Configuration/cleanup.php';
     unlink($statePath);
 }
 if ($action === 'cleanup') { echo "Removed run-owned Blog fixtures.\n"; exit; }
@@ -57,6 +59,7 @@ $persist = static function () use (&$fixture, $statePath): void {
     if (!rename($statePath . '.tmp', $statePath)) throw new RuntimeException('Cannot publish fixture ownership.');
 };
 $persist();
+if (is_file(__DIR__ . '/../Configuration/.enabled')) require __DIR__ . '/../Configuration/prepare.php';
 $categories = $om->get(\Application\Blog\Model\Categories::class);
 $posts = $om->get(\Application\Blog\Model\Posts::class);
 $fixture['category'] = $categories->save(['name' => $fixture['query'] . ' Engineering', 'slug' => $fixture['prefix'] . 'engineering', 'is_active' => 1]);
@@ -78,5 +81,6 @@ $om->create(\Magento\Authorization\Model\Rules::class)->setRoleId($role->getId()
 $user->setData(['username' => $fixture['readerUser'], 'firstname' => 'Coverage', 'lastname' => 'Reader',
     'email' => $fixture['readerUser'] . '@example.test', 'password' => $fixture['readerPassword'], 'is_active' => 1])->setRoleId($role->getId())->save();
 $om->get(\Magento\ReleaseNotification\Model\ResourceModel\Viewer\Logger::class)->log((int) $user->getId(), $om->get(\Magento\Framework\App\ProductMetadataInterface::class)->getVersion());
+if (is_file(__DIR__ . '/../Navigation/.enabled')) require __DIR__ . '/../Navigation/prepare.php';
 $persist();
 echo json_encode($fixture, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR), "\n";

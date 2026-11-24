@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd" layout="1column">
+    <head><title>Class reset fixture</title></head>
+    <body>
+        <attribute name="class" value="class-before"/>
+        <attribute name="class" value=""/>
+        <attribute name="class" value="class-after"/>
+        <referenceContainer name="content">
+            <block name="magelens.layout.class-clear" template="MageLens_Compatibility::layout-structure.phtml"/>
+        </referenceContainer>
+    </body>
+</page>

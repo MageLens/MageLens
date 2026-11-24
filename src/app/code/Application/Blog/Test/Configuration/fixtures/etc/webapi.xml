@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Webapi:etc/webapi.xsd">
+    <route url="/V1/magelens/area-probe" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
+        <resources><resource ref="anonymous"/></resources>
+    </route>
+    <route url="/V1/magelens/area-probe/:scenario" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="variant"/>
+        <resources><resource ref="anonymous"/></resources>
+    </route>
+    <route url="/V1/magelens/area-probe/restricted" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
+        <resources><resource ref="Application_Blog::manage"/></resources>
+    </route>
+    <route url="/V1/magelens/area-probe/unused" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="read"/>
+        <resources><resource ref="anonymous"/></resources>
+    </route>
+    <route url="/V1/magelens/area-probe/cached" method="GET">
+        <service class="Application\Blog\Model\ApiAreaProbe" method="variant"/>
+        <resources><resource ref="anonymous"/></resources>
+        <data><parameter name="scenario" force="true">cached</parameter></data>
+    </route>
+</routes>

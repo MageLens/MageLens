@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <html><attribute name="data-layout-html-removed" value="original"/></html>
+    <head>
+        <title>Displaced XML title</title>
+        <meta name="layout-empty" content="base"/>
+        <meta name="layout-zero" content="base"/>
+        <attribute name="data-layout-head-removed" value="original"/>
+        <link src="" src_type="url" rel="preconnect"/>
+    </head>
+    <body><attribute name="data-layout-body-removed" value="original"/></body>
+</page>

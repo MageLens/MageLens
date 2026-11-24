@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -40,9 +40,14 @@ function renderBadge(type, value, color) {
     // PhpStorm's SVG preview does not reliably resolve CSS font fallback lists.
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="28" viewBox="0 0 ${width} 28" role="img" aria-label="${label}"><title>${label}</title><defs><clipPath id="bounds"><rect width="${width}" height="28" rx="4"/></clipPath></defs><g clip-path="url(#bounds)"><rect width="${left}" height="28" fill="#555"/><rect x="${left}" width="${right}" height="28" fill="${color}"/></g><g transform="translate(10 4) scale(0.8333333333)" fill="${icon.color}" aria-hidden="true">${drawing}</g><text x="${left + right / 2}" y="19" fill="white" text-anchor="middle" font-family="sans-serif" font-size="14">${escape(value)}</text></svg>\n`;
 }
-function badge(type, percent) {
+function formatPercent(percent) {
+    if (percent === null) return 'N/A';
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('Invalid coverage percentage');
-    const value = `${percent.toFixed(2)}%`;
+    return `${percent.toFixed(2)}%`;
+}
+function badge(type, percent) {
+    const value = formatPercent(percent);
+    if (percent === null) return renderBadge(type, value, '#555');
     const color = percent >= 80 ? '#4c1' : percent >= 50 ? '#a4a61d' : '#e05d44';
     return renderBadge(type, value, color);
 }
@@ -59,4 +64,4 @@ function cypressBadge(results, runner = 'cypress') {
     return renderBadge(runner, `${percent}% (${results.totalPassed}/${results.totalTests}) - ${status}`,
         passed ? '#4c1' : failed ? '#e05d44' : '#a4a61d');
 }
-module.exports = {replaceBadgeSection, setBadgeSection, badge, cypressBadge};
+module.exports = {replaceBadgeSection, setBadgeSection, badge, cypressBadge, formatPercent};

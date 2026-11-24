@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Backend:etc/menu.xsd">
+    <menu>
+        <add id="MageLens_AdminNavigation::inherited_posts" title="Coverage posts" module="MageLens_AdminNavigation" sortOrder="60"
+             parent="Application_Blog::manage" action="application_blog/manage/index/section/posts" resource="MageLens_AdminNavigation::browse"/>
+        <add id="MageLens_AdminNavigation::inherited_categories" title="Coverage categories" module="MageLens_AdminNavigation" sortOrder="70"
+             parent="Application_Blog::manage" action="application_blog/manage/index/section/categories" resource="MageLens_AdminNavigation::browse"/>
+        <add id="MageLens_AdminNavigation::removed" title="Removed coverage link" module="MageLens_AdminNavigation" sortOrder="80"
+             parent="Application_Blog::manage" action="application_blog/manage/index/section/comments" resource="MageLens_AdminNavigation::browse"/>
+        <remove id="MageLens_AdminNavigation::removed"/>
+        <add id="MageLens_AdminNavigation::interrupted" title="Coverage interrupted" module="MageLens_AdminNavigation" sortOrder="90"
+             parent="Application_Blog::manage" action="application_blog/manage/index/section/comments" resource="MageLens_AdminNavigation::browse"/>
+        <add id="MageLens_AdminNavigation::products" title="Coverage products" module="MageLens_AdminNavigation" sortOrder="100"
+             parent="Application_Blog::manage" action="catalog/product/" resource="MageLens_AdminNavigation::browse"/>
+    </menu>
+</config>

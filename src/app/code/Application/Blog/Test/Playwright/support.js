@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
 const fs = require('node:fs');
 const {test: base, expect} = require('../../../../../../../playwright/support.cjs');
-const {observeStorefrontReadiness} = require('../storefront-readiness.cjs');
+const {observeStorefrontReadiness, lumaMessagesReady} = require('../storefront-readiness.cjs');
 // A shared module's beforeEach belongs only to its first importing spec.
 // Extend the context fixture so every spec and every new page observes events.
 const test = base.extend({
@@ -17,10 +17,12 @@ const fixtures = () => JSON.parse(fs.readFileSync('coverage/project-fixtures.jso
 const headers = () => ({'x-application-coverage': JSON.parse(fs.readFileSync('coverage/run.json')).id});
 const get = (page, name) => page.locator(`[data-cy="${name}"]`);
 const message = (page, type) => page.locator(`.message-${type}, [ui-id="message-${type}"]`);
-async function waitForStorefront(page) {
+async function waitForStorefront(page, {lumaMessages = false} = {}) {
     if (fixtures().themePaths[0] === 'Hyva/default-csp') {
         await expect.poll(() => page.evaluate(() => window.__magelensStorefrontReady),
             {message: 'Hyva cookie messages and private content initialized'}).toEqual({messages: true, privateContent: true});
+    } else if (lumaMessages) {
+        await page.waitForFunction(lumaMessagesReady);
     }
 }
 async function storefrontMessage(page, type, text) {
@@ -52,16 +54,22 @@ async function search(page, query, category = '') {
     await waitForBlog(page);
 }
 async function login(page, username = 'application', password = 'ApplicationOnly123456!') {
-    await page.goto('/admin/');
+    // Unrelated subresources can continue loading after the login controls work.
+    const response = await page.goto('/admin/', {waitUntil: 'domcontentloaded'});
+    expect(response?.ok(), 'Admin login document returned a successful response').toBe(true);
     await page.locator('#username').fill(username);
     await page.locator('#login').fill(password);
     await page.locator('.action-login').click();
     await expect(page.locator('#nav')).toBeVisible();
 }
-async function section(page, name) {
+async function navigateAdminMenu(page, parent, child) {
+    // The sidebar HTML is visible before Magento binds its click handlers.
     await expect(page.locator('.admin__menu-overlay')).toBeAttached();
-    await page.locator('#menu-application-blog-manage > a').click();
-    await page.locator(`[data-ui-id="menu-application-blog-${name}"] > a`).click();
+    await page.locator(parent).click();
+    await page.locator(child).click();
+}
+async function section(page, name) {
+    await navigateAdminMenu(page, '#menu-application-blog-manage > a', `[data-ui-id="menu-application-blog-${name}"] > a`);
     await expect(get(page, 'blog-admin')).toBeVisible();
 }
 async function findRecord(page, name) {
@@ -92,4 +100,4 @@ async function fillComment(page, name, email, body) {
     const form = get(page, 'comment-form');
     for (const [field, value] of Object.entries({name, email, body})) await form.locator(`[name="${field}"]`).fill(value);
 }
-module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForBlog, visitBlog, search, login, section, findRecord, save, remove, fillPost, fillComment};
+module.exports = {test, expect, fixtures, headers, get, message, storefrontMessage, waitForStorefront, waitForBlog, visitBlog, search, login, navigateAdminMenu, section, findRecord, save, remove, fillPost, fillComment};
