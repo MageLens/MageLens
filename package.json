@@ -3,7 +3,7 @@
   "version": "1.10.0",
   "private": true,
   "license": "Elastic-2.0",
-  "description": "Quickly bootstrap Magento with PHP, JavaScript, and HTML template code coverage",
+  "description": "Run Magento tests with PHP, JavaScript, HTML/PHTML template and XML configuration coverage",
   "scripts": {
     "check:copyright": "node tests/check-copyright.cjs",
     "coverage": "./bin/run-coverage",
