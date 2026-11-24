@@ -14,6 +14,9 @@ test('collects real PHP, JavaScript and template execution', async ({page}) => {
         }
         await expect(page.locator('[data-layout-origin="original"], [data-layout-origin="unvisited"]')).toHaveCount(0);
         if (process.env.MAGELENS_THEME === 'hyva') {
+            const source = await response.text();
+            expect(source).toContain('x-data="coverageProbe"');
+            expect(source).toContain('@update-gallery-42.window="updateImage"');
             const policy = response.headers()['content-security-policy'];
             expect(policy).toContain('script-src');
             expect(policy.match(/(?:^|;)\s*script-src\s+([^;]+)/)[1]).not.toContain("'unsafe-eval'");

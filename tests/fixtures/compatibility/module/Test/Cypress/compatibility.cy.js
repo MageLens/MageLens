@@ -16,6 +16,8 @@ describe('Magento storefront coverage compatibility', {testIsolation: false}, ()
         cy.get('[data-layout-origin="original"], [data-layout-origin="unvisited"]').should('not.exist');
         if (Cypress.expose('hyvaCsp')) {
             cy.request('/coverageprobe/').then(response => {
+                expect(response.body).to.contain('x-data="coverageProbe"');
+                expect(response.body).to.contain('@update-gallery-42.window="updateImage"');
                 const policy = response.headers['content-security-policy'];
                 expect(policy).to.contain('script-src');
                 expect(policy.match(/(?:^|;)\s*script-src\s+([^;]+)/)[1]).not.to.contain("'unsafe-eval'");
