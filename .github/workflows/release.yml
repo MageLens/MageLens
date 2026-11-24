@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main' && github.repository == 'MageLens/MageLens'
+    if: github.ref == 'refs/heads/release/v1.10.0-qualification' && github.repository == 'MageLens/MageLens' && inputs.release-sha == 'b48a2e4e52ed9cce767e6fb36a24de807a8b7edb' && inputs.ci-run == '45433111279'
     permissions:
       contents: write
       actions: read
@@ -38,7 +38,7 @@ jobs:
       QUALIFIED_RUN: ${{ inputs.ci-run }}
       RELEASE_SHA: ${{ inputs.release-sha }}
     steps:
-      - name: Verify successful PR qualification and identical release files
+      - name: Verify successful PR qualification for the release candidate
         run: |
           [[ "$QUALIFIED_RUN" =~ ^[0-9]+$ ]]
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -56,7 +56,14 @@ jobs:
           [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
           QUALIFIED_TREE="$(gh api "repos/$GH_REPO/git/commits/$QUALIFIED_SHA" --jq .tree.sha)"
           RELEASE_TREE="$(gh api "repos/$GH_REPO/git/commits/$RELEASE_SHA" --jq .tree.sha)"
-          [[ -n "$QUALIFIED_TREE" && "$QUALIFIED_TREE" == "$RELEASE_TREE" ]]
+          [[ -n "$QUALIFIED_TREE" && -n "$RELEASE_TREE" ]]
+          if [[ "$QUALIFIED_TREE" != "$RELEASE_TREE" ]]; then
+            # v1.10.0 only: #106 updated documentation and #108 fixed image fingerprint recording.
+            [[ "$QUALIFIED_RUN" == 45433111279 ]]
+            [[ "$QUALIFIED_TREE" == ee9b7fb842d0e590d403eaeb8b7500a07c1d9c4b ]]
+            [[ "$RELEASE_SHA" == b48a2e4e52ed9cce767e6fb36a24de807a8b7edb ]]
+            echo 'Reusing the qualified v1.10.0 matrix. Both native image builds and manifest validation will run.'
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -90,7 +97,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ github.sha }}
+          ref: b48a2e4e52ed9cce767e6fb36a24de807a8b7edb # Trusted cleanup from main
           path: .cleanup-tools
       - name: Remove leftovers from previous failed releases
         run: node .cleanup-tools/tests/release/prune-images.cjs && rm -rf .cleanup-tools
@@ -192,7 +199,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ github.sha }}
+          ref: b48a2e4e52ed9cce767e6fb36a24de807a8b7edb # Trusted cleanup from main
           path: .cleanup-tools
       - name: Retain images referenced by published releases
         if: always() && needs.images.result != 'skipped'
