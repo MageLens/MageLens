@@ -6,7 +6,7 @@ License: see LICENSE in the repository root.
 
 # MageLens coverage
 
-Run `./bin/run-coverage` from the repository root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, and HTML template reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
+Run `./bin/run-coverage` from the repository root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, HTML/PHTML template and [XML configuration](#xml-configuration-coverage) reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
 
 The local report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous report link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
 
@@ -17,7 +17,7 @@ Coverage includes supported files in:
 - `src/app/code/`
 - The selected frontend and Admin themes under `src/app/design/`, including their local parent themes.
 
-PHP executable lines, including PHP in `.phtml`, appear in the PHP report. Whole `.js` files appear in the JavaScript report. HTML/PHTML bindings, Knockout and jQuery templates, Hyvä/Alpine expressions and inline scripts appear in the template report. `Test`, `Setup`, `node_modules`, `tailwind`, browser specs and browser support directories are excluded. Unexecuted eligible files remain uncovered. Vendor packages are excluded unless opted in with `coverage.config.json`; inactive themes remain excluded. Each run resolves configured themes for active stores and Admin before instrumenting sources, so changing the selected theme updates all reports.
+PHP executable lines, including PHP in `.phtml`, appear in the PHP report. Whole `.js` files appear in the JavaScript report. HTML/PHTML bindings, Knockout and jQuery templates, Hyvä/Alpine expressions and inline scripts appear in the template report. Supported XML declarations appear in their own source tree with the runtime effects observed during the tests. `Test`, `Setup`, `node_modules`, `tailwind`, browser specs and browser support directories are excluded. Unexecuted eligible files remain uncovered. Vendor packages are excluded unless opted in with `coverage.config.json`; inactive themes remain excluded. Each run resolves configured themes for active stores and Admin before instrumenting sources, so changing the selected theme updates all reports.
 
 Coverage runs use disposable source copies and verify that your originals remain unchanged. Symlinked source files and directories are unsupported.
 
@@ -231,21 +231,29 @@ The result may include `warmupPaths`, an array of HTML page paths such as `["/ad
 
 Detailed HTML reports live in `coverage/php/`, `coverage/js/`, `coverage/templates/`, and `coverage/xml/`. `coverage/summary.json` records the run ID, generation time, and displayed metrics.
 
-For collection details, inspect PHP records under `coverage/raw/php/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
+For collection details, inspect PHP records and their XML observations under `coverage/raw/php/<run-id>/`, browser XML evidence under `coverage/raw/xml-browser/<run-id>/`, template observations under `coverage/raw/templates/`, and JavaScript counters in `.nyc_output/out.json`. Each run creates fresh execution records.
 
 After a successful run, use `./bin/export-coverage` and share only **`coverage/share.html`**. The standalone HTML file opens offline and includes coverage metrics, layout declaration totals, and project-relative file paths. If the recipient also needs the measured source code, run `./bin/export-coverage --include-source` and share **`coverage/share-with-source.html`** with them.
 
 Keep the full `coverage/` directory private. It contains local debugging artifacts, including raw request URLs and custom fixture data that can contain credentials. After upgrading, run `./bin/run-coverage` once to replace the old local web link with one that serves only report files. Git ignores the reports, raw artifacts and SVGs in `coverage/badges/`.
 
-XML configuration coverage appears separately in `coverage/xml/index.html`, with source directories preserved. Supported `config.xml` leaves turn green when a runtime read consumes their effective value at default, website or store scope. Supported `system.xml` fields turn green when Admin renders them; unopened fields and unread values remain red. Loading XML grants no credit. Unsupported XML and ambiguous field origins are shown as unmeasured. The collector uses OpenTelemetry runtime hooks without adding Magento modules, changing DI or rewriting application sources. Existing installations must rerun installation with their saved platform, theme and runner selections to install the hook extension.
+## XML configuration coverage
+
+Open `coverage/xml/index.html` and follow the original source directories down to a file. For an example, [browse XML in the live demo](https://magelens-coverage-demo.vitaliyboykostarkon.chatgpt.site/xml/index.html). Existing installations must rerun `./install.sh` with their saved platform, theme and runner flags to install the OpenTelemetry PHP extension used for runtime observations.
 
 Line totals include every measured XML file, including layouts and DI. A line counts as covered when at least one declaration on it was observed. Amber highlights lines with both covered and missed declarations. Unmeasured lines are outside the percentage, and N/A means there are no measured lines. Open **Declaration details** below a file's source to inspect its outcomes. The XML index links to detailed coverage data and counts by declaration type where available.
 
-During a collected HTTP request, MageLens bypasses Magento's native layout cache so the layout readers can trace instructions to their XML files. The installed cache settings and layout cache entries stay intact. Cached full-page responses and cached block HTML can still limit coverage.
+### Configuration reads, Admin fields and observers
+
+A supported `config.xml` leaf earns coverage when a runtime read consumes its effective value at default, website or store scope. A supported `system.xml` field earns coverage when Admin renders it. Unopened fields and unread values remain uncovered. Unsupported XML and ambiguous field origins appear as unmeasured.
 
 Configuration coverage includes Backend value and flag reads and Magento's lowercase aliases for store codes. Explicit paths and subtrees requested through these accessors earn credit for their native values before plugins decorate the result. Internal storage reads and whole-configuration snapshots, including accessor calls without a path, grant no execution credit. Replacements that bypass the native getter provide no XML evidence. Empty-node conflicts and empty CDATA whose exact ownership cannot be preserved are shown as unmeasured.
 
 The XML report also shows synchronous `events.xml` observer execution for global, frontend, adminhtml, REST (`webapi_rest`), GraphQL (`graphql`), and the CLI cron area (`crontab`). An observer earns credit when Magento reaches its underlying `execute()` method. The report links each registration to its original lines and shows covered and uncovered outcomes by area, even for observers that share a PHP class. Disabled, overridden, ambiguous and unsupported registrations are outside the observer totals for the affected area. Browser warm-up contributes no observer hits. If the collector reports stale event configuration, rerun `./bin/run-coverage --refresh-cache`.
+
+### Layout and page configuration
+
+During a collected HTTP request, MageLens bypasses Magento's native layout cache so the layout readers can trace instructions to their XML files. The installed cache settings and layout cache entries stay intact. Cached full-page responses and cached block HTML can still limit coverage.
 
 Layout XML reports list original declarations and attributes, with a separate layout total. Block creation and template selection remain visible facts. Block declarations require the native block HTML boundary for rendering coverage; template declarations require successful template engine execution. A constructed block or selected template that is never rendered remains uncovered. A native template file validation rejection is shown separately from execution failures and unconfirmed execution origins. The report also shows traversed include edges, duplicate inclusions, cycles, selected wireframes and moves. It records missing move targets, moves into removed subtrees, applied removals and surviving restorations. Container construction, emitted wrappers, display decisions, configuration flags and Admin ACL decisions have independent evidence. Ignored empty or zero operands retain explicit outcomes; native zero-class wrapper interpolation is shown separately. Class, group and TTL evidence identifies native application. A fresh cacheability check can identify a surviving block whose cacheable attribute is the literal false. An intercepted wireframe getter can prevent attribution of the original page attribute. An XML template assignment, a superseding XML declaration, a later PHP replacement and actual PHP template engine execution have separate evidence. The report identifies the originating handle and the area and theme observed during the request.
 
@@ -261,7 +269,9 @@ Layout registry coverage distinguishes native membership checks, option-label co
 
 The schema inventory links each declaration and runtime boundary to the native consumer, fixture, required evidence and platform verification. [Layout XML measurement inventory](../tests/layout-xml-inventory.md)
 
-The XML report measures `di.xml` usage during developer and production HTTP requests and CLI tests in those same configuration areas. Run `./bin/deploy-production` to switch the local application to production, run Magento’s compiler and static deployment, and record the DI source and generated metadata fingerprints. Then run `./bin/run-coverage`. Redeploy when the DI sources or compiled metadata change. Use `--refresh-assets` to rebuild production static files from current instrumented sources without recompiling DI.
+### Dependency injection
+
+The XML report measures `di.xml` usage during developer and production HTTP requests and CLI tests in supported Magento areas. Run `./bin/deploy-production` to switch the local application to production, run Magento’s compiler and static deployment, and record the DI source and generated metadata fingerprints. Then run `./bin/run-coverage`. Redeploy when the DI sources or compiled metadata change. Use `--refresh-assets` to rebuild production static files from current instrumented sources without recompiling DI.
 
 **Plugin execution** counts registered before, around or after callbacks that Magento reaches. Around callbacks earn credit when they short-circuit, as do enclosing after callbacks that run. The source view links inherited registrations to their unique sources and shows the effective subject, intercepted method, phase, and registration outcomes by area.
 
@@ -274,6 +284,8 @@ The XML report measures `di.xml` usage during developer and production HTTP requ
 **Object lifetime usage** records when Magento applies an explicit `shared` setting while resolving a dependency for a successful construction. A setting on an object argument or array item takes precedence over the corresponding type setting. A direct Object Manager call selects its own operation and does not exercise the configured lifetime.
 
 The declaration breakdown counts each DI declaration once per eligible area. The source report counts each measured line once across all areas. Custom plugin lists and descendants outside the inventoried subjects are unmeasured. A TypeError at a plugin declaration can leave callback entry unconfirmed. In developer mode, use `./bin/run-coverage --refresh-cache` for stale DI configuration. In production, use `./bin/deploy-production` for stale compiled provenance.
+
+### Admin UI components, routing, ACL, menus and cron
 
 **Standalone Admin UI component XML** tracks native creation, preparation, data-provider execution and configuration delivery for supported fields, columns and data sources. The browser report separates constructing a component, rendering its bound markup, invoking a button action and reloading a grid through AJAX. Browser effects require a matching response from the active run. Shared JavaScript execution has its own coverage report. Configuration served from cache without a source trace has a cache-only outcome.
 

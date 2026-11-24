@@ -6,23 +6,39 @@ License: see LICENSE in the repository root.
 
 # Release notes
 
-## 1.10.0 - Unreleased
+## 1.10.0 - 2026-11-24
 
-- Extend prebuilt image retention from 90 days to at least three years so older Magento installations can reuse the tooling images published with their MageLens release.
-- Update the shared Chrome for Testing browser to 158.0.8127.36 with verified x64 and ARM64 archives and its stable-channel security fixes.
-- Update PHP to 8.4.28 with a verified multi-platform base image for FPM request-smuggling and memory-safety security fixes.
-- Add a separate XML configuration coverage report in `coverage/xml/` for scoped `config.xml` reads and rendered `system.xml` fields, preserving source directories and identifying measurement limitations.
-- Report executed HTTP `events.xml` observer registrations by area, with original source links and explicit override and measurement statuses.
-- Report HTTP `di.xml` plugin callback execution by phase and configuration area, with links to the original registrations.
-- Report HTTP `di.xml` preference, virtual type, constructor argument and object lifetime usage in developer and production modes. Use `./bin/deploy-production` to record compiled DI provenance before collecting production coverage.
-- Report DI and observer usage for authorized REST and GraphQL requests by Magento configuration area.
-- Add Blog Journal settings scenarios for Cypress and Playwright to exercise configuration consumption across default, website and store scopes.
-- Add opt-in HTML validation for Cypress and Playwright tests. `mageLensValidateHtml` captures the HTML source of the current page, including signed-in pages. Captures are validated after the tests finish without affecting their result, and the combined report lists the findings in a separate Reports section with a dedicated report in `coverage/html-validation/`. ([#67](https://github.com/MageLens/MageLens/issues/67))
-- Add per-test coverage attribution. Every Cypress, Playwright and CLI test attempt, including each retry, gets an attempt ID that PHP, JavaScript and template collection record, and `coverage/attribution/` lists the attempts that executed each covered PHP line, JavaScript and template counter and XML declaration. Shared setup stays unattributed, and attribution is checked against the aggregate reports. ([#72](https://github.com/MageLens/MageLens/issues/72))
-- Fix the missing Prototype dependency on Braintree Admin pages while preserving original vendor files and browser caching.
-- Fix host-side integration and static checks on macOS with the system bash 3.2: `bin/build-php-image` no longer reads its Dockerfile fragment through a command substitution that bash 3.2 cannot parse, and static checks also parse bash scripts with `/bin/bash`, which is bash 3.2 on macOS hosts. ([#71](https://github.com/MageLens/MageLens/issues/71))
+### XML configuration coverage
 
-Rerun installation with your saved platform, theme and runner selections to install the XML collector extension, then regenerate reports with `./bin/run-coverage`.
+Open **XML** in the combined coverage report to see which Magento declarations your tests exercised. Each source file shows measured lines and the observed effect of individual declarations. A line counts as covered when at least one declaration on it was exercised. Amber marks lines with both covered and missed declarations. Unmeasured lines are excluded from the percentage. [Explore the demo report](https://magelens-coverage-demo.vitaliyboykostarkon.chatgpt.site/)
+
+| XML source | What the report can show |
+| --- | --- |
+| `config.xml` and `system.xml` | Scoped configuration values read at runtime and fields rendered in Admin. |
+| `events.xml` and `di.xml` | Observer and plugin callbacks reached, preferences selected, virtual types constructed, constructor arguments applied and object lifetimes used, with configuration areas and original source lines. |
+| Layout and page layout XML | Handles and instructions that affected page structure, blocks, containers or rendered output. The report identifies limits such as full-page cache responses. |
+| `acl.xml` and `menu.xml` | Native ACL decisions and Admin menu items rendered or followed. |
+| `routes.xml` and `webapi.xml` | Storefront and Admin controller selection and entry, plus route selection, authorization and service entry for synchronous REST requests. |
+| Admin UI component XML | Component creation, preparation and data-provider execution, with separate browser evidence for rendering, actions and AJAX reloads. |
+| `crontab.xml` | Schedule evaluation, handler entry and completion. Running a job directly can exercise its handler independently of the schedule. |
+
+Opening or merging an XML file alone earns no coverage. Source details distinguish missed declarations from effects that cannot be attributed. For production DI coverage, run `./bin/deploy-production` to record the compiled configuration before collection. [Coverage guide](https://github.com/MageLens/MageLens/blob/v1.10.0/docs/coverage.md)
+
+### Running tests and sharing reports
+
+- Add CLI tests under `cli/e2e/` or a module’s `Test/Cli/`. Both browser runners run these specs after the browser suite. Use the Magento and pinned n98-magerun2 command helpers to exercise application PHP and supported XML from the command line.
+- Inspect per-test attribution for PHP, JavaScript, templates and XML in `coverage/attribution/`. Each retry has its own attempt, and shared setup is recorded as unattributed. These files stay in the local run. ([#72](https://github.com/MageLens/MageLens/issues/72))
+- Share an offline report with `./bin/export-coverage`. The default `coverage/share.html` contains metrics and project-relative paths. Add `--include-source` to generate a separate copy with source code. Raw requests and fixture data stay private. README badge updates are opt-in with `--update-readme`.
+- Audit selected pages, including signed-in pages, with `mageLensValidateHtml` in Cypress or Playwright. The combined report links findings under **Reports**. Findings do not change the test result. ([#67](https://github.com/MageLens/MageLens/issues/67))
+
+### Compatibility and fixes
+
+- Preserve Hyvä CSP bindings during template collection with MagentoTemplateCoverage 2.1.4. Template execution shows N/A when there are no measurable counters.
+- Correct XML source attribution on live requests and after layout warm-up. Large XML exports and runner files with restrictive permissions are now handled.
+- Use Chrome for Testing 158.0.8127.36 and PHP 8.4.28. Prebuilt release images are retained for at least three years.
+- Restore the missing Prototype dependency on Braintree Admin pages and fix host-side checks with the macOS system Bash 3.2.
+
+**Upgrading an existing installation:** Back up your application data and rerun `./install.sh` with your saved platform, theme and runner flags to install the XML collector and update the runner. Then run `./bin/run-coverage` and open the combined report.
 
 ## 1.9.4 - 2026-11-16
 

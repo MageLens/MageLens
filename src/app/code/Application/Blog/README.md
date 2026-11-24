@@ -1,12 +1,12 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
 
 # MageLens demonstration blog
 
-`Application_Blog` is a sample application for [MageLens](../../../../../README.md). Its PHP controllers, Magento Admin forms, browser JavaScript, and Knockout/Alpine templates provide examples for all three coverage reports.
+`Application_Blog` is a sample application for [MageLens](../../../../../README.md). Its PHP controllers, browser JavaScript and Knockout/Alpine templates appear in the execution reports. The [XML configuration report](../../../../../docs/coverage.md#xml-configuration-coverage) shows which storefront and Admin routes, layout declarations and ACL checks the same scenarios exercise.
 
 Equivalent browser scenarios live in `Test/Cypress/` and `Test/Playwright/`; fixture creation, cleanup, and Cypress patches are managed by `Test/MageLens/hooks.php`. See [Use your project](../../../../../docs/coverage.md#use-your-project) to add your own modules and tests.
 

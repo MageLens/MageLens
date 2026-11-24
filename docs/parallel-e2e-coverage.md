@@ -10,7 +10,7 @@ When a Magento suite grows to hundreds or thousands of end-to-end tests, running
 
 We split the tests into independent CI jobs, collect coverage in each job, then merge their execution records into one report. This article adapts a real Magento project's Cypress CI setup, with names and application details generalized. It uses two shards for guest smoke tests and eight suites for the full coverage run.
 
-This is a project CI example. MageLens's `./bin/run-coverage` runs the full configured suite in one workspace; it does not provide a distributed `--shard` or cross-run merge command. The orchestration below belongs in your application's CI, with collectors and merge validation adapted to its configuration.
+This is a project CI example. MageLens's `./bin/run-coverage` runs the full configured suite in one workspace; it does not provide a distributed `--shard` or cross-run merge command. The example merges PHP, JavaScript and template records. MageLens also produces an [XML configuration report](coverage.md#xml-configuration-coverage) for a single run. The example has no XML merge step.
 
 ## Why split the suite?
 
