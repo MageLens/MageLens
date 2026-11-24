@@ -232,6 +232,9 @@ fi
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
     MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage ${coverage_options[@]+"${coverage_options[@]}"} | tee .runtime/coverage-run.log
+    if [[ "$theme/$runner" == hyva/playwright ]]; then
+        ./bin/runner node --test tests/hyva-csp-no-observer.cjs
+    fi
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs

@@ -6,6 +6,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {chromium, expect} = require('@playwright/test');
 const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
+const {trackBrowserErrors} = require('./browser-errors.cjs');
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL;
 const product = 'Push It Messenger Bag';
@@ -24,16 +25,15 @@ for (const headless of [true, false]) {
         });
         const page = await context.newPage();
         page.setDefaultTimeout(20_000);
-        const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
-        t.after(() => assert.equal(errors.length, 0, `Uncaught page errors: ${errors.slice(0, 3).join('; ')}`));
+        const assertNoErrors = trackBrowserErrors(page);
+        t.after(assertNoErrors);
         const response = await page.goto('/push-it-messenger-bag.html');
         assert.equal(response.status(), 200);
         assert.match(response.headers()['content-security-policy'], /(?:^|;)\s*script-src\s/);
         assert.match(await response.text(), / x-mtc="/, 'Expected template instrumentation on the sample storefront');
         await page.waitForFunction(() => window.alpineInitialized);
         await expect(page.getByRole('heading', {name: product, exact: true})).toBeVisible();
-        assert.equal(errors.length, 0, `PDP initialization errors: ${errors.slice(0, 3).join('; ')}`);
+        assertNoErrors();
 
         const accountButton = page.getByRole('button', {name: 'My Account'});
         await accountButton.click();

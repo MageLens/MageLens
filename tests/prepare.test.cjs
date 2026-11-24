@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const {Config, Parser} = require('html-validate');
 const {prepare} = require('../bin/prepare.cjs');
 const {nginxConfig} = require('../bin/project.cjs');
 const projectRoot = path.resolve(__dirname, '..');
@@ -29,20 +30,36 @@ function fixture(t) {
 }
 const read = file => JSON.parse(fs.readFileSync(file));
 
-test('prepared Hyvä property bindings work before attaching the coverage observer', t => {
+test('prepared Hyvä property bindings work before attaching the coverage observer', async t => {
     const {base, write} = fixture(t);
     const template = `${base}/view/frontend/templates/alpine.phtml`;
-    const source = '<div x-data="panel" @update-<?= $id ?>.window="update">\n<template x-for="item in items"><span x-text="item"></span></template>\n</div>';
+    const source = '<div id="panel" x-data="panel" @update-<?= $id ?>.window="update">\n<template id="loop" x-for="item in items"><span x-text="item"></span></template>\n</div>';
     write(`src/${template}`, source);
     prepare({runtimeOnly: true, themeRoots: []});
     const result = fs.readFileSync(`.runtime/${template}`, 'utf8');
-    assert.match(result, /x-data="panel" data-mtc-binding-\d+=""/);
-    assert.match(result, /@update-<\?= \$id \?>\.window="update" data-mtc-binding-\d+=""/);
-    assert.match(result, /x-for="item in items" data-mtc-binding-\d+=""/);
+    const entry = read('.runtime/template-manifest.json').templates.find(entry => entry.path === template);
+    const eventSource = '@update-<?= $id ?>.window';
     assert.equal(result.split('\n').length, source.split('\n').length);
     assert.equal(fs.readFileSync(`src/${template}`, 'utf8'), source);
-    const entry = read('.runtime/template-manifest.json').templates.find(entry => entry.path === template);
-    assert.ok(entry.statements.some(statement => statement.binding === '@update-<?= $id ?>.window' && statement.start.line === 1));
+    assert.equal(entry.statements.find(({binding}) => binding === eventSource)?.start.line, 1);
+
+    await t.test('rendered directives and markers identify the same bindings', t => {
+        const php = spawnSync('php', ['-n'], {input: '<?php $id = 42; ?>' + result, encoding: 'utf8', timeout: 10000});
+        if (php.error?.code === 'ENOENT') return t.skip('PHP CLI unavailable');
+        assert.equal(php.status, 0, php.error?.message || php.stderr);
+        const dom = new Parser(Config.empty().resolve()).parseHtml(php.stdout);
+        const collector = read('package-lock.json').packages['node_modules/@magelens/magento-template-coverage'];
+        const legacyMarkers = ['2.1.2', '2.1.3'].includes(collector.version);
+        for (const [element, name, expression, originalName] of [
+            [dom.querySelector('#panel'), 'x-data', 'panel', 'x-data'],
+            [dom.querySelector('#panel'), '@update-42.window', 'update', eventSource],
+            [dom.querySelector('#loop'), 'x-for', 'item in items', 'x-for']
+        ]) {
+            const {id} = entry.statements.find(({binding}) => binding === originalName);
+            assert.equal(element.getAttributeValue(name), expression);
+            assert.equal(element.getAttributeValue(`data-mtc-binding-${id}`), legacyMarkers ? '' : name);
+        }
+    });
 });
 
 test('repeated runs reuse browser files while resetting all execution artifacts', t => {
