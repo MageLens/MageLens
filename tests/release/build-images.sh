@@ -23,8 +23,8 @@ mkdir -p "$output" coverage
 version=$(node -p 'require("./package.json").version')
 for kind in php runner-cypress runner-playwright; do
     image="magelens-release-$kind:build"
+    fingerprint=$(node bin/image-inputs.cjs inputs "$kind")
     if [[ "$kind" == php ]]; then
-        fingerprint=$(node bin/image-inputs.cjs inputs "$kind")
         git clone --depth 1 --branch "$MARKSHUST_DOCKER_MAGENTO_VERSION" https://github.com/markshust/docker-magento.git .runtime/docker-magento
         "$ROOT/bin/build-php-image"
         docker build --target portable --file docker/php/Dockerfile --tag "$image" \
@@ -53,6 +53,8 @@ for kind in php runner-cypress runner-playwright; do
         fi
     fi
     [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" == "$MAGELENS_IMAGE_PLATFORM" ]] || fail 'Image architecture does not match the builder.'
+    image_inputs=$(docker image inspect --format '{{index .Config.Labels "org.magelens.inputs"}}' "$image")
+    [[ "$image_inputs" == "$fingerprint" ]] || fail "$kind ($MAGELENS_IMAGE_PLATFORM) has input fingerprint $image_inputs, expected $fingerprint."
     [[ "$mode" == publish ]] || continue
     # Push directly: Docker/OCI archives never enter Actions artifact storage.
     # A retry must not move the tag off the currently published digest. GHCR
