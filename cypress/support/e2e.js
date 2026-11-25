@@ -7,6 +7,7 @@ const {currentAttempt, setAttempt} = require('./attempt');
 const {registerTemplateCoverage} = require('@magelens/magento-template-coverage/cypress');
 // Template records carry the attempt ID where the package supports record metadata.
 registerTemplateCoverage({outputDir: 'coverage/raw/templates', metadata: () => ({attempt: currentAttempt()})});
+require('./failure-snapshot');
 
 const {disablePageTransitions, installCypressAdminDependencies, observeAdminMenuNavigation} = require('../../bin/browser-navigation.cjs');
 const {installUiBrowserObserver} = require('../../bin/xml-ui-browser.cjs');

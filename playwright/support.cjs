@@ -15,6 +15,91 @@ const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
 const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
 const {newAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
 const {sparseCounters} = require('../bin/javascript-attempts.cjs');
+const {failureHtmlFilename, failureSnapshotDocument, failureSnapshotUnavailable} = require('../cypress/support/failure-html.cjs');
+
+function snapshotMetadata(testInfo, pageIndex, phase, reason) {
+    let runId = 'run-unknown';
+    try { runId = JSON.parse(fs.readFileSync(path.resolve(testInfo.config.rootDir, 'coverage/run.json'))).id || runId; }
+    catch { /* Keep the diagnostic useful when collection metadata is unavailable. */ }
+    return {
+        runner: 'playwright', runId, spec: testInfo.file, test: testInfo.titlePath.join(' > '),
+        testId: testInfo.testId, attempt: testInfo.retry + 1, worker: testInfo.workerIndex,
+        parallel: testInfo.parallelIndex, page: pageIndex + 1, phase, reason,
+        capturedAt: new Date().toISOString()
+    };
+}
+
+function recordSnapshotNote(testInfo, message) {
+    try { testInfo.annotations.push({type: 'failure-html-snapshot', description: String(message).slice(0, 500)}); }
+    catch { /* Snapshot diagnostics must not replace the test result. */ }
+}
+
+function writeSnapshot(testInfo, index, metadata, html) {
+    try {
+        const name = failureHtmlFilename(`failure-page-${index + 1}`, {
+            attempt: testInfo.retry + 1,
+            runId: metadata.runId,
+            workerId: `w${testInfo.workerIndex}-p${testInfo.parallelIndex}`
+        });
+        const output = testInfo.outputPath(name);
+        fs.mkdirSync(path.dirname(output), {recursive: true});
+        fs.writeFileSync(output, html, {encoding: 'utf8', flag: 'wx'});
+        return true;
+    } catch (error) {
+        if (error.code === 'EEXIST') return true;
+        recordSnapshotNote(testInfo, `Could not save the HTML snapshot (${error.code || 'write error'}).`);
+        return false;
+    }
+}
+
+async function saveFailureSnapshots(context, testInfo, phase, reason) {
+    try {
+        let openPages;
+        try { openPages = context.pages(); }
+        catch (error) {
+            const metadata = snapshotMetadata(testInfo, 0, phase, reason);
+            writeSnapshot(testInfo, 0, metadata, failureSnapshotUnavailable(metadata, error?.message || 'The browser context was unavailable.'));
+            return;
+        }
+        const pages = openPages.slice(0, 4);
+        if (openPages.length > pages.length) recordSnapshotNote(testInfo, 'Only the first four open pages were captured.');
+        const targets = pages.length ? pages : [null];
+        const deadline = Date.now() + 1200;
+        for (const [index, page] of targets.entries()) {
+            let metadata;
+            try {
+                metadata = snapshotMetadata(testInfo, index, phase, reason);
+                let html;
+                if (!page || page.isClosed()) {
+                    html = failureSnapshotUnavailable(metadata, 'No accessible application page remained at capture time.');
+                } else {
+                    let timer;
+                    try {
+                        const remaining = Math.max(0, deadline - Date.now());
+                        if (!remaining) throw new Error('The bounded capture window expired.');
+                        html = await Promise.race([
+                            page.evaluate(failureSnapshotDocument, metadata),
+                            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The page did not respond to snapshot capture in time.')), remaining); })
+                        ]);
+                    } catch (error) {
+                        html = failureSnapshotUnavailable(metadata, error?.message || 'The application page could not be captured.');
+                    } finally { clearTimeout(timer); }
+                }
+                writeSnapshot(testInfo, index, metadata, html);
+            } catch (error) {
+                metadata ||= snapshotMetadata(testInfo, index, phase, reason);
+                writeSnapshot(testInfo, index, metadata, failureSnapshotUnavailable(metadata, error?.message || 'Snapshot capture was unavailable.'));
+            }
+        }
+    } catch (error) {
+        recordSnapshotNote(testInfo, `Could not capture the HTML snapshot (${error?.code || 'capture error'}).`);
+        try {
+            const metadata = snapshotMetadata(testInfo, 0, phase, reason);
+            writeSnapshot(testInfo, 0, metadata, failureSnapshotUnavailable(metadata, error?.message || 'Snapshot capture failed.'));
+        } catch { /* The snapshot path must never replace the original test result. */ }
+    }
+}
+
 function withCoverage(base = playwright.test) {
     return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
@@ -24,7 +109,7 @@ function withCoverage(base = playwright.test) {
             })});
             await use();
         }, {auto: true}],
-        applicationErrors: [async ({context}, use) => {
+        applicationErrors: [async ({context}, use, testInfo) => {
             const errors = [];
             const record = error => errors.push(error.message);
             const track = page => page.on('pageerror', record);
@@ -32,6 +117,7 @@ function withCoverage(base = playwright.test) {
             for (const page of context.pages()) track(page);
             try { await use(); }
             finally {
+                if (errors.length) await saveFailureSnapshots(context, testInfo, 'application-errors', errors.join('; '));
                 context.off('page', track);
                 for (const page of context.pages()) page.off('pageerror', record);
                 playwright.expect(errors, 'Uncaught application errors').toEqual([]);
@@ -66,7 +152,7 @@ function withCoverage(base = playwright.test) {
         }, {auto: true}],
         // Template records carry the attempt ID where the package keeps fixture metadata.
         templateCoverageOptions: async ({coverageAttempt}, use) => use({outputDir: 'coverage/raw/templates', metadata: {attempt: coverageAttempt}}),
-        context: async ({context, baseURL, coverageAttempt}, use) => {
+        context: async ({context, baseURL, coverageAttempt}, use, testInfo) => {
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
@@ -74,7 +160,7 @@ function withCoverage(base = playwright.test) {
             const menuBinding = '__magelensMenu' + randomUUID().replaceAll('-', '');
             await context.exposeBinding(menuBinding, (_source, evidence) => { recordXmlBrowserEvidence(evidence); });
             await context.addInitScript({content:
-                `if (window === window.top && location.origin === ${JSON.stringify(new URL(baseURL).origin)}) {
+                    `if (window === window.top && location.origin === ${JSON.stringify(new URL(baseURL).origin)}) {
                     (${observeAdminMenuNavigation})(window, () => '${menuBinding}', window.${menuBinding});
                 }`});
             const cookie = {domain: new URL(baseURL).hostname, path: '/', sameSite: 'Lax', httpOnly: true, secure: true};
@@ -111,18 +197,34 @@ function withCoverage(base = playwright.test) {
             for (const page of context.pages()) track(page);
             try { await use(context); }
             finally {
-                for (const page of context.pages()) await flush(page);
+                try {
+                    for (const page of context.pages()) await flush(page);
+                } catch (error) {
+                    await saveFailureSnapshots(context, testInfo, 'fixture-teardown', error?.message || 'A browser fixture failed during cleanup.');
+                    throw error;
+                }
                 context.off('page', track);
                 for (const [page, close] of closeMethods) page.close = close;
-                for (const entry of uiCandidates.values()) recordXmlBrowserEvidence({...entry, candidate: true});
-                const coverage = createCoverageMap({});
-                for (const snapshot of snapshots.values()) coverage.merge(snapshot);
-                fs.mkdirSync('.nyc_output', {recursive: true});
-                fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
-                checkAdminDependencies();
-                recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
+                try {
+                    for (const entry of uiCandidates.values()) recordXmlBrowserEvidence({...entry, candidate: true});
+                    const coverage = createCoverageMap({});
+                    for (const snapshot of snapshots.values()) coverage.merge(snapshot);
+                    fs.mkdirSync('.nyc_output', {recursive: true});
+                    fs.writeFileSync(`.nyc_output/playwright-${randomUUID()}.json`, JSON.stringify(coverage));
+                    checkAdminDependencies();
+                    recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
+                } catch (error) {
+                    await saveFailureSnapshots(context, testInfo, 'fixture-teardown', error?.message || 'A browser fixture failed during cleanup.');
+                    throw error;
+                }
             }
         }
     });
 }
-module.exports = {withCoverage, test: withCoverage(), expect: playwright.expect};
+
+const test = withCoverage();
+test.afterEach(async ({context}, testInfo) => {
+    if (testInfo.status === testInfo.expectedStatus) return;
+    await saveFailureSnapshots(context, testInfo, 'after-each', testInfo.error?.message || 'The test did not meet its expected status.');
+});
+module.exports = {withCoverage, test, expect: playwright.expect};
