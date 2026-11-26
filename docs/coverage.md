@@ -189,7 +189,7 @@ The PHP collector is part of the PHP image: an existing installation writes thes
 
 ## Per-test attribution
 
-After the reports, `bin/report-attribution.cjs` combines the attempt records into `coverage/attribution/`. It is private run data like `coverage/raw/` and is not published.
+`bin/report-attribution.cjs` combines test attempt records into JSON files under `coverage/attribution/`. These files and the raw collector inputs stay in the local coverage directory. With `--include-machine-report`, the installation’s report URL also serves the [coverage database](#coverage-database). When attribution was collected, the database includes test names, spec paths, retries, outcomes and the coverage records each attempt reached.
 
 | File | Contents |
 | --- | --- |

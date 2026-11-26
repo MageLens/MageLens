@@ -134,7 +134,7 @@ To share coverage, run `./bin/export-coverage` and send only **`coverage/share.h
 
 MageLens scans application modules under `src/app/code/` and selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. A measured XML line counts as covered when at least one declaration on it has runtime evidence. Unmeasured lines are listed separately and excluded from the percentage.
 
-With `./bin/run-coverage --include-machine-report`, `coverage/report.sqlite` holds the same results as a queryable database for CI, scripts and coding agents; see [Coverage database](docs/coverage.md#coverage-database).
+For CI, scripts and coding agents working with a private repository, run `./bin/run-coverage --include-machine-report` to generate `coverage/report.sqlite`. Anyone with access to the installation’s report URL can download the database and, when per-test attribution was collected, query which tests reached a file. [Coverage database](docs/coverage.md#coverage-database)
 
 Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](docs/coverage.md#html-validation).
 
