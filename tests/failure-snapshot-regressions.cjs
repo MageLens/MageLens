@@ -143,7 +143,7 @@ module.exports = {
     e2e: {
         baseUrl: ${JSON.stringify(`https://${applicationDomain}`)},
         supportFile: 'cypress/support/failure-snapshot.js',
-        specPattern: 'cypress/e2e/failure.cy.js',
+        specPattern: ['cypress/e2e/**/*.cy.js', 'src/app/code/**/Test/Cypress/**/*.cy.js'],
         setupNodeEvents(on, config) {
             const root = path.resolve(config.screenshotsFolder);
             on('task', {'failureSnapshot:write'({relativePath, html}) {
@@ -200,11 +200,16 @@ describe('failure snapshot serialization', () => {
     });
 });
 `);
+        write(path.join(project, 'src/app/code/Regression/Test/Cypress/anchor.cy.js'), `
+describe('module spec path anchor', () => {
+    it('passes', () => {});
+});
+`);
         const cypress = require('cypress');
         const result = await cypress.run({project, browser: 'chrome-for-testing', headed: true});
-        assert.equal(result.totalTests, 2, JSON.stringify({totalTests: result.totalTests, failures: result.failures}));
+        assert.equal(result.totalTests, 3, JSON.stringify({totalTests: result.totalTests, failures: result.failures}));
         assert.equal(result.totalFailed, 1, JSON.stringify({totalFailed: result.totalFailed, failures: result.failures}));
-        assert.equal(result.totalPassed, 1, JSON.stringify({totalPassed: result.totalPassed}));
+        assert.equal(result.totalPassed, 2, JSON.stringify({totalPassed: result.totalPassed}));
 
         const allFiles = filesBelow(path.join(project, 'screenshots'));
         const snapshots = allFiles.filter(file => file.endsWith('.html'));
@@ -217,7 +222,9 @@ describe('failure snapshot serialization', () => {
             assert.match(html, /client-side state from failing attempt/);
             assert.match(html, /&quot;runId&quot;:&quot;failure-snapshot-cypress-run&quot;/);
         }
-        assert.ok(allFiles.some(file => file.endsWith('.png')), 'Cypress must retain its failure screenshot.');
+        const screenshots = allFiles.filter(file => file.endsWith('.png'));
+        assert.ok(screenshots.length > 0, 'Cypress must retain its failure screenshot.');
+        assert.ok(snapshots.every(file => path.dirname(file) === path.dirname(screenshots[0])), 'HTML snapshots must sit alongside Cypress screenshots.');
         console.log('PASS: Cypress retry metadata, live DOM, serializer edge cases and failure screenshot.');
     } finally {
         fs.rmSync(project, {recursive: true, force: true});

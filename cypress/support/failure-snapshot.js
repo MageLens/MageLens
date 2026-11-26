@@ -72,7 +72,7 @@ afterEach(function () {
     const filename = failureHtmlFilename(test.fullTitle(), {attempt, runId: metadata.runId, workerId});
     writingSnapshot = true;
     cy.task('failureSnapshot:write', {
-        relativePath: `${Cypress.spec.name}/${filename}`,
+        relativePath: `${Cypress.spec.relative}/${filename}`,
         html: latestHtml
     }, {log: false}).then(result => {
         writingSnapshot = false;
