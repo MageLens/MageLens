@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {readXmlJson} = require('./xml-report/json.cjs');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const {sourceHashes} = require('./prepare.cjs');
@@ -14,7 +15,8 @@ const run = read('coverage/run.json');
 const php = read('coverage/php/coverage-summary.json');
 const js = read('coverage/js/coverage-summary.json');
 const templates = read('coverage/templates/coverage-summary.json');
-const xml = read('coverage/xml/coverage.json');
+const includeMachineReport = process.argv.includes('--include-machine-report');
+const xml = readXmlJson('coverage/xml/coverage.json', {omit: includeMachineReport ? ['requests'] : ['files', 'requests']});
 assert.equal(xml.run, run.id);
 assert.equal(xml.complete, true);
 assert.equal(xml.percent, xml.total ? xml.covered / xml.total * 100 : null, 'Invalid XML coverage percentage');
@@ -64,7 +66,7 @@ const generatedAt = new Date().toISOString();
 const htmlValidation = writeHtmlValidationReport(run);
 const limitations = templateLimitations(templates);
 // The coverage database is opt-in: it costs generation time and disk space on every run.
-if (process.argv.includes('--include-machine-report')) writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
+if (includeMachineReport) writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
 fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
     templateLimitations: limitations}, null, 2));
 writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});

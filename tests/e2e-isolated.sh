@@ -67,6 +67,7 @@ cleanup() {
     if (( result != 0 )) && [[ "${MAGELENS_E2E_KEEP_ON_FAILURE:-0}" == 1 ]]; then
         printf 'Failed E2E workspace retained for debugging: %s\n' "$scratch" >&2
         printf 'Clean up with: cd %q && ./bin/application-compose --profile "*" down --volumes --remove-orphans\n' "$scratch" >&2
+        printf 'Then remove its images with: docker image ls --filter %q --format "{{.Repository}}:{{.Tag}}" | grep . | xargs docker image rm\n' "reference=$project-*" >&2
         exit "$result"
     fi
     if [[ -f "$scratch/.runtime/docker-magento/compose/compose.yaml" ]]; then
@@ -74,13 +75,21 @@ cleanup() {
         # Include the install-only workspace profile so its legacy appdata volume
         # is removed even though the one-off workspace container has exited.
         if ! (cd "$scratch" && ./bin/application-compose --profile '*' down --volumes --remove-orphans); then
-            printf 'Cleanup failed; temporary workspace retained at %s\n' "$scratch" >&2
+            printf 'Cleanup failed; temporary workspace retained at %s, together with its images\n' "$scratch" >&2
             exit 1
         fi
     fi
     # The credentials volume can exist even when installation fails before Compose starts.
     if docker volume inspect "${project}_composerdata" >/dev/null 2>&1; then
         docker volume rm "${project}_composerdata" >/dev/null || result=1
+    fi
+    # Images tagged with this run's project name are never reused once its workspace is gone.
+    # Shared base and service images stay, so later runs keep the layer cache.
+    local images
+    if ! images=$(docker image ls --filter "reference=$project-*" --format '{{.Repository}}:{{.Tag}}'); then
+        result=1
+    elif [[ -n "$images" ]]; then
+        printf '%s\n' "$images" | xargs docker image rm >/dev/null || result=1
     fi
     rm -rf "$scratch"
     printf 'E2E artifacts: %s\n' "$artifacts"
@@ -232,6 +241,9 @@ fi
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
     MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage --include-machine-report ${coverage_options[@]+"${coverage_options[@]}"} | tee .runtime/coverage-run.log
+    if [[ "$theme/$runner" == hyva/playwright ]]; then
+        ./bin/runner node --test tests/hyva-csp-no-observer.cjs
+    fi
     ./bin/runner node tests/verify-report-publication.cjs
     ./bin/application-compose exec -T phpfpm php /application/docker/php/e2e/verify-php-report.php
     ./bin/runner node --test src/app/code/Application/Blog/Test/Configuration/coverage.test.cjs

@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {DatabaseSync} = require('node:sqlite');
+const {writeXmlJson} = require('../bin/xml-report/json.cjs');
 
 function reports(t, covered, runner = 'cypress') {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-finalize-'));
@@ -25,7 +26,7 @@ function reports(t, covered, runner = 'cypress') {
     // One eligible unit per metric, covered or not, in the shapes the collectors export.
     const areas = {frontend: {status: 'eligible', hits: covered}, adminhtml: {status: 'unsupported', hits: 0}};
     // Since the XML report counts lines in every file, the di.xml line is part of the XML line total.
-    json('coverage/xml/coverage.json', {run: 'fixture', covered: covered * 2, total: 2, percent, complete: true, sourcesUnchanged: true, collectorErrors: [],
+    writeXmlJson(path.join(root, 'coverage/xml/coverage.json'), {run: 'fixture', covered: covered * 2, total: 2, percent, complete: true, sourcesUnchanged: true, collectorErrors: [],
         observers: totals, plugins: totals, preferences: totals, virtualTypes: totals, arguments: totals, lifecycles: totals, warnings: [],
         files: [{path: 'app/code/Acme/Shop/etc/config.xml', family: 'config', declarations: [{id: 'config-1', family: 'config', startLine: 5, endLine: 5}],
             lines: {5: {hits: covered, state: covered ? 'covered' : 'uncovered'}, 6: {hits: 0, state: 'unmeasured'}}},

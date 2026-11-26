@@ -5,8 +5,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {createHash} = require('node:crypto');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 
-const report = JSON.parse(fs.readFileSync('coverage/xml/coverage.json'));
+const report = readXmlJson('coverage/xml/coverage.json', {omit: ['requests']});
 const fixture = 'app/code/MageLens/AdminNavigation/etc/';
 const blog = 'app/code/Application/Blog/etc/';
 

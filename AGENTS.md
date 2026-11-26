@@ -6,7 +6,7 @@ License: see LICENSE in the repository root.
 
 # Use MageLens with a coding agent
 
-MageLens provides a local Magento Open Source or Mage-OS environment with Cypress or Playwright and PHP, JavaScript and template coverage. Use [README.md](README.md) for installation and daily commands, [docs/coverage.md](docs/coverage.md) for scenarios and coverage configuration, and [tests/README.md](tests/README.md) for isolated validation.
+MageLens provides a local Magento Open Source or Mage-OS environment with Cypress or Playwright and PHP, JavaScript, template and XML configuration coverage. Use [README.md](README.md) for installation and daily commands, [docs/coverage.md](docs/coverage.md) for scenarios and coverage configuration, and [tests/README.md](tests/README.md) for isolated validation.
 
 Follow the [engineering-discipline skill](.agents/skills/engineering-discipline/SKILL.md) for implementation, documentation updates, testing and releases.
 
@@ -59,7 +59,7 @@ Edit original application files in `src/`, rather than generated files in `.runt
 
 ## Run scenarios and inspect coverage
 
-Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. Add Playwright scenarios in `playwright/e2e/` or module `Test/Playwright/` directories, importing `test` and `expect` from `playwright/support.cjs` to enable all three collectors.
+Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. Add Playwright scenarios in `playwright/e2e/` or module `Test/Playwright/` directories, importing `test` and `expect` from `playwright/support.cjs` to enable coverage collection.
 
 | Command | Purpose |
 | --- | --- |
@@ -81,7 +81,7 @@ Use the pinned Chrome for Testing build for every Cypress and Playwright journey
 
 Automated browser scenarios disable page-change animations. Uncaught application errors still fail the run.
 
-Open `coverage/index.html` after a successful run. To analyse results, run `./bin/run-coverage --include-machine-report` and query `coverage/report.sqlite` read-only as described in the [coverage-database skill](.agents/skills/coverage-database/SKILL.md) instead of parsing HTML or loading whole exports. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. XML configuration consumption appears separately in `coverage/xml/`, preserving source directories. Read measurement warnings before interpreting template and XML percentages.
+Open `coverage/index.html` after a successful run. To analyse results, run `./bin/run-coverage --include-machine-report` and query `coverage/report.sqlite` read-only as described in the [coverage-database skill](.agents/skills/coverage-database/SKILL.md) instead of parsing HTML or loading whole exports. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. The [XML configuration report](docs/coverage.md#xml-configuration-coverage) in `coverage/xml/` maps observed runtime effects to declarations in the original source tree. Read measurement warnings before interpreting template and XML percentages.
 
 Tests audit the HTML source of selected pages by calling `cy.mageLensValidateHtml()` in Cypress or the `mageLensValidateHtml(page)` fixture in Playwright. Audits are opt-in and listed in the separate Reports section of `coverage/index.html`, with details in `coverage/html-validation/`; a run without calls is shown as not audited. Captures are validated after the tests finish; findings never fail a test or the run. See [HTML validation](docs/coverage.md#html-validation) for the validation target and its limitations.
 
@@ -99,7 +99,7 @@ Run the full E2E matrix and release qualification in GitHub Actions. Focused loc
 
 The CI workflow checks seven Linux combinations and Mage-OS/Luma/Cypress on `windows-latest`, covering all eight platform, storefront and runner combinations once. Apple Silicon macOS supports all eight combinations, but macOS is not included in the automated release qualification matrix. Intel macOS is not supported. Actual host feasibility is required; a Linux job cannot stand in for Windows. The final `Required CI gate` requires all eight active cases, 64 acceptance scenarios, every report and the complete eight-way coverage comparison. Missing, skipped, canceled and incomplete required checks block qualification.
 
-Compare complete coverage outcomes within each theme across platforms, browser runners and operating systems: Luma with Luma and Hyvä CSP with Hyvä CSP. Include every measured application, theme and vendor file, PHP lines, JavaScript statements/functions/branches, template execution, DOM observations, source fingerprints and measurement warnings. Equal headline percentages are insufficient. Normalize only host paths, line endings, ordering, run metadata and repeated-hit frequencies; covered/uncovered outcomes, inventories and totals must match. Investigate discrepancies rather than excluding files or allowing a tolerance. Inspect `coverage/equivalence.json.gz` and `theme-report-comparison.json` alongside the complete eight-way comparison before declaring CI complete.
+Compare complete coverage outcomes within each theme across platforms, browser runners and operating systems: Luma with Luma and Hyvä CSP with Hyvä CSP. Include every measured application, theme and vendor file, PHP lines, JavaScript statements/functions/branches, template execution, DOM observations, XML declaration outcomes, source fingerprints and measurement warnings. Equal headline percentages are insufficient. Normalize only host paths, line endings, ordering, run metadata and repeated-hit frequencies; covered/uncovered outcomes, inventories and totals must match. Investigate discrepancies rather than excluding files or allowing a tolerance. Inspect `coverage/equivalence.json.gz` and `theme-report-comparison.json` alongside the complete eight-way comparison before declaring CI complete.
 
 Local development and CI use the same runner Dockerfile and harness. Cypress 16.3.0 is rebuilt from its pinned upstream source with the cookie, document-initialization and response-timeout fixes in `docker/runner/cypress-source/`; do not duplicate it in CI scripts or application code. Each Cypress case must pass the eleven runner regressions (nine cookie/authorization journeys, document initialization and a delayed-response check) and record matching source/patch provenance. Review the patch when updating Cypress; remove the source build after an upstream release passes the retained regressions. Existing installations must rerun installation with their saved selections to rebuild the runner.
 

@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+Copyright (c)  MageLens
 SPDX-License-Identifier: Elastic-2.0
 License: see LICENSE in the repository root.
 -->
@@ -8,7 +8,7 @@ License: see LICENSE in the repository root.
 
 This supplements the root [AGENTS.md](../../../../../AGENTS.md). Paths below are relative to this module unless stated otherwise.
 
-`Application_Blog` is the bundled example for trying PHP, JavaScript and template coverage on Magento Open Source or Mage-OS. Read [README.md](README.md) for behavior and scenarios.
+`Application_Blog` is the bundled example for trying PHP, JavaScript, template and XML configuration coverage on Magento Open Source or Mage-OS. Read [README.md](README.md) for behavior and scenarios.
 
 From the repository root, use `./install.sh --mageos` for Mage-OS. Add `--hyva` for Hyvä CSP, and add `--playwright` for Playwright. Omit `--mageos` for Magento Open Source. Run `./bin/run-coverage` to execute the demo scenarios and open `coverage/index.html` afterward. Repeat the same platform, theme and runner flags when reinstalling.
 

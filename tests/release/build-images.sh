@@ -19,13 +19,12 @@ case "$architecture" in
 esac
 export MAGELENS_IMAGE_PLATFORM="linux/$architecture"
 output="$ROOT/.runtime/release-images/$architecture"
-mkdir -p "$output" .runtime/template-package coverage
-touch .runtime/template-package/.keep
+mkdir -p "$output" coverage
 version=$(node -p 'require("./package.json").version')
 for kind in php runner-cypress runner-playwright; do
-    fingerprint=$(node bin/image-inputs.cjs inputs "$kind")
     image="magelens-release-$kind:build"
     if [[ "$kind" == php ]]; then
+        fingerprint=$(node bin/image-inputs.cjs inputs "$kind")
         git clone --depth 1 --branch "$MARKSHUST_DOCKER_MAGENTO_VERSION" https://github.com/markshust/docker-magento.git .runtime/docker-magento
         "$ROOT/bin/build-php-image"
         docker build --target portable --file docker/php/Dockerfile --tag "$image" \
@@ -44,17 +43,12 @@ for kind in php runner-cypress runner-playwright; do
             --mount "type=bind,source=$ROOT/src/app/code/Application/Blog/Test/Configuration,target=/workspace/src/app/code/Application/Blog/Test/Configuration,readonly" \
             "$image" -c 'php /workspace/tests/xml.test.php && php /workspace/tests/xml-hooks.test.php'
     else
-        export MAGELENS_RUNNER=${kind#runner-} TEMPLATE_COVERAGE_PACKAGE=''
-        source "$ROOT/bin/sync-runner-dependencies"
-        docker build --pull --target "$MAGELENS_RUNNER" --file docker/runner/Dockerfile --tag "$image" \
-            --label "org.magelens.inputs=$fingerprint" --label "org.opencontainers.image.source=$release_source" \
-            --build-arg "RUNNER_IMAGE=$RUNNER_IMAGE" --build-arg "PLAYWRIGHT_RUNNER_IMAGE=$PLAYWRIGHT_RUNNER_IMAGE" \
-            --build-arg "CHROME_VERSION=$CHROME_VERSION" --build-arg "CHROME_LINUX_X64_SHA256=$CHROME_LINUX_X64_SHA256" \
-            --build-arg "CHROME_LINUX_ARM64_SHA256=$CHROME_LINUX_ARM64_SHA256" .
+        runner=${kind#runner-}
+        bash tests/release/build-runner-image.sh "$runner" "$image"
         checks=()
-        [[ "$MAGELENS_RUNNER" != cypress ]] || checks=(--cypress-regressions)
+        [[ "$runner" != cypress ]] || checks=(--cypress-regressions)
         bash tests/runner-container.sh "$image" ${checks[@]+"${checks[@]}"}
-        if [[ "$MAGELENS_RUNNER" == cypress ]]; then
+        if [[ "$runner" == cypress ]]; then
             node -e 'const a=require("node:assert/strict");const r=require("./coverage/cypress-runner-results.json");a.equal(r.browserVersion,process.env.CHROME_VERSION);a.equal(r.browserName,"chrome-for-testing");'
         fi
     fi

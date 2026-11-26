@@ -4,6 +4,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 
 const read = file => JSON.parse(fs.readFileSync(`coverage/${file}`, 'utf8'));
 const moduleRoot = 'app/code/MageLens/Compatibility';
@@ -27,7 +28,7 @@ for (const fragment of ["getValue('magelens_probe/cron/enabled')", 'file_put_con
     assert.ok(line && hits[line] === 1, `Missing CLI PHP coverage for ${fragment}`);
 }
 
-const xml = read('xml/coverage.json');
+const xml = readXmlJson('coverage/xml/coverage.json');
 assert.equal(xml.run, run);
 const config = xml.files.find(file => file.path === `${moduleRoot}/etc/config.xml`);
 const message = config.declarations.find(item => item.path === 'magelens_probe/cron/magerun_message');

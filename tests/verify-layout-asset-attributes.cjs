@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 for (const [handle, node, attributes, state, effect] of [
     ['head', '/page/head/script[1]', ['defer', 'async', 'charset', 'type'], 'covered', 'layout-asset-attribute-emitted'],
     ['head', '/page/head/script[2]', ['ie_condition'], 'covered', 'layout-asset-condition-rendered'],

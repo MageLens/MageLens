@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const {createHash} = require('node:crypto');
+const {readXmlJson, writeXmlJson} = require('../bin/xml-report/json.cjs');
 const {merge, writeReport, layoutEvents, countsAsLayoutCoverage} = require('../bin/report-xml.cjs');
 function fixture() {
     const file = 'app/code/Acme/Blog/etc/config.xml';
@@ -54,6 +55,55 @@ test('XML HTML preserves nested directories, source anchors, escaping and line c
     assert.match(source, /&lt;script&gt;unsafe/);
     assert.doesNotMatch(source, /<script>unsafe/);
 });
+test('XML report keeps its JSON and HTML links when the combined export exceeds the string limit', t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-large-report-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    const {manifest, record, sources} = fixture();
+    const report = merge(manifest, [record], sources);
+    report.requests = Array.from({length: 50}, (_, id) => ({id, events: [{
+        type: 'config-read', requestedScope: {type: 'stores', code: 'é🏬\n\u2028'.repeat(100)}
+    }]}));
+    const expected = JSON.parse(JSON.stringify(report));
+    const maxStringLength = 4096;
+    const stringify = JSON.stringify;
+    const parse = JSON.parse;
+    t.mock.method(JSON, 'stringify', (value, ...options) => {
+        const result = stringify(value, ...options);
+        if (result?.length > maxStringLength) throw new RangeError('Invalid string length');
+        return result;
+    });
+    t.mock.method(JSON, 'parse', value => {
+        if (value.length > maxStringLength) throw new RangeError('Invalid string length');
+        return parse(value);
+    });
+    assert.throws(() => JSON.stringify(report), RangeError);
+    writeReport(report, sources, root);
+    const file = path.join(root, 'coverage.json');
+    assert.deepEqual(readXmlJson(file), expected);
+    const {requests, ...summary} = expected;
+    assert.deepEqual(readXmlJson(file, {omit: ['requests']}), summary);
+    assert.deepEqual(parse(fs.readFileSync(file, 'utf8')), expected);
+    assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /href="coverage\.json"/);
+    assert.match(fs.readFileSync(path.join(root, 'app/code/Acme/Blog/etc/index.html'), 'utf8'), /href="config\.xml\.html"/);
+});
+
+test('XML JSON export preserves the previous file after a failed write and rejects truncated exports', t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-json-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    const file = path.join(root, 'coverage.json');
+    const previous = {run: 'previous', files: [], requests: [], warnings: []};
+    fs.writeFileSync(file, JSON.stringify(previous, null, 2));
+    assert.deepEqual(readXmlJson(file), previous);
+    assert.throws(() => writeXmlJson(file, {files: [12n]}), TypeError);
+    assert.deepEqual(readXmlJson(file), previous);
+    assert.deepEqual(fs.readdirSync(root), ['coverage.json']);
+    writeXmlJson(file, previous);
+    assert.deepEqual(readXmlJson(file), previous);
+    const text = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(file, text.slice(0, -3));
+    assert.throws(() => readXmlJson(file), /Invalid XML coverage JSON/);
+});
+
 test('indexes first-seen evidence in order and counts duplicate hits', t => {
     const {manifest, record, sources} = fixture();
     const first = record.events[0];

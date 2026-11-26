@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {writeXmlJson} = require('./xml-report/json.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -487,7 +488,7 @@ ${diagnostics}`, true));
 <p class="muted">A line counts as covered when at least one declaration on it was observed. Unmeasured lines are outside the percentage. N/A means the file or directory has no measured lines.</p>
 ${name ? '' : reportDetails(result)}`));
     }
-    fs.writeFileSync(path.join(directory, 'coverage.json'), JSON.stringify(result, null, 2));
+    writeXmlJson(path.join(directory, 'coverage.json'), result);
 }
 function report() {
     const read = file => JSON.parse(fs.readFileSync(file));

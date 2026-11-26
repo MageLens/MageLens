@@ -10,15 +10,15 @@ License: see LICENSE in the repository root.
 
 # MageLens: Magento 2 and Mage-OS full stack coverage with Docker
 
-**See which PHP, JavaScript and templates your end-to-end and functional tests execute.** MageLens sets up a local Magento Open Source or Mage-OS environment in Docker and collects full stack coverage from Cypress or Playwright runs.
+**See which PHP, JavaScript and templates your tests execute, and which Magento XML declarations take effect.** MageLens sets up a local Magento Open Source or Mage-OS environment in Docker and collects full stack coverage from end-to-end and functional tests with Cypress or Playwright.
 
 **[Website](https://magelens.dev/)** · [Real-world Magento E2E coverage guide](https://magelens.dev/guides/parallel-magento-e2e-coverage/)
 
-> **[View the live Hyvä demo report →](https://magelens-coverage-demo.wintrywood128.chatgpt.site)** — PHP, JavaScript and template coverage from a Hyvä CSP storefront with 98 passing Playwright tests.
+> **[View the live Playwright demo report](https://magelens-coverage-demo.vitaliyboykostarkon.chatgpt.site/)** or [open its XML source tree](https://magelens-coverage-demo.vitaliyboykostarkon.chatgpt.site/xml/index.html) to explore covered, uncovered and unmeasured lines.
 
 Run the installer, run the tests, and open one report to see which parts of your application executed. PHP, Composer, Node, the selected browser runner, and reporting tools run in containers.
 
-The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä. The badges are updated after each successful coverage run.
+The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä.
 
 <!-- coverage-badges:start -->
 <!-- coverage-badges:end -->
@@ -27,7 +27,7 @@ The included [blog module](src/app/code/Application/Blog/README.md) provides an 
 
 MageLens grew out of a real-world Magento project with **600+ E2E tests**, where coverage helped uncover forgotten features, broken functionality, and legacy template overrides the tests never exercised.
 
-It makes those gaps visible across PHP, JavaScript and templates, with **low coverage overhead and near-native performance** observed in that project.
+The project observed **low coverage overhead and near-native performance** while measuring PHP, JavaScript and templates. MageLens also shows which XML declarations a scenario exercised, from a storefront layout block to an Admin ACL check.
 
 Use the same browser-based flows for **functional testing** by mocking external integrations such as ERP, shipping and tax services. This keeps tests independent of those services and helps provide faster pull request feedback. For release testing, run end-to-end scenarios against the integrations you need to validate.
 
@@ -41,7 +41,7 @@ bash -c "$(wget -qO- https://raw.githubusercontent.com/MageLens/MageLens/main/bo
 
 To install a specific release, prefix the command with `MAGELENS_VERSION=v1.8.2`, replacing the tag as needed. Append installer options after `--`, for example `--mageos --hyva --playwright`.
 
-If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory.
+If you have already cloned or downloaded MageLens, run `./install.sh` from its project directory. When upgrading an existing installation, repeat its platform, theme and runner flags to install the PHP extension required for XML coverage.
 
 Installation pulls compatible, digest-pinned Cypress or Playwright and PHP/PCOV images from GHCR when the checkout matches a published release. PHP applies a small local UID/GID layer. Use `./install.sh --build-from-source` (with your platform, theme and runner flags) to build everything locally. Unpublished or modified image inputs and unsupported architectures fall back to source builds; registry or provenance failures stop installation. Linux amd64 and arm64 images are published, including native images for Apple Silicon. GHCR retains prebuilt images for at least three years (1,096 days) after a MageLens release is published. The latest release, the five most recently published releases and pinned releases keep their images beyond that window. Checkouts without published images or with modified inputs build from source. Application packages, credentials and databases remain local. Custom npm dependencies are installed when the project lock differs from the bundled dependencies.
 
@@ -117,27 +117,28 @@ By default, the installer adds the domain to your hosts file and uses Mark Shust
 
 ## Coverage reports
 
-`./bin/run-coverage` runs the project’s selected browser suite and generates three reports:
+`./bin/run-coverage` runs the selected browser suite and any configured CLI tests. The combined index links to four reports.
 
 | Coverage | What it measures | Local report |
 | --- | --- | --- |
-| PHP | Executable PHP lines in `.php` and `.phtml` files reached by Magento HTTP requests, shown against your original source | `coverage/php/index.html` |
+| PHP | Executable PHP lines in `.php` and `.phtml` files reached by Magento HTTP requests or CLI tests, shown against your original source | `coverage/php/index.html` |
 | JavaScript | Statements in whole `.js` files, collected with Istanbul and the selected runner | `coverage/js/index.html` |
 | Templates | HTML/PHTML bindings, template expressions and inline scripts, with script functions, branches and DOM presence reported separately | `coverage/templates/index.html` |
+| [XML configuration](docs/coverage.md#xml-configuration-coverage) | Original XML lines with observed effects, such as a configuration read, plugin callback, rendered layout block or selected route | `coverage/xml/index.html` |
 
 PHP coverage excludes emitted HTML and inline JavaScript. Template warnings identify unsupported directives, scripts or PHP-generated output. When a warning is present, the template percentage covers only the parts MageLens can measure.
 
-After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. Each successful full run also refreshes the four SVG badges in `coverage/badges/` and the managed badge section in this README. Reports are generated locally and are ignored by Git; the badges can be committed.
+After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. A successful full run refreshes the test, PHP, JavaScript and template SVG badges in `coverage/badges/`. Pass `--update-readme` to update the badge section in this README. The combined index and `coverage/summary.json` include the XML percentage.
 
 To share coverage, run `./bin/export-coverage` and send only **`coverage/share.html`**. This standalone report contains coverage metrics and project-relative file paths. Keep the full `coverage/` directory private because it contains raw requests and test fixture data. [Export options](docs/coverage.md#reports-and-artifacts)
 
-Coverage includes PHP executable lines, whole JavaScript files, and HTML/PHTML templates with their bindings and inline scripts under `src/app/code/`, plus selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. JavaScript badges measure statements in whole `.js` files, with separate application/library reports. Inline scripts belong to template coverage, which also lists unsupported and PHP-generated script fragments. See [JavaScript coverage configuration](docs/coverage.md#javascript-coverage).
+MageLens scans application modules under `src/app/code/` and selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. A measured XML line counts as covered when at least one declaration on it has runtime evidence. Unmeasured lines are listed separately and excluded from the percentage.
 
 With `./bin/run-coverage --include-machine-report`, `coverage/report.sqlite` holds the same results as a queryable database for CI, scripts and coding agents; see [Coverage database](docs/coverage.md#coverage-database).
 
 Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](docs/coverage.md#html-validation).
 
-Read the [coverage guide](docs/coverage.md) for report semantics, collection details, and adding tests and fixtures.
+Read the [coverage guide](docs/coverage.md) for collector configuration, report semantics and test fixtures. The [XML coverage wiki](https://github.com/MageLens/MageLens/wiki/XML-Configuration-Coverage) summarizes supported Magento XML families.
 
 ## Magento environment
 
@@ -167,6 +168,7 @@ This is the single place to choose the main dependency versions:
 | Official PHP base image | `PHP_IMAGE` |
 | Composer in the PHP image | `COMPOSER_VERSION` |
 | [PCOV fork](https://github.com/MageLens/PCOV) / PIE installer | `PCOV_VERSION` / `PIE_VERSION` |
+| OpenTelemetry PHP extension for XML runtime hooks | `OPENTELEMETRY_VERSION` / `OPENTELEMETRY_SHA256` |
 | Cypress | `CYPRESS_VERSION` |
 | Playwright | `PLAYWRIGHT_VERSION` |
 | n98-magerun2 for CLI tests | `MAGERUN_VERSION` / `MAGERUN_SHA256` |
@@ -187,7 +189,7 @@ The installer updates `package.json` and `package-lock.json` for your selected r
 
 After changing versions, run `./bin/run-coverage` to check your tests and regenerate reports. For automated environments, `./install.sh --container-only [domain]` uses self-signed HTTPS without changing host DNS or certificate trust.
 
-Select Playwright during installation with `./install.sh --playwright`, then use `./bin/run-coverage`. Import `test` and `expect` from `playwright/support.cjs` in project specs under `playwright/e2e/` or module `Test/Playwright/` directories. Cypress remains the default. Both runners produce PHP, JavaScript and template reports with the same source-integrity checks.
+Select Playwright during installation with `./install.sh --playwright`, then use `./bin/run-coverage`. Import `test` and `expect` from `playwright/support.cjs` in project specs under `playwright/e2e/` or module `Test/Playwright/` directories. Cypress remains the default. Both runners produce the same four coverage reports and verify the original sources.
 
 For installations created by MageLens, changing `MAGENTO_VERSION` updates Magento Open Source; changing `MAGEOS_VERSION` updates Mage-OS when installed with `--mageos`. Updates preserve client modules, configuration, media, and the database. Installation stops if an update conflicts with local edits. Back up the database before upgrading; application setup can change its schema. Downgrades and switching platforms require a separate checkout and database.
 
@@ -269,7 +271,7 @@ Avoid changing application data while the tests run. See the [coverage guide](do
 | `cypress/`, module `Test/Cypress/` directories | Project scenarios and browser coverage collectors |
 | `playwright/`, module `Test/Playwright/` directories | Playwright scenarios and coverage fixtures |
 | `coverage/` | Generated reports and badges |
-| [Blog demo](src/app/code/Application/Blog/README.md) | Example application exercising all three collectors |
+| [Blog demo](src/app/code/Application/Blog/README.md) | Example application with PHP, JavaScript, template and XML coverage |
 | [Coverage guide](docs/coverage.md) | Collector details and customization |
 
 ## FAQ
@@ -286,9 +288,9 @@ Yes. Use `./install.sh --mageos --hyva` for Hyvä CSP. Add `--playwright` to use
 
 Yes. [Copy modules or themes](#copy-custom-modules-or-themes), or [copy a complete project before installation](#copy-a-complete-magento-project), then add scenarios for the selected runner. Coverage follows the configured theme scope; vendor packages require an explicit `vendorRoots` entry.
 
-### Why are PHP, JavaScript and template percentages different?
+### Why do the four coverage percentages differ?
 
-They measure different source operations. PHP uses executable lines, whole-file JavaScript uses Istanbul statements, and template coverage measures bindings and inline scripts with DOM presence reported separately. See the [coverage guide](docs/coverage.md); the percentages are not interchangeable.
+Each report has its own unit. PHP counts executable lines, JavaScript counts statements, templates count executable lines containing bindings or inline scripts, and XML counts measurable source lines with an observed declaration. Template DOM presence and per-declaration XML outcomes are available in the detailed reports.
 
 ### Is this a production deployment setup?
 

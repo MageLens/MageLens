@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
+const {readXmlJson} = require('../../../../../../../bin/xml-report/json.cjs');
 const directory = process.env.MAGELENS_XML_ACCEPTANCE_DIR || 'coverage';
 const read = file => JSON.parse(fs.readFileSync(path.join(directory, file)));
 const config = 'app/code/Application/Blog/etc/config.xml';
@@ -19,13 +20,16 @@ const cachePluginName = 'magelens_layout_cache_fixture';
 const routeMetadataSubject = 'Magento\\Framework\\App\\Route\\Config';
 const routeMetadataName = 'magelens_route_metadata';
 const prefix = 'application_blog/display/';
+let verifiedReport;
 function report() {
-    const value = read('xml/coverage.json');
+    if (verifiedReport) return verifiedReport;
+    const value = readXmlJson(path.join(directory, 'xml/coverage.json'));
     assert.equal(value.run, read('run.json').id);
     assert.equal(value.complete, true);
     assert.equal(value.sourcesUnchanged, true);
     assert.deepEqual(value.collectorErrors, []);
-    return value;
+    verifiedReport = value;
+    return verifiedReport;
 }
 function declaration(result, file, key, type = 'default', code = '', family = null) {
     const matches = result.files.find(entry => entry.path === file)?.declarations

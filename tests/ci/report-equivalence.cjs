@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {readXmlJson} = require('../../bin/xml-report/json.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -99,7 +100,7 @@ function snapshot(directory) {
     const scope = read(directory, 'javascript-scope.json');
     const templates = read(directory, 'templates/coverage-summary.json');
     const summary = read(directory, 'summary.json');
-    const xml = read(directory, 'xml/coverage.json');
+    const xml = readXmlJson(path.join(directory, 'xml/coverage.json'), {omit: ['requests']});
     assert.equal(xml.run, run.id, 'Stale XML coverage');
     assert.equal(xml.complete, true);
     assert.equal(xml.sourcesUnchanged, true);

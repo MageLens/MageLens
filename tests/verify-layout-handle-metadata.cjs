@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 for (const provider of ['Compatibility', 'LayoutOverlay']) {
     for (const name of ['custom', 'equal', ...(provider === 'Compatibility' ? ['wireframe', 'untyped'] : [])]) {
         const file = report.files.find(file => file.path === `app/code/MageLens/${provider}/view/frontend/layout/coverageprobe_metadata_${name}.xml`);

@@ -5,8 +5,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {createHash} = require('node:crypto');
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
 
-const report = JSON.parse(fs.readFileSync('coverage/xml/coverage.json'));
+const report = readXmlJson('coverage/xml/coverage.json');
 assert.equal(report.run, JSON.parse(fs.readFileSync('coverage/run.json')).id);
 const original = 'app/code/MageLens/Compatibility/etc/crontab.xml';
 const file = report.files.find(item => item.path === original);

@@ -3,8 +3,8 @@
 // License: see LICENSE in the repository root.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const report = JSON.parse(fs.readFileSync(process.argv[2] || 'coverage/xml/coverage.json'));
+const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json');
 const file = report.files.find(item => item.path.endsWith('/layout/coverageprobe_cachepage_index.xml'));
 assert.ok(file);
 for (const kind of ['container', 'block', 'argument']) {
