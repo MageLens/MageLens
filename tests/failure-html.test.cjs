@@ -6,7 +6,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {failureHtmlFilename, failureSnapshotUnavailable} = require('../cypress/support/failure-html.cjs');
 const {retryAttemptNumber} = require('../cypress/support/failure-metadata.cjs');
-const {wrapTestType} = require('../playwright/failure-snapshot-hooks.cjs');
+const {observeTestFailures} = require('../playwright/failure-snapshot-hooks.cjs');
 
 test('failure HTML filenames identify title, run, attempt and worker without unsafe paths', () => {
     const first = failureHtmlFilename('Catalog / Search: shows "result"', {attempt: 1, runId: 'run-a', workerId: 'worker-a'});
@@ -33,38 +33,39 @@ test('Cypress retry attempt reads the failing runnable before currentTest fallba
     assert.equal(retryAttemptNumber({currentRetry: () => 0}), 1);
 });
 
-test('Playwright test callbacks capture failure before later hooks and preserve expected failures', async () => {
-    const definitions = [];
-    const hooks = [];
-    const base = function (...args) { definitions.push(args); };
-    base.extend = () => base;
-    base.beforeEach = (...args) => hooks.push(args);
-    base.afterEach = (...args) => hooks.push(args);
+test('Playwright records the original error before starting diagnostics', () => {
     const captures = [];
-    const wrapped = wrapTestType(base, async (...args) => captures.push(args));
-
-    wrapped('first passing spec', async () => {});
-    wrapped('later failing spec', async ({context}) => {
-        throw Object.assign(new Error('assertion failed'), {context});
+    const error = new Error('original assertion');
+    const report = function (failure) {
+        assert.equal(this, testInfo);
+        this.status = 'failed';
+        this.errors.push(failure);
+        return 'reported';
+    };
+    const testInfo = {expectedStatus: 'passed', status: 'passed', errors: [],
+        _failWithError: report, _currentHookType: () => 'beforeEach'};
+    const restore = observeTestFailures(testInfo, (phase, reason) => {
+        assert.equal(testInfo.errors[0], error);
+        captures.push([phase, reason]);
+        throw new Error('diagnostic failed');
     });
-    const fixtures = {context: {name: 'application page'}};
-    const testInfo = {expectedStatus: 'passed'};
-    await assert.rejects(definitions[1][1](fixtures, testInfo), /assertion failed/);
-    assert.deepEqual(captures[0], [fixtures.context, testInfo, 'test-body', 'assertion failed']);
 
-    wrapped.afterEach('nested cleanup', async () => { throw new Error('cleanup failed'); });
-    const cleanup = hooks[0].at(-1);
-    await assert.rejects(cleanup(fixtures, testInfo), /cleanup failed/);
-    assert.equal(captures[1][2], 'afterEach-hook');
+    assert.equal(testInfo._failWithError(error), 'reported');
+    assert.deepEqual(captures, [['beforeEach-hook', 'original assertion']]);
+    assert.deepEqual(testInfo.errors, [error]);
+    restore();
+    assert.equal(testInfo._failWithError, report);
+});
 
-    const pageContext = {name: 'context from page fixture'};
-    wrapped('page fixture context', async ({page}) => {
-        throw Object.assign(new Error('page fixture failed'), {page});
-    });
-    await assert.rejects(definitions[2][1]({page: {context: () => pageContext}}, testInfo), /page fixture failed/);
-    assert.equal(captures[2][0], pageContext);
-
-    wrapped('expected failure', async () => { throw new Error('expected'); });
-    await assert.rejects(definitions[3][1](fixtures, {expectedStatus: 'failed'}), /expected/);
-    assert.equal(captures.length, 3);
+test('Playwright diagnostics do not record expected failures', () => {
+    const testInfo = {
+        expectedStatus: 'failed',
+        status: 'passed',
+        _failWithError() { this.status = 'failed'; }
+    };
+    let captures = 0;
+    observeTestFailures(testInfo, () => { captures++; });
+    testInfo._failWithError(new Error('expected assertion failure'));
+    assert.equal(testInfo.status, 'failed');
+    assert.equal(captures, 0);
 });

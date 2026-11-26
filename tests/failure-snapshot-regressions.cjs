@@ -28,13 +28,13 @@ function playwrightProject(project) {
     write(path.join(project, 'coverage/run.json'), '{"id":"failure-snapshot-playwright-run"}\n');
     write(path.join(project, 'playwright.config.cjs'), `module.exports = {
         testDir: ${JSON.stringify(project)},
-        testMatch: ['01-passing.spec.cjs', '02-failing.spec.cjs'],
+        testMatch: ['01-passing.spec.cjs', '02-failing.spec.cjs', '03-lifecycle.spec.cjs'],
         outputDir: ${JSON.stringify(path.join(project, 'artifacts'))},
         workers: 1,
         retries: 0,
         timeout: 30000,
         expect: {timeout: 2000},
-        reporter: 'list',
+        reporter: [['list'], ['json', {outputFile: 'results.json'}]],
         use: {browserName: 'chromium', channel: 'chrome', baseURL: 'https://magelens.test', ignoreHTTPSErrors: true, headless: false, screenshot: 'only-on-failure', trace: 'retain-on-failure'}
     };\n`);
     write(path.join(project, '01-passing.spec.cjs'), `
@@ -107,6 +107,49 @@ test.describe.serial('nested cleanup', function () {
 `;
     const registrationLine = failingSpec.split('\n').findIndex(line => line.includes("test('captures a client-side failure")) + 1;
     write(path.join(project, '02-failing.spec.cjs'), failingSpec.replace('__EXPECTED_TEST_LINE__', String(registrationLine)));
+    write(path.join(project, '03-lifecycle.spec.cjs'), `
+const {test, expect} = require(${support});
+
+test.beforeEach(async ({page}) => {
+    await page.setContent('<main id="snapshot-probe">initial DOM</main>');
+});
+test.afterEach(async ({page}) => {
+    await page.setContent('<main>cleanup DOM</main>');
+});
+
+test('failure without browser fixtures in callback', async () => {
+    throw new Error('failure with a page opened in beforeEach');
+});
+
+test('soft assertion before later DOM updates', async ({page}) => {
+    await page.locator('main').evaluate(node => { node.textContent = 'soft assertion DOM'; });
+    await expect.soft(page.locator('main')).toHaveText('absent text', {timeout: 100});
+    await page.locator('main').evaluate(node => { node.textContent = 'DOM after soft assertion'; });
+});
+
+test('application error before cleanup', async ({page}) => {
+    await page.locator('main').evaluate(node => { node.textContent = 'application error DOM'; });
+    const pageError = page.waitForEvent('pageerror');
+    await page.evaluate(() => { setTimeout(() => { throw new Error('intentional pageerror'); }, 0); });
+    await pageError;
+});
+
+test('slow snapshot does not mask assertion', async ({page}, testInfo) => {
+    const evaluate = page.evaluate;
+    page.evaluate = function (fn, ...args) {
+        if (fn.name === 'failureSnapshotDocument') return new Promise(() => {});
+        return evaluate.call(this, fn, ...args);
+    };
+    // Leave less time in the test slot than the snapshot read budget.
+    testInfo.setTimeout(Date.now() - testInfo._startWallTime + 300);
+    throw new Error('original assertion before the deadline');
+});
+
+test('runtime skip has no failure snapshot', async ({page}) => {
+    expect(await page.locator('main').isVisible()).toBe(true);
+    test.skip(true, 'skip after the page is open');
+});
+`);
     return registrationLine;
 }
 
@@ -125,31 +168,55 @@ async function verifyPlaywright() {
             cwd: project, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024
         });
         const output = `${result.stdout || ''}\n${result.stderr || ''}`;
-        assert.equal(result.status, 1, `Expected exactly one intentional Playwright failure.\n${output}`);
-        assert.match(output, /1 passed/);
-        assert.match(output, /1 failed/);
+        assert.equal(result.status, 1, `Expected intentional Playwright failures.\n${output}`);
         const attempts = filesBelow(path.join(project, 'coverage/raw/attempts'))
             .map(file => JSON.parse(fs.readFileSync(file, 'utf8')));
         assert.deepEqual(attempts.map(attempt => [attempt.spec, attempt.outcome]).sort(), [
             ['01-passing.spec.cjs', 'passed'],
-            ['02-failing.spec.cjs', 'failed']
+            ['02-failing.spec.cjs', 'failed'],
+            ...Array.from({length: 4}, () => ['03-lifecycle.spec.cjs', 'failed']),
+            ['03-lifecycle.spec.cjs', 'skipped']
         ]);
+
+        const report = JSON.parse(fs.readFileSync(path.join(project, 'results.json'), 'utf8'));
+        const lifecycle = report.suites.find(suite => suite.file === '03-lifecycle.spec.cjs');
+        const resultFor = title => lifecycle.specs.find(spec => spec.title === title).tests[0].results[0];
+        const slow = resultFor('slow snapshot does not mask assertion');
+        assert.equal(slow.status, 'failed', output);
+        assert.equal(slow.errors.length, 1, output);
+        assert.match(slow.errors[0].message, /original assertion before the deadline/);
+        assert.match(resultFor('application error before cleanup').errors[0].message, /Uncaught application errors/);
+        const skipped = resultFor('runtime skip has no failure snapshot');
+        assert.equal(skipped.status, 'skipped');
+        assert.deepEqual(skipped.errors, []);
 
         const artifacts = path.join(project, 'artifacts');
         const allFiles = filesBelow(artifacts);
         const snapshots = allFiles.filter(file => file.endsWith('.html'));
-        assert.equal(snapshots.length, 1, `Expected one snapshot for the later failing spec; got ${snapshots.length}.\n${output}`);
-        const html = fs.readFileSync(snapshots[0], 'utf8');
+        assert.equal(snapshots.length, 5, `Expected one snapshot per failed attempt only.\n${output}`);
+        const snapshotFor = specAndTitle => {
+            const file = snapshots.find(snapshot => path.basename(path.dirname(snapshot)).startsWith(specAndTitle));
+            assert.ok(file, `Missing snapshot for ${specAndTitle}.\n${output}`);
+            assert.ok(allFiles.some(artifact => path.dirname(artifact) === path.dirname(file) && artifact.endsWith('.png')),
+                `Missing sibling screenshot for ${specAndTitle}.\n${output}`);
+            return fs.readFileSync(file, 'utf8');
+        };
+        const html = snapshotFor('02-failing-');
         assert.match(html, /updated DOM before nested cleanup/);
         assert.match(html, /&quot;runId&quot;:&quot;failure-snapshot-playwright-run&quot;/);
         assert.match(html, /02-failing\.spec\.cjs/);
         assert.match(html, /&quot;attempt&quot;:1/);
         assert.match(html, /&quot;phase&quot;:&quot;test-body&quot;/);
-        const screenshots = allFiles.filter(file => file.endsWith('.png'));
-        assert.ok(screenshots.length > 0, 'The existing failure screenshot must remain present.');
         assert.ok(allFiles.some(file => file.endsWith('.zip')), 'The existing failure trace must remain present.');
-        assert.equal(path.dirname(snapshots[0]), path.dirname(screenshots[0]), 'HTML snapshots must sit alongside Playwright screenshots.');
+        assert.match(snapshotFor('03-lifecycle-failure-without-browser-fixtures'), /<main id="snapshot-probe">initial DOM<\/main>/);
+        assert.match(snapshotFor('03-lifecycle-soft-assertion'), /<main id="snapshot-probe">soft assertion DOM<\/main>/);
+        assert.match(snapshotFor('03-lifecycle-application-error'), /<main id="snapshot-probe">application error DOM<\/main>/);
+        const unavailable = snapshotFor('03-lifecycle-slow-snapshot');
+        assert.match(unavailable, /HTML snapshot unavailable/);
+        assert.match(unavailable, /did not respond to snapshot capture in time/);
+        assert.ok(snapshots.every(file => !file.includes('runtime-skip')));
         console.log('PASS: Playwright API compatibility, ordinary callbacks, original file/line selection, multi-spec capture, serializer edge cases, screenshot and trace.');
+        console.log('PASS: fixture-independent capture, soft assertions, application errors, snapshot timeout, and runtime skips.');
     } finally {
         fs.rmSync(project, {recursive: true, force: true});
     }

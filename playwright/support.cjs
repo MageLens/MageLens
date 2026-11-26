@@ -16,7 +16,9 @@ const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
 const {newAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
 const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 const {failureHtmlFilename, failureSnapshotDocument, failureSnapshotUnavailable} = require('../cypress/support/failure-html.cjs');
-const {wrapTestType} = require('./failure-snapshot-hooks.cjs');
+const {observeTestFailures} = require('./failure-snapshot-hooks.cjs');
+
+const snapshotTimeoutMs = 1200;
 
 function playwrightSpecPath(testInfo) {
     return projectPath(testInfo.file, testInfo.config.rootDir);
@@ -59,20 +61,20 @@ function writeSnapshot(testInfo, index, metadata, html) {
     }
 }
 
-async function saveFailureSnapshots(context, testInfo, phase, reason) {
+async function collectFailureSnapshots(context, testInfo, phase, reason) {
     try {
         let openPages;
-        try { openPages = context.pages(); }
+        try { openPages = context?.pages() ?? []; }
         catch (error) {
             const metadata = snapshotMetadata(testInfo, 0, phase, reason);
-            writeSnapshot(testInfo, 0, metadata, failureSnapshotUnavailable(metadata, error?.message || 'The browser context was unavailable.'));
-            return;
+            return [{metadata, html: failureSnapshotUnavailable(metadata, error?.message || 'The browser context was unavailable.')}];
         }
         const pages = openPages.slice(0, 4);
         if (openPages.length > pages.length) recordSnapshotNote(testInfo, 'Only the first four open pages were captured.');
         const targets = pages.length ? pages : [null];
-        const deadline = Date.now() + 1200;
-        for (const [index, page] of targets.entries()) {
+        const deadline = Date.now() + snapshotTimeoutMs;
+        // Submit every DOM read before user cleanup can navigate or close pages.
+        return await Promise.all(targets.map(async (page, index) => {
             let metadata;
             try {
                 metadata = snapshotMetadata(testInfo, index, phase, reason);
@@ -92,23 +94,47 @@ async function saveFailureSnapshots(context, testInfo, phase, reason) {
                         html = failureSnapshotUnavailable(metadata, error?.message || 'The application page could not be captured.');
                     } finally { clearTimeout(timer); }
                 }
-                writeSnapshot(testInfo, index, metadata, html);
+                return {metadata, html};
             } catch (error) {
                 metadata ||= snapshotMetadata(testInfo, index, phase, reason);
-                writeSnapshot(testInfo, index, metadata, failureSnapshotUnavailable(metadata, error?.message || 'Snapshot capture was unavailable.'));
+                return {metadata, html: failureSnapshotUnavailable(metadata, error?.message || 'Snapshot capture was unavailable.')};
             }
-        }
+        }));
     } catch (error) {
         recordSnapshotNote(testInfo, `Could not capture the HTML snapshot (${error?.code || 'capture error'}).`);
         try {
             const metadata = snapshotMetadata(testInfo, 0, phase, reason);
-            writeSnapshot(testInfo, 0, metadata, failureSnapshotUnavailable(metadata, error?.message || 'Snapshot capture failed.'));
+            return [{metadata, html: failureSnapshotUnavailable(metadata, error?.message || 'Snapshot capture failed.')}];
         } catch { /* The snapshot path must never replace the original test result. */ }
+        return [];
+    }
+}
+
+async function writeFailureSnapshots(testInfo, capture) {
+    for (const [index, {metadata, html}] of (await capture).entries()) {
+        writeSnapshot(testInfo, index, metadata, html);
     }
 }
 
 function withCoverage(base = playwright.test) {
-    return wrapTestType(withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+    return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+        // Keep snapshot I/O outside the test body and user hooks' timeout slots.
+        failureSnapshots: [async ({}, use, testInfo) => {
+            let context;
+            let pending;
+            const capture = (phase, reason) => {
+                pending ??= collectFailureSnapshots(context, testInfo, phase, reason);
+            };
+            const stopObserving = observeTestFailures(testInfo, capture);
+            try { await use({capture, setContext: current => { context = current; }}); }
+            finally {
+                stopObserving();
+                if (testInfo.status !== 'skipped' && testInfo.status !== testInfo.expectedStatus) {
+                    capture('fixture-fallback', testInfo.error?.message || 'The test did not meet its expected status.');
+                    await writeFailureSnapshots(testInfo, pending);
+                }
+            }
+        }, {auto: 'all-hooks-included', timeout: snapshotTimeoutMs + 800}],
         recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
         browserIdentity: [async ({browser}, use, testInfo) => {
             testInfo.annotations.push({type: 'magelens-browser', description: JSON.stringify({
@@ -116,23 +142,18 @@ function withCoverage(base = playwright.test) {
             })});
             await use();
         }, {auto: true}],
-        failureSnapshotFallback: [async ({context}, use, testInfo) => {
-            try { await use(); }
-            finally {
-                if (testInfo.status !== testInfo.expectedStatus) {
-                    await saveFailureSnapshots(context, testInfo, 'fixture-fallback', testInfo.error?.message || 'The test did not meet its expected status.');
-                }
-            }
-        }, {auto: true}],
-        applicationErrors: [async ({context}, use, testInfo) => {
+        applicationErrors: [async ({context, failureSnapshots}, use) => {
+            failureSnapshots.setContext(context);
             const errors = [];
-            const record = error => errors.push(error.message);
+            const record = error => {
+                errors.push(error.message);
+                if (errors.length === 1) failureSnapshots.capture('application-errors', error.message);
+            };
             const track = page => page.on('pageerror', record);
             context.on('page', track);
             for (const page of context.pages()) track(page);
             try { await use(); }
             finally {
-                if (errors.length) await saveFailureSnapshots(context, testInfo, 'application-errors', errors.join('; '));
                 context.off('page', track);
                 for (const page of context.pages()) page.off('pageerror', record);
                 playwright.expect(errors, 'Uncaught application errors').toEqual([]);
@@ -167,7 +188,8 @@ function withCoverage(base = playwright.test) {
         }, {auto: true}],
         // Template records carry the attempt ID where the package keeps fixture metadata.
         templateCoverageOptions: async ({coverageAttempt}, use) => use({outputDir: 'coverage/raw/templates', metadata: {attempt: coverageAttempt}}),
-        context: async ({context, baseURL, coverageAttempt}, use, testInfo) => {
+        context: async ({context, baseURL, coverageAttempt, failureSnapshots}, use) => {
+            failureSnapshots.setContext(context);
             const checkAdminDependencies = await installPlaywrightAdminDependencies(context);
             const run = JSON.parse(fs.readFileSync('coverage/run.json'));
             await context.addInitScript(disablePageTransitions);
@@ -215,7 +237,7 @@ function withCoverage(base = playwright.test) {
                 try {
                     for (const page of context.pages()) await flush(page);
                 } catch (error) {
-                    await saveFailureSnapshots(context, testInfo, 'fixture-teardown', error?.message || 'A browser fixture failed during cleanup.');
+                    failureSnapshots.capture('fixture-teardown', error?.message || 'A browser fixture failed during cleanup.');
                     throw error;
                 }
                 context.off('page', track);
@@ -229,12 +251,12 @@ function withCoverage(base = playwright.test) {
                     checkAdminDependencies();
                     recordJavascript({id: coverageAttempt, counters: sparseCounters(coverage.toJSON())});
                 } catch (error) {
-                    await saveFailureSnapshots(context, testInfo, 'fixture-teardown', error?.message || 'A browser fixture failed during cleanup.');
+                    failureSnapshots.capture('fixture-teardown', error?.message || 'A browser fixture failed during cleanup.');
                     throw error;
                 }
             }
         }
-    }), saveFailureSnapshots);
+    });
 }
 
 const test = withCoverage();
