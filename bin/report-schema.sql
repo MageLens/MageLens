@@ -10,6 +10,9 @@ PRAGMA user_version = 1;
 -- One row per collector. Check `status` before reading its records:
 --   collected      records and hits of this collector are complete for the run
 --   not_collected  the collector did not run or its data is not stored yet; no rows exist
+--   inventory_only the eligible units are listed, but nothing was observed (template
+--                  collection without observation records): records have no hits, and
+--                  that is missing data, not uncovered code
 -- A collected collector without hits means uncovered code, not missing data.
 CREATE TABLE manifest (
     collector      TEXT PRIMARY KEY,   -- php, js, template, xml (as records.source_type) and test-attribution
@@ -17,7 +20,7 @@ CREATE TABLE manifest (
     run_id         TEXT NOT NULL,      -- shared by every report of the bundle
     generated_at   TEXT NOT NULL,      -- ISO 8601, UTC
     commit_sha     TEXT,               -- project Git commit, NULL outside a Git checkout
-    status         TEXT NOT NULL CHECK (status IN ('collected', 'not_collected')),
+    status         TEXT NOT NULL CHECK (status IN ('collected', 'not_collected', 'inventory_only')),
     scope          TEXT NOT NULL,      -- what the collector measures
     limitations    TEXT NOT NULL,      -- JSON array of {id, count, description}; [] when none
     export_paths   TEXT NOT NULL       -- JSON array of detailed exports, relative to the database
@@ -31,7 +34,7 @@ CREATE TABLE records (
     metric      TEXT NOT NULL,     -- a metric is the pair (source_type, metric); never total across pairs
     record_key  TEXT NOT NULL,     -- identity of the unit within its file and metric for this run's sources
     file_path   TEXT NOT NULL,     -- relative to the Magento root (src/)
-    module_name TEXT NOT NULL,     -- Vendor_Module, design/<area>/<Vendor>/<theme> or vendor/<package>
+    module_name TEXT NOT NULL,     -- name from etc/module.xml, design/<area>/<Vendor>/<theme> or vendor/<package>
     start_line  INTEGER,           -- NULL when the unit has no source position
     end_line    INTEGER,
     -- file_path leads so this index also serves lookups by file.
@@ -77,10 +80,15 @@ CREATE TABLE unattributed_hits (
 ) STRICT;
 
 -- Totals per file and metric. A file or metric without eligible units has no row.
+-- percent has two decimals, computed as each source's report shows it: JavaScript truncates
+-- as Istanbul does, PHP and template exports round, the XML report formats with toFixed(2).
 CREATE VIEW file_totals AS
 SELECT r.source_type, r.metric, r.module_name, r.file_path,
        COUNT(*) AS total, COUNT(h.record_id) AS covered,
-       ROUND(100.0 * COUNT(h.record_id) / COUNT(*), 2) AS percent
+       CASE r.source_type
+           WHEN 'js' THEN 10000 * COUNT(h.record_id) / COUNT(*) / 100.0
+           WHEN 'xml' THEN CAST(printf('%.2f', 1.0 * COUNT(h.record_id) / COUNT(*) * 100) AS REAL)
+           ELSE ROUND(100.0 * COUNT(h.record_id) / COUNT(*), 2) END AS percent
 FROM records r LEFT JOIN hits h USING (record_id)
 GROUP BY r.source_type, r.metric, r.file_path;
 
@@ -88,14 +96,20 @@ GROUP BY r.source_type, r.metric, r.file_path;
 CREATE VIEW module_totals AS
 SELECT r.source_type, r.metric, r.module_name,
        COUNT(DISTINCT r.file_path) AS files, COUNT(*) AS total, COUNT(h.record_id) AS covered,
-       ROUND(100.0 * COUNT(h.record_id) / COUNT(*), 2) AS percent
+       CASE r.source_type
+           WHEN 'js' THEN 10000 * COUNT(h.record_id) / COUNT(*) / 100.0
+           WHEN 'xml' THEN CAST(printf('%.2f', 1.0 * COUNT(h.record_id) / COUNT(*) * 100) AS REAL)
+           ELSE ROUND(100.0 * COUNT(h.record_id) / COUNT(*), 2) END AS percent
 FROM records r LEFT JOIN hits h USING (record_id)
 GROUP BY r.source_type, r.metric, r.module_name;
 
 -- Totals per metric for the whole run; these match the headline numbers of the HTML reports.
 CREATE VIEW metric_totals AS
 SELECT r.source_type, r.metric, COUNT(*) AS total, COUNT(h.record_id) AS covered,
-       ROUND(100.0 * COUNT(h.record_id) / COUNT(*), 2) AS percent
+       CASE r.source_type
+           WHEN 'js' THEN 10000 * COUNT(h.record_id) / COUNT(*) / 100.0
+           WHEN 'xml' THEN CAST(printf('%.2f', 1.0 * COUNT(h.record_id) / COUNT(*) * 100) AS REAL)
+           ELSE ROUND(100.0 * COUNT(h.record_id) / COUNT(*), 2) END AS percent
 FROM records r LEFT JOIN hits h USING (record_id)
 GROUP BY r.source_type, r.metric;
 

@@ -32,7 +32,8 @@ SELECT collector, status, limitations FROM manifest;
 
 - `collected`: the data is complete for the run. A record without a hit is uncovered code.
 - `not_collected`: there are no rows for this collector. Report "not measured", never 0%.
-- `collector` equals `records.source_type`. `limitations` lists what the collector could not measure. Those units have no records, so they are neither covered nor uncovered.
+- `inventory_only`: the records list the eligible units, but nothing was observed. Report "not measured", never 0%.
+- `collector` equals `records.source_type`. `limitations` lists what the collector could not measure. Those units have no records, so they are neither covered nor uncovered. The exception is `alpine-late-markers`: those templates keep their records, but an evaluation can be missed. They are the templates with `measurementLimitations` in `templates/coverage-summary.json`; treat their uncovered records as possibly unmeasured.
 - `run_id` and `commit_sha` identify the run. If the sources changed since, rerun coverage before trusting line numbers.
 
 ## Example queries
@@ -72,8 +73,9 @@ For XML declarations, `record_key` ends with `@<area>`, for example `@frontend`:
 Files of a module that no test reached at all:
 
 ```sql
-SELECT file_path, source_type, metric, total FROM file_totals
-WHERE module_name = 'Application_Blog' AND covered = 0;
+SELECT file_path FROM file_totals
+WHERE module_name = 'Application_Blog'
+GROUP BY file_path HAVING MAX(covered) = 0;
 ```
 
 Tests covering a file. First confirm that `test-attribution` is `collected` in `manifest`; otherwise `attempts` and `attempt_hits` are empty and the answer is "not measured". A unit can also have `unattributed_hits` from shared setup:

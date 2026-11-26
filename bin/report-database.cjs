@@ -9,15 +9,17 @@ const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const {DatabaseSync} = require('node:sqlite');
+const {discover} = require('./project.cjs');
 
 const schema = fs.readFileSync(path.join(__dirname, 'report-schema.sql'), 'utf8');
 const schemaVersion = Number(schema.match(/^PRAGMA user_version = (\d+);$/m)[1]);
 const xmlMetrics = {events: 'observers', plugins: 'plugins', preferences: 'preferences',
     'virtual-types': 'virtual-types', arguments: 'arguments', lifecycles: 'lifecycles'};
 
-function moduleName(file) {
+// registered maps app/code/<Vendor>/<Directory> to the name in its etc/module.xml.
+function moduleName(file, registered = new Map()) {
     const parts = file.split('/');
-    if (parts[0] === 'app' && parts[1] === 'code') return `${parts[2]}_${parts[3]}`;
+    if (parts[0] === 'app' && parts[1] === 'code') return registered.get(parts.slice(0, 4).join('/')) ?? `${parts[2]}_${parts[3]}`;
     if (parts[0] === 'app' && parts[1] === 'design') return `design/${parts.slice(2, 5).join('/')}`;
     return parts.slice(0, 3).join('/');
 }
@@ -190,6 +192,7 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
         const addHit = database.prepare('INSERT INTO hits (record_id, hit_count) VALUES (?, ?)');
         const addManifest = database.prepare('INSERT INTO manifest VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
         const sha = commitSha(root);
+        const registered = new Map(discover(path.join(root, 'src')).modules.map(module => [module.root, module.name]));
         const manifest = (collector, status, scope, limitations, exports) => addManifest.run(collector, schemaVersion, run.id, generatedAt, sha, status, scope,
             JSON.stringify(limitations.filter(limitation => limitation.count > 0)), JSON.stringify(exports));
         // One transaction: the prepared inserts are batched into a single write.
@@ -197,7 +200,7 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
         for (const units of [phpUnits(read('php/line-coverage.json')), javascriptUnits(read('js/coverage-final.json'), read('javascript-scope.json')),
             templateUnits(templates), xmlUnits(xml)]) {
             for (const unit of units) {
-                const {lastInsertRowid} = addRecord.run(unit.type, unit.source, unit.metric, unit.key, unit.file, moduleName(unit.file), unit.start, unit.end);
+                const {lastInsertRowid} = addRecord.run(unit.type, unit.source, unit.metric, unit.key, unit.file, moduleName(unit.file, registered), unit.start, unit.end);
                 if (unit.hits) addHit.run(lastInsertRowid, unit.hits === true ? null : unit.hits);
             }
         }
@@ -205,10 +208,13 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
             [], ['php/line-coverage.json', 'php/clover.xml']);
         manifest('js', 'collected', 'Whole .js files executed in the browser. Metrics: statements, functions, branches.',
             [], ['js/coverage-final.json', 'js/coverage-summary.json', 'javascript-summary.json', 'javascript-scope.json']);
-        manifest('template', 'collected', 'HTML/PHTML bindings, template expressions and inline scripts. Metrics: executable-lines, statements, functions, branches, and dom-presence for templates that entered a tested document.', [
+        // Without observation records the template export is the inventory baseline, not a measurement.
+        manifest('template', templates.records > 0 ? 'collected' : 'inventory_only', 'HTML/PHTML bindings, template expressions and inline scripts. Metrics: executable-lines, statements, functions, branches, and dom-presence for templates that entered a tested document.', [
             {id: 'unsupported-directives', count: templateLimitations.directives.length, description: 'Template directives that cannot be measured; they have no records.'},
             {id: 'unsupported-scripts', count: templateLimitations.scripts.length, description: 'Inline scripts that cannot be instrumented; they have no records.'},
-            {id: 'unmapped-generated-scripts', count: templateLimitations.generated.length, description: 'PHP-generated script fragments without a static source mapping; they have no records.'}
+            {id: 'unmapped-generated-scripts', count: templateLimitations.generated.length, description: 'PHP-generated script fragments without a static source mapping; they have no records.'},
+            {id: 'alpine-late-markers', count: templates.templates.filter(entry => entry.measurementLimitations?.length).length,
+                description: 'Templates with Alpine x-model, x-if, x-for, x-html or x-html-safe: coverage can miss evaluations when markers are added after Alpine first binds the directive; see measurementLimitations in templates/coverage-summary.json.'}
         ], ['templates/coverage-summary.json']);
         manifest('xml', 'collected', 'XML lines whose declarations took effect: config reads, Admin field renders and the effects of ACL, menu, route, cron, Web API and UI component declarations (metric lines); observer registrations and DI declarations per configuration area (metrics observers, plugins, preferences, virtual-types, arguments, lifecycles); layout declarations with observed effects (metric layout).', [
             {id: 'measurement-warnings', count: xml.warnings.length, description: 'Unsupported or ambiguous XML is unmeasured and has no records; see warnings in xml/coverage.json.'}
@@ -217,10 +223,10 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
         database.exec('COMMIT');
 
         // The database must agree with the reports people read for the same run.
-        const totals = database.prepare('SELECT source_type, metric, total, covered FROM metric_totals').all();
+        const totals = database.prepare('SELECT source_type, metric, total, covered, percent FROM metric_totals').all();
         const expected = [
             ['php', 'lines', php], ['js', 'statements', js.total.statements], ['js', 'functions', js.total.functions], ['js', 'branches', js.total.branches],
-            ['template', 'executable-lines', templates.lines], ['template', 'dom-presence', {total: templates.summary.eligible, covered: templates.summary.covered}],
+            ['template', 'executable-lines', templates.lines], ['template', 'dom-presence', {total: templates.summary.eligible, covered: templates.summary.covered, percent: templates.summary.percent}],
             ['template', 'statements', templates.statements], ['template', 'functions', templates.functions], ['template', 'branches', templates.branches],
             ['xml', 'lines', xml], ['xml', 'observers', xml.observers], ['xml', 'plugins', xml.plugins], ['xml', 'preferences', xml.preferences],
             ['xml', 'virtual-types', xml.virtualTypes], ['xml', 'arguments', xml.arguments], ['xml', 'lifecycles', xml.lifecycles], ['xml', 'layout', xml.layout ?? {total: 0, covered: 0}]
@@ -228,6 +234,9 @@ function writeDatabase({directory = 'coverage', root = '.', run, generatedAt, ph
         for (const [source, metric, summary] of expected) {
             const stored = totals.find(row => row.source_type === source && row.metric === metric) || {total: 0, covered: 0};
             assert.deepEqual([stored.total, stored.covered], [summary.total, summary.covered], `Coverage database differs from the ${source} ${metric} report`);
+            // The XML report formats unrounded percentages; the other exports store them.
+            const reported = source === 'xml' ? Number((summary.covered / summary.total * 100).toFixed(2)) : summary.pct ?? summary.percent;
+            if (stored.total) assert.equal(stored.percent, reported, `Coverage database percentage differs from the ${source} ${metric} report`);
         }
         database.close();
         fs.copyFileSync(temporary, path.join(directory, 'report.sqlite'));

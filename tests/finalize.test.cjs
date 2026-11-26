@@ -22,7 +22,7 @@ function reports(t, covered, runner = 'cypress') {
     }
     fs.writeFileSync(`${root}/README.md`, '<!-- coverage-badges:start -->\n<!-- coverage-badges:end -->');
     fs.writeFileSync(`${root}/coverage/.active-run`, 'fixture');
-    const totals = {covered, total: 1};
+    const totals = {covered, total: 1, percent};
     // One eligible unit per metric, covered or not, in the shapes the collectors export.
     const areas = {frontend: {status: 'eligible', hits: covered}, adminhtml: {status: 'unsupported', hits: 0}};
     // Since the XML report counts lines in every file, the di.xml line is part of the XML line total.
@@ -42,7 +42,7 @@ function reports(t, covered, runner = 'cypress') {
     json('coverage/run.json', {id: 'fixture', runner, sources: {}});
     json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}], commands: []});
     json('coverage/js/coverage-summary.json', {total: Object.fromEntries(['statements', 'functions', 'branches', 'lines'].map(name => [name, {covered, total: 1, pct: percent}]))});
-    json('coverage/templates/coverage-summary.json', {schemaVersion: 2, lines: {covered, total: 1, percent}, summary: {covered, eligible: 1, percent},
+    json('coverage/templates/coverage-summary.json', {schemaVersion: 2, records: 1, lines: {covered, total: 1, percent}, summary: {covered, eligible: 1, percent},
         statements: totals, functions: totals, branches: totals,
         templates: [{path: 'app/code/Acme/Shop/view/frontend/templates/cart.phtml', kind: 'browser-phtml', instrumented: true,
             status: covered ? 'observed' : 'unobserved', observations: covered * 3, lineHits: {4: {hits: covered * 2}},
@@ -433,6 +433,115 @@ test('the manifest table tells collected data from data that is not collected', 
     assert.deepEqual(JSON.parse(templatesRow.export_paths), ['templates/coverage-summary.json']);
     assert.deepEqual(JSON.parse(rows.find(row => row.collector === 'php').limitations), []);
     assert.deepEqual(query("SELECT COUNT(*) AS records FROM records WHERE file_path LIKE '%image.phtml'"), [{records: 0}], 'Unsupported templates have no records');
+});
+
+test('a template export without observation records is an inventory, not a measurement', t => {
+    const fixture = reports(t, 0);
+    const file = `${fixture.root}/coverage/templates/coverage-summary.json`;
+    fs.writeFileSync(file, JSON.stringify({...JSON.parse(fs.readFileSync(file)), records: 0}));
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
+    const query = database(t, fixture);
+    assert.deepEqual(query('SELECT collector, status FROM manifest ORDER BY collector').map(row => [row.collector, row.status]),
+        [['js', 'collected'], ['php', 'collected'], ['template', 'inventory_only'], ['test-attribution', 'not_collected'], ['xml', 'collected']]);
+    assert.deepEqual(query("SELECT COUNT(*) AS records FROM records WHERE source_type = 'template'"), [{records: 5}], 'The inventory stays queryable');
+    assert.deepEqual(query("SELECT COUNT(*) AS hits FROM hits JOIN records USING (record_id) WHERE source_type = 'template'"), [{hits: 0}]);
+});
+
+test('Alpine directives that can miss evaluations are listed as a template limitation', t => {
+    const fixture = reports(t, 1);
+    const file = `${fixture.root}/coverage/templates/coverage-summary.json`;
+    const templates = JSON.parse(fs.readFileSync(file));
+    templates.templates[0].measurementLimitations = ['Coverage for x-model can miss evaluations when markers are added after Alpine first binds the directive.'];
+    fs.writeFileSync(file, JSON.stringify(templates));
+    assert.equal(fixture.run(['--include-machine-report']).status, 0);
+    const [row] = database(t, fixture)("SELECT limitations FROM manifest WHERE collector = 'template'");
+    assert.deepEqual(JSON.parse(row.limitations).map(limitation => [limitation.id, limitation.count]), [['alpine-late-markers', 1]]);
+});
+
+test('app/code modules are named as registered in etc/module.xml', t => {
+    const fixture = reports(t, 1);
+    fs.mkdirSync(`${fixture.root}/src/app/code/Acme/Shop/etc`, {recursive: true});
+    fs.writeFileSync(`${fixture.root}/src/app/code/Acme/Shop/etc/module.xml`, '<config><module name="Acme_Store"/></config>');
+    const hash = require('node:crypto').createHash('sha256').update(fs.readFileSync(`${fixture.root}/src/app/code/Acme/Shop/etc/module.xml`)).digest('hex');
+    fixture.json('coverage/run.json', {id: 'fixture', runner: 'cypress', sources: {'src/app/code/Acme/Shop/etc/module.xml': hash}});
+    const result = fixture.run(['--include-machine-report']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(database(t, fixture)("SELECT DISTINCT module_name FROM records WHERE file_path LIKE 'app/code/%'"), [{module_name: 'Acme_Store'}]);
+});
+
+test('database percentages must equal the reported ones, with JavaScript as Istanbul truncates', t => {
+    const fixture = reports(t, 1);
+    const script = '/workspace/src/app/code/Acme/Shop/view/frontend/web/js/cart.js';
+    const location = {start: {line: 2, column: 0}, end: {line: 3, column: 1}};
+    const ids = Array.from({length: 20000}, (_, id) => id);
+    fixture.json('coverage/js/coverage-final.json', {[script]: {path: script, statementMap: Object.fromEntries(ids.map(id => [id, location])),
+        s: Object.fromEntries(ids.map(id => [id, id ? 1 : 0])), fnMap: {0: {name: 'add', loc: location}}, f: {0: 1}, branchMap: {0: {locations: [location]}}, b: {0: [1]}}});
+    fixture.json('coverage/php/line-coverage.json', {'app/code/Acme/Shop/Model/Cart.php': Object.fromEntries(ids.map(id => [id + 1, id ? 1 : 0]))});
+    fixture.json('coverage/php/coverage-summary.json', {run: 'fixture', covered: 19999, total: 20000, percent: 100, requests: [{uri: '/', method: 'GET'}], commands: []});
+    const summary = pct => ({total: {statements: {covered: 19999, total: 20000, pct}, functions: {covered: 1, total: 1, pct: 100}, branches: {covered: 1, total: 1, pct: 100}, lines: {covered: 1, total: 1, pct: 100}}});
+    fixture.json('coverage/js/coverage-summary.json', summary(100));
+    const result = fixture.run(['--include-machine-report']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Coverage database percentage differs from the js statements report/);
+    const percent = require('istanbul-lib-coverage/lib/percent');
+    fixture.json('coverage/js/coverage-summary.json', summary(percent(19999, 20000)));
+    // Restore the marker of the active run, as a fresh finalization finds it.
+    fs.writeFileSync(`${fixture.root}/coverage/.active-run`, 'fixture');
+    const retry = fixture.run(['--include-machine-report']);
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.deepEqual(database(t, fixture)("SELECT source_type, percent FROM metric_totals WHERE metric IN ('statements', 'lines') AND source_type IN ('js', 'php') ORDER BY source_type"),
+        [{source_type: 'js', percent: 99.99}, {source_type: 'php', percent: 100}]);
+});
+
+test('percentage views compute each source as its report does', () => {
+    const istanbul = require('istanbul-lib-coverage/lib/percent');
+    // As istanbul-lib-coverage, the template package summary and the XML report's formatPercent.
+    const reported = {js: istanbul, template: (covered, total) => Math.round(10000 * covered / total) / 100,
+        xml: (covered, total) => Number((covered / total * 100).toFixed(2))};
+    const connection = new DatabaseSync(':memory:');
+    connection.exec(fs.readFileSync(path.join(__dirname, '../bin/report-schema.sql'), 'utf8'));
+    const addRecord = connection.prepare("INSERT INTO records (record_type, source_type, metric, record_key, file_path, module_name) VALUES ('statement', ?, 'statements', ?, ?, ?)");
+    const addHit = connection.prepare('INSERT INTO hits (record_id) VALUES (?)');
+    const expected = {};
+    connection.exec('BEGIN');
+    // Small totals, plus pairs where ROUND(x, 2) differs from the report: 19999/20000 for Istanbul
+    // and 23/160 for toFixed(2) of a binary fraction.
+    const small = Array.from({length: 40}, (_, index) => index + 1).flatMap(total => Array.from({length: total + 1}, (_, covered) => [covered, total]));
+    const cases = {js: [...small, [19999, 20000]], template: [...small, [19999, 20000], [23, 160]], xml: [...small, [23, 160], [41, 160]]};
+    for (const [source, pairs] of Object.entries(cases)) for (const [covered, total] of pairs) {
+        const file = `${source}/${covered}/${total}`;
+        expected[file] = reported[source](covered, total);
+        for (let key = 0; key < total; key++) {
+            const {lastInsertRowid} = addRecord.run(source, String(key), file, file);
+            if (key < covered) addHit.run(lastInsertRowid);
+        }
+    }
+    connection.exec('COMMIT');
+    for (const view of ['file_totals', 'module_totals']) {
+        const column = view === 'file_totals' ? 'file_path' : 'module_name';
+        const rows = connection.prepare(`SELECT ${column} AS file, percent FROM ${view}`).all();
+        assert.equal(rows.length, Object.keys(expected).length);
+        for (const row of rows) assert.equal(row.percent, expected[row.file], `${view} ${row.file}`);
+    }
+    connection.close();
+});
+
+test('the skill query for files no test reached skips partially covered files', t => {
+    const fixture = reports(t, 1);
+    const script = '/workspace/src/app/code/Acme/Shop/view/frontend/web/js/cart.js';
+    const final = JSON.parse(fs.readFileSync(`${fixture.root}/coverage/js/coverage-final.json`));
+    final[script].f = {0: 0};
+    fixture.json('coverage/js/coverage-final.json', final);
+    const summary = JSON.parse(fs.readFileSync(`${fixture.root}/coverage/js/coverage-summary.json`));
+    summary.total.functions = {covered: 0, total: 1, pct: 0};
+    fixture.json('coverage/js/coverage-summary.json', summary);
+    fixture.json('coverage/php/line-coverage.json', {'app/code/Acme/Shop/Model/Cart.php': {12: 1}, 'app/code/Acme/Shop/Model/Order.php': {3: 0}});
+    fixture.json('coverage/php/coverage-summary.json', {run: 'fixture', covered: 1, total: 2, percent: 50, requests: [{uri: '/', method: 'GET'}], commands: []});
+    const result = fixture.run(['--include-machine-report']);
+    assert.equal(result.status, 0, result.stderr);
+    const skill = fs.readFileSync(path.join(__dirname, '../.agents/skills/coverage-database/SKILL.md'), 'utf8');
+    const sql = skill.match(/Files of a module that no test reached at all:\n\n```sql\n([^`]+)```/)[1].replaceAll('Application_Blog', 'Acme_Shop');
+    assert.deepEqual(database(t, fixture)(sql), [{file_path: 'app/code/Acme/Shop/Model/Order.php'}]);
 });
 
 test('views total files and modules from counts and keep metrics apart', t => {
