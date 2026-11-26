@@ -149,6 +149,18 @@ test('a template record whose attempt ID belongs to another test blocks the run'
     assert.throws(() => writeAttribution(), /another test's attempt/);
 });
 
+test('wrapped Playwright template records use their attempt and title path when the wrapper is reported as the spec', t => {
+    workspace(t, data => {
+        Object.assign(data['coverage/raw/templates/1.mtc'], {
+            spec: path.resolve('playwright/failure-snapshot-hooks.cjs'), test: [spec, 'cart', 'adds'], attempt: retry
+        });
+    });
+    const summary = writeAttribution();
+    assert.deepEqual([summary.collectors.templates.unattributedRecords, summary.collectors.templates.ambiguousRecords], [1, 0]);
+    assert.deepEqual(JSON.parse(fs.readFileSync('coverage/attribution/templates.json', 'utf8')).files['app/code/Acme/Shop/view/frontend/templates/cart.phtml'],
+        {'binding:1': {1: 2, unattributed: 1}});
+});
+
 test('Playwright template records match attempts when the testDir is not the project root', t => {
     // Playwright starts the title path with the file relative to its testDir, here playwright/tests.
     const nested = 'playwright/tests/e2e/cart.spec.js';

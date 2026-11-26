@@ -18,12 +18,23 @@ const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 const {failureHtmlFilename, failureSnapshotDocument, failureSnapshotUnavailable} = require('../cypress/support/failure-html.cjs');
 const {wrapTestType} = require('./failure-snapshot-hooks.cjs');
 
+function playwrightSpecPath(testInfo) {
+    const titlePathSpec = testInfo.titlePath?.[0];
+    if (typeof titlePathSpec !== 'string' || !/\.(?:spec|cy)\.[cm]?[jt]sx?$/.test(titlePathSpec)) {
+        return projectPath(testInfo.file, testInfo.config.rootDir);
+    }
+    const testDir = testInfo.project.testDir || testInfo.config.rootDir;
+    return projectPath(path.resolve(testDir, titlePathSpec), testInfo.config.rootDir);
+}
+
 function snapshotMetadata(testInfo, pageIndex, phase, reason) {
     let runId = 'run-unknown';
     try { runId = JSON.parse(fs.readFileSync(path.resolve(testInfo.config.rootDir, 'coverage/run.json'))).id || runId; }
     catch { /* Keep the diagnostic useful when collection metadata is unavailable. */ }
+    const titlePath = testInfo.titlePath;
+    const spec = playwrightSpecPath(testInfo);
     return {
-        runner: 'playwright', runId, spec: testInfo.file, test: testInfo.titlePath.join(' > '),
+        runner: 'playwright', runId, spec, test: titlePath.join(' > '),
         testId: testInfo.testId, attempt: testInfo.retry + 1, worker: testInfo.workerIndex,
         parallel: testInfo.parallelIndex, page: pageIndex + 1, phase, reason,
         capturedAt: new Date().toISOString()
@@ -138,7 +149,7 @@ function withCoverage(base = playwright.test) {
                 // A capture problem must not fail the test that requested the audit.
                 try {
                     const url = page.url();
-                    const capture = {runner: 'playwright', url, spec: path.relative(testInfo.config.rootDir, testInfo.file),
+                    const capture = {runner: 'playwright', url, spec: playwrightSpecPath(testInfo),
                         test: testInfo.titlePath.slice(1).join(' › ')};
                     try {
                         const response = await page.request.get(url, {headers: {accept: 'text/html'}, maxRedirects: 0, timeout: 60000});
@@ -154,7 +165,7 @@ function withCoverage(base = playwright.test) {
         // Each attempt, including a retry, has its own ID; see docs/coverage.md#test-attempts.
         coverageAttempt: [async ({}, use, testInfo) => {
             const id = newAttemptId();
-            startAttempt({id, runner: 'playwright', spec: projectPath(testInfo.file),
+            startAttempt({id, runner: 'playwright', spec: playwrightSpecPath(testInfo),
                 test: testInfo.titlePath.slice(1), retry: testInfo.retry, project: testInfo.project.name, worker: testInfo.workerIndex});
             try { await use(id); }
             finally { finishAttempt({id, outcome: testInfo.status}); }

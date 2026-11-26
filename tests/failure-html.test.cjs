@@ -57,7 +57,14 @@ test('Playwright test callbacks capture failure before later hooks and preserve 
     await assert.rejects(cleanup(fixtures, testInfo), /cleanup failed/);
     assert.equal(captures[1][2], 'afterEach-hook');
 
+    const pageContext = {name: 'context from page fixture'};
+    wrapped('page fixture context', async ({page}) => {
+        throw Object.assign(new Error('page fixture failed'), {page});
+    });
+    await assert.rejects(definitions[2][1]({page: {context: () => pageContext}}, testInfo), /page fixture failed/);
+    assert.equal(captures[2][0], pageContext);
+
     wrapped('expected failure', async () => { throw new Error('expected'); });
-    await assert.rejects(definitions[2][1](fixtures, {expectedStatus: 'failed'}), /expected/);
-    assert.equal(captures.length, 2);
+    await assert.rejects(definitions[3][1](fixtures, {expectedStatus: 'failed'}), /expected/);
+    assert.equal(captures.length, 3);
 });

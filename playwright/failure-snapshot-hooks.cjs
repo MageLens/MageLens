@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+function browserContextFromFixtures(fixtures) {
+    try {
+        if (fixtures?.context) return fixtures.context;
+        if (typeof fixtures?.page?.context === 'function') return fixtures.page.context();
+    } catch { /* The page or browser may already be unavailable. */ }
+    return undefined;
+}
+
 function wrapFailureCallback(callback, capture, phase) {
     const source = Function.prototype.toString.call(callback);
     const arrowIndex = source.indexOf('=>');
@@ -23,7 +31,7 @@ function wrapFailureCallback(callback, capture, phase) {
             const testInfo = args.at(-1);
             if (testInfo && testInfo.expectedStatus !== 'failed') {
                 try {
-                    await capture(args[0]?.context, testInfo, phase, error?.message || String(error));
+                    await capture(browserContextFromFixtures(args[0]), testInfo, phase, error?.message || String(error));
                 } catch { /* Capturing must not replace the original test or hook failure. */ }
             }
             throw error;

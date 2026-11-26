@@ -115,10 +115,13 @@ async function verifyPlaywright() {
         const html = fs.readFileSync(snapshots[0], 'utf8');
         assert.match(html, /updated DOM before nested cleanup/);
         assert.match(html, /&quot;runId&quot;:&quot;failure-snapshot-playwright-run&quot;/);
+        assert.match(html, /02-failing\.spec\.cjs/);
         assert.match(html, /&quot;attempt&quot;:1/);
         assert.match(html, /&quot;phase&quot;:&quot;test-body&quot;/);
-        assert.ok(allFiles.some(file => file.endsWith('.png')), 'The existing failure screenshot must remain present.');
+        const screenshots = allFiles.filter(file => file.endsWith('.png'));
+        assert.ok(screenshots.length > 0, 'The existing failure screenshot must remain present.');
         assert.ok(allFiles.some(file => file.endsWith('.zip')), 'The existing failure trace must remain present.');
+        assert.equal(path.dirname(snapshots[0]), path.dirname(screenshots[0]), 'HTML snapshots must sit alongside Playwright screenshots.');
         console.log('PASS: Playwright multi-spec, pre-cleanup capture, serializer edge cases, screenshot and trace.');
     } finally {
         fs.rmSync(project, {recursive: true, force: true});
