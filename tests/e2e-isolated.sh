@@ -163,6 +163,7 @@ fi
     database=$(./bin/application-compose ps -q db)
     [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$database")" == "$project" ]]
     ./bin/runner node tests/verify-installation.cjs "$theme" "$runner" "$platform"
+    ./bin/runner node tests/failure-snapshot-regressions.cjs "$runner"
     if [[ "$focus" == default-coverage ]]; then
         ./bin/n98-magerun2 --skip-core-commands --version | grep -F "$MAGERUN_VERSION"
         mkdir -p coverage

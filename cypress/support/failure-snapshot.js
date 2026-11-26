@@ -3,6 +3,7 @@
 // License: see LICENSE in the repository root.
 
 const {failureHtmlFilename, failureSnapshotDocument, failureSnapshotUnavailable} = require('./failure-html.cjs');
+const {retryAttemptNumber} = require('./failure-metadata.cjs');
 let applicationWindow;
 let latestHtml;
 let captureError;
@@ -44,7 +45,7 @@ Cypress.on('fail', (error, runnable) => {
         // Cypress replaces the application view with its failure overlay after this event.
         const window = applicationWindow || Cypress.state('window');
         const test = runnable?.ctx?.currentTest || Cypress.currentTest || runnable;
-        const attempt = (typeof test?.currentRetry === 'function' ? test.currentRetry() : test?._currentRetry || 0) + 1;
+        const attempt = retryAttemptNumber(runnable, runnable?.ctx?.currentTest, Cypress.currentTest, test);
         latestHtml = capture(window?.document, test, attempt, 'cypress-fail-event');
     } catch (captureFailure) {
         captureError = captureFailure?.message || 'The application page could not be serialized.';
@@ -57,7 +58,7 @@ beforeEach(() => { latestHtml = undefined; applicationWindow = undefined; captur
 afterEach(function () {
     if (this.currentTest?.state !== 'failed') return;
     const test = this.currentTest;
-    const attempt = (typeof test.currentRetry === 'function' ? test.currentRetry() : 0) + 1;
+    const attempt = retryAttemptNumber(test);
     const metadata = snapshotMetadata(test, attempt, 'cypress-after-each');
     if (!latestHtml) {
         try {

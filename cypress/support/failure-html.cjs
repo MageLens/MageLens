@@ -9,9 +9,12 @@ function failureHtmlFilename(title, {attempt = 1, runId = 'run', workerId = 'wor
 }
 
 function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {}) {
-    const document = documentOrMetadata?.documentElement ? documentOrMetadata : globalThis.document;
+    const sourceDocument = documentOrMetadata?.documentElement ? documentOrMetadata : globalThis.document;
     const metadata = documentOrMetadata?.documentElement ? suppliedMetadata : documentOrMetadata;
-    if (!document?.documentElement || !document.createElement) throw new Error('The application document is unavailable.');
+    if (!sourceDocument?.documentElement || !sourceDocument.createElement) throw new Error('The application document is unavailable.');
+    // Build clones in a detached HTML document so custom-element constructors
+    // and attribute callbacks cannot run again in the live application page.
+    const document = sourceDocument.implementation?.createHTMLDocument?.('') || sourceDocument;
 
     const maxNodes = 6000;
     const maxSourceCharacters = 100000;
@@ -41,7 +44,6 @@ function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {})
         mpath: new Set(['href', 'xlink:href']),
         portal: new Set(['src'])
     };
-    resourceAttributes.base = new Set(['href']);
     resourceAttributes.base = new Set(['href']);
 
     function take(value, limit) {
@@ -96,7 +98,8 @@ function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {})
             if (/^data:/i.test(value)) value = '[embedded data omitted]';
             else if (/^javascript:/i.test(value)) value = '[script URL omitted]';
             value = take(value, maxAttributeCharacters);
-            if (value) clone.setAttribute(outputName, value);
+            if (value || attribute.value === '') clone.setAttribute(outputName, value);
+            else state.truncated = true;
         }
         if (sourceAttributeCount > 128) state.truncated = true;
 
@@ -104,7 +107,7 @@ function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {})
             const type = String(source.type || '').toLowerCase();
             if (type !== 'file' && type !== 'image') {
                 const value = type === 'password' || type === 'hidden' ? '[redacted]' : take(source.value, maxAttributeCharacters);
-                if (value) clone.setAttribute('value', value);
+                if (value || source.value === '' || type === 'password' || type === 'hidden') clone.setAttribute('value', value);
             }
             if (source.checked) clone.setAttribute('checked', '');
             else clone.removeAttribute('checked');
@@ -125,7 +128,7 @@ function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {})
             const children = tag === 'template' ? source.content?.childNodes : source.childNodes;
             for (let childIndex = 0; childIndex < (children?.length || 0); childIndex++) {
                 const childClone = cloneNode(children[childIndex]);
-                if (childClone) clone.appendChild(childClone);
+                if (childClone) (tag === 'template' ? clone.content : clone).appendChild(childClone);
                 if (state.nodes >= maxNodes || state.characters >= maxSourceCharacters) {
                     state.truncated = true;
                     break;
@@ -135,7 +138,7 @@ function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {})
         return clone;
     }
 
-    const root = cloneNode(document.documentElement);
+    const root = cloneNode(sourceDocument.documentElement);
     const head = root?.querySelector?.('head');
     if (!root || !head) throw new Error('The application document could not be serialized.');
     let details;
@@ -154,7 +157,7 @@ function failureSnapshotDocument(documentOrMetadata = {}, suppliedMetadata = {})
 
     const output = `<!doctype html>\n${root.outerHTML}`;
     if (new TextEncoder().encode(output).byteLength <= maxOutputBytes) return output;
-    const fallback = document.implementation.createHTMLDocument('HTML snapshot unavailable');
+    const fallback = sourceDocument.implementation.createHTMLDocument('HTML snapshot unavailable');
     const notice = document.createElement('main');
     const heading = document.createElement('h1');
     heading.textContent = 'HTML snapshot truncated';

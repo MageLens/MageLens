@@ -16,6 +16,7 @@ const {loadUiBrowserScope} = require('../bin/xml-ui-browser-scope.cjs');
 const {newAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
 const {sparseCounters} = require('../bin/javascript-attempts.cjs');
 const {failureHtmlFilename, failureSnapshotDocument, failureSnapshotUnavailable} = require('../cypress/support/failure-html.cjs');
+const {wrapTestType} = require('./failure-snapshot-hooks.cjs');
 
 function snapshotMetadata(testInfo, pageIndex, phase, reason) {
     let runId = 'run-unknown';
@@ -101,13 +102,21 @@ async function saveFailureSnapshots(context, testInfo, phase, reason) {
 }
 
 function withCoverage(base = playwright.test) {
-    return withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
+    return wrapTestType(withTemplateCoverage(base, {outputDir: 'coverage/raw/templates'}).extend({
         recordXmlBrowserEvidence: async ({}, use) => { await use(recordXmlBrowserEvidence); },
         browserIdentity: [async ({browser}, use, testInfo) => {
             testInfo.annotations.push({type: 'magelens-browser', description: JSON.stringify({
                 name: testInfo.project.use.channel, version: browser.version()
             })});
             await use();
+        }, {auto: true}],
+        failureSnapshotFallback: [async ({context}, use, testInfo) => {
+            try { await use(); }
+            finally {
+                if (testInfo.status !== testInfo.expectedStatus) {
+                    await saveFailureSnapshots(context, testInfo, 'fixture-fallback', testInfo.error?.message || 'The test did not meet its expected status.');
+                }
+            }
         }, {auto: true}],
         applicationErrors: [async ({context}, use, testInfo) => {
             const errors = [];
@@ -219,12 +228,8 @@ function withCoverage(base = playwright.test) {
                 }
             }
         }
-    });
+    }), saveFailureSnapshots);
 }
 
 const test = withCoverage();
-test.afterEach(async ({context}, testInfo) => {
-    if (testInfo.status === testInfo.expectedStatus) return;
-    await saveFailureSnapshots(context, testInfo, 'after-each', testInfo.error?.message || 'The test did not meet its expected status.');
-});
 module.exports = {withCoverage, test, expect: playwright.expect};
