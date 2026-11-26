@@ -113,6 +113,7 @@ Fix failures, push a new candidate and request CI again. Rerun all jobs on the f
 - Keep warm-up separate from collection. Fresh run IDs and zero-hit baselines must exclude stale and warm-up execution.
 - Preserve fixture, collection and compatibility-patch cleanup after failures or interruptions on both platforms.
 - Retain checks for matching run IDs, unchanged source and all tests passing before reports and badges are published. Skipped or pending tests are not a successful run.
+- Keep every value in the opt-in coverage database equal to what the corresponding report shows: totals, percentages with the report's own rounding, module names as registered in `etc/module.xml`, and collector status. Mark data that was not observed, such as a template inventory without observation records, instead of reporting it as uncovered, and carry measurement warnings into the manifest. Retain the check that compares the database with the reports before publication.
 - Never print or commit Composer auth, `.env`, installed `env.php`, certificates or credential volumes. Do not prune unrelated Docker resources or remove an existing application's volumes.
 - Preserve dependency pins and lockfiles together. Do not publish a release unless requested.
 - Exclude generated runtime files, coverage reports and incidental badge changes from unrelated work. Report which validation actually passed and any checks blocked by unavailable services, images, repositories or credentials.
