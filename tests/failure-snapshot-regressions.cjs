@@ -41,7 +41,12 @@ function playwrightProject(project) {
 const {test, expect} = require(${support});
 const {failureSnapshotDocument} = require(${serializer});
 
-test('serializes live DOM without altering custom elements', async ({page}) => {
+test.describe.configure({mode: 'default'});
+test.skip(function ({browserName}) { return browserName !== 'chromium'; }, 'requires Chromium');
+test('serializes live DOM without altering custom elements', async function ({page}) {
+    const arrowInsideBody = () => 'ordinary function callback';
+    expect(arrowInsideBody()).toBe('ordinary function callback');
+    await test.step.skip('skipped step', async () => { throw new Error('Skipped step unexpectedly ran'); });
     let assetRequests = 0;
     await page.route('https://assets.invalid/**', route => { assetRequests++; return route.abort(); });
     await page.setContent(\`<!doctype html><html><head><style>STYLE_PAYLOAD_OMITTED</style><link rel="stylesheet" href="https://assets.invalid/app.css"></head><body>
@@ -81,25 +86,41 @@ test('serializes live DOM without altering custom elements', async ({page}) => {
     expect(assetRequests).toBe(requestsBefore);
 });
 `);
-    write(path.join(project, '02-failing.spec.cjs'), `
+    const failingSpec = `
 const {test, expect} = require(${support});
 
-test.describe('nested cleanup', () => {
-    test.afterEach(async ({page}) => { await page.goto('about:blank'); });
-    test('captures a client-side failure before cleanup and after another spec', async ({page}) => {
+test.describe.serial('nested cleanup', function () {
+    test.afterEach(async function ({page}) {
+        const cleanup = () => page.goto('about:blank');
+        await cleanup();
+    });
+    test('captures a client-side failure before cleanup and after another spec', async function ({page}, testInfo) {
+        const arrowInsideBody = () => 'still parse the original function';
+        expect(arrowInsideBody()).toBe('still parse the original function');
+        expect(testInfo.file).toBe(require('node:path').join(__dirname, '02-failing.spec.cjs'));
+        expect(testInfo.line).toBe(__EXPECTED_TEST_LINE__);
         await page.setContent('<!doctype html><main id="failed-page"><p data-testid="failure">initial</p></main>');
         await page.locator('[data-testid="failure"]').evaluate(element => { element.textContent = 'updated DOM before nested cleanup'; });
         await expect(page.locator('[data-testid="failure"]')).toHaveText('expected text that is not present');
     });
 });
-`);
+`;
+    const registrationLine = failingSpec.split('\n').findIndex(line => line.includes("test('captures a client-side failure")) + 1;
+    write(path.join(project, '02-failing.spec.cjs'), failingSpec.replace('__EXPECTED_TEST_LINE__', String(registrationLine)));
+    return registrationLine;
 }
 
 async function verifyPlaywright() {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-playwright-failure-'));
     try {
-        playwrightProject(project);
+        const registrationLine = playwrightProject(project);
         const cli = path.join(path.dirname(require.resolve('@playwright/test')), 'cli.js');
+        const list = require('node:child_process').spawnSync(process.execPath, [cli, 'test', '--config=playwright.config.cjs', '--list', `02-failing.spec.cjs:${registrationLine}`], {
+            cwd: project, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024
+        });
+        assert.equal(list.status, 0, `Playwright must select a test by its original file and line.\n${list.stdout}\n${list.stderr}`);
+        assert.match(list.stdout, /captures a client-side failure before cleanup/);
+        assert.doesNotMatch(list.stdout, /serializes live DOM/);
         const result = require('node:child_process').spawnSync(process.execPath, [cli, 'test', '--config=playwright.config.cjs'], {
             cwd: project, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024
         });
@@ -107,6 +128,12 @@ async function verifyPlaywright() {
         assert.equal(result.status, 1, `Expected exactly one intentional Playwright failure.\n${output}`);
         assert.match(output, /1 passed/);
         assert.match(output, /1 failed/);
+        const attempts = filesBelow(path.join(project, 'coverage/raw/attempts'))
+            .map(file => JSON.parse(fs.readFileSync(file, 'utf8')));
+        assert.deepEqual(attempts.map(attempt => [attempt.spec, attempt.outcome]).sort(), [
+            ['01-passing.spec.cjs', 'passed'],
+            ['02-failing.spec.cjs', 'failed']
+        ]);
 
         const artifacts = path.join(project, 'artifacts');
         const allFiles = filesBelow(artifacts);
@@ -122,7 +149,7 @@ async function verifyPlaywright() {
         assert.ok(screenshots.length > 0, 'The existing failure screenshot must remain present.');
         assert.ok(allFiles.some(file => file.endsWith('.zip')), 'The existing failure trace must remain present.');
         assert.equal(path.dirname(snapshots[0]), path.dirname(screenshots[0]), 'HTML snapshots must sit alongside Playwright screenshots.');
-        console.log('PASS: Playwright multi-spec, pre-cleanup capture, serializer edge cases, screenshot and trace.');
+        console.log('PASS: Playwright API compatibility, ordinary callbacks, original file/line selection, multi-spec capture, serializer edge cases, screenshot and trace.');
     } finally {
         fs.rmSync(project, {recursive: true, force: true});
     }

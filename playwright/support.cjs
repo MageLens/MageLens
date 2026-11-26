@@ -19,12 +19,7 @@ const {failureHtmlFilename, failureSnapshotDocument, failureSnapshotUnavailable}
 const {wrapTestType} = require('./failure-snapshot-hooks.cjs');
 
 function playwrightSpecPath(testInfo) {
-    const titlePathSpec = testInfo.titlePath?.[0];
-    if (typeof titlePathSpec !== 'string' || !/\.(?:spec|cy)\.[cm]?[jt]sx?$/.test(titlePathSpec)) {
-        return projectPath(testInfo.file, testInfo.config.rootDir);
-    }
-    const testDir = testInfo.project.testDir || testInfo.config.rootDir;
-    return projectPath(path.resolve(testDir, titlePathSpec), testInfo.config.rootDir);
+    return projectPath(testInfo.file, testInfo.config.rootDir);
 }
 
 function snapshotMetadata(testInfo, pageIndex, phase, reason) {
