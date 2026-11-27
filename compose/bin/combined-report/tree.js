@@ -58,6 +58,25 @@ function percent(entry) {
     return value === null ? 'N/A' : (100 * value).toFixed(2) + '%';
 }
 
+function coverageCell(entry) {
+    const label = percent(entry);
+    const cell = element('td');
+    if (entry.total) {
+        cell.append(element('strong', label));
+        const track = element('span');
+        track.className = 'coverage-track';
+        track.setAttribute('aria-hidden', 'true');
+        const fill = element('span');
+        fill.style.width = label;
+        fill.style.backgroundColor = entry.color;
+        track.append(fill);
+        cell.append(track);
+    } else {
+        cell.textContent = label;
+    }
+    return cell;
+}
+
 function countLabel(count, singular, plural = singular + 's') {
     return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -98,7 +117,7 @@ function render() {
         if (!entry.href) icon.setAttribute('aria-label', 'Directory');
         cell.append(icon, entry.href ? link(name, entry.href) : directoryLink(name, entry.path));
         const measurement = entry.partial ? (entry.href ? 'Limited' : `${entry.partial} limited ${entry.partial === 1 ? 'file' : 'files'}`) : '—';
-        row.append(cell, element('td', `${entry.covered} / ${entry.total}`), element('td', percent(entry)), element('td', measurement));
+        row.append(cell, element('td', `${entry.covered} / ${entry.total}`), coverageCell(entry), element('td', measurement));
         return row;
     });
     if (!rows.length) {

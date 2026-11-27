@@ -131,6 +131,10 @@ if (process.env.MAGELENS_REPORT_CHROME) {
                 query.dispatchEvent(new Event('input'));
             };
             return (async () => {
+                const trackFor = label => find(label).closest('tr').querySelector('.coverage-track');
+                const emptyFill = trackFor('vendor')?.firstElementChild;
+                check(emptyFill?.style.width === '0%' && getComputedStyle(emptyFill).backgroundColor === 'rgb(224, 93, 68)',
+                    'Zero coverage has an empty red track');
                 const back = document.getElementById('report-back');
                 const overview = document.getElementById('report-overview');
                 check(back.textContent.includes('Back to overview') && back.getAttribute('href') === '../index.html', 'Root returns to overview');
@@ -149,6 +153,10 @@ if (process.env.MAGELENS_REPORT_CHROME) {
                     && overviewBounds.top === backBounds.top && overviewBounds.left > backBounds.right, 'Overview button sits beside Up one level');
                 check(document.getElementById('summary').textContent.includes('10 / 11 (90.91%)'), 'Module coverage');
                 check(names().join() === 'a,b,Missing.php', 'Name order');
+                const directoryTrack = trackFor('a');
+                check(directoryTrack?.firstElementChild.style.width === '90.91%'
+                    && getComputedStyle(directoryTrack.firstElementChild).backgroundColor === 'rgb(68, 204, 17)', 'Directory track shows high coverage in green');
+                check(!trackFor('Missing.php'), 'N/A has no coverage track');
                 check(find('b').closest('tr').textContent.includes('1 limited file'), 'Singular limited file label');
                 const sort = document.getElementById('sort');
                 sort.value = 'ascending';
@@ -169,6 +177,10 @@ if (process.env.MAGELENS_REPORT_CHROME) {
                 sort.value = 'descending';
                 sort.dispatchEvent(new Event('change'));
                 check(names().join() === 'cart #2.phtml,item.js', 'Descending file coverage');
+                const itemFill = trackFor('item.js')?.firstElementChild;
+                check(trackFor('cart #2.phtml')?.firstElementChild.style.width === '100%'
+                    && itemFill?.style.width === '50%' && getComputedStyle(itemFill).backgroundColor === 'rgb(164, 166, 29)',
+                    'File tracks reflect coverage and its color after sorting');
                 const source = find('cart #2.phtml');
                 check(source.closest('th').querySelector('.phtml'), 'PHTML icon');
                 document.body.dataset.source = source.getAttribute('href');

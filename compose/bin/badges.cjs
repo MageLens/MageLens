@@ -45,11 +45,12 @@ function formatPercent(percent) {
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('Invalid coverage percentage');
     return `${percent.toFixed(2)}%`;
 }
+function coverageColor(percent) {
+    if (percent === null) return '#555';
+    return percent >= 80 ? '#4c1' : percent >= 50 ? '#a4a61d' : '#e05d44';
+}
 function badge(type, percent) {
-    const value = formatPercent(percent);
-    if (percent === null) return renderBadge(type, value, '#555');
-    const color = percent >= 80 ? '#4c1' : percent >= 50 ? '#a4a61d' : '#e05d44';
-    return renderBadge(type, value, color);
+    return renderBadge(type, formatPercent(percent), coverageColor(percent));
 }
 function cypressBadge(results, runner = 'cypress') {
     const counts = ['totalTests', 'totalPassed', 'totalFailed', 'totalPending', 'totalSkipped'].map(key => results[key]);
@@ -64,4 +65,4 @@ function cypressBadge(results, runner = 'cypress') {
     return renderBadge(runner, `${percent}% (${results.totalPassed}/${results.totalTests}) - ${status}`,
         passed ? '#4c1' : failed ? '#e05d44' : '#a4a61d');
 }
-module.exports = {replaceBadgeSection, setBadgeSection, badge, cypressBadge, formatPercent};
+module.exports = {replaceBadgeSection, setBadgeSection, badge, cypressBadge, formatPercent, coverageColor};

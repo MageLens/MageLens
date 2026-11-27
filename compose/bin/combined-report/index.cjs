@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {escapeHtml: html} = require('../report-index.cjs');
-const {formatPercent} = require('../badges.cjs');
+const {formatPercent, coverageColor} = require('../badges.cjs');
 const {createSourceReader} = require('../share-report-source.cjs');
 const {types} = require('./data.cjs');
 const homeIcon = `<svg class="home-icon" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -82,7 +82,11 @@ function writeCombinedReport(coverage, directory = 'coverage') {
         const {path: relative, extension, covered, total, warnings} = file;
         return {path: relative, extension, covered, total, partial: Number(warnings.length > 0), href};
     });
-    const data = JSON.stringify({directories: [...coverage.directories.values()], files}).replaceAll('<', '\\u003c');
+    const withColor = entry => ({...entry, color: coverageColor(entry.total ? entry.covered / entry.total * 100 : null)});
+    const data = JSON.stringify({
+        directories: [...coverage.directories.values()].map(withColor),
+        files: files.map(withColor)
+    }).replaceAll('<', '\\u003c');
     fs.writeFileSync(path.join(output, 'index.html'), page('Coverage by directory', `<nav aria-label="Breadcrumb" id="breadcrumb"></nav>
 <p id="summary" role="status"></p>
 <div class="controls">
