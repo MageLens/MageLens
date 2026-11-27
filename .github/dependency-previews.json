@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "pcov": {
+    "repository": "MageLens/PCOV",
+    "pullRequest": 4,
+    "sha": "526e5fbd107fc56ae52c9e4f7fff1900b7faae0a",
+    "version": "2.1.4"
+  }
+}

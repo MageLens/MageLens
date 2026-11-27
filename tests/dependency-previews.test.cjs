@@ -45,3 +45,21 @@ test('the matrix rejects stale or missing dependency preview provenance', () => 
         assert.throws(() => verifyEvidence(expected, {templateCoverage: {...actual.templateCoverage, ...patch}}));
     }
 });
+
+test('PCOV source previews preserve every unrelated PHP recipe installation', () => {
+    const recipe = fs.readFileSync(path.join(__dirname, '../compose/docker/php/Dockerfile'), 'utf8');
+    const preview = pcovRecipe(recipe);
+    const blocks = [...recipe.matchAll(/^RUN [^\n]*(?:\n[ \t]+[^\n]*)*/gm)].map(match => match[0]);
+    for (const block of blocks) {
+        if (!block.includes('pie install "magelens/pcov:') && !block.startsWith('RUN mkdir /opt/pcov-tools')) {
+            assert.ok(preview.includes(block), 'Unrelated PHP recipe blocks must be preserved');
+        }
+    }
+    assert.ok(preview.includes('pecl install /tmp/opentelemetry.tgz'));
+    assert.ok(preview.includes('COPY docker/php/dependency-preview-pcov /tmp/pcov-preview'));
+    assert.ok(preview.includes('cp -a /tmp/pcov-preview/tools/. /opt/pcov-tools/'));
+    assert.ok(!preview.includes('pie install "magelens/pcov:'));
+    assert.ok(!preview.includes('refs/tags/v${PCOV_VERSION}'));
+    assert.throws(() => pcovRecipe(recipe.replace('pie install "magelens/pcov:', 'pie install "other/pcov:')));
+    assert.throws(() => pcovRecipe(recipe.replace('RUN mkdir /opt/pcov-tools', 'RUN mkdir /opt/other-tools')));
+});
