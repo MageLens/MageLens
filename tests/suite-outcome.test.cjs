@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const {projectFile} = require('./project-path.cjs');
 
 // Runs a browser suite script against stub runner packages, so only its exit status is under test.
 function suite(t, script, stubs, args = [], env = {}) {
@@ -17,7 +18,7 @@ function suite(t, script, stubs, args = [], env = {}) {
         fs.mkdirSync(path.dirname(path.join(root, file)), {recursive: true});
         fs.writeFileSync(path.join(root, file), content);
     };
-    write(`bin/${script}`, fs.readFileSync(path.resolve(__dirname, '../bin', script)));
+    write(`bin/${script}`, fs.readFileSync(projectFile('bin', script)));
     write('bin/project.cjs', `module.exports = {specPatterns: () => ['cypress/e2e/*.cy.js'], warmupPaths: () => ['/']};`);
     write('coverage/run.json', JSON.stringify({id: 'current-run'}));
     write('coverage/project-fixtures.json', '{}');
