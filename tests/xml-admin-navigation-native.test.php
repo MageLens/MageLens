@@ -23,7 +23,7 @@ function expectAdminNavigation(bool $condition, string $message): void
     }
 }
 
-$root = $argv[2] ?? realpath(__DIR__ . '/..');
+$root = $argv[2] ?? (require __DIR__ . '/project-root.php');
 $app = $argv[2] ?? $root . '/src';
 $blog = $app . '/app/code/Application/Blog/etc';
 $fixture = isset($argv[2]) ? $app . '/app/code/MageLens/AdminNavigation/etc' : __DIR__ . '/fixtures/admin-navigation/module/etc';

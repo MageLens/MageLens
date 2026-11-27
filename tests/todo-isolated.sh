@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
-source "$(dirname "$0")/../bin/common"
+source "$(dirname "$0")/common.sh"
 preflight
 scratch=$(mktemp -d /tmp/magelens-todo.XXXXXX)
 original_root=$ROOT
@@ -18,16 +18,17 @@ cleanup() {
     exit "$result"
 }
 trap cleanup EXIT
-for file in bin docker patches cypress tests assets install.sh compose.yaml dependencies.yaml package.json package-lock.json cypress.config.cjs README.md; do
+for file in bin docker patches cypress assets install.sh compose.yaml dependencies.yaml package.json package-lock.json cypress.config.cjs README.md; do
     cp -a "$file" "$scratch/"
 done
+cp -a "$TESTS_ROOT" "$scratch/tests"
 # This fixture deliberately contains neither of the original demo directories.
 rm -rf "$scratch/cypress/e2e"
 mkdir -p "$scratch/cypress/e2e" "$scratch/src/app/code/Vitalii" "$scratch/src/app/design/frontend/Vitalii"
-cp -a tests/fixtures/todo/module "$scratch/src/app/code/Vitalii/TodoList"
-cp -a tests/fixtures/todo/theme "$scratch/src/app/design/frontend/Vitalii/todo"
+cp -a "$TESTS_ROOT/fixtures/todo/module" "$scratch/src/app/code/Vitalii/TodoList"
+cp -a "$TESTS_ROOT/fixtures/todo/theme" "$scratch/src/app/design/frontend/Vitalii/todo"
 mkdir -p "$scratch/src/app/code/Vitalii/TodoList/Test/Cypress"
-cp tests/fixtures/todo/*.cy.js "$scratch/src/app/code/Vitalii/TodoList/Test/Cypress/"
+cp "$TESTS_ROOT"/fixtures/todo/*.cy.js "$scratch/src/app/code/Vitalii/TodoList/Test/Cypress/"
 printf 'COMPOSE_PROJECT_NAME=magelens-todo-check-%s\nAPPLICATION_DOMAIN=todo.magelens.test\nAPPLICATION_PORT=%s\nAPPLICATION_HTTPS_PORT=%s\nCYPRESS_VIEW_PORT=%s\n' \
     "$$" "${MAGELENS_TEST_PORT:-8099}" "${MAGELENS_TEST_HTTPS_PORT:-8449}" "${MAGELENS_TEST_VIEW_PORT:-6099}" > "$scratch/.env"
 cd "$scratch"

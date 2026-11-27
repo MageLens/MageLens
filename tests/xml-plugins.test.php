@@ -30,7 +30,7 @@ use Magento\Framework\ObjectManagerInterface;
 use Psr\Log\NullLogger;
 
 require getenv('MAGELENS_PLUGIN_AUTOLOAD') ?: '/var/www/html/vendor/autoload.php';
-require getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php';
+require getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php';
 
 function check(bool $condition, string $message): void
 {

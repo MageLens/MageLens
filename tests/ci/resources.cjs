@@ -1,7 +1,9 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectRoot} = require('../project-path.cjs');
+const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const {execFileSync} = require('node:child_process');
@@ -23,7 +25,7 @@ function checkResources() {
         // WSL's sparse virtual disk must not hide the Windows drive limit.
         hostFree = Math.min(hostFree, free(process.env.MAGELENS_CI_HOST_PATH));
     }
-    const image = fs.readFileSync('dependencies.yaml', 'utf8').match(/^PLAYWRIGHT_RUNNER_IMAGE: "([^"]+)"$/m)?.[1];
+    const image = fs.readFileSync(path.join(projectRoot(process.cwd()), 'dependencies.yaml'), 'utf8').match(/^PLAYWRIGHT_RUNNER_IMAGE: "([^"]+)"$/m)?.[1];
     if (!image) throw new Error('Missing resource probe image pin');
     // The host probe already pulled this image. Read the engine filesystem and
     // memory from a disposable container, including Colima's local Linux VM.

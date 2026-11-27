@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 
 function write(file, content) {
     fs.mkdirSync(path.dirname(file), {recursive: true});

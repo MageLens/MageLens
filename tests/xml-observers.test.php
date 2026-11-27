@@ -14,7 +14,7 @@ use Magento\Framework\Event\Invoker\InvokerDefault;
 use Magento\Framework\Serialize\Serializer\Json;
 
 require getenv('MAGELENS_EVENT_AUTOLOAD') ?: '/var/www/html/vendor/autoload.php';
-require (getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+require (getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php');
 
 function requireObserver(bool $condition, string $message): void
 {

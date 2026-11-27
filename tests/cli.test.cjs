@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,7 +15,7 @@ function suite(t) {
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     for (const file of ['bin/cli-relay', 'bin/run-cli.cjs', 'bin/project.cjs', 'bin/test-attempts.cjs', 'bin/javascript-attempts.cjs', 'cli/support.cjs']) {
         fs.mkdirSync(path.join(root, path.dirname(file)), {recursive: true});
-        fs.copyFileSync(path.join(__dirname, '..', file), path.join(root, file));
+        fs.copyFileSync(projectFile(file), path.join(root, file));
     }
     fs.mkdirSync(path.join(root, 'coverage'));
     fs.writeFileSync(path.join(root, 'coverage/run.json'), JSON.stringify({id: 'a'.repeat(32)}));

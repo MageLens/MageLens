@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -11,10 +12,10 @@ const {execFileSync, spawnSync} = require('node:child_process');
 const {
     inputs, kinds, select, resolve, validateManifest, confirmExpiration,
     repositoryUrl, imageRegistry, platforms, manifestFilename, expirationProtocol
-} = require('../bin/image-inputs.cjs');
-const {synchronize} = require('../docker/runner/sync-node-modules.cjs');
+} = require(projectFile('bin/image-inputs.cjs'));
+const {synchronize} = require(projectFile('docker/runner/sync-node-modules.cjs'));
 const {retentionFixture} = require('./release/image-fixtures.cjs');
-const root = path.join(__dirname, '..');
+const root = projectFile();
 const immutableImagePattern = /^ghcr\.io\/magelens\/[a-z-]+@sha256:[a-f0-9]{64}$/;
 const sourcePhpBuildPattern = /source-php/;
 const sourceRunnerBuildPattern = /"build","--pull","runner"/;
@@ -25,7 +26,7 @@ function temporary(t) {
     return directory;
 }
 function candidate() {
-    return {schema: 1, version: require('../package.json').version, platform: 'linux/amd64', images: Object.fromEntries(kinds.map(kind =>
+    return {schema: 1, version: require(projectFile('package.json')).version, platform: 'linux/amd64', images: Object.fromEntries(kinds.map(kind =>
         [kind, {inputs: inputs(root, kind), digest: 'sha256:' + 'b'.repeat(64)}]))};
 }
 test('selects only immutable images with matching release, input hash and tested architecture', () => {
@@ -219,7 +220,7 @@ test('missing compatible images build locally', t => {
 
 test('intentional manifest expiration and missing manifests fall back safely; network, 403 and provenance errors fail', async () => {
     const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
-    const {version} = require('../package.json');
+    const {version} = require(projectFile('package.json'));
 
     // 404 falls back safely to source build
     assert.deepEqual(await resolve(root, env, async url => {
@@ -248,7 +249,7 @@ test('intentional manifest expiration and missing manifests fall back safely; ne
 test('intentional expiration selects source builds through the installer on both architectures and runners', async t => {
     for (const platform of platforms) for (const runner of ['cypress', 'playwright']) {
         const selected = await resolve(root, {MAGELENS_IMAGE_PLATFORM: platform, MAGELENS_RUNNER: runner}, async () => ({
-            status: 200, ok: true, json: async () => ({schema: 1, version: require('../package.json').version, expired: true})
+            status: 200, ok: true, json: async () => ({schema: 1, version: require(projectFile('package.json')).version, expired: true})
         }));
         const {run} = prepareFixture(t);
         const result = run('0', {MAGELENS_RUNNER: runner, MOCK_ARCH: platform}, selected);
@@ -350,7 +351,7 @@ test('interrupted pulls do not re-fetch manifests or begin source builds', t => 
 
 test('expiration confirmation rejects invalid retirement metadata', async () => {
     const env = {MAGELENS_IMAGE_PLATFORM: 'linux/amd64', MAGELENS_RUNNER: 'cypress'};
-    const {version} = require('../package.json');
+    const {version} = require(projectFile('package.json'));
     for (const expiredAt of [undefined, 'not a timestamp', '2026-02-30T00:00:00Z']) {
         await assert.rejects(confirmExpiration(root, env, async () => ({
             status: 200, ok: true,

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
-source "$(dirname "$0")/../bin/common"
+source "$(dirname "$0")/common.sh"
 preflight
 scratch=$(mktemp -d /tmp/magelens-adoption.XXXXXX)
 trap 'rm -rf "$scratch"' EXIT
@@ -32,7 +32,7 @@ printf '{"name":"customer/project","require":{}}\n' > "$scratch/import/composer.
 printf '{"packages":[]}\n' > "$scratch/import/composer.lock"
 printf '<?php // customer entry point\n' > "$scratch/import/bin/magento"
 printf '<?php // customer bootstrap\n' > "$scratch/import/app/bootstrap.php"
-cp -a tests/fixtures/todo/module "$scratch/todo"
+cp -a "$TESTS_ROOT/fixtures/todo/module" "$scratch/todo"
 mkdir -p "$scratch/import/app/code/Vitalii"
 cp -a "$scratch/todo" "$scratch/import/app/code/Vitalii/TodoList"
 before=$(sha256sum "$scratch/import/composer.json" "$scratch/import/composer.lock" "$scratch/import/bin/magento" "$scratch/import/app/code/Vitalii/TodoList/registration.php")

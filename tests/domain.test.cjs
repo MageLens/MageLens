@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const helper = path.resolve(__dirname, '../bin/application-domain');
+const helper = projectFile('bin/application-domain');
 
 function fixture(t, content = 'COMPOSE_PROJECT_NAME=customer\nAPPLICATION_HTTPS_PORT=8443\n') {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-domain-'));

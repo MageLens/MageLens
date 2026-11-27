@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
 const {request} = require('node:https');
 const {test} = require('node:test');
-const {apiJourneys, routingJourneys} = require('../src/app/code/Application/Blog/Test/Configuration/journeys.cjs');
+const {apiJourneys, routingJourneys} = require(projectFile('src/app/code/Application/Blog/Test/Configuration/journeys.cjs'));
 
 const run = process.env.MAGELENS_ROUTING_COLLECT === '1' ? readFileSync('coverage/.active-run', 'utf8').trim() : null;
 if (run) assert.match(run, /^[a-f0-9]{32}$/);

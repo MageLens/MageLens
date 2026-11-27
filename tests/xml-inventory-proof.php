@@ -12,7 +12,7 @@ use Magento\Framework\Config\{FileResolverInterface, ValidationStateInterface};
 use Magento\Framework\Module\Dir\Reader as ModuleReader;
 
 require ($argv[1] ?? '/var/www/html/vendor') . '/autoload.php';
-$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php');
 require $hooks . '/xml-data.php';
 require $hooks . '/xml-family-evidence.php';
 require $hooks . '/xml-family-cron.php';

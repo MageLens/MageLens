@@ -1,12 +1,12 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
 
 declare(strict_types=1);
-require dirname(__DIR__) . '/docker/php/configure-theme.php';
+require (require __DIR__ . '/project-root.php') . '/docker/php/configure-theme.php';
 
 function expectThemes(array $registered, array $roots, array $expected, string $scenario): void
 {

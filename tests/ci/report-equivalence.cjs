@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const {readXmlJson} = require('../../bin/xml-report/json.cjs');
+const {projectFile} = require('../project-path.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
-const {familyOutcomes} = require('../../bin/xml-family-report.cjs');
+const {familyOutcomes} = require(projectFile('bin/xml-family-report.cjs'));
 const {isDeepStrictEqual} = require('node:util');
-const {layoutEvents, countsAsLayoutCoverage} = require('../../bin/report-xml.cjs');
+const {layoutEvents, countsAsLayoutCoverage} = require(projectFile('bin/report-xml.cjs'));
 const digest = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n')).digest('hex');
 const sort = values => values.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en'));
 const read = (directory, file) => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const {constants: {MAX_STRING_LENGTH}} = require('node:buffer');
 const {execFileSync} = require('node:child_process');
@@ -10,7 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
-const {writeXmlJson} = require('../bin/xml-report/json.cjs');
+const {writeXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 
 test('Admin navigation verifier checks original source and evidence in an oversized XML report', t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-xml-verifier-'));
@@ -23,9 +24,9 @@ test('Admin navigation verifier checks original source and evidence in an oversi
     const fixture = 'app/code/MageLens/AdminNavigation/etc/';
     const blog = 'app/code/Application/Blog/etc/';
     const xmlFile = (file, declarations) => {
-        const source = fs.readFileSync(path.join(__dirname, '..', file.startsWith(fixture)
-            ? file.replace('app/code/MageLens/AdminNavigation/', 'tests/fixtures/admin-navigation/module/')
-            : 'src/' + file));
+        const source = fs.readFileSync(file.startsWith(fixture)
+            ? path.join(__dirname, 'fixtures/admin-navigation/module/etc', file.slice(fixture.length))
+            : projectFile('src', file));
         write('src/' + file, source);
         return {path: file, sourceHash: createHash('sha256').update(source).digest('hex'), declarations};
     };

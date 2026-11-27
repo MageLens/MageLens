@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -35,8 +35,11 @@ wget -qO "$temporary/release.tar.gz" "https://github.com/MageLens/MageLens/archi
 mkdir "$temporary/source"
 tar -xzf "$temporary/release.tar.gz" --strip-components=1 --no-same-owner -C "$temporary/source" \
     || fail "Could not extract MageLens $version."
-[[ -x "$temporary/source/install.sh" ]] || fail 'The release archive does not contain an executable install.sh.'
-cp -a "$temporary/source/." .
+project="$temporary/source/compose"
+# Releases published before the repository split have a flat project root.
+[[ -d "$project" ]] || project="$temporary/source"
+[[ -x "$project/install.sh" ]] || fail 'The release archive does not contain an executable install.sh.'
+cp -a "$project/." .
 rm -rf -- "$temporary"
 trap - EXIT
 

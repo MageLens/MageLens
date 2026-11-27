@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 // Checks the test attempt records of a passing E2E run and the attempt IDs in its PHP records.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -46,8 +47,8 @@ for (const request of requests) {
 for (const [id, count] of used) assert.ok(count > 0, `No PHP execution attributed to ${attempts.get(id).test.join(' › ')}`);
 
 // Every test runs in an attributed browser context, so the attempts' JavaScript counters add up to the aggregate.
-const {mergeCounters} = require('../bin/javascript-attempts.cjs');
-const {isCoverageExcluded} = require('../bin/project.cjs');
+const {mergeCounters} = require(projectFile('bin/javascript-attempts.cjs'));
+const {isCoverageExcluded} = require(projectFile('bin/project.cjs'));
 const javascript = {};
 for (const file of fs.readdirSync('coverage/raw/javascript-attempts')) {
     assert.ok(attempts.get(path.basename(file, '.json'))?.runner === runner, 'JavaScript counters of an unknown attempt');

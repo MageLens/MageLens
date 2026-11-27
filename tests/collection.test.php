@@ -7,7 +7,7 @@
 
 // Run in a disposable container with writable /coverage and /pcov-state.
 declare(strict_types=1);
-require dirname(__DIR__) . '/docker/php/collection.php';
+require (require __DIR__ . '/project-root.php') . '/docker/php/collection.php';
 function check(bool $condition, string $message): void
 {
     if (!$condition) throw new RuntimeException($message);

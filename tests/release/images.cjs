@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('../project-path.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const {kinds, inputs, validateManifest, platforms, expirationProtocol} = require('../../bin/image-inputs.cjs');
+const {kinds, inputs, validateManifest, platforms, expirationProtocol} = require(projectFile('bin/image-inputs.cjs'));
 const read = file => JSON.parse(fs.readFileSync(file));
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
-function manifest(directory, root = process.cwd(), env = process.env) {
+function manifest(directory, root = projectFile(), env = process.env) {
     const entries = Object.fromEntries(platforms.map(platform => [platform, Object.fromEntries(kinds.map(kind => {
         const entry = read(path.join(directory, `${platform.split('/')[1]}/${kind}.json`));
         assert.equal(entry.kind, kind);

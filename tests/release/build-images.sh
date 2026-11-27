@@ -4,7 +4,7 @@
 # License: see LICENSE in the repository root.
 
 # Shared native image build and regression checks for PR CI and the qualified publisher.
-source "$(dirname "$0")/../../bin/common"
+source "$(dirname "$0")/../common.sh"
 mode=${1:-publish}
 release_repository=$(node -p 'require("./bin/image-inputs.cjs").repository')
 release_source=$(node -p 'require("./bin/image-inputs.cjs").repositoryUrl')
@@ -33,21 +33,21 @@ for kind in php runner-cypress runner-playwright; do
             --build-arg "OPENTELEMETRY_VERSION=$OPENTELEMETRY_VERSION" --build-arg "OPENTELEMETRY_SHA256=$OPENTELEMETRY_SHA256" \
             --build-arg "PIE_VERSION=$PIE_VERSION" --build-arg "PCOV_VERSION=$PCOV_VERSION" .
         docker run --rm --entrypoint php \
-            --mount "type=bind,source=$ROOT/tests,target=/tests,readonly" \
+            --mount "type=bind,source=$TESTS_ROOT,target=/tests,readonly" \
             --mount "type=bind,source=$ROOT/docker/php,target=/application/docker/php,readonly" \
             --env MAGELENS_REPORT_DATA=/application/docker/php/report-data.php \
             "$image" -d pcov.directory=/tmp -d pcov.exclude= /tests/php-report.test.php
         docker run --rm --network none --memory 256m --cpus 1 --user root --entrypoint sh \
-            --mount "type=bind,source=$ROOT/tests,target=/workspace/tests,readonly" \
+            --mount "type=bind,source=$TESTS_ROOT,target=/workspace/tests,readonly" \
             --mount "type=bind,source=$ROOT/docker/php,target=/workspace/docker/php,readonly" \
             --mount "type=bind,source=$ROOT/src/app/code/Application/Blog/Test/Configuration,target=/workspace/src/app/code/Application/Blog/Test/Configuration,readonly" \
             "$image" -c 'php /workspace/tests/xml.test.php && php /workspace/tests/xml-hooks.test.php'
     else
         runner=${kind#runner-}
-        bash tests/release/build-runner-image.sh "$runner" "$image"
+        bash "$TESTS_ROOT/release/build-runner-image.sh" "$runner" "$image"
         checks=()
         [[ "$runner" != cypress ]] || checks=(--cypress-regressions)
-        bash tests/runner-container.sh "$image" ${checks[@]+"${checks[@]}"}
+        bash "$TESTS_ROOT/runner-container.sh" "$image" ${checks[@]+"${checks[@]}"}
         if [[ "$runner" == cypress ]]; then
             node -e 'const a=require("node:assert/strict");const r=require("./coverage/cypress-runner-results.json");a.equal(r.browserVersion,process.env.CHROME_VERSION);a.equal(r.browserName,"chrome-for-testing");'
         fi
@@ -60,7 +60,7 @@ for kind in php runner-cypress runner-playwright; do
     reference="$release_registry/$kind:$version-linux-$architecture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
     skopeo copy --format oci --digestfile "$output/$kind.digest" "docker-daemon:$image" "docker://$reference"
     digest=$(cat "$output/$kind.digest")
-    node tests/release/images.cjs record "$kind" "$fingerprint" "$digest" "$output/$kind.json"
+    node "$TESTS_ROOT/release/images.cjs" record "$kind" "$fingerprint" "$digest" "$output/$kind.json"
 done
 [[ "$mode" == publish ]] || exit 0
 for kind in php runner-cypress runner-playwright; do

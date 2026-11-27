@@ -6,7 +6,7 @@
  */
 
 declare(strict_types=1);
-require __DIR__ . '/../docker/php/report-url.php';
+require (require __DIR__ . '/project-root.php') . '/docker/php/report-url.php';
 
 foreach (['https://magelens.test/', 'http://custom.test:8080/shop/', 'https://custom.test:8443/a/b', 'http://[::1]:8080/shop/'] as $base) {
     $expected = rtrim($base, '/') . '/media/coverage/index.html';

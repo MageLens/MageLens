@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 require '/var/www/html/app/bootstrap.php';
-require dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php') . '/xml-manifest.php';
+require dirname(getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php') . '/xml-manifest.php';
 use MageLens\XmlCoverage\Xml;
 
 $objects = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER)->getObjectManager();

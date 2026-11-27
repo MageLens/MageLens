@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
-source bin/common
+source "$(dirname "$0")/../common.sh"
 preflight
 scratch=$(mktemp -d "${MAGELENS_TEST_TMPDIR:-/tmp}/magelens-feasibility.XXXXXX")
 project="magelens-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

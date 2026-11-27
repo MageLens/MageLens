@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
-const config = require('../../../playwright.config.cjs');
+const {projectFile} = require('../../project-path.cjs');
+const config = require(projectFile('playwright.config.cjs'));
 module.exports = {
     ...config,
     testDir: '.',

@@ -1,10 +1,11 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {createJavascriptScope} = require('../bin/javascript-scope.cjs');
+const {createJavascriptScope} = require(projectFile('bin/javascript-scope.cjs'));
 
 test('duplicate build selection retains unloaded application features and records reasons', () => {
     const files = ['app/code/A/unvisited.js', 'vendor/a/b/library.js', 'vendor/a/b/library.min.js', 'vendor/a/b/view/frontend/tailwind/config.js'];

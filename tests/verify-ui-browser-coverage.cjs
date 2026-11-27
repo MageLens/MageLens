@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 const {listingEffects, formEffects, fields, columns, provider, proofDirectory, responseId, initialDisabled} =
     require('./fixtures/ui-module/module/Test/Browser/journey.cjs');
 

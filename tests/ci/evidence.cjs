@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectRoot} = require('../project-path.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -55,7 +56,7 @@ function writeEvidence() {
     const report = {...entry, sha: process.env.CI_SHA, workflowRun: process.env.GITHUB_RUN_ID,
         attempt: process.env.GITHUB_RUN_ATTEMPT, host: process.env.RUNNER_OS, architecture: process.arch,
         runtime: process.env.CI_HOST_RUNTIME || 'native', image: process.env.ImageOS, imageVersion: process.env.ImageVersion, memoryGiB: Math.round(os.totalmem() / 2 ** 30),
-        dependencies: Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(match => [match[1], match[2]])),
+        dependencies: Object.fromEntries([...fs.readFileSync(path.join(projectRoot(process.cwd()), 'dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(match => [match[1], match[2]])),
         counts: null, steps: Object.fromEntries(Object.entries(JSON.parse(process.env.CI_STEPS)).map(([key, value]) => [key, pick(value, ['outcome', 'conclusion'])])), passed: false};
     try { report.dependencyPreviews = previewEvidence(); }
     catch { report.previewError = 'Missing or invalid pinned library preview provenance.'; }
@@ -65,14 +66,14 @@ function writeEvidence() {
         if (fs.existsSync(registry)) {
             const project = fs.readFileSync(registry, 'utf8').trim().split(' ')[0];
             if (!/^magelens-e2e-[a-z0-9]+$/.test(project)) throw new Error('Invalid project evidence path');
-            const results = `.runtime/e2e/${project}/coverage/${entry.runner}-results.json`;
+            const results = `${projectRoot(process.cwd())}/.runtime/e2e/${project}/coverage/${entry.runner}-results.json`;
             if (fs.existsSync(results)) {
                 const safe = testResults(read(results));
                 report.counts = pick(safe, countKeys);
                 report.browser = safe.browser;
                 fs.writeFileSync(`${directory}/browser-results.json`, JSON.stringify(safe, null, 2) + '\n');
             }
-            const regressions = `.runtime/e2e/${project}/coverage/cypress-runner-results.json`;
+            const regressions = `${projectRoot(process.cwd())}/.runtime/e2e/${project}/coverage/cypress-runner-results.json`;
             if (entry.runner === 'cypress' && fs.existsSync(regressions)) {
                 const safe = runnerResults(read(regressions));
                 report.runnerRegressionCounts = pick(safe, countKeys);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,9 +17,9 @@ const {createContext} = require('istanbul-lib-report');
 const reports = require('istanbul-reports');
 const {createManifest, merge} = require('@magelens/magento-template-coverage');
 
-const {createJavascriptScope} = require('../bin/javascript-scope.cjs');
+const {createJavascriptScope} = require(projectFile('bin/javascript-scope.cjs'));
 
-const cli = path.resolve(__dirname, '../bin/export-coverage.cjs');
+const cli = projectFile('bin/export-coverage.cjs');
 const moduleRoot = 'app/code/Example/Checkout';
 const php = moduleRoot + '/Model/Shipping.php';
 const js = moduleRoot + '/view/frontend/web/js/shipping.js';
@@ -220,7 +221,7 @@ exec "$@"
 `);
     fs.chmodSync(path.join(report.root, 'bin/application-compose'), 0o755);
     const launcher = path.join(report.root, 'bin/export-coverage');
-    fs.copyFileSync(path.join(__dirname, '../bin/export-coverage'), launcher);
+    fs.copyFileSync(projectFile('bin/export-coverage'), launcher);
     fs.symlinkSync(cli, path.join(report.root, 'bin/export-coverage.cjs'));
     for (const [args, file] of exportModes) {
         const result = spawnSync('bash', [launcher, ...args], {cwd: os.tmpdir(), encoding: 'utf8'});

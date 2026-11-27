@@ -247,7 +247,7 @@ $usage = [
         Nested::class => ['tag' => ['id' => 'nested-tag', 'array' => false]],
     ],
 ];
-require getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php';
+require getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php';
 verifyProvenance();
 if ($mode === 'collector-gaps') {
     verifyRemainingFactoryPaths();

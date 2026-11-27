@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 // Run against a disposable installation with the compatibility fixture modules.
 require '/var/www/html/app/bootstrap.php';
-$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php');
 require $hooks . '/xml-data.php';
 require $hooks . '/xml-layout-runtime-hooks.php';
 require $hooks . '/xml-layout-manifest.php';

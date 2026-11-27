@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
-const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 
 const theme = process.argv[3] || 'adminhtml/Magento/backend';
 assert.ok(['adminhtml/Magento/backend', 'adminhtml/MageOS/m137-admin-theme'].includes(theme));

@@ -70,7 +70,7 @@ jobs:
         run: |
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-          RELEASE_TAG="v$(jq -r .version package.json)"
+          RELEASE_TAG="v$(jq -r .version compose/package.json)"
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           awk -v version="${RELEASE_TAG#v}" '
             /^## / { if (selected) exit; selected = ($2 == version); next }
@@ -133,7 +133,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-images-${{ matrix.arch }}-${{ github.run_attempt }}
-          path: .runtime/release-images/
+          path: compose/.runtime/release-images/
           retention-days: 1
           if-no-files-found: error
   publish:
@@ -162,15 +162,15 @@ jobs:
         if: needs.images.result == 'success'
         with:
           pattern: release-images-*-${{ github.run_attempt }}
-          path: .runtime/release-images
+          path: compose/.runtime/release-images
           merge-multiple: true
       - name: Validate complete native image set
         if: needs.images.result == 'success'
-        run: node tests/release/images.cjs manifest .runtime/release-images .runtime/release-images/images.json
+        run: node tests/release/images.cjs manifest compose/.runtime/release-images compose/.runtime/release-images/images.json
       - name: Publish release and image manifest
         if: needs.images.result == 'success'
         run: |
-          RELEASE_TAG="v$(jq -r .version package.json)"
+          RELEASE_TAG="v$(jq -r .version compose/package.json)"
           awk -v version="${RELEASE_TAG#v}" '
             /^## / { if (selected) exit; selected = ($2 == version); next }
             selected { print }
@@ -185,7 +185,7 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag --notes-file release-notes.md \
               --title "MageLens $RELEASE_TAG" --draft
           fi
-          gh release upload "$RELEASE_TAG" .runtime/release-images/images.json --clobber
+          gh release upload "$RELEASE_TAG" compose/.runtime/release-images/images.json --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest
       - name: Check out trusted cleanup implementation
         if: always() && needs.images.result != 'skipped'

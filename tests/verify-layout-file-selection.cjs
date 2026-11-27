@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
-const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 for (const handle of ['coverageprobe_index_index', 'coverageprobe_layout_nested', 'coverageprobe_layout_dynamic', 'coverageprobe_fragment_index']) {
     const file = report.files.find(file => file.path.endsWith(`/layout/${handle}.xml`));

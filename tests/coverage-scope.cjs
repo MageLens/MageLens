@@ -1,7 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 // Exercise the real instrumenters and report filters without Magento credentials.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -37,7 +38,7 @@ if (process.argv[2] === 'browser') {
     process.exit(0);
 }
 
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-scope-'));
 const put = (file, contents) => {
     fs.mkdirSync(path.dirname(`${scratch}/${file}`), {recursive: true});
@@ -76,7 +77,7 @@ try {
     const bind = (source, target) => ['--mount', `type=bind,source=${source},target=${target}`];
     const dependencies = config.services.runner.volumes.find(volume => volume.target === '/workspace/node_modules').source;
     run([
-        ...bind(scratch, '/workspace'), ...bind(`${scratch}/src`, '/source'), ...bind(`${root}/tests`, '/tests'),
+        ...bind(scratch, '/workspace'), ...bind(`${scratch}/src`, '/source'), ...bind(__dirname, '/tests'),
         '--mount', `type=volume,source=${config.volumes[dependencies].name},target=/workspace/node_modules,readonly`,
         '--workdir', '/workspace', '--entrypoint', 'node', config.services.runner.image || `${config.name}-runner`,
         '/tests/coverage-scope.cjs', 'browser'
@@ -85,7 +86,7 @@ try {
         ...bind(`${scratch}/src`, '/var/www/html'), ...bind(`${root}/docker`, '/application/docker'),
         ...bind(`${scratch}/.runtime/project.json`, '/application/project.json'),
         ...bind(`${scratch}/.runtime/coverage.ini`, '/usr/local/etc/php/conf.d/zzz-magelens-scope.ini'),
-        ...bind(`${root}/tests`, '/tests'), '--entrypoint', 'php', config.services.phpfpm.image, '/tests/coverage-scope.php'
+        ...bind(__dirname, '/tests'), '--entrypoint', 'php', config.services.phpfpm.image, '/tests/coverage-scope.php'
     ]);
 } finally {
     fs.rmSync(scratch, {recursive: true, force: true});

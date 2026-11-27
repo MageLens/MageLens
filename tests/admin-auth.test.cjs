@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const installer = path.resolve(__dirname, '../docker/php/install-dev-tools.sh');
+const installer = projectFile('docker/php/install-dev-tools.sh');
 
 function workspace(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-admin-auth-'));

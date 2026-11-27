@@ -18,11 +18,11 @@ function workspace(t, options = {}) {
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     const destination = path.join(directory, 'project with spaces');
     const temporary = path.join(directory, 'temporary');
-    const source = path.join(directory, 'release');
+    const source = path.join(directory, options.legacyLayout ? 'release' : 'release/compose');
     const commands = path.join(directory, 'commands');
     const log = path.join(directory, 'downloads.jsonl');
     const archive = path.join(directory, 'release.tar.gz');
-    for (const entry of [destination, temporary, source, commands]) fs.mkdirSync(entry);
+    for (const entry of [destination, temporary, source, commands]) fs.mkdirSync(entry, {recursive: true});
     if (!options.missingInstaller) {
         fs.writeFileSync(path.join(source, 'install.sh'), `#!/usr/bin/env bash
 set -euo pipefail
@@ -32,6 +32,8 @@ printf '%s\\n' "$answer" > answer
 exit ${options.installStatus ?? 0}
 `, {mode: 0o755});
     }
+    fs.writeFileSync(path.join(directory, 'release', 'maintainer-only'), 'must not be installed');
+    fs.writeFileSync(path.join(source, 'AGENTS.md'), 'Project-facing LLM-to-TDD instructions\n');
     fs.writeFileSync(path.join(source, '.hidden'), 'release contents\n');
     fs.symlinkSync('.hidden', path.join(source, 'linked'));
     execFileSync('tar', ['-czf', archive, '-C', directory, 'release']);
@@ -85,6 +87,9 @@ for (const mode of ['file', 'command']) {
             assert.equal(fs.readFileSync(path.join(fixture.destination, '.hidden'), 'utf8'), 'release contents\n');
             assert.equal(fs.readlinkSync(path.join(fixture.destination, 'linked')), '.hidden');
             assert.ok(fs.statSync(path.join(fixture.destination, 'install.sh')).mode & 0o111);
+            assert.equal(fs.readFileSync(path.join(fixture.destination, 'AGENTS.md'), 'utf8'), 'Project-facing LLM-to-TDD instructions\n');
+            assert.equal(fs.existsSync(path.join(fixture.destination, 'maintainer-only')), false);
+            assert.equal(fs.existsSync(path.join(fixture.destination, 'compose')), false);
         });
     }
 }
@@ -131,4 +136,11 @@ test('bootstrap preserves the installer exit status and extracted files for reco
     assert.equal(result.status, 37, result.stderr);
     assert.ok(fs.existsSync(path.join(fixture.destination, 'install.sh')));
     assert.ok(fs.existsSync(path.join(fixture.destination, 'answer')));
+});
+
+test('bootstrap still installs flat archives from previously published releases', t => {
+    const fixture = workspace(t, {legacyLayout: true, version: 'v1.8.1'});
+    const result = fixture.run({input: 'legacy answer\n'});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(path.join(fixture.destination, 'answer'), 'utf8'), 'legacy answer\n');
 });

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
-const {tests, setTransport} = require('../cli/support.cjs');
+const {tests, setTransport} = require(projectFile('cli/support.cjs'));
 
 async function main() {
     assert.ok(!fs.existsSync('coverage/.active-run'), 'Stop coverage collection before the native cron proof');
@@ -18,7 +19,7 @@ async function main() {
         if (result.error) throw result.error;
         return {code: result.status, stdout: result.stdout, stderr: result.stderr};
     });
-    require('../src/app/code/MageLens/Compatibility/Test/Cli/compatibility.test.cjs');
+    require(projectFile('src/app/code/MageLens/Compatibility/Test/Cli/compatibility.test.cjs'));
     const scenarios = tests.filter(entry => entry.title.includes('cron job'));
     assert.equal(scenarios.length, 2);
     for (const scenario of scenarios) {

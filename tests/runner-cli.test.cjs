@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,7 +17,7 @@ for (const runner of ['cypress', 'playwright']) {
         fs.mkdirSync(path.join(root, 'bin'));
         fs.mkdirSync(path.join(root, '.runtime'));
         for (const file of ['bin/runner', 'bin/expose-tools', 'bin/application-compose', 'bin/common', 'bin/compose-project', 'bin/dependencies', 'dependencies.yaml']) {
-            fs.copyFileSync(path.resolve(__dirname, '..', file), path.join(root, file));
+            fs.copyFileSync(projectFile(file), path.join(root, file));
         }
         for (const directory of ['bin', 'lib', 'env']) fs.mkdirSync(path.join(root, '.runtime/docker-magento/compose', directory), {recursive: true});
         fs.writeFileSync(path.join(root, '.runtime/docker-magento/compose/bin/status'), '#!/bin/sh\n');

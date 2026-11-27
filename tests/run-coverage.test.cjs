@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,7 +15,7 @@ function workflow(t, args = [], failure = '', interrupted = false, runner = 'cyp
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const name of ['bin', '.runtime', 'coverage']) fs.mkdirSync(path.join(directory, name));
     for (const file of ['run-coverage', 'public-report.cjs']) {
-        fs.copyFileSync(path.resolve(__dirname, '../bin', file), path.join(directory, 'bin', file));
+        fs.copyFileSync(projectFile('bin', file), path.join(directory, 'bin', file));
     }
     fs.writeFileSync(path.join(directory, '.runtime/installed'), installedVersion + '\n');
     if (interrupted) fs.writeFileSync(path.join(directory, '.runtime/hooks-active'), '');
@@ -253,7 +254,7 @@ test('local web report stages only presentation files and never follows input sy
     }
     fs.symlinkSync('../project-fixtures.json', path.join(coverage, 'js/leak.html'));
     fs.symlinkSync('../raw', path.join(coverage, 'php/linked'));
-    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/public-report.cjs')], {cwd: root, encoding: 'utf8'});
+    const run = spawnSync(process.execPath, [projectFile('bin/public-report.cjs')], {cwd: root, encoding: 'utf8'});
     assert.equal(run.status, 0, run.stderr);
     for (const file of expected) assert.equal(fs.readFileSync(path.join(coverage, '.site', file), 'utf8'), file);
     for (const file of [...privateFiles, 'js/leak.html', 'php/linked']) {

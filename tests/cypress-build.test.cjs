@@ -1,13 +1,14 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {provenance, source, verifyInstalled} = require('../docker/runner/cypress-source/provenance.cjs');
+const {provenance, source, verifyInstalled} = require(projectFile('docker/runner/cypress-source/provenance.cjs'));
 test('local and CI runner validation rejects absent, stale and mismatched Cypress builds', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-cypress-build-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
@@ -22,7 +23,7 @@ test('local and CI runner validation rejects absent, stale and mismatched Cypres
     }
 });
 test('Cypress upgrades require reviewing the source patch before changing the pinned binary', () => {
-    const dependencies = fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8');
+    const dependencies = fs.readFileSync(projectFile('dependencies.yaml'), 'utf8');
     assert.equal(source.version, dependencies.match(/^CYPRESS_VERSION: "([^"]+)"$/m)[1]);
 });
 test('isolated runner regressions override and restore the shop URL on success and failure', async () => {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {DatabaseSync} = require('node:sqlite');
-const {writeXmlJson} = require('../bin/xml-report/json.cjs');
+const {writeXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 
 function reports(t, covered, runner = 'cypress') {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-finalize-'));
@@ -50,7 +51,7 @@ function reports(t, covered, runner = 'cypress') {
             branches: [{id: 'script:1:b:0', hits: covered}], scripts: []}]});
     json(`coverage/${runner}-results.json`, {run: 'fixture', totalTests: 1, totalPassed: 1, totalFailed: 0, totalPending: 0, totalSkipped: 0});
     json('coverage/cli-results.json', {run: 'fixture', totalTests: 0, totalPassed: 0, totalFailed: 0, totalPending: 0, totalSkipped: 0, commands: 0});
-    return {root, json, run: (args = []) => spawnSync(process.execPath, [path.join(__dirname, '../bin/finalize.cjs'), ...args], {cwd: root, encoding: 'utf8'})};
+    return {root, json, run: (args = []) => spawnSync(process.execPath, [projectFile('bin/finalize.cjs'), ...args], {cwd: root, encoding: 'utf8'})};
 }
 
 for (const covered of [0, 1]) test(`publishes valid ${covered * 100}% coverage without demo routes or files`, t => {
@@ -499,7 +500,7 @@ test('percentage views compute each source as its report does', () => {
     const reported = {js: istanbul, template: (covered, total) => Math.round(10000 * covered / total) / 100,
         xml: (covered, total) => Number((covered / total * 100).toFixed(2))};
     const connection = new DatabaseSync(':memory:');
-    connection.exec(fs.readFileSync(path.join(__dirname, '../bin/report-schema.sql'), 'utf8'));
+    connection.exec(fs.readFileSync(projectFile('bin/report-schema.sql'), 'utf8'));
     const addRecord = connection.prepare("INSERT INTO records (record_type, source_type, metric, record_key, file_path, module_name) VALUES ('statement', ?, 'statements', ?, ?, ?)");
     const addHit = connection.prepare('INSERT INTO hits (record_id) VALUES (?)');
     const expected = {};
@@ -539,7 +540,7 @@ test('the skill query for files no test reached skips partially covered files', 
     fixture.json('coverage/php/coverage-summary.json', {run: 'fixture', covered: 1, total: 2, percent: 50, requests: [{uri: '/', method: 'GET'}], commands: []});
     const result = fixture.run(['--include-machine-report']);
     assert.equal(result.status, 0, result.stderr);
-    const skill = fs.readFileSync(path.join(__dirname, '../.agents/skills/coverage-database/SKILL.md'), 'utf8');
+    const skill = fs.readFileSync(projectFile('.agents/skills/coverage-database/SKILL.md'), 'utf8');
     const sql = skill.match(/Files of a module that no test reached at all:\n\n```sql\n([^`]+)```/)[1].replaceAll('Application_Blog', 'Acme_Shop');
     assert.deepEqual(database(t, fixture)(sql), [{file_path: 'app/code/Acme/Shop/Model/Order.php'}]);
 });
@@ -580,7 +581,7 @@ test('the published schema matches the database and pins version 1', t => {
     assert.equal(fixture.run(['--include-machine-report']).status, 0);
     const query = database(t, fixture);
     const schema = fs.readFileSync(`${fixture.root}/coverage/schema.sql`, 'utf8');
-    assert.equal(schema, fs.readFileSync(path.join(__dirname, '../bin/report-schema.sql'), 'utf8'));
+    assert.equal(schema, fs.readFileSync(projectFile('bin/report-schema.sql'), 'utf8'));
     assert.deepEqual(query('PRAGMA user_version'), [{user_version: 1}]);
     // Removing or renaming any of these requires a new schema version.
     const columns = name => query(`SELECT name FROM pragma_table_info('${name}')`).map(row => row.name);
@@ -602,7 +603,7 @@ test('the published schema matches the database and pins version 1', t => {
 });
 
 test('the commit is read from a Git checkout without the git command', t => {
-    const {commitSha} = require('../bin/report-database.cjs');
+    const {commitSha} = require(projectFile('bin/report-database.cjs'));
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-commit-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const sha = 'a'.repeat(40), packed = 'b'.repeat(40);

@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 
 for (const platform of ['magento', 'mageos']) {
     for (const statuses of [[100, 100, 0], [2], [100, 100, 100]]) {
@@ -43,6 +44,9 @@ if (args[0] === 'create-project') {
     process.exit(${JSON.stringify(statuses)}[attempt] ?? 99);
 }
 `, {mode: 0o755});
+            fs.writeFileSync(path.join(directory, 'commands/sleep'), `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(['sleep', ...process.argv.slice(2)]) + '\\n');
+`, {mode: 0o755});
             const run = () => spawnSync('bash', ['download.sh'], {cwd: directory, encoding: 'utf8', env: {
                 ...process.env, PATH: `${directory}/commands:${process.env.PATH}`,
                 MAGELENS_PLATFORM: platform, MAGELENS_PLATFORM_VERSION: version, MAGENTO_VERSION: '2.4.8-p5'
@@ -58,6 +62,9 @@ if (args[0] === 'create-project') {
             assert.ok(create.includes(`--repository=https://repo.${platform === 'mageos' ? 'mage-os.org' : 'magento.com'}/`));
             assert.ok(create.includes(`${vendor}/project-community-edition=${version}`));
             assert.equal(calls().filter(args => args[0] === 'create-project').length, 1);
+            const install = ['install', '--prefer-dist', '--no-interaction', '--no-progress'];
+            assert.deepEqual(calls().filter(args => ['install', 'sleep'].includes(args[0])), statuses.flatMap((_, index) =>
+                index === 0 ? [install] : [['sleep', String(index * 30)], install]));
             if (success) {
                 assert.equal(JSON.parse(fs.readFileSync(path.join(stage, '.magelens-source.json'))).platform, platform);
                 assert.equal(run().status, 0);

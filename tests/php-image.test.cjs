@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 const packages = ['redis-6.3.0', 'ssh2-1.5.0', 'swoole-6.2.1', 'imagick-3.8.1'];
 const composerInstall = 'RUN curl -sS https://getcomposer.org/installer | php -- --version=2.9.8 --install-dir=/usr/local/bin --filename=composer';
 

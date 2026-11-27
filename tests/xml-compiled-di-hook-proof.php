@@ -26,7 +26,7 @@ use Magento\Setup\Module\Di\Definition\Collection;
 use function OpenTelemetry\Instrumentation\hook;
 
 require '/var/www/html/vendor/autoload.php';
-require getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php';
+require getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php';
 
 interface First {}
 interface Second {}
@@ -211,7 +211,7 @@ function verifyCompiledProvenance(): void
         $metadata = CompiledProvenance::metadata($areas);
         check(CompiledProvenance::validate($providers, $areas) === $metadata, 'compiled provenance round trip');
         $patchPath = '/cypress-patches/magento-framework-session-cookie-race-41057.patch';
-        if (!is_file($patchPath)) $patchPath = dirname(__DIR__) . '/patches/cypress/' . basename($patchPath);
+        if (!is_file($patchPath)) $patchPath = (require __DIR__ . '/project-root.php') . '/patches/cypress/' . basename($patchPath);
         $patch = proc_open(['git', 'apply', '--no-index', '--unidiff-zero', $patchPath],
             [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $directory);
         check(is_resource($patch) && proc_close($patch) === 0, 'apply the native session fixture patch on a test copy');

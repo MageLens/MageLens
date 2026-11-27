@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const root = path.join(__dirname, '..');
+const root = projectFile();
 
 // The fixture holds too little to populate the isolated workspace, so the harness
 // fails right after creating it and runs its cleanup against a fake Docker. The fake
@@ -17,9 +18,9 @@ const root = path.join(__dirname, '..');
 function run(t, env = {}) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-e2e-cleanup-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
-    for (const file of ['tests/e2e-isolated.sh', 'tests/e2e-xml-proofs.sh', 'bin/common', 'bin/dependencies', 'dependencies.yaml']) {
+    for (const file of ['tests/e2e-isolated.sh', 'tests/e2e-xml-proofs.sh', 'tests/common.sh', 'bin/common', 'bin/dependencies', 'dependencies.yaml']) {
         fs.mkdirSync(path.join(directory, path.dirname(file)), {recursive: true});
-        fs.copyFileSync(path.join(root, file), path.join(directory, file));
+        fs.copyFileSync(file.startsWith('tests/') ? path.join(__dirname, '..', file) : path.join(root, file), path.join(directory, file));
     }
     const fakeBin = path.join(directory, 'fake-bin');
     const scratch = path.join(directory, 'scratch');

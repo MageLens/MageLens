@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const {kinds, inputs, platforms, resolve, repository, repositoryUrl, manifestFilename, expirationProtocol} = require('../bin/image-inputs.cjs');
+const {kinds, inputs, platforms, resolve, repository, repositoryUrl, manifestFilename, expirationProtocol} = require(projectFile('bin/image-inputs.cjs'));
 const {manifest} = require('./release/images.cjs');
 const {obsoleteVersions, prune, RETIREMENT_GRACE_PERIOD_MS} = require('./release/prune-images.cjs');
 const {
@@ -34,10 +35,10 @@ test('retention keeps the published digest even when a newer failed candidate ex
 test('image builder keeps publication restricted to the configured repository and manual workflow', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-publish-guard-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
-    for (const file of ['dependencies.yaml', 'bin/common', 'bin/dependencies', 'bin/image-inputs.cjs', 'tests/release/build-images.sh']) {
+    for (const file of ['dependencies.yaml', 'bin/common', 'bin/dependencies', 'bin/image-inputs.cjs', 'tests/release/build-images.sh', 'tests/common.sh']) {
         const destination = path.join(directory, file);
         fs.mkdirSync(path.dirname(destination), {recursive: true});
-        fs.copyFileSync(path.join(root, file), destination);
+        fs.copyFileSync(file.startsWith('tests/') ? path.join(__dirname, '..', file) : path.join(root, file), destination);
     }
     const commands = path.join(directory, 'commands');
     const log = path.join(directory, 'docker-called');
@@ -184,7 +185,7 @@ test('cleanup does not require manifests for releases that predate prebuilt-imag
 });
 
 test('release workflow pins cleanup to trusted github.sha in .cleanup-tools separately from release checkout', () => {
-    const workflowPath = path.join(root, '.github/workflows/release.yml');
+    const workflowPath = path.join(__dirname, '../.github/workflows/release.yml');
     const workflowContent = fs.readFileSync(workflowPath, 'utf8');
 
     const trustedCleanupCheckoutPattern = /uses:\s*actions\/checkout@[^\n]+\n\s+with:\n\s+persist-credentials:\s*false\n\s+ref:\s*\$\{\{\s*github\.sha\s*\}\}\n\s+path:\s*\.cleanup-tools/g;
@@ -208,8 +209,9 @@ test('retrying an older release cannot invoke historical cleanup in workspace', 
 
     fs.mkdirSync(path.join(directory, '.cleanup-tools/tests/release'), {recursive: true});
     fs.mkdirSync(path.join(directory, '.cleanup-tools/bin'), {recursive: true});
-    fs.copyFileSync(path.join(root, 'tests/release/prune-images.cjs'), path.join(directory, '.cleanup-tools/tests/release/prune-images.cjs'));
-    fs.copyFileSync(path.join(root, 'tests/release/legacy-missing-images.json'), path.join(directory, '.cleanup-tools/tests/release/legacy-missing-images.json'));
+    fs.copyFileSync(path.join(__dirname, 'project-path.cjs'), path.join(directory, '.cleanup-tools/tests/project-path.cjs'));
+    fs.copyFileSync(path.join(__dirname, 'release/prune-images.cjs'), path.join(directory, '.cleanup-tools/tests/release/prune-images.cjs'));
+    fs.copyFileSync(path.join(__dirname, 'release/legacy-missing-images.json'), path.join(directory, '.cleanup-tools/tests/release/legacy-missing-images.json'));
     fs.copyFileSync(path.join(root, 'bin/image-inputs.cjs'), path.join(directory, '.cleanup-tools/bin/image-inputs.cjs'));
 
     const result = execFileSync('node', ['-e', 'require("./.cleanup-tools/tests/release/prune-images.cjs"); console.log("trusted cleanup loaded");'], {cwd: directory, encoding: 'utf8'});
@@ -466,11 +468,11 @@ test('all exact legacy exceptions retain available digests and never apply to th
 test('retirement stays valid after installer revisions and missing images remain mandatory for actual pins', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-retirement-revision-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
-    const files = ['bin/image-inputs.cjs', 'bin/prepare-images', 'tests/release/prune-images.cjs', 'tests/release/legacy-missing-images.json'];
+    const files = ['bin/image-inputs.cjs', 'bin/prepare-images', 'tests/release/prune-images.cjs', 'tests/release/legacy-missing-images.json', 'tests/project-path.cjs'];
     for (const file of files) {
         const target = path.join(directory, file);
         fs.mkdirSync(path.dirname(target), {recursive: true});
-        fs.copyFileSync(path.join(root, file), target);
+        fs.copyFileSync(file.startsWith('tests/') ? path.join(__dirname, '..', file) : path.join(root, file), target);
     }
     const cleanupPath = path.join(directory, 'tests/release/prune-images.cjs');
     const api = mockApi(retentionFixture());

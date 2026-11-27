@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
-source "$(dirname "$0")/../../bin/common"
+source "$(dirname "$0")/../common.sh"
 [[ $# == 2 && ( "$1" == cypress || "$1" == playwright ) ]] || fail "Usage: $0 cypress|playwright IMAGE"
 export MAGELENS_RUNNER=$1 TEMPLATE_COVERAGE_PACKAGE=''
 image=$2

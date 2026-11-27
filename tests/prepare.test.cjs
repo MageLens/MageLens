@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,9 +10,9 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {Config, Parser} = require('html-validate');
-const {prepare} = require('../bin/prepare.cjs');
-const {nginxConfig} = require('../bin/project.cjs');
-const projectRoot = path.resolve(__dirname, '..');
+const {prepare} = require(projectFile('bin/prepare.cjs'));
+const {nginxConfig} = require(projectFile('bin/project.cjs'));
+const projectRoot = projectFile();
 
 function fixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-prepare-'));

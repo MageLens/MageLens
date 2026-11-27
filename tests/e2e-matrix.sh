@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 result=0
-export MAGELENS_MATRIX_REPORT=${MAGELENS_MATRIX_REPORT:-$PWD/.runtime/e2e/matrix-comparison.json}
+export MAGELENS_MATRIX_REPORT=${MAGELENS_MATRIX_REPORT:-$PWD/compose/.runtime/e2e/matrix-comparison.json}
 mkdir -p "$(dirname "$MAGELENS_MATRIX_REPORT")"
 printf '{"passed":false,"status":"running"}\n' > "$MAGELENS_MATRIX_REPORT"
 results=$(mktemp -d /tmp/magelens-matrix.XXXXXX)

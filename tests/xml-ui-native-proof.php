@@ -181,7 +181,7 @@ if ($collector) {
     require_once __DIR__ . '/xml-ui-collector-proof.php';
     $files = \MageLens\XmlCoverage\startUiProof(
         $app,
-        dirname(getenv('MAGELENS_XML_HOOKS') ?: dirname(__DIR__) . '/docker/php/xml-hooks.php'),
+        dirname(getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php'),
         $argv[3] ?? bin2hex(random_bytes(16))
     );
 }

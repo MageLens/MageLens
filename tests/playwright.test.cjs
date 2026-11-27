@@ -1,15 +1,16 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const Reporter = require('../playwright/reporter.cjs');
-const {isCoverageExcluded} = require('../bin/project.cjs');
-const {observeStorefrontReadiness} = require('../src/app/code/Application/Blog/Test/storefront-readiness.cjs');
+const Reporter = require(projectFile('playwright/reporter.cjs'));
+const {isCoverageExcluded} = require(projectFile('bin/project.cjs'));
+const {observeStorefrontReadiness} = require(projectFile('src/app/code/Application/Blog/Test/storefront-readiness.cjs'));
 
 test('storefront readiness observes both real message sources in either order and resets for each document', () => {
     for (const order of [['messages-loaded', 'private-content-loaded'], ['private-content-loaded', 'messages-loaded']]) {

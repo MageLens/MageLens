@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {failureHtmlFilename, failureSnapshotUnavailable} = require('../cypress/support/failure-html.cjs');
-const {retryAttemptNumber} = require('../cypress/support/failure-metadata.cjs');
-const {observeTestFailures} = require('../playwright/failure-snapshot-hooks.cjs');
+const {failureHtmlFilename, failureSnapshotUnavailable} = require(projectFile('cypress/support/failure-html.cjs'));
+const {retryAttemptNumber} = require(projectFile('cypress/support/failure-metadata.cjs'));
+const {observeTestFailures} = require(projectFile('playwright/failure-snapshot-hooks.cjs'));
 
 test('failure HTML filenames identify title, run, attempt and worker without unsafe paths', () => {
     const first = failureHtmlFilename('Catalog / Search: shows "result"', {attempt: 1, runId: 'run-a', workerId: 'worker-a'});

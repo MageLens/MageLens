@@ -12,13 +12,13 @@ Equivalent browser scenarios live in `Test/Cypress/` and `Test/Playwright/`; fix
 
 ## Try the demo
 
-From the repository root, run `./install.sh`, then `./bin/run-coverage`. Add `--mageos` for Mage-OS instead of Magento Open Source, `--hyva` for Hyvä CSP, and `--playwright` to use Playwright with any theme. The Blog features and five acceptance scenarios are the same in all eight combinations.
+From the installed project root, run `./install.sh`, then `./bin/run-coverage`. Add `--mageos` for Mage-OS instead of Magento Open Source, `--hyva` for Hyvä CSP, and `--playwright` to use Playwright with any theme. The Blog features and five acceptance scenarios are the same in all eight combinations.
 
 - Storefront: **https://magelens.test/blog/**.
 - Magento Admin: **https://magelens.test/admin/**; local demo credentials are `application` / `ApplicationOnly123456!`.
 - Live runner (Cypress or Playwright): **https://magelens.test:6080/**.
 - In Admin, open **Blog → Posts**, **Categories**, or **Comments**.
-- Reports: open `coverage/index.html` from the repository root after the coverage command finishes.
+- Reports: open `coverage/index.html` from the installed project root after the coverage command finishes.
 
 Use the domain and ports configured in `.env` if you changed the defaults. Installation creates three starter articles once and preserves editorial changes on reruns.
 

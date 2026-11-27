@@ -53,7 +53,7 @@ namespace Magento\Framework\Controller\Result {
     class JsonFactory { public function create() { return new Json; } }
 }
 namespace {
-    $fixtures = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures';
+    $fixtures = (require __DIR__ . '/project-root.php') . '/src/app/code/Application/Blog/Test/Configuration/fixtures';
     require $fixtures . '/Model/JournalPluginSubjectInterface.php';
     require $fixtures . '/Model/JournalPluginSubject.php';
     require $fixtures . '/Model/JournalPreferenceProbe.php';
