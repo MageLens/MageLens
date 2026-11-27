@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -24,14 +24,16 @@ if [[ ! -f "$stage/composer.json" ]]; then
 fi
 cd "$stage"
 # Composer caches successful archives even when another HTTP transfer fails.
-# Retry transport failures without repeating dependency-resolution errors.
+# Give rate limits without a Retry-After header time to clear.
 for attempt in 1 2 3; do
     if composer install --prefer-dist --no-interaction --no-progress; then
         break
     else
         status=$?
         (( status == 100 && attempt < 3 )) || exit "$status"
-        printf 'Package download interrupted; retrying Composer (%s/3).\n' "$((attempt + 1))" >&2
+        delay=$((attempt * 30))
+        printf 'Package download interrupted; retrying Composer in %s seconds (%s/3).\n' "$delay" "$((attempt + 1))" >&2
+        sleep "$delay"
     fi
 done
 bash /application/docker/php/install-dev-tools.sh

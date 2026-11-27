@@ -44,6 +44,9 @@ if (args[0] === 'create-project') {
     process.exit(${JSON.stringify(statuses)}[attempt] ?? 99);
 }
 `, {mode: 0o755});
+            fs.writeFileSync(path.join(directory, 'commands/sleep'), `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(['sleep', ...process.argv.slice(2)]) + '\\n');
+`, {mode: 0o755});
             const run = () => spawnSync('bash', ['download.sh'], {cwd: directory, encoding: 'utf8', env: {
                 ...process.env, PATH: `${directory}/commands:${process.env.PATH}`,
                 MAGELENS_PLATFORM: platform, MAGELENS_PLATFORM_VERSION: version, MAGENTO_VERSION: '2.4.8-p5'
@@ -59,6 +62,9 @@ if (args[0] === 'create-project') {
             assert.ok(create.includes(`--repository=https://repo.${platform === 'mageos' ? 'mage-os.org' : 'magento.com'}/`));
             assert.ok(create.includes(`${vendor}/project-community-edition=${version}`));
             assert.equal(calls().filter(args => args[0] === 'create-project').length, 1);
+            const install = ['install', '--prefer-dist', '--no-interaction', '--no-progress'];
+            assert.deepEqual(calls().filter(args => ['install', 'sleep'].includes(args[0])), statuses.flatMap((_, index) =>
+                index === 0 ? [install] : [['sleep', String(index * 30)], install]));
             if (success) {
                 assert.equal(JSON.parse(fs.readFileSync(path.join(stage, '.magelens-source.json'))).platform, platform);
                 assert.equal(run().status, 0);
