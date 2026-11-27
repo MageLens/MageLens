@@ -18,8 +18,51 @@ module.exports = defineConfig({
         specPattern: specPatterns(),
         supportFile: 'cypress/support/e2e.js',
         setupNodeEvents(on, config) {
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const screenshotsRoot = path.resolve(config.screenshotsFolder || 'cypress/screenshots');
+
+            on('task', {
+                'failureSnapshot:write'({relativePath, html}) {
+                    if (
+                        typeof relativePath !== 'string'
+                        || !relativePath.endsWith('.html')
+                        || typeof html !== 'string'
+                        || Buffer.byteLength(html) > 1024 * 1024
+                    ) {
+                        return {saved: false, reason: 'invalid-or-oversized-snapshot'};
+                    }
+
+                    const target = path.resolve(screenshotsRoot, relativePath);
+                    if (!target.startsWith(screenshotsRoot + path.sep)) {
+                        return {saved: false, reason: 'invalid-path'};
+                    }
+
+                    try {
+                        fs.mkdirSync(path.dirname(target), {recursive: true});
+                    } catch (error) {
+                        return {saved: false, reason: error.code || 'directory-error'};
+                    }
+
+                    for (let attempt = 0; attempt < 32; attempt++) {
+                        const candidate = attempt
+                            ? target.replace(/\.html$/, `--${attempt + 1}.html`)
+                            : target;
+
+                        try {
+                            fs.writeFileSync(candidate, html, {encoding: 'utf8', flag: 'wx'});
+                            return {saved: true, path: path.relative(process.cwd(), candidate)};
+                        } catch (error) {
+                            if (error.code === 'EEXIST') continue;
+                            return {saved: false, reason: error.code || 'write-error'};
+                        }
+                    }
+
+                    return {saved: false, reason: 'snapshot-name-collision'};
+                }
+            });
+
             if (config.expose.warmup) {
-                const fs = require('node:fs');
                 on('task', {
                     'warmup:diagnostics'(diagnostics) {
                         fs.writeFileSync('coverage/warmup-diagnostics.json', JSON.stringify(diagnostics, null, 2));
@@ -50,10 +93,10 @@ module.exports = defineConfig({
                 });
                 // A capture problem must not fail the test that requested the audit.
                 on('task', {mageLensValidateHtml(capture) {
-                    try { captureHtml({runner: 'cypress', ...capture}); }
-                    catch (error) { console.error('HTML validation capture failed:', error.message); }
-                    return null;
-                }});
+                        try { captureHtml({runner: 'cypress', ...capture}); }
+                        catch (error) { console.error('HTML validation capture failed:', error.message); }
+                        return null;
+                    }});
             }
             return config;
         }

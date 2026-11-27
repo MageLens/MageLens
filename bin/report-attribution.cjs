@@ -114,15 +114,29 @@ function templates(attempts, index) {
     for (const file of files('coverage/raw/templates', '.mtc')) {
         const record = read(`coverage/raw/templates/${file}`);
         // Playwright stores the absolute spec path and starts the title path with the spec file.
-        const spec = projectPath(record.spec);
+        let spec = projectPath(record.spec);
         // Its title path starts with the file relative to the Playwright testDir, not to the project.
         const first = String(record.test[0]).split('\\').join('/');
-        const test = spec === first || spec.endsWith(`/${first}`) ? record.test.slice(1) : record.test;
-        const identity = owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
+        let test = spec === first || spec.endsWith(`/${first}`) ? record.test.slice(1) : record.test;
+        let identity = owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
         // Records that carry their attempt ID need no matching by test identity, but must not contradict it.
         if (record.attempt) {
             assert.ok(index.has(record.attempt), `Template record of an unknown attempt: ${file}`);
-            assert.ok(identity.includes(index.get(record.attempt)), `Template record of another test's attempt: ${file}`);
+            const ownerIndex = index.get(record.attempt);
+            if (!identity.includes(ownerIndex)) {
+                const owner = attempts[ownerIndex];
+                const titlePath = record.test.slice(1);
+                const specMatches = owner.spec === first || owner.spec.endsWith(`/${first}`);
+                const testMatches = JSON.stringify(owner.test) === JSON.stringify(titlePath);
+                assert.ok(specMatches && testMatches && owner.retry === record.retry && owner.project === record.project,
+                    `Template record of another test's attempt: ${file}`);
+                // Wrapped Playwright callbacks can make Playwright report the wrapper file as record.spec;
+                // the attempt ID and title path still identify the real spec and test unambiguously.
+                spec = owner.spec;
+                test = titlePath;
+                identity = owners.get(key({spec, test, retry: record.retry, project: record.project})) || [];
+            }
+            assert.ok(identity.includes(ownerIndex), `Template record of another test's attempt: ${file}`);
         }
         const matches = record.attempt ? [index.get(record.attempt)] : identity;
         const owner = matches.length === 1 ? matches[0] : unattributed;
