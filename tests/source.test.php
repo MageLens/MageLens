@@ -1,12 +1,12 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
 
 declare(strict_types=1);
-require dirname(__DIR__) . '/docker/php/sync-source.php';
+require (require __DIR__ . '/project-root.php') . '/docker/php/sync-source.php';
 
 function check(bool $condition, string $message): void
 {

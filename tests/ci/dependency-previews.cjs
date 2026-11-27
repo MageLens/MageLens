@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('../project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
-const {syncDependencies} = require('../../bin/sync-dependencies.cjs');
+const {syncDependencies} = require(projectFile('bin/sync-dependencies.cjs'));
 const repositories = {
     templateCoverage: {name: 'MageLens/MagentoTemplateCoverage', previous: ['MageLens/magento-template-coverage', 'VitaliyBoyko/magento-template-coverage']},
     pcov: {name: 'MageLens/PCOV', previous: ['MageLens/pcov', 'VitaliyBoyko/pcov']}
@@ -54,7 +55,7 @@ function prepare(root = process.cwd()) {
     if (!Object.keys(entries).length) return;
     assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Dependency previews run in GitHub Actions');
     assert.equal(process.env.GITHUB_EVENT_NAME, 'pull_request', 'Dependency previews are PR-only');
-    const pins = Object.fromEntries([...fs.readFileSync(path.join(root, 'dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
+    const pins = Object.fromEntries([...fs.readFileSync(path.join(root, 'compose/dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
     const run = (command, args, cwd = root) => execFileSync(command, args, {cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
     const result = {};
     for (const [key, entry] of Object.entries(entries)) {
@@ -76,16 +77,19 @@ function prepare(root = process.cwd()) {
             assert.equal(path.basename(packed.filename), packed.filename);
             archive = path.join(source, packed.filename);
             fs.copyFileSync(archive, path.join(root, '.runtime/template-coverage.tgz'));
-            syncDependencies(root, {...process.env, ...pins, MAGELENS_RUNNER: process.env.MAGELENS_E2E_RUNNER || 'cypress', TEMPLATE_COVERAGE_PACKAGE: '.runtime/template-coverage.tgz'});
+            fs.mkdirSync(path.join(root, 'compose/.runtime'), {recursive: true});
+            fs.copyFileSync(archive, path.join(root, 'compose/.runtime/template-coverage.tgz'));
+            syncDependencies(root, {...process.env, ...pins, MAGELENS_RUNNER: 'cypress', TEMPLATE_COVERAGE_PACKAGE: '.runtime/template-coverage.tgz'});
+            syncDependencies(path.join(root, 'compose'), {...process.env, ...pins, MAGELENS_RUNNER: process.env.MAGELENS_E2E_RUNNER || 'cypress', TEMPLATE_COVERAGE_PACKAGE: '.runtime/template-coverage.tgz'});
         } else {
             const header = fs.readFileSync(path.join(source, 'php_pcov.h'), 'utf8');
             assert.equal(header.match(/^#define PHP_PCOV_VERSION "([^"]+)"/m)?.[1], entry.version);
             archive = path.join(source, 'source.tar');
             run('git', ['archive', '--format=tar', '--output=source.tar', entry.sha], source);
-            const target = path.join(root, 'docker/php/dependency-preview-pcov');
+            const target = path.join(root, 'compose/docker/php/dependency-preview-pcov');
             fs.mkdirSync(target, {recursive: true});
             run('tar', ['-xf', archive, '-C', target]);
-            const file = path.join(root, 'docker/php/Dockerfile');
+            const file = path.join(root, 'compose/docker/php/Dockerfile');
             let recipe = fs.readFileSync(file, 'utf8');
             const start = recipe.indexOf('# Current supported installation mechanism');
             const end = recipe.indexOf('# Magento is installed', start);

@@ -1,7 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 // Exercise the real instrumenters and report filters without Magento credentials.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -37,7 +38,7 @@ if (process.argv[2] === 'browser') {
     process.exit(0);
 }
 
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-scope-'));
 const put = (file, contents) => {
     fs.mkdirSync(path.dirname(`${scratch}/${file}`), {recursive: true});

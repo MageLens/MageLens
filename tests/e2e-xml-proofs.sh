@@ -5,7 +5,8 @@
 
 # Native XML proof entry points and their helpers live alongside the host tests.
 stage_xml_proofs() {
-    cp tests/xml-*.php "$1/"
+    cp "$TESTS_ROOT"/xml-*.php "$1/"
+    cp "$TESTS_ROOT/project-root.php" "$1/"
 }
 
 xml_proof() {

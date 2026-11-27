@@ -6,7 +6,7 @@ License: see LICENSE in the repository root.
 
 # MageLens coverage
 
-Run `./bin/run-coverage` from the repository root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, HTML/PHTML template and [XML configuration](#xml-configuration-coverage) reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
+Run `./bin/run-coverage` from the installed project root, then open the report URL printed on success, or `coverage/index.html` locally. The command runs the full suite for the runner selected during installation and generates PHP, JavaScript, HTML/PHTML template and [XML configuration](#xml-configuration-coverage) reports. Cypress and Playwright both run in Docker, with a browser visible through the live viewer. See the [quick start](../README.md#quick-start) for installation.
 
 The local report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous report link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
 
@@ -272,7 +272,7 @@ Native file selection is a zero-hit observation of merged input. Handle inclusio
 
 Layout registry coverage distinguishes native membership checks, option-label consumption and whole-map snapshots. Equal-valued overlays retain their own origins. Empty labels, empty CDATA and mixed-source label fragments follow the native merge outcomes. Page-type coverage separates initialization and translated-label application from explicit field reads. Cached registry inputs and page-type data require verified source lineage for fresh hits. Observed native and reflection assignments revoke later field-read ownership. Request evidence is bounded, and exceeding the event limit prevents report publication. A failed layout observer also blocks publication; diagnostics identify collector code without exposing application exception messages.
 
-The schema inventory links each declaration and runtime boundary to the native consumer, fixture, required evidence and platform verification. [Layout XML measurement inventory](../tests/layout-xml-inventory.md)
+The schema inventory links each declaration and runtime boundary to the native consumer, fixture, required evidence and platform verification. [Layout XML measurement inventory](https://github.com/MageLens/MageLens/blob/release/next/tests/layout-xml-inventory.md)
 
 ### Dependency injection
 

@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const {syncDependencies} = require('../bin/sync-dependencies.cjs');
-const root = path.resolve(__dirname, '..');
+const {syncDependencies} = require(projectFile('bin/sync-dependencies.cjs'));
+const root = projectFile();
 const yaml = fs.readFileSync(path.join(root, 'dependencies.yaml'), 'utf8');
 const configured = key => yaml.match(new RegExp(`^${key}: \"([^\"]+)\"`, 'm'))[1];
 const phpVersion = configured('PHP_IMAGE').match(/^php:([0-9]+\.[0-9]+\.[0-9]+)-/)[1];
@@ -51,6 +52,27 @@ test('committed browser dependencies and locks match the central version setting
         assert.equal(lock.packages[''].devDependencies[name], expected, name);
         if (!local) assert.equal(lock.packages[`node_modules/${name}`].version, expected, name);
         else assert.ok(fs.existsSync(path.join(root, '.runtime/template-coverage.tgz')));
+    }
+});
+
+// Contributor checks and the standalone runtime each have a locked npm context.
+test('contributor tooling uses the same pinned dependency versions as the standalone project', () => {
+    const contributorPackage = path.resolve(__dirname, '../package.json');
+    const runtimePackage = path.join(root, 'package.json');
+    if (contributorPackage === runtimePackage) return; // E2E runs in a standalone copy.
+    const contributor = JSON.parse(fs.readFileSync(contributorPackage));
+    const lock = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package-lock.json')));
+    const runtime = JSON.parse(fs.readFileSync(runtimePackage));
+    const runtimeLock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json')));
+    assert.deepEqual(contributor.devDependencies, runtime.devDependencies);
+    assert.deepEqual(lock.packages[''].devDependencies, contributor.devDependencies);
+    for (const [name, version] of Object.entries(contributor.devDependencies)) {
+        const locked = lock.packages[`node_modules/${name}`];
+        if (version.startsWith('file:')) {
+            assert.ok(fs.existsSync(path.resolve(path.dirname(contributorPackage), version.slice(5))));
+            assert.equal(locked.version, runtimeLock.packages[`node_modules/${name}`].version, name);
+            assert.equal(locked.integrity, runtimeLock.packages[`node_modules/${name}`].integrity, name);
+        } else assert.equal(locked.version, version, name);
     }
 });
 

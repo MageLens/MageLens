@@ -77,7 +77,7 @@ namespace Magento\Config\Model\Config\Structure\Element {
     }
 }
 namespace {
-    require __DIR__ . '/../docker/php/xml-hooks.php';
+    require (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php';
     use MageLens\XmlCoverage\{Recorder, Xml};
     function verifyHook(bool $condition, string $message): void { if (!$condition) throw new \RuntimeException($message); }
     @mkdir('/coverage');

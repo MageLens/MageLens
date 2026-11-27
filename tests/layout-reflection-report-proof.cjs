@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {merge} = require('../bin/report-xml.cjs');
+const {merge} = require(projectFile('bin/report-xml.cjs'));
 const [field, outcome, input, sourceRoot = 'src'] = process.argv.slice(2);
 assert.ok(['template', 'data'].includes(field));
 assert.ok(['success', 'failed'].includes(outcome));

@@ -1,13 +1,14 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {retryDownload, prepareElectron} = require('../docker/runner/cypress-source/prepare-electron.cjs');
+const {retryDownload, prepareElectron} = require(projectFile('docker/runner/cypress-source/prepare-electron.cjs'));
 
 test('Electron downloads recover only from transient transport failures and stay bounded', async () => {
     for (const failure of [{response: {statusCode: 504}}, {code: 'ECONNRESET'}]) {

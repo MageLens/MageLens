@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, spawnSync} = require('node:child_process');
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 const yaml = fs.readFileSync(path.join(root, 'dependencies.yaml'), 'utf8');
 const configured = key => yaml.match(new RegExp(`^${key}: "([^"]+)"`, 'm'))[1];
 const phpVersion = configured('PHP_IMAGE').match(/^php:([0-9]+\.[0-9]+\.[0-9]+)-/)[1];

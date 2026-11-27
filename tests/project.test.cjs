@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {discover, specPatterns, writeRuntime, withThemeRoots, isCoverageExcluded, warmupPaths} = require('../bin/project.cjs');
-const {sourceHashes} = require('../bin/prepare.cjs');
+const {discover, specPatterns, writeRuntime, withThemeRoots, isCoverageExcluded, warmupPaths} = require(projectFile('bin/project.cjs'));
+const {sourceHashes} = require(projectFile('bin/prepare.cjs'));
 
 test('warm-up visits the homepage and each fixture page once, without assuming an Admin path', () => {
     assert.deepEqual(warmupPaths({}), ['/']);

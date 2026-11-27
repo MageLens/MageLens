@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
@@ -20,7 +21,7 @@ function nativePlaywright() {
 }
 
 async function nativeCypress() {
-    require('../docker/runner/cypress-source/provenance.cjs').verifyInstalled();
+    require(projectFile('docker/runner/cypress-source/provenance.cjs')).verifyInstalled();
     const result = await require('cypress').run({
         browser: 'chrome-for-testing', headed: true,
         configFile: 'tests/fixtures/ui-module/cypress-native.config.cjs'

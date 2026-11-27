@@ -6,11 +6,11 @@ License: see LICENSE in the repository root.
 
 # Demonstration Blog module
 
-This supplements the root [AGENTS.md](../../../../../AGENTS.md). Paths below are relative to this module unless stated otherwise.
+This supplements the project [AGENTS.md](../../../../../AGENTS.md). Paths below are relative to this module unless stated otherwise.
 
 `Application_Blog` is the bundled example for trying PHP, JavaScript, template and XML configuration coverage on Magento Open Source or Mage-OS. Read [README.md](README.md) for behavior and scenarios.
 
-From the repository root, use `./install.sh --mageos` for Mage-OS. Add `--hyva` for Hyvä CSP, and add `--playwright` for Playwright. Omit `--mageos` for Magento Open Source. Run `./bin/run-coverage` to execute the demo scenarios and open `coverage/index.html` afterward. Repeat the same platform, theme and runner flags when reinstalling.
+From the installed project root, use `./install.sh --mageos` for Mage-OS. Add `--hyva` for Hyvä CSP, and add `--playwright` for Playwright. Omit `--mageos` for Magento Open Source. Run `./bin/run-coverage` to execute the demo scenarios and open `coverage/index.html` afterward. Repeat the same platform, theme and runner flags when reinstalling.
 
 ## Navigation and contracts
 
@@ -29,6 +29,6 @@ Fixture preparation returns one JSON value on stdout; send diagnostics to stderr
 
 ## Validation
 
-Run the root integration suite for tooling and fixture changes. Focused local browser reproductions, development and debugging are allowed with isolated resources and bounded RAM/disk use. Run the full E2E matrix and release qualification in GitHub Actions using [the testing guide](../../../../../tests/README.md); do not run the full CI suite locally unless explicitly requested. There is no standalone Composer or npm test package inside this module.
+Run the relevant application scenarios from the installed project root with `./bin/run-coverage`. Inspect the reports and retain source-preservation and fixture-cleanup checks. There is no standalone Composer or npm test package inside this module.
 
 Edit tracked files here, never their `.runtime/app/` copies. Module/schema/theme installation changes need the normal installer with the same profile flags; use isolated E2E installations to avoid mutating an existing project's database. Source-only coverage runs must still preserve original bytes and PHP line numbers.

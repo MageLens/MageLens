@@ -1,7 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const [theme, runner, platform] = process.argv.slice(2);
@@ -14,7 +15,7 @@ const selected = runner === 'cypress' ? ['cypress', '@cypress/code-coverage'] : 
 const rejected = runner === 'cypress' ? ['@playwright/test', 'playwright', 'playwright-core'] : ['cypress', '@cypress/code-coverage'];
 let runnerBuild;
 if (runner === 'cypress') {
-    runnerBuild = require('../docker/runner/cypress-source/provenance.cjs').verifyInstalled();
+    runnerBuild = require(projectFile('docker/runner/cypress-source/provenance.cjs')).verifyInstalled();
 }
 for (const name of selected) assert.ok(fs.existsSync(`node_modules/${name}/package.json`), `Missing selected runner package: ${name}`);
 for (const name of rejected) {
@@ -30,7 +31,7 @@ assert.ok(process.env.DISPLAY, 'Both runners need a container display');
 require('node:child_process').execFileSync('xdpyinfo', ['-display', process.env.DISPLAY]);
 require('node:child_process').execFileSync(process.execPath, ['/opt/magelens/healthcheck.cjs']);
 if (runner === 'playwright') {
-    const config = require('../playwright.config.cjs');
+    const config = require(projectFile('playwright.config.cjs'));
     assert.equal(config.use.headless, false);
     assert.equal(config.use.channel, 'chrome');
 }

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
-const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 for (const name of ['native', 'template_get', 'template_set', 'template_magic', 'template_redeclared',
     'data_get', 'data_magic', 'data_set', 'data_redeclared']) {

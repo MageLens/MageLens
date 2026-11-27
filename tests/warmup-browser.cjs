@@ -1,7 +1,8 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 // Isolated browser regression: ./bin/application-compose exec -T runner node tests/warmup-browser.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -12,7 +13,7 @@ const {execFile} = require('node:child_process');
 const {promisify} = require('node:util');
 const execute = promisify(execFile);
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-warmup-'));
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 const requests = [];
 let scenario = 'loaded';
 const server = http.createServer((request, response) => {

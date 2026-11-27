@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {chromium, expect} = require('@playwright/test');
-const {disablePageTransitions} = require('../bin/browser-navigation.cjs');
+const {disablePageTransitions} = require(projectFile('bin/browser-navigation.cjs'));
 const {trackBrowserErrors} = require('./browser-errors.cjs');
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL;

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {merge} = require('../bin/report-xml.cjs');
+const {merge} = require(projectFile('bin/report-xml.cjs'));
 const reportFile = path.resolve(process.argv[2] || 'coverage/xml/coverage.json');
 const coverage = path.dirname(path.dirname(reportFile));
 const root = path.dirname(coverage);

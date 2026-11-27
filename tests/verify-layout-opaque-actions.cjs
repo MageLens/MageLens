@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
-const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json');
 const requests = report.requests.filter(request => request.layoutLimitations?.some(reason => reason.includes('could execute application serialization')));
 assert.ok(requests.length, 'Missing native opaque-action measurement limitation');

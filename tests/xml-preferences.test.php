@@ -26,7 +26,7 @@ use Magento\Indexer\Console\Command\AbstractIndexerCommand;
 use function OpenTelemetry\Instrumentation\hook;
 
 require __DIR__ . '/xml-preference-hook-proof.php';
-require getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php';
+require getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php';
 
 $mode = $argv[2] ?? 'cold';
 $collect = $mode !== 'benchmark-baseline';

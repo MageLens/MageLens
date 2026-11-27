@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {writeAttribution} = require('../bin/report-attribution.cjs');
+const {writeAttribution} = require(projectFile('bin/report-attribution.cjs'));
 
 const [first, retry, other] = ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)];
 const spec = 'src/app/code/Acme/Shop/Test/Playwright/cart.spec.js';

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -44,7 +44,7 @@ try {
     if (builder.status !== 0) throw new Error('Docker Buildx unavailable; the legacy builder cannot qualify this host.');
     // Image download/unpacking is infrastructure preparation, with its own bound.
     // Keep the actual mount/network assertions on their original two-minute limit.
-    const image = run('probe-image', 'bash', ['-c', 'set -euo pipefail; source bin/common; docker pull "$PLAYWRIGHT_RUNNER_IMAGE"']);
+    const image = run('probe-image', 'bash', ['-c', 'set -euo pipefail; source compose/bin/common; docker pull "$PLAYWRIGHT_RUNNER_IMAGE"']);
     if (image.status !== 0) throw new Error('Probe image preparation failed.');
     const mounts = run('mounts-network', 'bash', ['tests/ci/probe-linux-containers.sh']);
     if (mounts.status !== 0 || report.checks.bash.status !== 0) throw new Error('Bash, Compose, filesystem or networking validation failed.');

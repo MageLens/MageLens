@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,7 +16,7 @@ function workspace(t, content = '') {
     for (const file of ['install.sh', 'dependencies.yaml', 'bin/install', 'bin/common', 'bin/dependencies',
         'bin/compose-project', 'bin/application-domain', 'bin/application-compose', 'bin/expose-tools', 'bin/runner', 'bin/run-coverage']) {
         fs.mkdirSync(path.dirname(path.join(root, file)), {recursive: true});
-        fs.copyFileSync(path.resolve(__dirname, '..', file), path.join(root, file));
+        fs.copyFileSync(projectFile(file), path.join(root, file));
     }
     fs.mkdirSync(path.join(root, '.runtime'));
     fs.mkdirSync(path.join(root, 'commands'));

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile, projectRoot} = require('../project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,7 +11,7 @@ const {browserTitles, cliTitles, verifyScenarios} = require('../verify-scenarios
 const {cases} = require('./cases.cjs');
 const {validateSnapshot, compareThemes} = require('./report-equivalence.cjs');
 const {snapshotFile, xmlFile, readProjection} = require('./report-artifact.cjs');
-const {provenance} = require('../../docker/runner/cypress-source/provenance.cjs');
+const {provenance} = require(projectFile('docker/runner/cypress-source/provenance.cjs'));
 const {configuration: previewConfiguration, verifyEvidence: verifyPreviewEvidence} = require('./dependency-previews.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 function verifyCase(entry, evidence, directory, context) {
@@ -35,7 +36,7 @@ function verifyCase(entry, evidence, directory, context) {
     assert.equal(results.run, run.id);
     assert.equal(summary.run, run.id);
     for (const key of ['platform', 'theme', 'runner']) assert.equal(installation[key], entry[key]);
-    const pins = Object.fromEntries([...fs.readFileSync('dependencies.yaml', 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
+    const pins = Object.fromEntries([...fs.readFileSync(path.join(projectRoot(process.cwd()), 'dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
     assert.deepEqual(evidence.dependencies, pins, 'Dependency provenance differs');
     assert.deepEqual(results.browser, {name: entry.runner === 'cypress' ? 'chrome-for-testing' : 'chrome', version: pins.CHROME_VERSION}, 'Wrong or missing Chrome browser');
     assert.deepEqual(evidence.browser, results.browser, 'Browser evidence differs');

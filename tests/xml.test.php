@@ -5,8 +5,8 @@
  * License: see LICENSE in the repository root.
  */
 declare(strict_types=1);
-require __DIR__ . '/../docker/php/xml-manifest.php';
-require_once __DIR__ . '/../docker/php/xml-routing-runtime.php';
+require (require __DIR__ . '/project-root.php') . '/docker/php/xml-manifest.php';
+require_once (require __DIR__ . '/project-root.php') . '/docker/php/xml-routing-runtime.php';
 use MageLens\XmlCoverage\{FamilyEvidence, LayoutManifest, RoutingRuntime, Xml};
 function checkXml(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
 $themeRoots = Xml::registeredThemeAreas([
@@ -66,7 +66,7 @@ try {
 }
 checkXml(Xml::scalarTreeSignature(['value' => ['false' => false, 'null' => null]]) !== null,
     'Runtime signatures preserve nested scalar types');
-require_once __DIR__ . '/../docker/php/xml-layout.php';
+require_once (require __DIR__ . '/project-root.php') . '/docker/php/xml-layout.php';
 $fingerprint = new ReflectionMethod(\MageLens\XmlCoverage\LayoutCoverage::class, 'valueFingerprint');
 $matches = new ReflectionMethod(\MageLens\XmlCoverage\LayoutCoverage::class, 'matchesFingerprint');
 $objectIdentity = $fingerprint->invoke(null, $unsafe);
@@ -85,7 +85,7 @@ checkXml($matches->invoke(null, $streamIdentity, $stream), 'Open resource identi
 fclose($stream);
 checkXml(!$matches->invoke(null, $streamIdentity, $stream) && $fingerprint->invoke(null, $stream) === null,
     'Closed resources cannot retain a live argument identity');
-$config = __DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/etc/config.xml';
+$config = (require __DIR__ . '/project-root.php') . '/src/app/code/Application/Blog/Test/Configuration/fixtures/etc/config.xml';
 $source = file_get_contents($config);
 $items = Xml::declarations('app/code/Application/Blog/etc/config.xml', $source, 'config');
 checkXml(count($items) === 13, 'Inventory all default, website and store leaves');
@@ -102,7 +102,7 @@ foreach (['<!DOCTYPE x [<!ENTITY x SYSTEM "file:///etc/passwd">]><x>&x;</x>', '<
     try { Xml::document($invalid); throw new LogicException('Invalid input accepted'); }
     catch (RuntimeException $expected) {}
 }
-$system = file_get_contents(__DIR__ . '/../src/app/code/Application/Blog/Test/Configuration/fixtures/etc/adminhtml/system.xml');
+$system = file_get_contents((require __DIR__ . '/project-root.php') . '/src/app/code/Application/Blog/Test/Configuration/fixtures/etc/adminhtml/system.xml');
 $fields = Xml::declarations('app/code/Application/Blog/etc/adminhtml/system.xml', $system, 'system');
 checkXml(count($fields) === 5, 'Inventory hidden and unopened fields as well as rendered fields');
 checkXml(count(array_unique(array_column($fields, 'id'))) === 5, 'Shared config_path does not collapse fields');
@@ -307,8 +307,8 @@ foreach ([[], ['id' => 'new-scalar']] as $newOrigin) {
 }
 echo "Programmatic argument overlays preserve displaced and surviving XML origins.\n";
 
-require_once __DIR__ . '/../docker/php/xml-layout-references.php';
-require_once __DIR__ . '/../docker/php/xml-layout-ownership.php';
+require_once (require __DIR__ . '/project-root.php') . '/docker/php/xml-layout-references.php';
+require_once (require __DIR__ . '/project-root.php') . '/docker/php/xml-layout-ownership.php';
 $lazyCalls = 0;
 $lazyType = new ReflectionClass(new class { public $value = 'same'; });
 $lazyObject = $lazyType->newLazyGhost(static function ($object) use (&$lazyCalls): void {
@@ -346,7 +346,7 @@ foreach (['references' => 8193, 'effect origins' => 32769] as $limit => $count) 
 }
 echo "Reference inventory bounds reject incomplete attribution.\n";
 
-require_once __DIR__ . '/../docker/php/xml-layout-argument-names.php';
+require_once (require __DIR__ . '/project-root.php') . '/docker/php/xml-layout-argument-names.php';
 $targets = [];
 for ($index = 0; $index < 32769; $index++) $targets[] = ['ids' => ['argument' => 'value-' . $index, 'argument-name' => 'name-' . $index]];
 try {
@@ -378,7 +378,7 @@ checkXml($guard['supported'] && $guard['layout']['kind'] === 'action-ifconfig',
     'Action scope guards have an independent original operand identity');
 echo "Action guards retain independent original inventory identities.\n";
 
-require_once __DIR__ . '/../docker/php/xml-layout-positions.php';
+require_once (require __DIR__ . '/project-root.php') . '/docker/php/xml-layout-positions.php';
 $positionTargets = [];
 for ($index = 0; $index <= 32768; $index++) {
     $positionTargets[] = ['element' => '0', 'ids' => ['position-name' => 'defaulted-name-' . $index]];

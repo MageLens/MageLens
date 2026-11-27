@@ -2,19 +2,20 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('../project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {kinds, inputs, platforms, repository, imageRegistry, manifestFilename, expirationProtocol} = require('../../bin/image-inputs.cjs');
+const {kinds, inputs, platforms, repository, imageRegistry, manifestFilename, expirationProtocol} = require(projectFile('bin/image-inputs.cjs'));
 const digest = letter => 'sha256:' + letter.repeat(64);
-const root = path.join(__dirname, '../..');
+const root = projectFile();
 const now = Date.parse('2026-06-01T00:00:00Z');
 const oldImage = (id, name) => ({id, name, created_at: '2025-01-01T00:00:00Z'});
 const dayMs = 24 * 60 * 60 * 1000;
 const releasesEndpoint = `repos/${repository}/releases`;
 const packagesEndpoint = `orgs/${repository.split('/')[0]}/packages/container`;
 const packageKind = endpoint => endpoint.slice(`${packagesEndpoint}/`.length).split('/')[0];
-const published = {schema: 1, platform: 'linux/amd64', version: require('../../package.json').version,
+const published = {schema: 1, platform: 'linux/amd64', version: require(projectFile('package.json')).version,
     images: Object.fromEntries(kinds.map(kind => [kind, {inputs: inputs(root, kind), digest: digest('a')}]))};
 
 function retentionFixture({count = 6, ageDays = i => (count + 1 - i) * 200, protocol = expirationProtocol} = {}) {

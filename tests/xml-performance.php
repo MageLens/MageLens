@@ -16,7 +16,7 @@ namespace Magento\Config\App\Config\Type {
     class System { public function get($path = '') { return 'original'; } }
 }
 namespace {
-    require __DIR__ . '/../docker/php/xml-hooks.php';
+    require (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php';
     use MageLens\XmlCoverage\Recorder;
     $mode = $argv[1] ?? 'unhooked';
     @mkdir('/coverage');

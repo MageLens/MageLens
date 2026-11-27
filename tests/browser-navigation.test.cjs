@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const {adminScriptDependencies, installCypressAdminDependencies, installPlaywrightAdminDependencies,
-    observeAdminMenuNavigation} = require('../bin/browser-navigation.cjs');
+    observeAdminMenuNavigation} = require(projectFile('bin/browser-navigation.cjs'));
 
 const script = `require(['jquery', 'Magento_Ui/js/modal/alert', 'mage/translate', 'domReady!'], function ($, alert, $t) {
     var locations = ['cart', 'checkout'];

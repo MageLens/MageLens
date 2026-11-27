@@ -3,11 +3,9 @@
   "version": "1.10.0",
   "private": true,
   "license": "Elastic-2.0",
-  "description": "Run Magento tests with PHP, JavaScript, HTML/PHTML template and XML configuration coverage",
+  "description": "Contributor checks and release qualification for MageLens",
   "scripts": {
     "check:copyright": "node tests/check-copyright.cjs",
-    "coverage": "./bin/run-coverage",
-    "cy:coverage": "./bin/run-coverage",
     "test:integration": "node --test --test-concurrency=2 tests/*.test.cjs",
     "test:e2e": "bash tests/e2e-isolated.sh",
     "test:e2e:matrix": "bash tests/e2e-matrix.sh"
@@ -27,27 +25,5 @@
   "overrides": {
     "glob@>=9.0.0 <=14.0.1": "14.0.4",
     "minimatch@>=7.0.0 <11.0.1": "11.0.5"
-  },
-  "nyc": {
-    "include": [
-      "src/app/code/**/*.js",
-      "src/app/design/frontend/**/*.js",
-      "src/app/design/adminhtml/**/*.js"
-    ],
-    "exclude": [
-      "**/*.cy.js",
-      "**/Test/**",
-      "**/Setup/**",
-      "**/cypress/**"
-    ],
-    "report-dir": "coverage/js",
-    "reporter": [
-      "html",
-      "json",
-      "json-summary",
-      "text-summary"
-    ],
-    "instrument": false,
-    "sourceMap": false
   }
 }

@@ -5,7 +5,7 @@ License: see LICENSE in the repository root.
 -->
 
 <p align="center">
-  <img src="assets/magelens.svg" alt="MageLens logo" width="320">
+  <img src="compose/assets/magelens.svg" alt="MageLens logo" width="320">
 </p>
 
 # MageLens: Magento 2 and Mage-OS full stack coverage with Docker
@@ -18,7 +18,7 @@ License: see LICENSE in the repository root.
 
 Run the installer, run the tests, and open one report to see which parts of your application executed. PHP, Composer, Node, the selected browser runner, and reporting tools run in containers.
 
-The included [blog module](src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä.
+The included [blog module](compose/src/app/code/Application/Blog/README.md) provides an optional demonstration application with equivalent Cypress and Playwright suites for Luma and Hyvä.
 
 <!-- coverage-badges:start -->
 <!-- coverage-badges:end -->
@@ -30,6 +30,12 @@ MageLens grew out of a real-world Magento project with **600+ E2E tests**, where
 The project observed **low coverage overhead and near-native performance** while measuring PHP, JavaScript and templates. MageLens also shows which XML declarations a scenario exercised, from a storefront layout block to an Admin ACL check.
 
 Use the same browser-based flows for **functional testing** by mocking external integrations such as ERP, shipping and tax services. This keeps tests independent of those services and helps provide faster pull request feedback. For release testing, run end-to-end scenarios against the integrations you need to validate.
+
+## Repository layout
+
+The installable project lives in [`compose/`](compose/). In a contributor checkout, run `cd compose` before `./install.sh`, `./bin/run-coverage` and other application commands. Bootstrap installations already place those files at the installed project root.
+
+Maintenance instructions and CI qualification stay at the repository root: see [AGENTS.md](AGENTS.md) and [tests/README.md](tests/README.md). For application development, use [compose/AGENTS.md](compose/AGENTS.md).
 
 ## Quick start
 
@@ -84,7 +90,7 @@ Then generate coverage reports:
 ./bin/run-coverage
 ```
 
-Coverage runs reuse the running environment and automatically warm the storefront homepage before starting tests in a fresh browser. Cache cleaning, asset refreshes and restarts are [optional arguments](docs/coverage.md#run-lifecycle); use `--start` if services are stopped.
+Coverage runs reuse the running environment and automatically warm the storefront homepage before starting tests in a fresh browser. Cache cleaning, asset refreshes and restarts are [optional arguments](compose/docs/coverage.md#run-lifecycle); use `--start` if services are stopped.
 
 The installer asks for a test domain, defaulting to `magelens.test`, and saves it as `APPLICATION_DOMAIN` in `.env`. It downloads your selected platform, dependencies, and the runner’s browser; allow several minutes. To use an existing project, [copy its source before installing](#copy-a-complete-magento-project).
 
@@ -98,7 +104,7 @@ With the default domain and ports:
 | Live test runner (Cypress or Playwright) | https://magelens.test:6080/ |
 | Combined coverage report, after a successful test run | https://magelens.test/media/coverage/index.html |
 
-Fresh installations create the Admin account `application` / `ApplicationOnly123456!`. Demo features and usage are documented in the [blog README](src/app/code/Application/Blog/README.md).
+Fresh installations create the Admin account `application` / `ApplicationOnly123456!`. Demo features and usage are documented in the [blog README](compose/src/app/code/Application/Blog/README.md).
 
 Open the live runner before starting `./bin/run-coverage` to watch either runner's browser through noVNC. The viewer is read-only. Use your selected domain in these URLs if you changed it during setup.
 
@@ -124,21 +130,21 @@ By default, the installer adds the domain to your hosts file and uses Mark Shust
 | PHP | Executable PHP lines in `.php` and `.phtml` files reached by Magento HTTP requests or CLI tests, shown against your original source | `coverage/php/index.html` |
 | JavaScript | Statements in whole `.js` files, collected with Istanbul and the selected runner | `coverage/js/index.html` |
 | Templates | HTML/PHTML bindings, template expressions and inline scripts, with script functions, branches and DOM presence reported separately | `coverage/templates/index.html` |
-| [XML configuration](docs/coverage.md#xml-configuration-coverage) | Original XML lines with observed effects, such as a configuration read, plugin callback, rendered layout block or selected route | `coverage/xml/index.html` |
+| [XML configuration](compose/docs/coverage.md#xml-configuration-coverage) | Original XML lines with observed effects, such as a configuration read, plugin callback, rendered layout block or selected route | `coverage/xml/index.html` |
 
 PHP coverage excludes emitted HTML and inline JavaScript. Template warnings identify unsupported directives, scripts or PHP-generated output. When a warning is present, the template percentage covers only the parts MageLens can measure.
 
 After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. A successful full run refreshes the test, PHP, JavaScript and template SVG badges in `coverage/badges/`. Pass `--update-readme` to update the badge section in this README. The combined index and `coverage/summary.json` include the XML percentage.
 
-To share coverage, run `./bin/export-coverage` and send only **`coverage/share.html`**. This standalone report contains coverage metrics and project-relative file paths. Keep the full `coverage/` directory private because it contains raw requests and test fixture data. [Export options](docs/coverage.md#reports-and-artifacts)
+To share coverage, run `./bin/export-coverage` and send only **`coverage/share.html`**. This standalone report contains coverage metrics and project-relative file paths. Keep the full `coverage/` directory private because it contains raw requests and test fixture data. [Export options](compose/docs/coverage.md#reports-and-artifacts)
 
-MageLens scans application modules under `src/app/code/` and selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. A measured XML line counts as covered when at least one declaration on it has runtime evidence. Unmeasured lines are listed separately and excluded from the percentage.
+MageLens scans application modules under `src/app/code/` and selected storefront and Admin themes and their local parents under `src/app/design/`. Composer packages can be included explicitly using `vendorRoots` in [coverage.config.json](compose/coverage.config.json). Directories named `Test`, `Setup`, `node_modules` or `tailwind`, browser specs and support directories are excluded. The theme scope is resolved from Magento on each run; unrelated inactive themes and vendor packages remain excluded. Unexecuted eligible files remain uncovered. A measured XML line counts as covered when at least one declaration on it has runtime evidence. Unmeasured lines are listed separately and excluded from the percentage.
 
-For CI, scripts and coding agents working with a private repository, run `./bin/run-coverage --include-machine-report` to generate `coverage/report.sqlite`. Anyone with access to the installation’s report URL can download the database and, when per-test attribution was collected, query which tests reached a file. [Coverage database](docs/coverage.md#coverage-database)
+For CI, scripts and coding agents working with a private repository, run `./bin/run-coverage --include-machine-report` to generate `coverage/report.sqlite`. Anyone with access to the installation’s report URL can download the database and, when per-test attribution was collected, query which tests reached a file. [Coverage database](compose/docs/coverage.md#coverage-database)
 
-Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](docs/coverage.md#html-validation).
+Tests can also call `mageLensValidateHtml` to audit the HTML source of selected pages. The findings appear in a separate **Reports** section of the combined view; see [HTML validation](compose/docs/coverage.md#html-validation).
 
-Read the [coverage guide](docs/coverage.md) for collector configuration, report semantics and test fixtures. The [XML coverage wiki](https://github.com/MageLens/MageLens/wiki/XML-Configuration-Coverage) summarizes supported Magento XML families.
+Read the [coverage guide](compose/docs/coverage.md) for collector configuration, report semantics and test fixtures. The [XML coverage wiki](https://github.com/MageLens/MageLens/wiki/XML-Configuration-Coverage) summarizes supported Magento XML families.
 
 ## Magento environment
 
@@ -146,13 +152,13 @@ MageLens extends the Compose services from the selected [Mark Shust Docker Magen
 
 The selected platform is installed through Composer. Its modules, framework, and themes live in `src/vendor/magento/` for Magento Open Source or `src/vendor/mage-os/` for Mage-OS; client modules live in `src/app/code/`. Both run in developer mode, generating code and static assets on demand, with page and block caches disabled for coverage collection.
 
-The coverage configuration is explicit in [docker/php/env.php.sample](docker/php/env.php.sample). Installation merges this fragment into `src/app/etc/env.php`, preserving credentials and unrelated settings. HTML/PHTML and browser assets run without minification.
+The coverage configuration is explicit in [docker/php/env.php.sample](compose/docker/php/env.php.sample). Installation merges this fragment into `src/app/etc/env.php`, preserving credentials and unrelated settings. HTML/PHTML and browser assets run without minification.
 
 Following Mark Shust's development setup, MageLens installs [DisableTwoFactorAuth](https://github.com/markshust/magento2-module-disabletwofactorauth) as a Composer development dependency and turns off Admin 2FA for this local environment. Your browser tests can sign in with the Admin username and password.
 
 ## Dependency versions
 
-Edit **[dependencies.yaml](dependencies.yaml)**, then rerun the installer with your platform, theme and runner flags. For Magento Open Source with Luma/Cypress:
+Edit **[dependencies.yaml](compose/dependencies.yaml)**, then rerun the installer with your platform, theme and runner flags. For Magento Open Source with Luma/Cypress:
 
 ```bash
 ./install.sh
@@ -176,7 +182,7 @@ This is the single place to choose the main dependency versions:
 | Cypress JavaScript coverage adapter | `CYPRESS_CODE_COVERAGE_VERSION` |
 | Istanbul coverage data / instrumentation | `ISTANBUL_LIB_COVERAGE_VERSION` / `ISTANBUL_LIB_INSTRUMENT_VERSION` |
 | Istanbul report CLI (nyc) | `NYC_VERSION` |
-| [HTML validation](docs/coverage.md#html-validation) engine (html-validate) | `HTML_VALIDATE_VERSION` |
+| [HTML validation](compose/docs/coverage.md#html-validation) engine (html-validate) | `HTML_VALIDATE_VERSION` |
 | [Magento template coverage](https://github.com/MageLens/MagentoTemplateCoverage) | `TEMPLATE_COVERAGE_VERSION` |
 | Cypress runner's Node and browser system dependencies | `RUNNER_IMAGE` |
 | Playwright runner’s Node base image | `PLAYWRIGHT_RUNNER_IMAGE` |
@@ -193,7 +199,7 @@ Select Playwright during installation with `./install.sh --playwright`, then use
 
 For installations created by MageLens, changing `MAGENTO_VERSION` updates Magento Open Source; changing `MAGEOS_VERSION` updates Mage-OS when installed with `--mageos`. Updates preserve client modules, configuration, media, and the database. Installation stops if an update conflicts with local edits. Back up the database before upgrading; application setup can change its schema. Downgrades and switching platforms require a separate checkout and database.
 
-For a copied project, manage Magento dependencies through its own `composer.json` and `composer.lock`. Review the demo's [Cypress patches](patches/cypress/README.md) when changing Magento versions.
+For a copied project, manage Magento dependencies through its own `composer.json` and `composer.lock`. Review the demo's [Cypress patches](compose/patches/cypress/README.md) when changing Magento versions.
 
 ## Work with the source
 
@@ -208,7 +214,7 @@ Copy them into their normal Magento locations, for example `src/app/code/YourVen
 ./bin/run-coverage
 ```
 
-The installer enables newly discovered modules and preserves explicitly disabled modules. Add Cypress tests under `cypress/e2e/` or a module's `Test/Cypress/` directory; add Playwright tests under `playwright/e2e/` or a module's `Test/Playwright/` directory. See [adding scenarios](docs/coverage.md#use-your-project) for the required Playwright coverage fixture.
+The installer enables newly discovered modules and preserves explicitly disabled modules. Add Cypress tests under `cypress/e2e/` or a module's `Test/Cypress/` directory; add Playwright tests under `playwright/e2e/` or a module's `Test/Playwright/` directory. See [adding scenarios](compose/docs/coverage.md#use-your-project) for the required Playwright coverage fixture.
 
 Fresh installations select Luma by default and Hyvä CSP with `--hyva`. Installation applies the selected base theme. To select a custom child theme afterward, use **Content → Design → Configuration**; the next coverage run follows your selection.
 
@@ -218,7 +224,7 @@ Before the first installation, place your complete Magento or Mage-OS project in
 
 For a fresh local database, omit the copied `app/etc/env.php`. To use existing data, import your database into the local `db` service and configure `env.php` for the local services before running `./install.sh`. The database host must be `db`.
 
-Rerun `./install.sh` with the same platform, theme and runner flags after module or theme changes to refresh setup and static assets. See the [coverage guide](docs/coverage.md#use-your-project) for adding scenarios and optional test fixtures.
+Rerun `./install.sh` with the same platform, theme and runner flags after module or theme changes to refresh setup and static assets. See the [coverage guide](compose/docs/coverage.md#use-your-project) for adding scenarios and optional test fixtures.
 
 ## Everyday commands
 
@@ -254,7 +260,7 @@ For multiple copies, choose a different project name and domain for each and set
 
 Rerun `./install.sh` with your platform, theme and runner flags to resume interrupted setup or rebuild after Dockerfile changes. Existing database contents, configuration, and media are preserved.
 
-Avoid changing application data while the tests run. See the [coverage guide](docs/coverage.md#run-lifecycle) for optional refreshes and recovery.
+Avoid changing application data while the tests run. See the [coverage guide](compose/docs/coverage.md#run-lifecycle) for optional refreshes and recovery.
 
 `./bin/application-compose down -v` deletes this project's Docker volumes, including its database and stored Composer credentials. Source files remain in `src/`. For a fresh database, back up wanted data, run that command, remove `src/app/etc/env.php`, and rerun `./install.sh`.
 
@@ -266,13 +272,13 @@ Avoid changing application data while the tests run. See the [coverage guide](do
 | `src/app/design/frontend/`, `src/app/design/adminhtml/` | Local themes |
 | `src/vendor/` | Composer dependencies, including Magento core |
 | `install.sh`, `compose.yaml`, `docker/` | Installation and Docker services |
-| [dependencies.yaml](dependencies.yaml) | Dependency version settings |
+| [dependencies.yaml](compose/dependencies.yaml) | Dependency version settings |
 | `bin/run-coverage` | Run the selected browser suite and generate coverage |
 | `cypress/`, module `Test/Cypress/` directories | Project scenarios and browser coverage collectors |
 | `playwright/`, module `Test/Playwright/` directories | Playwright scenarios and coverage fixtures |
 | `coverage/` | Generated reports and badges |
-| [Blog demo](src/app/code/Application/Blog/README.md) | Example application with PHP, JavaScript, template and XML coverage |
-| [Coverage guide](docs/coverage.md) | Collector details and customization |
+| [Blog demo](compose/src/app/code/Application/Blog/README.md) | Example application with PHP, JavaScript, template and XML coverage |
+| [Coverage guide](compose/docs/coverage.md) | Collector details and customization |
 
 ## FAQ
 
@@ -314,8 +320,8 @@ MageLens is source-available under the [Elastic License 2.0](LICENSE). Commercia
 
 You may not offer MageLens to third parties as a hosted or managed service that gives users access to a substantial set of its features or functionality, including a SaaS offering of MageLens. Using MageLens internally to test your own SaaS application is allowed. Preserve licensing and copyright notices and do not bypass any license-key protections. See [LICENSE](LICENSE) for the complete terms.
 
-Third-party dependencies and assets retain their own licenses, including the [badge icons](assets/badge-icons/LICENSE.md).
+Third-party dependencies and assets retain their own licenses, including the [badge icons](compose/assets/badge-icons/LICENSE.md).
 
 ## Repository navigation for AI agents
 
-See [AGENTS.md](AGENTS.md) for installation, coverage and testing instructions for coding agents using MageLens.
+See [compose/AGENTS.md](compose/AGENTS.md) for application development with MageLens and [AGENTS.md](AGENTS.md) for contributor checks and release qualification.

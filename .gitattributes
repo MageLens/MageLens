@@ -1,13 +1,25 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
-# Keep maintainer tools in Git, outside source downloads used for installation.
+# Source archives contain only the standalone installable project.
 /tests export-ignore
 /.github export-ignore
+/.agents export-ignore
 /.gitattributes export-ignore
+/.gitignore export-ignore
+/AGENTS.md export-ignore
+/README.md export-ignore
+/CHANGELOG.md export-ignore
+/LICENSE export-ignore
+/LICENSE.license export-ignore
+/bootstrap.sh export-ignore
+/package.json export-ignore
+/package.json.license export-ignore
+/package-lock.json export-ignore
+/package-lock.json.license export-ignore
 
-# Bash entry points must also be executable from WSL after a Windows checkout.
+# Preserve executable Bash entry points in Windows checkouts.
 *.sh text eol=lf
 *.patch text eol=lf
-/bin/* text eol=lf
+/compose/bin/* text eol=lf

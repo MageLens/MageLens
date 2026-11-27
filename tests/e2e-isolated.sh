@@ -5,8 +5,8 @@
 
 set -euo pipefail
 export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true
-source "$(dirname "$0")/../bin/common"
-source "$(dirname "$0")/e2e-xml-proofs.sh"
+source "$(dirname "$0")/common.sh"
+source "$TESTS_ROOT/e2e-xml-proofs.sh"
 preflight
 [[ $# == 0 ]] || fail 'Usage: bash tests/e2e-isolated.sh (see tests/README.md for configuration)'
 theme=${MAGELENS_E2E_THEME:-luma}
@@ -99,18 +99,19 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for file in bin docker patches cypress playwright cli tests assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
+for file in bin docker patches cypress playwright cli assets install.sh .dockerignore compose.yaml dependencies.yaml coverage.config.json package.json package-lock.json cypress.config.cjs playwright.config.cjs README.md; do
     cp -a "$file" "$scratch/"
 done
+cp -a "$TESTS_ROOT" "$scratch/tests"
 if [[ -d "$original_root/.runtime/docker-magento/.git" ]]; then
     mkdir -p "$scratch/.runtime"
     cp -a "$original_root/.runtime/docker-magento" "$scratch/.runtime/"
     git -C "$scratch/.runtime/docker-magento" remote set-url origin "$original_root/.runtime/docker-magento"
 fi
 mkdir -p "$scratch/docker/php/e2e"
-cp tests/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
-cp -a tests/fixtures/compatibility/invalid-layout "$scratch/docker/php/e2e/"
-cp tests/php-report.test.php "$scratch/docker/php/e2e/"
+cp "$TESTS_ROOT"/fixtures/compatibility/*.php "$scratch/docker/php/e2e/"
+cp -a "$TESTS_ROOT/fixtures/compatibility/invalid-layout" "$scratch/docker/php/e2e/"
+cp "$TESTS_ROOT/php-report.test.php" "$scratch/docker/php/e2e/"
 stage_xml_proofs "$scratch/docker/php/e2e"
 # Exercise the bundled demo only; existing Magento data and third-party modules
 # are not fixtures. Composer downloads a clean source tree into this workspace.
@@ -125,14 +126,14 @@ if [[ -z "$focus" ]]; then
     cp src/app/code/Application/Blog/Test/Configuration/Playwright/settings.spec.js "$scratch/src/app/code/Application/Blog/Test/Playwright/"
 
     mkdir -p "$scratch/src/app/code/MageLens"
-    cp -a tests/fixtures/compatibility/module "$scratch/src/app/code/MageLens/Compatibility"
-    cp -a tests/fixtures/compatibility/overlay "$scratch/src/app/code/MageLens/LayoutOverlay"
-    cp -a tests/fixtures/compatibility/disabled-module "$scratch/src/app/code/MageLens/LayoutDisabled"
-    cp -a tests/fixtures/ui-module/module "$scratch/src/app/code/MageLens/UiProbe"
-    cp -a tests/fixtures/ui-module/overlay "$scratch/src/app/code/MageLens/UiProbeOverlay"
+    cp -a "$TESTS_ROOT/fixtures/compatibility/module" "$scratch/src/app/code/MageLens/Compatibility"
+    cp -a "$TESTS_ROOT/fixtures/compatibility/overlay" "$scratch/src/app/code/MageLens/LayoutOverlay"
+    cp -a "$TESTS_ROOT/fixtures/compatibility/disabled-module" "$scratch/src/app/code/MageLens/LayoutDisabled"
+    cp -a "$TESTS_ROOT/fixtures/ui-module/module" "$scratch/src/app/code/MageLens/UiProbe"
+    cp -a "$TESTS_ROOT/fixtures/ui-module/overlay" "$scratch/src/app/code/MageLens/UiProbeOverlay"
     mkdir -p "$scratch/src/app/design/frontend/MageLens"
-    cp -a tests/fixtures/compatibility/themes/. "$scratch/src/app/design/frontend/MageLens/"
-    cp -a tests/fixtures/admin-navigation/module "$scratch/src/app/code/MageLens/AdminNavigation"
+    cp -a "$TESTS_ROOT/fixtures/compatibility/themes/." "$scratch/src/app/design/frontend/MageLens/"
+    cp -a "$TESTS_ROOT/fixtures/admin-navigation/module" "$scratch/src/app/code/MageLens/AdminNavigation"
     touch "$scratch/src/app/code/Application/Blog/Test/Navigation/.enabled"
 fi
 if [[ -n "${MAGELENS_TEMPLATE_COVERAGE_PACKAGE:-}" ]]; then

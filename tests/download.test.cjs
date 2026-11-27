@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const root = path.resolve(__dirname, '..');
+const root = projectFile();
 
 for (const platform of ['magento', 'mageos']) {
     for (const statuses of [[100, 100, 0], [2], [100, 100, 100]]) {

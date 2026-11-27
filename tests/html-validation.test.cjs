@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {captureHtml, auditedUrl, writeReport} = require('../bin/html-validation.cjs');
+const {captureHtml, auditedUrl, writeReport} = require(projectFile('bin/html-validation.cjs'));
 
 const valid = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><title>Valid</title></head><body><p>Fine</p></body></html>';
 const invalid = '<!DOCTYPE html>\n<html lang="en"><head><title>Invalid</title></head><body>\n<p id="twice">One</p>\n<div id="twice"><button>Open</div>\n</body></html>';
@@ -64,7 +65,7 @@ test('one report collects every audit of a run with its page and test', t => {
     const report = results();
     assert.equal(report.run, 'current-run');
     assert.equal(report.target, 'source');
-    assert.deepEqual(report.engine, {name: 'html-validate', version: require('../package.json').devDependencies['html-validate'],
+    assert.deepEqual(report.engine, {name: 'html-validate', version: require(projectFile('package.json')).devDependencies['html-validate'],
         preset: 'html-validate:standard'});
     assert.deepEqual(report.audits.map(audit => [audit.url, audit.runner, audit.status, audit.errorCount > 0]).sort(),
         [['https://magelens.test/invalid?step=2', 'playwright', 404, true], ['https://magelens.test/valid', 'cypress', 200, false]]);

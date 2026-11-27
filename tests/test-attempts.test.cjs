@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {newAttemptId, isAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require('../bin/test-attempts.cjs');
-const {sparseCounters, mergeCounters} = require('../bin/javascript-attempts.cjs');
+const {newAttemptId, isAttemptId, projectPath, startAttempt, finishAttempt, recordJavascript} = require(projectFile('bin/test-attempts.cjs'));
+const {sparseCounters, mergeCounters} = require(projectFile('bin/javascript-attempts.cjs'));
 
 const read = id => JSON.parse(fs.readFileSync(`coverage/raw/attempts/${id}.json`, 'utf8'));
 

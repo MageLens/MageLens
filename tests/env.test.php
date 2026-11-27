@@ -1,12 +1,12 @@
 <?php
 /*
- * SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+ * Copyright (c)  MageLens
  * SPDX-License-Identifier: Elastic-2.0
  * License: see LICENSE in the repository root.
  */
 
 declare(strict_types=1);
-require dirname(__DIR__) . '/docker/php/configure-env.php';
+require (require __DIR__ . '/project-root.php') . '/docker/php/configure-env.php';
 
 function check(bool $condition, string $message): void
 {
@@ -14,7 +14,7 @@ function check(bool $condition, string $message): void
 }
 putenv('APPLICATION_DOMAIN=shop.test');
 putenv('APPLICATION_HTTPS_PORT=8443');
-$fragment = require dirname(__DIR__) . '/docker/php/env.php.sample';
+$fragment = require (require __DIR__ . '/project-root.php') . '/docker/php/env.php.sample';
 $original = [
     'crypt' => ['key' => 'preserve-key'], 'db' => ['connection' => ['default' => ['password' => 'preserve-password']]],
     'MAGE_MODE' => 'production', 'cache_types' => ['config' => 1, 'full_page' => 1],

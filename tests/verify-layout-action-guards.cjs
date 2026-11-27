@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
-const {readXmlJson} = require('../bin/xml-report/json.cjs');
+const {readXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
 const report = readXmlJson(process.argv[2] || 'coverage/xml/coverage.json', {omit: ['requests']});
 function check(handle, node, state, types) {
     const file = report.files.find(file => file.path === `app/code/MageLens/Compatibility/view/frontend/layout/${handle}.xml`);

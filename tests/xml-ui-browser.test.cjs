@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {installUiBrowserObserver} = require('../bin/xml-ui-browser.cjs');
-const {correlateBrowserEvidence} = require('../bin/xml-browser-evidence.cjs');
+const {installUiBrowserObserver} = require(projectFile('bin/xml-ui-browser.cjs'));
+const {correlateBrowserEvidence} = require(projectFile('bin/xml-browser-evidence.cjs'));
 
 const formButton = 'form.button.clicked';
 const providerName = 'listing.data_source';

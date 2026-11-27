@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {replaceBadgeSection, badge, cypressBadge} = require('../bin/badges.cjs');
+const {replaceBadgeSection, badge, cypressBadge} = require(projectFile('bin/badges.cjs'));
 
 test('badge refresh preserves all README content outside the managed region', () => {
     const start = '<!-- coverage-badges:start -->';

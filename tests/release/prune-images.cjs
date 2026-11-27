@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('../project-path.cjs');
 const assert = require('node:assert/strict');
 const {isDeepStrictEqual} = require('node:util');
 const {execFileSync} = require('node:child_process');
 const {
     kinds, digestPattern, releaseTagPattern, validateManifest, platformImages,
     repository, manifestFilename, expirationProtocol, timestampMillis
-} = require('../../bin/image-inputs.cjs');
+} = require(projectFile('bin/image-inputs.cjs'));
 const executeApi = (args, input) => execFileSync('gh', ['api', ...args], {encoding: 'utf8', input});
 const repositoryEndpoint = `repos/${repository}`;
 const releasesEndpoint = `${repositoryEndpoint}/releases`;

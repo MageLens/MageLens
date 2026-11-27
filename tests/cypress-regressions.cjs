@@ -1,13 +1,14 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {startFixture} = require('./fixtures/cypress-runner/server.cjs');
-const {verifyInstalled, source} = require('../docker/runner/cypress-source/provenance.cjs');
+const {verifyInstalled, source} = require(projectFile('docker/runner/cypress-source/provenance.cjs'));
 async function runAgainstFixture(cypress, fixture, project) {
     const previous = process.env.CYPRESS_BASE_URL;
     try {

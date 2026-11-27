@@ -16,7 +16,7 @@ use Magento\Framework\Authorization\Policy\Acl as AclPolicy;
 use Magento\Framework\Interception\{DefinitionInterface, Interceptor, InterceptorInterface, PluginListInterface};
 
 require '/var/www/html/app/bootstrap.php';
-$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+$hooks = dirname(getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php');
 require $hooks . '/xml-hooks.php';
 require $hooks . '/xml-family-admin-navigation.php';
 

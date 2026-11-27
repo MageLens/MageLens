@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -13,10 +14,10 @@ const {cases} = require('./ci/cases.cjs');
 const {verifyCase} = require('./ci/gate.cjs');
 const {sanitizedCoverage} = require('./ci/evidence.cjs');
 const {writeCoverage} = require('./ci-coverage-fixture.cjs');
-const {provenance} = require('../docker/runner/cypress-source/provenance.cjs');
+const {provenance} = require(projectFile('docker/runner/cypress-source/provenance.cjs'));
 const {snapshot, validateSnapshot, compareThemes} = require('./ci/report-equivalence.cjs');
 const {snapshotFile, xmlFile, readProjection, writeProjection} = require('./ci/report-artifact.cjs');
-const pins = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
+const pins = Object.fromEntries([...fs.readFileSync(projectFile('dependencies.yaml'), 'utf8').matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
 const {browserTitles, cliTitles} = require('./verify-scenarios.cjs');
 const counts = {totalTests: 8, totalPassed: 8, totalFailed: 0, totalSkipped: 0, totalPending: 0};
 function fixture(t) {
@@ -64,7 +65,7 @@ test('artifact projection removes credentials, source, private packages and arbi
 });
 test('a large sanitized report preserves its complete inventory within the artifact limit', t => {
     const {directory, entry, evidence, context} = fixture(t);
-    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
+    fs.copyFileSync(projectFile('dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
     fs.writeFileSync(path.join(directory, 'magelens-result'), directory);
     const rawXml = path.join(directory, 'xml/coverage.json');
     const xml = JSON.parse(fs.readFileSync(rawXml));
@@ -114,7 +115,7 @@ test('complete qualification uses the Windows report for the eighth mode and sti
     const {directory, evidence} = fixture(t);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-complete-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(root, 'dependencies.yaml'));
+    fs.copyFileSync(projectFile('dependencies.yaml'), path.join(root, 'dependencies.yaml'));
     const artifacts = new Map();
     for (const entry of cases) {
         const artifact = path.join(root, 'ci-artifacts', `case-${entry.id}-attempt-1`);
@@ -284,7 +285,7 @@ test('final gate consumes only artifacts from the current workflow attempt', t =
     const {directory, entry, evidence} = fixture(t);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-attempt-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(root, 'dependencies.yaml'));
+    fs.copyFileSync(projectFile('dependencies.yaml'), path.join(root, 'dependencies.yaml'));
     const install = attempt => {
         const artifact = path.join(root, 'ci-artifacts', `case-${entry.id}-attempt-${attempt}`);
         fs.cpSync(directory, path.join(artifact, 'coverage'), {recursive: true});
@@ -328,7 +329,7 @@ for (const file of ['php/line-coverage.json', 'js/coverage-final.json', 'templat
 test('failed harness uploads sanitized failing test counts without completed report pointers', t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-ci-failed-'));
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
-    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
+    fs.copyFileSync(projectFile('dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
     const project = 'magelens-e2e-fixture';
     const coverage = path.join(directory, '.runtime/e2e', project, 'coverage');
     fs.mkdirSync(coverage, {recursive: true});
@@ -361,7 +362,7 @@ test('failed harness uploads sanitized failing test counts without completed rep
 
 test('invalid full report fails its case while retaining safe acceptance and legacy coverage diagnostics', t => {
     const {directory, entry} = fixture(t);
-    fs.copyFileSync(path.join(__dirname, '../dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
+    fs.copyFileSync(projectFile('dependencies.yaml'), path.join(directory, 'dependencies.yaml'));
     fs.writeFileSync(path.join(directory, 'magelens-result'), directory);
     fs.writeFileSync(path.join(directory, 'javascript-summary.json'), JSON.stringify({run: 'fresh', groups: {private: 'SECRET'}}));
     const result = spawnSync(process.execPath, [path.join(__dirname, 'ci/evidence.cjs')], {cwd: directory, encoding: 'utf8', env: {...process.env,

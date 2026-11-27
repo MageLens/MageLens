@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const {syncDependencies} = require('../bin/sync-dependencies.cjs');
+const {syncDependencies} = require(projectFile('bin/sync-dependencies.cjs'));
 const versions = {CYPRESS_VERSION: '16.2.0', PLAYWRIGHT_VERSION: '1.64.1',
     ISTANBUL_LIB_REPORT_VERSION: '3.0.1', ISTANBUL_REPORTS_VERSION: '3.2.0',
     TEMPLATE_COVERAGE_VERSION: '1.1.2', CYPRESS_CODE_COVERAGE_VERSION: '4.0.3',
@@ -52,7 +53,7 @@ function profileWorkspace(t, profile) {
     t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
     for (const file of ['bin/common', 'bin/dependencies', 'bin/install', 'bin/run-coverage', 'bin/application-compose', 'install.sh', 'dependencies.yaml']) {
         fs.mkdirSync(path.dirname(path.join(directory, file)), {recursive: true});
-        fs.copyFileSync(path.resolve(__dirname, '..', file), path.join(directory, file));
+        fs.copyFileSync(projectFile(file), path.join(directory, file));
     }
     fs.mkdirSync(path.join(directory, '.runtime'));
     fs.writeFileSync(path.join(directory, '.runtime/install-profile'), profile + '\n');

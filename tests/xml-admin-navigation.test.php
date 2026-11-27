@@ -11,7 +11,7 @@ use Magento\Backend\Model\Menu\Config as MenuConfig;
 use Magento\Framework\Acl\AclResource\{Provider, ProviderInterface};
 
 require __DIR__ . '/xml-admin-navigation-native.test.php';
-$hooks = getenv('MAGELENS_XML_EVIDENCE') ?: dirname(getenv('MAGELENS_XML_HOOKS') ?: __DIR__ . '/../docker/php/xml-hooks.php');
+$hooks = getenv('MAGELENS_XML_EVIDENCE') ?: dirname(getenv('MAGELENS_XML_HOOKS') ?: (require __DIR__ . '/project-root.php') . '/docker/php/xml-hooks.php');
 require $hooks . '/xml-family-admin-navigation.php';
 require $hooks . '/xml-data.php';
 require $hooks . '/xml-family-evidence.php';

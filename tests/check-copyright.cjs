@@ -16,7 +16,7 @@ const thirdParty = new Set([
 ]);
 
 function notice(file, legacy = false) {
-    if (thirdParty.has(file)) {
+    if (thirdParty.has(file.replace(/^compose\//, ''))) {
         return 'SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko (MageLens packaging)\n' +
             'SPDX-FileCopyrightText: Simple Icons contributors\n' +
             'SPDX-License-Identifier: CC0-1.0\n' +
@@ -28,7 +28,7 @@ function notice(file, legacy = false) {
 }
 
 function style(file, content) {
-    if (file === 'LICENSE' || thirdParty.has(file) || content.includes(0)) return 'sidecar';
+    if (file === 'LICENSE' || thirdParty.has(file.replace(/^compose\//, '')) || content.includes(0)) return 'sidecar';
     const extension = path.extname(file);
     if (['.json', '.lock'].includes(extension)) return 'sidecar';
     if (['.php', '.phtml'].includes(extension) || file.endsWith('.php.sample')) return 'php';
@@ -147,7 +147,7 @@ function checkCopyright(root) {
                     throw new Error('Missing year-free copyright and license header at the start of the file');
                 }
             }
-            if (thirdParty.has(file) && !tracked.has('assets/badge-icons/LICENSE.md')) {
+            if (thirdParty.has(file.replace(/^compose\//, '')) && !tracked.has(file.startsWith('compose/') ? 'compose/assets/badge-icons/LICENSE.md' : 'assets/badge-icons/LICENSE.md')) {
                 throw new Error('The referenced CC0 license must be tracked');
             }
         } catch (error) {

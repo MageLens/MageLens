@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+# Copyright (c)  MageLens
 # SPDX-License-Identifier: Elastic-2.0
 # License: see LICENSE in the repository root.
 
@@ -17,8 +17,16 @@ updates:
     groups:
       coverage-tooling:
         patterns: ['*']
+  - package-ecosystem: npm
+    directory: /compose
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      coverage-tooling:
+        patterns: ['*']
   - package-ecosystem: composer
-    directory: /docker/php
+    directory: /compose/docker/php
     schedule:
       interval: weekly
     open-pull-requests-limit: 2

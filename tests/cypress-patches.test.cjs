@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const script = path.resolve(__dirname, '../docker/php/cypress-patches.sh');
+const script = projectFile('docker/php/cypress-patches.sh');
 
 function fixture(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-patches-'));

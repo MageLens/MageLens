@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
+const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const {createHash} = require('node:crypto');
-const {readXmlJson, writeXmlJson} = require('../bin/xml-report/json.cjs');
-const {merge, writeReport, layoutEvents, countsAsLayoutCoverage} = require('../bin/report-xml.cjs');
+const {readXmlJson, writeXmlJson} = require(projectFile('bin/xml-report/json.cjs'));
+const {merge, writeReport, layoutEvents, countsAsLayoutCoverage} = require(projectFile('bin/report-xml.cjs'));
 function fixture() {
     const file = 'app/code/Acme/Blog/etc/config.xml';
     const source = '<config>\n<first>used</first><second>unused</second>\n<!-- <script>unsafe</script> -->\n</config>';
@@ -426,7 +427,7 @@ test('XML reporting rejects a symlink to an otherwise identical layout source', 
         run: 'fresh', files: [{path: file, sourceHash: createHash('sha256').update(bytes).digest('hex')}]
     }));
     const {spawnSync} = require('node:child_process');
-    const result = spawnSync(process.execPath, [require.resolve('../bin/report-xml.cjs')], {cwd: root, encoding: 'utf8'});
+    const result = spawnSync(process.execPath, [projectFile('bin/report-xml.cjs')], {cwd: root, encoding: 'utf8'});
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Symlinked XML source/);
 });

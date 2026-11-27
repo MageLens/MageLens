@@ -4,7 +4,7 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+source "$(dirname "$0")/common.sh"
 [[ $# == 1 || ( $# == 2 && "$2" == --cypress-regressions ) ]] || { echo "Usage: $0 RUNNER_IMAGE [--cypress-regressions]" >&2; exit 1; }
 # Exercise the packaged bootstrap and lockfile with an unprivileged UID even when the host user is root.
 docker run --rm --network none --user 65534:65534 --workdir /tmp --env HOME=/tmp --entrypoint node "$1" -e '
@@ -35,7 +35,7 @@ trap cleanup EXIT
 mounts=()
 if [[ "${2:-}" == --cypress-regressions ]]; then
     mkdir -p coverage
-    mounts=(--mount "type=bind,source=$PWD/tests,target=/workspace/tests,readonly"
+    mounts=(--mount "type=bind,source=$TESTS_ROOT,target=/workspace/tests,readonly"
         --mount "type=bind,source=$PWD/docker/runner,target=/workspace/docker/runner,readonly"
         --mount "type=bind,source=$PWD/coverage,target=/workspace/coverage")
 fi

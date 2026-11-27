@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 require '/opt/report/vendor/autoload.php';
-require getenv('MAGELENS_REPORT_DATA') ?: __DIR__ . '/../docker/php/report-data.php';
+require getenv('MAGELENS_REPORT_DATA') ?: (require __DIR__ . '/project-root.php') . '/docker/php/report-data.php';
 
 use SebastianBergmann\CodeCoverage\Report\Clover;
 use SebastianBergmann\CodeCoverage\Report\Html\Facade;
