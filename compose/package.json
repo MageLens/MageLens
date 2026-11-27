@@ -1,6 +1,6 @@
 {
   "name": "magelens",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "private": true,
   "license": "Elastic-2.0",
   "description": "Run Magento tests with PHP, JavaScript, HTML/PHTML template and XML configuration coverage",

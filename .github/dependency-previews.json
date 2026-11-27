@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "templateCoverage": {
+    "repository": "MageLens/MagentoTemplateCoverage",
+    "pullRequest": 11,
+    "sha": "82f6203baa784b6ab66036b58562bb19afc25165",
+    "version": "2.1.5"
+  }
+}
