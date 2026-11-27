@@ -58,8 +58,16 @@ for kind in php runner-cypress runner-playwright; do
     # A retry must not move the tag off the currently published digest. GHCR
     # requires a tagged version to remain when deleting a failed candidate.
     reference="$release_registry/$kind:$version-linux-$architecture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-    skopeo copy --format oci --digestfile "$output/$kind.digest" "docker-daemon:$image" "docker://$reference"
+    # Docker v2 schema 2 keeps HEALTHCHECK; the OCI image config has no field for it.
+    skopeo copy --format v2s2 --digestfile "$output/$kind.digest" "docker-daemon:$image" "docker://$reference"
     digest=$(cat "$output/$kind.digest")
+    if [[ "$kind" == runner-* ]]; then
+        # Check the image users pull, not only the local build: readiness depends on its health check.
+        published="magelens-release-$kind:published"
+        skopeo copy "docker://$release_registry/$kind@$digest" "docker-daemon:$published"
+        bash "$TESTS_ROOT/runner-container.sh" "$published" ${checks[@]+"${checks[@]}"}
+        docker image rm "$published" >/dev/null
+    fi
     node "$TESTS_ROOT/release/images.cjs" record "$kind" "$fingerprint" "$digest" "$output/$kind.json"
 done
 [[ "$mode" == publish ]] || exit 0
