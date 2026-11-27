@@ -77,7 +77,7 @@ try {
     const bind = (source, target) => ['--mount', `type=bind,source=${source},target=${target}`];
     const dependencies = config.services.runner.volumes.find(volume => volume.target === '/workspace/node_modules').source;
     run([
-        ...bind(scratch, '/workspace'), ...bind(`${scratch}/src`, '/source'), ...bind(`${root}/tests`, '/tests'),
+        ...bind(scratch, '/workspace'), ...bind(`${scratch}/src`, '/source'), ...bind(__dirname, '/tests'),
         '--mount', `type=volume,source=${config.volumes[dependencies].name},target=/workspace/node_modules,readonly`,
         '--workdir', '/workspace', '--entrypoint', 'node', config.services.runner.image || `${config.name}-runner`,
         '/tests/coverage-scope.cjs', 'browser'
@@ -86,7 +86,7 @@ try {
         ...bind(`${scratch}/src`, '/var/www/html'), ...bind(`${root}/docker`, '/application/docker'),
         ...bind(`${scratch}/.runtime/project.json`, '/application/project.json'),
         ...bind(`${scratch}/.runtime/coverage.ini`, '/usr/local/etc/php/conf.d/zzz-magelens-scope.ini'),
-        ...bind(`${root}/tests`, '/tests'), '--entrypoint', 'php', config.services.phpfpm.image, '/tests/coverage-scope.php'
+        ...bind(__dirname, '/tests'), '--entrypoint', 'php', config.services.phpfpm.image, '/tests/coverage-scope.php'
     ]);
 } finally {
     fs.rmSync(scratch, {recursive: true, force: true});

@@ -12,3 +12,16 @@
 /.idea/
 .DS_Store
 *.log
+
+# Protect ignored files left behind by pre-compose contributor installations.
+/.env
+/env/
+/src/
+/lib/
+/bin/
+/compose.versions.yaml
+/rootCA.pem
+/policies.json
+/.nyc_output/
+/cypress/screenshots/
+/cypress/videos/

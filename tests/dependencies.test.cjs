@@ -37,44 +37,75 @@ const browserPackages = {
 const select = (content, values) => Object.entries(values).reduce((text, [key, value]) =>
     text.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: \"${value}\"`), content);
 
-test('committed browser dependencies and locks match the central version settings', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
-    const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json')));
+function checkDependencyContext(directory, runner) {
+    const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json')));
+    const lock = JSON.parse(fs.readFileSync(path.join(directory, 'package-lock.json')));
     assert.equal(lock.version, manifest.version, 'Release versions must match');
     assert.equal(lock.packages[''].version, manifest.version, 'Root package versions must match');
-    const runner = process.env.MAGELENS_RUNNER || 'cypress';
     const selected = Object.entries(browserPackages).filter(([key]) => runner === 'cypress' ? key !== 'PLAYWRIGHT_VERSION' : !['CYPRESS_VERSION', 'CYPRESS_CODE_COVERAGE_VERSION'].includes(key));
     assert.deepEqual(Object.keys(manifest.devDependencies).sort(), selected.map(([, name]) => name).sort());
+    assert.deepEqual(lock.packages[''].devDependencies, manifest.devDependencies);
     for (const [key, name] of selected) {
         const local = key === 'TEMPLATE_COVERAGE_VERSION' && manifest.devDependencies[name] === 'file:.runtime/template-coverage.tgz';
         const expected = local ? manifest.devDependencies[name] : configured(key);
         assert.equal(manifest.devDependencies[name], expected, name);
-        assert.equal(lock.packages[''].devDependencies[name], expected, name);
         if (!local) assert.equal(lock.packages[`node_modules/${name}`].version, expected, name);
-        else assert.ok(fs.existsSync(path.join(root, '.runtime/template-coverage.tgz')));
+        else assert.ok(fs.existsSync(path.join(directory, '.runtime/template-coverage.tgz')));
     }
-});
-
-// Contributor checks and the standalone runtime each have a locked npm context.
-test('contributor tooling uses the same pinned dependency versions as the standalone project', () => {
-    const contributorPackage = path.resolve(__dirname, '../package.json');
-    const runtimePackage = path.join(root, 'package.json');
-    if (contributorPackage === runtimePackage) return; // E2E runs in a standalone copy.
-    const contributor = JSON.parse(fs.readFileSync(contributorPackage));
-    const lock = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package-lock.json')));
-    const runtime = JSON.parse(fs.readFileSync(runtimePackage));
-    const runtimeLock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json')));
-    assert.deepEqual(contributor.devDependencies, runtime.devDependencies);
-    assert.deepEqual(lock.packages[''].devDependencies, contributor.devDependencies);
-    for (const [name, version] of Object.entries(contributor.devDependencies)) {
-        const locked = lock.packages[`node_modules/${name}`];
+    return {manifest, lock};
+}
+function checkContributorDependencies(contributorRoot, runtimeRoot, runner) {
+    const contributor = checkDependencyContext(contributorRoot, 'cypress');
+    const runtime = checkDependencyContext(runtimeRoot, runner);
+    const runnerPackages = new Set(['cypress', '@cypress/code-coverage', '@playwright/test']);
+    for (const [name, version] of Object.entries(contributor.manifest.devDependencies)) {
+        if (runnerPackages.has(name)) continue;
+        assert.equal(version, runtime.manifest.devDependencies[name], name);
         if (version.startsWith('file:')) {
-            assert.ok(fs.existsSync(path.resolve(path.dirname(contributorPackage), version.slice(5))));
-            assert.equal(locked.version, runtimeLock.packages[`node_modules/${name}`].version, name);
-            assert.equal(locked.integrity, runtimeLock.packages[`node_modules/${name}`].integrity, name);
-        } else assert.equal(locked.version, version, name);
+            const locked = contributor.lock.packages[`node_modules/${name}`];
+            const other = runtime.lock.packages[`node_modules/${name}`];
+            assert.equal(locked.version, other.version, name);
+            assert.equal(locked.integrity, other.integrity, name);
+        }
     }
+}
+const runtimeRunner = () => process.env.MAGELENS_RUNNER || (JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).devDependencies['@playwright/test'] ? 'playwright' : 'cypress');
+test('committed browser dependencies and locks match the central version settings', () => {
+    checkDependencyContext(root, runtimeRunner());
 });
+test('contributor tooling and the selected runtime validate their own runner and shared pins', () => {
+    const contributorRoot = path.resolve(__dirname, '..');
+    if (contributorRoot === root) return; // E2E runs in a standalone copy.
+    checkContributorDependencies(contributorRoot, root, runtimeRunner());
+});
+for (const runner of ['cypress', 'playwright']) {
+    test(`contributor checks accept a synchronized ${runner} runtime and reject stale shared pins`, t => {
+        const directory = workspace(t);
+        const createContext = (name, selectedRunner) => {
+            const context = path.join(directory, name);
+            fs.mkdirSync(context);
+            for (const file of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(root, file), path.join(context, file));
+            const pins = Object.fromEntries([...yaml.matchAll(/^(\w+): "([^"]+)"$/gm)].map(m => [m[1], m[2]]));
+            syncDependencies(context, {...pins, MAGELENS_RUNNER: selectedRunner}, (command, args, {cwd}) => {
+                const manifest = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json')));
+                fs.writeFileSync(path.join(cwd, 'package-lock.json'), JSON.stringify({version: manifest.version, lockfileVersion: 3, packages: {
+                    '': {version: manifest.version, devDependencies: manifest.devDependencies},
+                    ...Object.fromEntries(Object.entries(manifest.devDependencies).map(([name, version]) => [`node_modules/${name}`, {version}]))
+                }}));
+            });
+            return context;
+        };
+        const contributor = createContext('contributor', 'cypress');
+        const runtime = createContext('runtime', runner);
+        checkContributorDependencies(contributor, runtime, runner);
+        assert.throws(() => checkDependencyContext(runtime, runner === 'cypress' ? 'playwright' : 'cypress'));
+        const manifestFile = path.join(runtime, 'package.json');
+        const manifest = JSON.parse(fs.readFileSync(manifestFile));
+        manifest.devDependencies['istanbul-lib-coverage'] = '0.0.0';
+        fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+        assert.throws(() => checkContributorDependencies(contributor, runtime, runner));
+    });
+}
 
 function workspace(t) {
     const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-test-')));
