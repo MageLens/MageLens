@@ -1,9 +1,26 @@
-Copyright (c)  MageLens
-SPDX-License-Identifier: Elastic-2.0
-License: see LICENSE in the repository root.
-
+diff --git a/.node-version b/.node-version
+index ce62013c39aed63f656bb7ae41bdd45d81163ffe..229b3ce85a631ccd5991b25f75f414171ccc7942 100644
+--- a/.node-version
++++ b/.node-version
+@@ -1 +1 @@
+-24.22.1
++24.22.3
+diff --git a/nx.json b/nx.json
+index 5bfbf35f4fe47c69d54bf432161587ecaaa9172c..11fd4513a638839a7efd43188407c6fac70bbdc0 100644
+--- a/nx.json
++++ b/nx.json
+@@ -17,7 +17,8 @@
+       "dependsOn": [
+         "^build"
+       ],
+-      "cache": false
++      "cache": false,
++      "parallelism": false
+     },
+     "build-prod": {
+       "dependsOn": [
 diff --git a/packages/network-interception/lib/core/document-preparation.ts b/packages/network-interception/lib/core/document-preparation.ts
-index b464348..cd5ccb3 100644
+index b4643489376b08d3157d774675bf7c149fd1d023..cd5ccb37033ad64463e7fda358409782961afbc7 100644
 --- a/packages/network-interception/lib/core/document-preparation.ts
 +++ b/packages/network-interception/lib/core/document-preparation.ts
 @@ -53,7 +53,11 @@ function resolveInjectionLevelInner (facts: InjectionLevelFacts): InjectionLevel
@@ -20,7 +37,7 @@ index b464348..cd5ccb3 100644
    }
 
 diff --git a/packages/network-interception/lib/ports/http-interception.ts b/packages/network-interception/lib/ports/http-interception.ts
-index 0eea440..0de1732 100644
+index 0e4ba96f29dbef6ece8e5f65f146ef63a7db880e..75d04d575ce17332758932def05bba65eac7bf76 100644
 --- a/packages/network-interception/lib/ports/http-interception.ts
 +++ b/packages/network-interception/lib/ports/http-interception.ts
 @@ -12,6 +12,7 @@ export type HttpRequest = {
@@ -32,7 +49,7 @@ index 0eea440..0de1732 100644
    // so classification agrees with the interception that actually ran.
    hadMatchingRoutes?: boolean
 diff --git a/packages/network-interception/test/unit/document-preparation.spec.ts b/packages/network-interception/test/unit/document-preparation.spec.ts
-index 6e81c43..2c02f19 100644
+index 6e81c43798466f48c1ca3656d2a9828c0d869327..2c02f19a9847f7240a6b559691de54a788196e50 100644
 --- a/packages/network-interception/test/unit/document-preparation.spec.ts
 +++ b/packages/network-interception/test/unit/document-preparation.spec.ts
 @@ -3,6 +3,27 @@ import { resolveInjectionLevel, resolveWantsSecurityRemoved } from '../../lib/co
@@ -64,10 +81,10 @@ index 6e81c43..2c02f19 100644
        expect(resolveInjectionLevel({
          hasFileServerError: true,
 diff --git a/packages/proxy/lib/adapters/http-codec.ts b/packages/proxy/lib/adapters/http-codec.ts
-index 1b76edc..363a905 100644
+index 2db3f947cafc303efcfa8d4aac9b80b4449cb97c..e2a6a6bea7ba3d0e5e1245b4ab232cd964406fc9 100644
 --- a/packages/proxy/lib/adapters/http-codec.ts
 +++ b/packages/proxy/lib/adapters/http-codec.ts
-@@ -47,6 +47,7 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
+@@ -104,6 +104,7 @@ export function createProxyHttpCodec (options: ProxyHttpCodecOptions = {}): Tran
          headers: ctx.req.headers as HttpRequest['headers'],
          body: ctx.req.body,
          resourceType: ctx.req.resourceType,
@@ -75,7 +92,7 @@ index 1b76edc..363a905 100644
        }
      },
 
-@@ -67,6 +68,10 @@ export function createProxyHttpCodec (): TransportCodecPort<HttpInterceptCtx, Ht
+@@ -124,6 +125,10 @@ export function createProxyHttpCodec (options: ProxyHttpCodecOptions = {}): Tran
          ctx.req.body = request.body
        }
 
@@ -87,7 +104,7 @@ index 1b76edc..363a905 100644
      },
 
 diff --git a/packages/proxy/lib/http/util/rewriter.ts b/packages/proxy/lib/http/util/rewriter.ts
-index 417cc56..3597baf 100644
+index 417cc56dc7750adcf1df8960c2d6a1aca9f26323..3597bafd4938400f708187fe45d9f4accfc427ac 100644
 --- a/packages/proxy/lib/http/util/rewriter.ts
 +++ b/packages/proxy/lib/http/util/rewriter.ts
 @@ -119,9 +119,12 @@ export async function html (html: string, opts: SecurityOpts & InjectionOpts) {
@@ -107,7 +124,7 @@ index 417cc56..3597baf 100644
 
    return `<head> ${htmlToInject} </head>${html}`
 diff --git a/packages/proxy/lib/http/util/top-simulation.ts b/packages/proxy/lib/http/util/top-simulation.ts
-index 36e1384..eafec22 100644
+index 19e393d3071eac3f17897c847565ba5134e5e2c4..b7e85eb06e2fc390b5b612c9e61c0cc2355b96fc 100644
 --- a/packages/proxy/lib/http/util/top-simulation.ts
 +++ b/packages/proxy/lib/http/util/top-simulation.ts
 @@ -1,4 +1,5 @@
@@ -116,7 +133,7 @@ index 36e1384..eafec22 100644
 
  export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean => {
    const currentAUTUrl = ctx.getAUTUrl()
-@@ -8,7 +9,23 @@ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean
+@@ -8,9 +9,25 @@ export const doesTopNeedToBeSimulated = <T>(ctx: HttpMiddlewareThis<T>): boolean
      return false
    }
 
@@ -143,11 +160,13 @@ index 36e1384..eafec22 100644
 +
 +  return !(isDirectPrimaryNavigation && urlOriginsMatch(currentAUTUrl, ctx.req.proxiedUrl))
  }
+
+ const sameSiteFetchSites = ['same-origin', 'same-site']
 diff --git a/packages/proxy/lib/types.ts b/packages/proxy/lib/types.ts
-index 27f8435..1401e9f 100644
+index bd05e7dbcbc97973a7e8d48b6bc3d19a371e2398..510167fabed598b19b8c7f6b3a2a1ae57860ee06 100644
 --- a/packages/proxy/lib/types.ts
 +++ b/packages/proxy/lib/types.ts
-@@ -90,6 +90,8 @@ export type BrowserPreRequest = {
+@@ -91,6 +91,8 @@ export type BrowserPreRequest = {
    initiator?: Protocol.Network.Initiator
    documentURL?: string
    hasRedirectResponse?: boolean
@@ -157,10 +176,10 @@ index 27f8435..1401e9f 100644
    cdpRequestWillBeSentReceivedTimestamp?: number
  }
 diff --git a/packages/proxy/test/unit/adapters/http-codec.spec.ts b/packages/proxy/test/unit/adapters/http-codec.spec.ts
-index 04fe5bf..6311321 100644
+index 7262ad85abe2e2759a1668e18ee03976a7093a37..995ca8471d377eac1f63689f5ff9ddf67cf277b7 100644
 --- a/packages/proxy/test/unit/adapters/http-codec.spec.ts
 +++ b/packages/proxy/test/unit/adapters/http-codec.spec.ts
-@@ -22,6 +22,18 @@ describe('proxyHttpCodec', () => {
+@@ -58,6 +58,18 @@ describe('proxyHttpCodec', () => {
      expect(ctx.id).to.equal(request.id)
    })
 
@@ -180,10 +199,10 @@ index 04fe5bf..6311321 100644
      const ctx = createCtx()
 
 diff --git a/packages/proxy/test/unit/http/request-middleware.spec.ts b/packages/proxy/test/unit/http/request-middleware.spec.ts
-index cbd6c28..be85b2e 100644
+index 9ce17576e9c151698a1424cbf441bb4cceb60eb4..e2c08c316318bc4d4261bd140a258c6e2003a462 100644
 --- a/packages/proxy/test/unit/http/request-middleware.spec.ts
 +++ b/packages/proxy/test/unit/http/request-middleware.spec.ts
-@@ -430,6 +430,73 @@ describe('http/request-middleware', () => {
+@@ -506,6 +506,73 @@ describe('http/request-middleware', () => {
    describe('MaybeAttachCrossOriginCookies', () => {
      const { MaybeAttachCrossOriginCookies } = RequestMiddleware
 
@@ -258,10 +277,10 @@ index cbd6c28..be85b2e 100644
        const ctx = await getContext()
 
 diff --git a/packages/proxy/test/unit/http/response-middleware.spec.ts b/packages/proxy/test/unit/http/response-middleware.spec.ts
-index 6846276..2dbade2 100644
+index b3f767be2b6060828f2480049011dc32f4bff794..99b1c2c29997f8b1abbd87b5225841891b86a877 100644
 --- a/packages/proxy/test/unit/http/response-middleware.spec.ts
 +++ b/packages/proxy/test/unit/http/response-middleware.spec.ts
-@@ -738,7 +738,7 @@ describe('http/response-middleware', function () {
+@@ -739,7 +739,7 @@ describe('http/response-middleware', function () {
        expect(ctx.res.wantsInjection).toEqual('full')
      })
 
@@ -270,7 +289,7 @@ index 6846276..2dbade2 100644
        prepareContext({
          renderedHTMLOrigins: {},
          getRenderedHTMLOrigins () {
-@@ -746,7 +746,7 @@ describe('http/response-middleware', function () {
+@@ -747,7 +747,7 @@ describe('http/response-middleware', function () {
          },
          req: {
            proxiedUrl: 'http://127.0.0.1:3501/',
@@ -279,7 +298,7 @@ index 6846276..2dbade2 100644
            cookies: {},
            headers: {
              'accept': [
-@@ -766,7 +766,7 @@ describe('http/response-middleware', function () {
+@@ -767,7 +767,7 @@ describe('http/response-middleware', function () {
        expect(ctx.res.wantsInjection).toEqual('partial')
      })
 
@@ -288,7 +307,7 @@ index 6846276..2dbade2 100644
        prepareContext({
          renderedHTMLOrigins: {},
          getRenderedHTMLOrigins () {
-@@ -791,7 +791,7 @@ describe('http/response-middleware', function () {
+@@ -792,7 +792,7 @@ describe('http/response-middleware', function () {
        })
 
        await testMiddleware([SetInjectionLevel], ctx)
@@ -297,7 +316,7 @@ index 6846276..2dbade2 100644
      })
 
      it('does not set Origin-Agent-Cluster header to false when injection is not expected', async function () {
-@@ -1236,6 +1236,21 @@ describe('http/response-middleware', function () {
+@@ -1277,6 +1277,21 @@ describe('http/response-middleware', function () {
    describe('MaybeCopyCookiesFromIncomingRes', function () {
      const { MaybeCopyCookiesFromIncomingRes } = ResponseMiddleware
 
@@ -320,7 +339,7 @@ index 6846276..2dbade2 100644
        const { appendStub, ctx } = prepareSameOriginContext({
          incomingRes: {
 diff --git a/packages/proxy/test/unit/http/util/rewriter.spec.ts b/packages/proxy/test/unit/http/util/rewriter.spec.ts
-index f608e0b..2000a3b 100644
+index f608e0b19bdb5b4d9dd900728e0e0957bf9039bf..2000a3bcd1c23cfadcc3651b39b06c8604e8e072 100644
 --- a/packages/proxy/test/unit/http/util/rewriter.spec.ts
 +++ b/packages/proxy/test/unit/http/util/rewriter.spec.ts
 @@ -3,6 +3,19 @@ import * as rewriter from '../../../../lib/http/util/rewriter'
@@ -344,10 +363,10 @@ index f608e0b..2000a3b 100644
        const html = '<html><head></head><body></body></html>'
        const opts = {
 diff --git a/packages/proxy/test/unit/http/util/top-simulation.spec.ts b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
-index 10454fb..1908262 100644
+index bf8937939e39615aac7ab1edf4e4f3004c8c53e1..a2c687f04b78ba606a065c1b02dd99a00621e31f 100644
 --- a/packages/proxy/test/unit/http/util/top-simulation.spec.ts
 +++ b/packages/proxy/test/unit/http/util/top-simulation.spec.ts
-@@ -5,6 +5,48 @@ import { doesTopNeedToBeSimulated } from '../../../../lib/http/util/top-simulati
+@@ -5,6 +5,48 @@ import { doesBrowserSendAllCookies, doesTopNeedToBeSimulated } from '../../../..
  describe('.doesTopNeedToBeSimulated', () => {
    const autUrl = 'http://localhost:8080'
 
@@ -397,10 +416,10 @@ index 10454fb..1908262 100644
      const mockCtx: HttpMiddlewareThis<any> = {
        getAUTUrl: vi.fn().mockReturnValue(autUrl),
 diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
-index 454a54a..83113b8 100644
+index fb1c16434e69ffe4dcf380820c576e601dca5c77..5fde28ef397f4aebdb3e7e518f10dab70649efc5 100644
 --- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
 +++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-codec.ts
-@@ -297,6 +297,7 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
+@@ -330,6 +330,7 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
          headers: transportRequest.headers,
          body: transportRequest.pausePostDataBuffer ?? transportRequest.postData,
          resourceType: transportRequest.resourceType,
@@ -408,31 +427,19 @@ index 454a54a..83113b8 100644
        }
      },
 
-@@ -355,6 +356,10 @@ export function createCdpFetchCodec (): TransportCodecPort<CdpFetchTransportRequ
-         transportRequest.hadMatchingRoutes = httpRequest.hadMatchingRoutes
-       }
-
-+      if (httpRequest.responseTimeout !== undefined) {
-+        transportRequest.responseTimeout = httpRequest.responseTimeout
-+      }
-+
-       return transportRequest
-     },
-
 diff --git a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
-index 889433f..0950874 100644
+index f122927f3cee857558254c65584b695f60edef1f..7a77b29f405361988b96830e8a25195f4129c9f3 100644
 --- a/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
 +++ b/packages/server/lib/browsers/cdp-protocol/cdp-fetch-transport.ts
-@@ -22,7 +22,7 @@ const debug = debugModule('cypress:server:browsers:cdp-fetch-transport')
- type CdpFetchClient = Pick<ICriClient, 'send' | 'on' | 'off'>
+@@ -24,6 +24,7 @@ type CdpFetchClient = Pick<ICriClient, 'send' | 'on' | 'off'>
 
  type CdpFetchRequest = Protocol.Fetch.RequestPausedEvent['request']
--const RESPONSE_PAUSE_TIMEOUT_MS = 30000
-+const DEFAULT_RESPONSE_PAUSE_TIMEOUT_MS = 30000
- const REDIRECT_STATUS_CODES = [301, 302, 303, 307, 308]
+ const INVALID_INTERCEPTION_ID = /Invalid InterceptionId/
++const REDIRECT_STATUS_CODES = [301, 302, 303, 307, 308]
 
  const setCookieHeaders = (headers: Protocol.Fetch.HeaderEntry[]): string[] => {
-@@ -90,6 +90,9 @@ const partitionInternalMarkers = (headers: Protocol.Network.Headers) => {
+   return headers
+@@ -90,6 +91,9 @@ const partitionInternalMarkers = (headers: Protocol.Network.Headers) => {
  let extraTargetTransportCount = 0
 
  type CdpFetchTransportOptions = {
@@ -442,7 +449,7 @@ index 889433f..0950874 100644
    isAUTFrame?: (frameId: string) => Promise<boolean>
    /**
     * When true, mark every paused request with X-Cypress-Is-From-Extra-Target
-@@ -152,6 +155,7 @@ export interface CdpFetchTransportRequest extends CdpFetchRequest {
+@@ -159,6 +163,7 @@ export interface CdpFetchTransportRequest extends CdpFetchRequest {
    pausePostDataBuffer?: Buffer
    requestId?: string
    resourceType?: ResourceType
@@ -450,26 +457,41 @@ index 889433f..0950874 100644
    sessionId?: string
    // Request-stage route-match result, threaded from the neutral request —
    // see the `next` callback in `interceptRequest`.
-@@ -181,7 +185,7 @@ export interface CdpFetchTransportResponse extends CdpFetchTransportRequest {
+@@ -195,9 +200,8 @@ export interface CdpFetchTransportResponse extends CdpFetchTransportRequest {
 
  /**
   * `headersReady` settles once the response pause has arrived and its headers
-- * are resolved. RESPONSE_PAUSE_TIMEOUT_MS is bounded on that rather than on the
-+ * are resolved. The configured response timeout is bounded on that rather than on the
-  * whole response so the body transfer, which can legitimately outlast the time
-  * the browser took to respond, is not charged against a pause that arrived.
+- * are resolved. A request's `responseTimeout` is bounded on that rather than on
+- * the whole response so the body transfer, which can legitimately outlast the
+- * time the browser took to respond, is not charged against a pause that arrived.
++ * are resolved. An explicit request timeout or configured response timeout is bounded
++ * on that rather than the whole response; body transfer is not charged against it.
   */
-@@ -666,7 +670,7 @@ export class CdpFetchTransport {
-             new Promise<never>((_resolve, reject) => {
-               timeout = setTimeout(() => {
-                 reject(new Error(`Timed out waiting for CDP Fetch response pause for ${event.request.url}`))
--              }, RESPONSE_PAUSE_TIMEOUT_MS)
-+              }, outbound.responseTimeout ?? this.options.responseTimeout?.() ?? DEFAULT_RESPONSE_PAUSE_TIMEOUT_MS)
-             }),
-           ])
+ type ResponsePauseDeferred = PromiseWithResolvers<CdpFetchTransportResponse> & {
+   headersReady: PromiseWithResolvers<void>
+@@ -687,15 +691,16 @@ export class CdpFetchTransport {
 
+         requestContinued = true
+
+-        // Like the MITM path, only a request handler's responseTimeout bounds
+-        // the wait; otherwise the origin may take any time to send headers.
++        // Honor explicit request overrides and the configured response timeout.
++        // Without either, preserve upstream's unbounded wait for headers.
+         // Abandoned flows settle on a canceled Network.loadingFailed (not
+         // emitted for service workers or downloads) or on reset()/stop().
+         let timeout: NodeJS.Timeout | undefined
+
+         try {
+-          if (outbound.responseTimeout) {
+-            const responseTimeout = outbound.responseTimeout
++          const responseTimeout = outbound.responseTimeout ?? this.options.responseTimeout?.()
++
++          if (responseTimeout) {
+
+             await Promise.race([
+               responseDeferred.headersReady.promise,
 diff --git a/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts b/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
-index 5e668a6..06e2a4e 100644
+index 8c4ef33baf54370f69b06b4c109aa2787b80ef4a..faa9b6722cd82331d432b2807e8fdfd9801b0d51 100644
 --- a/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
 +++ b/packages/server/lib/browsers/cdp-protocol/cdp_automation.ts
 @@ -3,7 +3,7 @@
@@ -488,7 +510,7 @@ index 5e668a6..06e2a4e 100644
 +  private crossOriginRedirects: Set<string> = new Set()
    private executionContexts: Map<Protocol.Runtime.ExecutionContextId, Protocol.Runtime.ExecutionContextDescription> = new Map()
 
-   private constructor (private sendDebuggerCommandFn: SendDebuggerCommand, private onFn: OnFn, private offFn: OffFn, private sendCloseCommandFn: SendCloseCommand, private automation: Automation, private focusTabOnScreenshot: boolean = false, private isHeadless: boolean = false, private storageOrigins: Set<string> = new Set()) {
+   private constructor (private sendDebuggerCommandFn: SendDebuggerCommand, private onFn: OnFn, private offFn: OffFn, private sendCloseCommandFn: SendCloseCommand, private automation: Automation, private focusTabOnScreenshot: boolean = false, private bringsPageToFront: boolean = false, private storageOrigins: Set<string> = new Set()) {
 @@ -91,6 +92,7 @@ export class CdpAutomation implements CDPClient, AutomationMiddleware {
      onFn('Network.responseReceived', this.onResponseReceived)
      onFn('Network.requestServedFromCache', this.onRequestServedFromCache)
@@ -547,10 +569,10 @@ index 5e668a6..06e2a4e 100644
      if (params.response.fromDiskCache || (params.response.fromServiceWorker && params.response.encodedDataLength <= 0)) {
        this.automation.onRemoveBrowserPreRequest?.(params.requestId)
 diff --git a/packages/server/lib/network-runtime.ts b/packages/server/lib/network-runtime.ts
-index 678ee2e..3a44f4e 100644
+index b90b14d0cf00f3d6d2c3beaf853e1968c6fda884..fb27a8373c33c8b051a09b1da957254737c4ea19 100644
 --- a/packages/server/lib/network-runtime.ts
 +++ b/packages/server/lib/network-runtime.ts
-@@ -323,6 +323,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
+@@ -324,6 +324,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
    }
 
    const fetchTransport = new CdpFetchTransport(deps.client, networkInterception, {
@@ -558,7 +580,7 @@ index 678ee2e..3a44f4e 100644
      isAUTFrame: deps.isAUTFrame,
      // Download-manager pauses omit networkId and never emit requestWillBeSent;
      // pre-register so CorrelateBrowserPreRequest does not wait the full timeout.
-@@ -372,6 +373,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
+@@ -374,6 +375,7 @@ export function createCdpFetchRuntime (deps: CreateCdpFetchRuntimeDeps): CdpFetc
        }
 
        const extraTransport = new CdpFetchTransport(client, networkInterception, {
@@ -567,10 +589,10 @@ index 678ee2e..3a44f4e 100644
          resolveOriginRedirect,
          onRequestCanceled,
 diff --git a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
-index 4297c81..5ba7233 100644
+index b9303e6eb871d3b0345598995ca5107f859b2ec1..3b39443f3d128389b4a52e6e2211f64664d77426 100644
 --- a/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
 +++ b/packages/server/test/unit/browsers/cdp-fetch-transport.spec.ts
-@@ -119,6 +119,7 @@ function createNetworkExtraInfo () {
+@@ -121,6 +121,7 @@ function createNetworkExtraInfo () {
 
  function createTransport (client: ReturnType<typeof createClient>, options: {
    httpIntercept?: HttpIntercept<any, any>
@@ -578,7 +600,7 @@ index 4297c81..5ba7233 100644
    isAUTFrame?: (frameId: string) => Promise<boolean>
    isFromExtraTarget?: boolean
    addPendingUrlWithoutPreRequest?: (url: string) => void
-@@ -138,6 +139,7 @@ function createTransport (client: ReturnType<typeof createClient>, options: {
+@@ -141,6 +142,7 @@ function createTransport (client: ReturnType<typeof createClient>, options: {
      return shouldStreamResponseBody(event, { modifyObstructiveCode: true, hasMatchingRoute: () => hasMatchingRoute })
    }
    const transport = new CdpFetchTransport(client as any, options.httpIntercept, {
@@ -586,15 +608,16 @@ index 4297c81..5ba7233 100644
      isAUTFrame: options.isAUTFrame,
      isFromExtraTarget: options.isFromExtraTarget,
      addPendingUrlWithoutPreRequest: options.addPendingUrlWithoutPreRequest,
-@@ -3507,6 +3509,54 @@ describe('CdpFetchTransport', () => {
+@@ -4101,7 +4103,55 @@ describe('CdpFetchTransport', () => {
        })
      })
 
+-    it('does not charge the response body transfer against the responseTimeout', async () => {
 +    it.each([
 +      [60000, undefined, 31000, false],
 +      [30000, 60000, 31000, false],
 +      [60000, 1000, 1001, true],
-+      [undefined, undefined, 30001, true],
++      [undefined, undefined, 30001, false],
 +    ] as const)('honors configured %s and per-request %s response timeouts at %s ms', async (configured, override, elapsed, timesOut) => {
 +      const client = createClient()
 +      const httpIntercept = new HttpIntercept(createCdpFetchCodec())
@@ -625,7 +648,7 @@ index 4297c81..5ba7233 100644
 +        if (timesOut) {
 +          await handled
 +          expect(onError).toHaveBeenCalledOnce()
-+          expect(onError.mock.calls[0][0].message).toContain('Timed out waiting for CDP Fetch response pause')
++          expect(onError.mock.calls[0][0].message).toContain('ESOCKETTIMEDOUT')
 +        } else {
 +          expect(onError).not.toHaveBeenCalled()
 +          await onRequestPaused(createPausedRequest({ requestId: 'fetch-timeout', networkId: 'network-timeout', responseStatusCode: 200 }))
@@ -638,11 +661,12 @@ index 4297c81..5ba7233 100644
 +      }
 +    })
 +
-     it('does not charge the response body transfer against the response pause timeout', async () => {
++    it('does not charge the response body transfer against the response pause timeout', async () => {
        const client = createClient()
        const httpIntercept = new HttpIntercept(createCdpFetchCodec())
+       const { transport } = createTransport(client, { httpIntercept })
 diff --git a/packages/server/test/unit/browsers/cdp_automation.spec.ts b/packages/server/test/unit/browsers/cdp_automation.spec.ts
-index 467997b..1141e45 100644
+index 467997becaaec136739886ba8c602f31bea4833b..1141e45840703e7cb360b851a5331e2d40b2764f 100644
 --- a/packages/server/test/unit/browsers/cdp_automation.spec.ts
 +++ b/packages/server/test/unit/browsers/cdp_automation.spec.ts
 @@ -290,6 +290,40 @@ describe('lib/browsers/cdp_automation', () => {
@@ -706,23 +730,3 @@ index 467997b..1141e45 100644
        })
 
        it('cleans up prerequests when response is cached from disk', () => {
-diff --git a/.node-version b/.node-version
---- a/.node-version
-+++ b/.node-version
-@@ -1 +1 @@
--24.22.1
-+24.22.3
-diff --git a/nx.json b/nx.json
-index 097763c..3fe83bb 100644
---- a/nx.json
-+++ b/nx.json
-@@ -17,7 +17,8 @@
-       "dependsOn": [
-         "^build"
-       ],
--      "cache": false
-+      "cache": false,
-+      "parallelism": false
-     },
-     "build-prod": {
-       "dependsOn": [

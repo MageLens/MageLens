@@ -4,7 +4,7 @@
 # License: see LICENSE in the repository root.
 
 set -euo pipefail
-# Cypress 16.3.0 bundles Electron 43.8.4. Electron initializes Hunspell even
+# Cypress 16.4.0 bundles Electron 43.8.4. Electron initializes Hunspell even
 # with webPreferences.spellcheck=false (electron/electron#22995). Package the
 # Cypress controller's English dictionary before any test traffic. The
 # application under test runs in Chrome; Cypress itself still uses Electron.
