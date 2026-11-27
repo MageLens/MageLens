@@ -68,6 +68,7 @@ Add Cypress scenarios in `cypress/e2e/` or module `Test/Cypress/` directories. A
 | `./bin/run-coverage --refresh-cache` | Clean caches before collection |
 | `./bin/run-coverage --refresh-assets` | Refresh static assets and caches before collection |
 | `./bin/run-coverage --restart-php` | Restart PHP before collection |
+| `./bin/run-coverage --include-machine-report` | Also write the SQLite coverage database |
 | `./bin/runner COMMAND` | Run Node, npm or a shell in the selected runner container |
 | `bin/magento`, `bin/composer`, `bin/bash` | Work in the application container |
 | `./bin/application-compose logs app phpfpm runner` | Inspect application and browser services |
@@ -80,7 +81,7 @@ Use the pinned Chrome for Testing build for every Cypress and Playwright journey
 
 Automated browser scenarios disable page-change animations. Uncaught application errors still fail the run.
 
-Open `coverage/index.html` after a successful run. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. The [XML configuration report](docs/coverage.md#xml-configuration-coverage) in `coverage/xml/` maps observed runtime effects to declarations in the original source tree. Read measurement warnings before interpreting template and XML percentages.
+Open `coverage/index.html` after a successful run. To analyse results, run `./bin/run-coverage --include-machine-report` and query `coverage/report.sqlite` read-only as described in the [coverage-database skill](.agents/skills/coverage-database/SKILL.md) instead of parsing HTML or loading whole exports. PHP executable lines appear in `coverage/php/`, whole JavaScript file statements in `coverage/js/`, and HTML/PHTML bindings and inline scripts in `coverage/templates/`. DOM presence is reported separately from execution. The [XML configuration report](docs/coverage.md#xml-configuration-coverage) in `coverage/xml/` maps observed runtime effects to declarations in the original source tree. Read measurement warnings before interpreting template and XML percentages.
 
 Tests audit the HTML source of selected pages by calling `cy.mageLensValidateHtml()` in Cypress or the `mageLensValidateHtml(page)` fixture in Playwright. Audits are opt-in and listed in the separate Reports section of `coverage/index.html`, with details in `coverage/html-validation/`; a run without calls is shown as not audited. Captures are validated after the tests finish; findings never fail a test or the run. See [HTML validation](docs/coverage.md#html-validation) for the validation target and its limitations.
 
@@ -112,6 +113,7 @@ Fix failures, push a new candidate and request CI again. Rerun all jobs on the f
 - Keep warm-up separate from collection. Fresh run IDs and zero-hit baselines must exclude stale and warm-up execution.
 - Preserve fixture, collection and compatibility-patch cleanup after failures or interruptions on both platforms.
 - Retain checks for matching run IDs, unchanged source and all tests passing before reports and badges are published. Skipped or pending tests are not a successful run.
+- Keep every value in the opt-in coverage database equal to what the corresponding report shows: totals, percentages with the report's own rounding, module names as registered in `etc/module.xml`, and collector status. Mark data that was not observed, such as a template inventory without observation records, instead of reporting it as uncovered, and carry measurement warnings into the manifest. Retain the check that compares the database with the reports before publication.
 - Never print or commit Composer auth, `.env`, installed `env.php`, certificates or credential volumes. Do not prune unrelated Docker resources or remove an existing application's volumes.
 - Preserve dependency pins and lockfiles together. Do not publish a release unless requested.
 - Exclude generated runtime files, coverage reports and incidental badge changes from unrelated work. Report which validation actually passed and any checks blocked by unavailable services, images, repositories or credentials.

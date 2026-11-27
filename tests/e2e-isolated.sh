@@ -240,7 +240,7 @@ fi
     # The installer selection must drive coverage without an extra runner flag.
     mkdir -p coverage
     printf 'obsolete report content\n' > coverage/obsolete-publication.txt
-    MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage ${coverage_options[@]+"${coverage_options[@]}"} | tee .runtime/coverage-run.log
+    MAGELENS_MAGERUN_OFFLINE=1 ./bin/run-coverage --include-machine-report ${coverage_options[@]+"${coverage_options[@]}"} | tee .runtime/coverage-run.log
     if [[ "$theme/$runner" == hyva/playwright ]]; then
         ./bin/runner node --test tests/hyva-csp-no-observer.cjs
     fi

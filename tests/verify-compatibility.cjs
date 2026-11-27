@@ -87,3 +87,21 @@ assert.deepEqual(read('coverage/summary.json').htmlValidation, {audits: 2, pages
 assert.equal(validation.target, 'source');
 assert.match(fs.readFileSync('coverage/index.html', 'utf8'), /<a href="html-validation\/index\.html">HTML validation/);
 console.log('Verified opt-in HTML validation of a valid and an invalid session-protected page.');
+
+const {DatabaseSync} = require('node:sqlite');
+const database = new DatabaseSync('coverage/report.sqlite', {readOnly: true});
+const query = sql => database.prepare(sql).all();
+assert.deepEqual(query('SELECT collector, status FROM manifest ORDER BY collector').map(row => [row.collector, row.status]),
+    [['js', 'collected'], ['php', 'collected'], ['template', 'collected'], ['test-attribution', 'collected'], ['xml', 'collected']]);
+const [phpTotals] = query("SELECT total, covered FROM metric_totals WHERE source_type = 'php' AND metric = 'lines'");
+assert.deepEqual([phpTotals.total, phpTotals.covered], [php.total, php.covered], 'The coverage database and the PHP report must agree');
+const [probe] = query("SELECT total, covered FROM module_totals WHERE module_name = 'MageLens_Compatibility' AND source_type = 'php'");
+assert.ok(probe.covered > 0 && probe.covered < probe.total, 'The fixture module needs covered and uncovered PHP lines in the database');
+// The markup probe rejects requests without the test session; that branch never runs.
+assert.ok(query("SELECT start_line FROM uncovered_records WHERE file_path = 'app/code/MageLens/Compatibility/Controller/Index/Markup.php' AND metric = 'lines'").length > 0);
+// Attribution in the database answers which test ran a file, here the late controller of the first compatibility test.
+assert.equal(query('SELECT COUNT(*) AS attempts FROM attempts')[0].attempts, JSON.parse(fs.readFileSync('coverage/attribution/index.json', 'utf8')).attempts.length);
+assert.deepEqual(query("SELECT DISTINCT test_name FROM record_attempts WHERE file_path = 'app/code/MageLens/Compatibility/Controller/Index/Late.php'")
+    .map(row => row.test_name.split(' › ').at(-1)), ['collects real PHP, JavaScript and template execution']);
+database.close();
+console.log('Verified the coverage database against the reports and the test attribution.');

@@ -9,12 +9,14 @@ const {sourceHashes} = require('./prepare.cjs');
 const {badge, cypressBadge, setBadgeSection, formatPercent} = require('./badges.cjs');
 const {writeIndex, templateLimitations} = require('./report-index.cjs');
 const {writeReport: writeHtmlValidationReport} = require('./html-validation.cjs');
+const {writeDatabase} = require('./report-database.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const run = read('coverage/run.json');
 const php = read('coverage/php/coverage-summary.json');
 const js = read('coverage/js/coverage-summary.json');
 const templates = read('coverage/templates/coverage-summary.json');
-const xml = readXmlJson('coverage/xml/coverage.json', {omit: ['files', 'requests']});
+const includeMachineReport = process.argv.includes('--include-machine-report');
+const xml = readXmlJson('coverage/xml/coverage.json', {omit: includeMachineReport ? ['requests'] : ['files', 'requests']});
 assert.equal(xml.run, run.id);
 assert.equal(xml.complete, true);
 assert.equal(xml.percent, xml.total ? xml.covered / xml.total * 100 : null, 'Invalid XML coverage percentage');
@@ -62,8 +64,11 @@ for (const [type, metric] of Object.entries(metrics).filter(([type]) => type !==
 }
 const generatedAt = new Date().toISOString();
 const htmlValidation = writeHtmlValidationReport(run);
+const limitations = templateLimitations(templates);
+// The coverage database is opt-in: it costs generation time and disk space on every run.
+if (includeMachineReport) writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
 fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
-    templateLimitations: templateLimitations(templates)}, null, 2));
+    templateLimitations: limitations}, null, 2));
 writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});
 if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
     `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`

@@ -75,6 +75,16 @@ test(`${runner}: README flag reaches preparation and finalization only when requ
     assert.match(optedIn.calls, /finalize\.cjs "\$@".* sh --update-readme/);
 });
 
+test(`${runner}: the coverage database is requested from finalization only with its flag`, t => {
+    const defaultRun = workflow(t, [], '', false, runner);
+    assert.equal(defaultRun.status, 0, defaultRun.stderr);
+    assert.doesNotMatch(defaultRun.calls, /--include-machine-report/);
+    const optedIn = workflow(t, ['--include-machine-report', '--update-readme'], '', false, runner);
+    assert.equal(optedIn.status, 0, optedIn.stderr);
+    assert.match(optedIn.calls, /finalize\.cjs "\$@".* sh --update-readme --include-machine-report/);
+    assert.doesNotMatch(optedIn.calls, /prepare\.cjs.*--include-machine-report/);
+});
+
 test(`${runner}: publishes complete reports after cleanup`, t => {
     const result = workflow(t, [], '', false, runner);
     assert.equal(result.status, 0, result.stderr);
@@ -203,6 +213,7 @@ test('help and invalid options do not touch the environment', t => {
     const help = workflow(t, ['--help']);
     assert.equal(help.calls, '');
     assert.match(help.stdout, /--update-readme/);
+    assert.match(help.stdout, /--include-machine-report/);
     const result = workflow(t, ['--unknown']);
     assert.equal(result.status, 1);
     assert.equal(result.calls, '');
@@ -230,7 +241,7 @@ test('local web report stages only presentation files and never follows input sy
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-public-report-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const coverage = path.join(root, 'coverage');
-    const expected = ['index.html', 'summary.json', 'php/clover.xml', 'php/_js/source-view.js',
+    const expected = ['index.html', 'report.sqlite', 'schema.sql', 'summary.json', 'php/clover.xml', 'php/_js/source-view.js',
         'js/base.css', 'js-application/index.html', 'templates/files/view.html', 'xml/coverage.json', 'badges/php.svg',
         'html-validation/index.html', 'html-validation/results.json'];
     const privateFiles = ['raw/php/private.json', 'raw/templates/private.html', 'raw/html-validation/private.json', 'project-fixtures.json',
