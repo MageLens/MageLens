@@ -10,6 +10,16 @@ Run `./bin/run-coverage` from the installed project root, then open the report U
 
 The local report uses the configured default storefront URL, including its protocol, port and base path where routing supports it. Each new run removes the previous report link until collection, report validation and cleanup succeed. Existing installations must rerun installation with their saved platform, theme and runner flags to enable the report mount and web-server configuration.
 
+## Combined coverage report
+
+Open **By directory** from the overview to browse measured files by their Magento project-relative paths (relative to `src/` in a MageLens checkout). Search matches paths beneath the current directory, and sorting applies to the visible rows. Open a file to see its original source, line states and collector metrics. Use **Back to directory** from a file or **Up one level** from a nested directory. Copy the published report bundle to use it offline.
+
+The combined percentage is covered lines divided by eligible lines. PHP uses the executable lines in the PHP report. Standalone JavaScript uses the original starting lines of mapped Istanbul statements. Template coverage uses the original starting lines of mapped bindings, expressions and inline script statements. When multiple units start on a line, any hit makes that line covered. Statement, function and branch counts and DOM presence are separate metrics.
+
+A PHTML file can contribute to both the PHP and template rows on the overview. Its overall result takes the union of their eligible physical lines and the union of their covered lines, so an overlapping line is counted once and a hit from either collector covers it. The source view shows the collectors' line states separately. Directory totals sum the covered and eligible counts of distinct descendant files. XML configuration coverage measures runtime effects and has its own report and totals.
+
+Mapped lines in unused files with a collected result retain zero hits. Missing mappings, unsupported constructs and template inventories without observation records are flagged and excluded from the measured denominator. A zero denominator displays **N/A**. Partial totals cover only the available measurements.
+
 ## Coverage scope
 
 Coverage includes supported files in:

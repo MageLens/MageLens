@@ -242,7 +242,8 @@ test('local web report stages only presentation files and never follows input sy
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-public-report-'));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const coverage = path.join(root, 'coverage');
-    const expected = ['index.html', 'report.sqlite', 'schema.sql', 'summary.json', 'php/clover.xml', 'php/_js/source-view.js',
+    const expected = ['index.html', 'combined/index.html', 'combined/source-1.html', 'combined/tree.js', 'combined/report.css',
+        'report.sqlite', 'schema.sql', 'summary.json', 'php/clover.xml', 'php/_js/source-view.js',
         'js/base.css', 'js-application/index.html', 'templates/files/view.html', 'xml/coverage.json', 'badges/php.svg',
         'html-validation/index.html', 'html-validation/results.json'];
     const privateFiles = ['raw/php/private.json', 'raw/templates/private.html', 'raw/html-validation/private.json', 'project-fixtures.json',

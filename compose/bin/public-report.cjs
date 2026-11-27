@@ -7,9 +7,9 @@ const path = require('node:path');
 
 // Only these generated views, assets and report downloads belong on the local web server.
 // The collectors share the parent directory with request records and fixture credentials.
-const reportDirectories = ['php', 'js', 'js-application', 'js-libraries', 'templates', 'xml', 'html-validation'];
+const reportDirectories = ['combined', 'php', 'js', 'js-application', 'js-libraries', 'templates', 'xml', 'html-validation'];
 const downloads = new Set([
-    'index.html', 'report.sqlite', 'schema.sql', 'summary.json', 'javascript-summary.json', 'javascript-scope.json',
+    'index.html', 'combined/tree.js', 'combined/report.css', 'report.sqlite', 'schema.sql', 'summary.json', 'javascript-summary.json', 'javascript-scope.json',
     'php/clover.xml', 'php/line-coverage.json', 'templates/coverage-summary.json', 'xml/coverage.json', 'xml/report.css',
     'html-validation/results.json',
     ...['cypress', 'playwright', 'php', 'js', 'templates'].map(name => `badges/${name}.svg`),

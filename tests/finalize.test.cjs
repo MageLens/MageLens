@@ -6,6 +6,7 @@ const {projectFile} = require('./project-path.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {createHash} = require('node:crypto');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
@@ -40,12 +41,20 @@ function reports(t, covered, runner = 'cypress') {
     json('coverage/javascript-scope.json', {run: 'fixture', included: [{path: 'app/code/Acme/Shop/view/frontend/web/js/cart.js', coveragePath: script}]});
     json('coverage/js/coverage-final.json', {[script]: {path: script, statementMap: {0: location}, s: {0: covered * 7},
         fnMap: {0: {name: 'add', loc: location}}, f: {0: covered}, branchMap: {0: {locations: [location]}}, b: {0: [covered]}}});
-    json('coverage/run.json', {id: 'fixture', runner, sources: {}});
+    const template = 'app/code/Acme/Shop/view/frontend/templates/cart.phtml';
+    const sources = Object.fromEntries(['app/code/Acme/Shop/Model/Cart.php', script.split('/src/')[1], template].map(file => {
+        const source = 'src/' + file;
+        const content = '// fixture\n'.repeat(12);
+        fs.mkdirSync(path.join(root, path.dirname(source)), {recursive: true});
+        fs.writeFileSync(path.join(root, source), content);
+        return [source, createHash('sha256').update(content).digest('hex')];
+    }));
+    json('coverage/run.json', {id: 'fixture', runner, roots: ['app/code'], sources});
     json('coverage/php/coverage-summary.json', {run: 'fixture', covered, total: 1, percent, requests: [{uri: '/customer/', method: 'GET'}], commands: []});
     json('coverage/js/coverage-summary.json', {total: Object.fromEntries(['statements', 'functions', 'branches', 'lines'].map(name => [name, {covered, total: 1, pct: percent}]))});
     json('coverage/templates/coverage-summary.json', {schemaVersion: 2, records: 1, lines: {covered, total: 1, percent}, summary: {covered, eligible: 1, percent},
         statements: totals, functions: totals, branches: totals,
-        templates: [{path: 'app/code/Acme/Shop/view/frontend/templates/cart.phtml', kind: 'browser-phtml', instrumented: true,
+        templates: [{path: template, kind: 'browser-phtml', instrumented: true,
             status: covered ? 'observed' : 'unobserved', observations: covered * 3, lineHits: {4: {hits: covered * 2}},
             statements: [{id: 'binding:1', start: {line: 4}, hits: covered * 2}], functions: [{id: 'script:1:f:0', hits: covered}],
             branches: [{id: 'script:1:b:0', hits: covered}], scripts: []}]});
@@ -58,7 +67,10 @@ for (const covered of [0, 1]) test(`publishes valid ${covered * 100}% coverage w
     const fixture = reports(t, covered);
     const result = fixture.run();
     assert.equal(result.status, 0, result.stderr);
-    assert.ok(fs.existsSync(`${fixture.root}/coverage/index.html`));
+    const overview = fs.readFileSync(`${fixture.root}/coverage/index.html`, 'utf8');
+    assert.match(overview, /<a class="primary" href="combined\/index\.html">By directory<\/a>/);
+    assert.match(overview, new RegExp(`Overall line coverage[^<]*</th>\\s*<td>${covered * 3} / 3</td>`));
+    assert.ok(fs.existsSync(`${fixture.root}/coverage/combined/index.html`));
     assert.equal(JSON.parse(fs.readFileSync(`${fixture.root}/coverage/summary.json`)).metrics.php.percent, covered * 100);
 });
 
@@ -463,8 +475,10 @@ test('app/code modules are named as registered in etc/module.xml', t => {
     const fixture = reports(t, 1);
     fs.mkdirSync(`${fixture.root}/src/app/code/Acme/Shop/etc`, {recursive: true});
     fs.writeFileSync(`${fixture.root}/src/app/code/Acme/Shop/etc/module.xml`, '<config><module name="Acme_Store"/></config>');
-    const hash = require('node:crypto').createHash('sha256').update(fs.readFileSync(`${fixture.root}/src/app/code/Acme/Shop/etc/module.xml`)).digest('hex');
-    fixture.json('coverage/run.json', {id: 'fixture', runner: 'cypress', sources: {'src/app/code/Acme/Shop/etc/module.xml': hash}});
+    const run = JSON.parse(fs.readFileSync(`${fixture.root}/coverage/run.json`));
+    const file = 'src/app/code/Acme/Shop/etc/module.xml';
+    run.sources[file] = createHash('sha256').update(fs.readFileSync(path.join(fixture.root, file))).digest('hex');
+    fixture.json('coverage/run.json', run);
     const result = fixture.run(['--include-machine-report']);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(database(t, fixture)("SELECT DISTINCT module_name FROM records WHERE file_path LIKE 'app/code/%'"), [{module_name: 'Acme_Store'}]);

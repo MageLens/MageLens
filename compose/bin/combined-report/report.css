@@ -1,0 +1,49 @@
+/*
+ * Copyright (c)  MageLens
+ * SPDX-License-Identifier: Elastic-2.0
+ * License: see LICENSE in the repository root.
+ */
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #172b3a; background: #f3f6f8; }
+body { margin: 0; }
+main { max-width: 1080px; margin: 48px auto; padding: 0 24px; }
+h1 { overflow-wrap: anywhere; }
+a { color: #086b68; text-underline-offset: 4px; }
+a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #086b68; outline-offset: 4px; }
+nav { overflow-wrap: anywhere; }
+.report-navigation { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 4px; margin: -8px -4px 0; background: #f3f6f8; }
+.back-link, .overview-link:not([hidden]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid #a8c7c5;
+    border-radius: 8px;
+    background: white;
+    font-weight: 600;
+    text-decoration: none;
+}
+.back-link:hover, .overview-link:hover { background: #e0efed; }
+#back-icon { font-size: 1.25em; }
+.home-icon { vertical-align: middle; flex-shrink: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 20px 0; }
+input, select { padding: 6px 8px; font: inherit; }
+.table { overflow: auto; background: white; border: 1px solid #d6dfe5; border-radius: 12px; margin: 16px 0; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+thead { background: #f8fafb; }
+th, td { padding: 12px 16px; border-bottom: 1px solid #e3e9ed; }
+caption { text-align: left; padding: 12px 16px; font-weight: 600; }
+td { white-space: nowrap; }
+.icon { display: inline-block; min-width: 42px; margin-right: 10px; padding: 3px 4px; border-radius: 4px; background: #e5ecf1; text-align: center; font-size: 11px; }
+.php { background: #e5e2fa; }
+.js { background: #fff2bb; }
+.html { background: #ffe5d8; }
+.phtml { background: #f6e0f2; }
+.warnings { background: #fff2ce; padding: 12px 32px; border-radius: 8px; }
+.source th, .source td { padding: 4px 10px; }
+.source pre { margin: 0; tab-size: 4; }
+.source td:last-child { width: 100%; }
+.source tr:target { outline: 2px solid #086b68; outline-offset: -2px; }
+.state { font-size: 12px; }
+.covered { background: #dcefe8; }
+.uncovered { background: #ffe5e5; }

@@ -24,6 +24,7 @@
 !/bin/badges.cjs
 !/bin/browser-navigation.cjs
 !/bin/cli-relay
+!/bin/combined-report/
 !/bin/common
 !/bin/compose-project
 !/bin/dependencies
