@@ -112,7 +112,7 @@ cleanup() {
         if (( published )); then
             printf '\nTests failed in the %s. The reports include their results.\n' "$failed_suites" >&2
         else
-            printf '\nTests failed in the %s. No report was published.\n' "$failed_suites" >&2
+            printf '\nThe %s failed. No report was published.\n' "$failed_suites" >&2
         fi
         (( result )) || result=1
     fi

@@ -222,7 +222,7 @@ for (const failure of ['tests+finalize', 'tests+publish']) test(`${runner}: ${fa
     const result = workflow(t, [], failure, false, runner);
     assert.equal(result.status, 1, result.stderr);
     assert.equal(fs.existsSync(path.join(result.directory, 'src/pub/media/coverage')), false);
-    assert.match(result.stderr, /Tests failed in the (cypress|playwright) suite\. No report was published\./);
+    assert.match(result.stderr, /The (cypress|playwright) suite failed\. No report was published\./);
     assert.doesNotMatch(result.stderr, /include their results/);
 });
 
