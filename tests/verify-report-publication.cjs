@@ -58,6 +58,8 @@ async function verifyPage(file) {
 
 async function main() {
     await verifyPage('index.html');
+    await verifyPage('combined/index.html');
+    await verifyPage('combined/source-1.html');
     for (const type of ['php', 'js', 'templates', 'xml']) {
         await verifyPage(`${type}/index.html`);
         const entries = fs.readdirSync(`coverage/${type}`, {recursive: true});

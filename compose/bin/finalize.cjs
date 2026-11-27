@@ -9,6 +9,8 @@ const {sourceHashes} = require('./prepare.cjs');
 const {badge, cypressBadge, setBadgeSection, formatPercent} = require('./badges.cjs');
 const {writeIndex, templateLimitations} = require('./report-index.cjs');
 const {writeReport: writeHtmlValidationReport} = require('./html-validation.cjs');
+const {buildCoverage} = require('./combined-report/data.cjs');
+const {writeCombinedReport} = require('./combined-report/index.cjs');
 const {writeDatabase} = require('./report-database.cjs');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const run = read('coverage/run.json');
@@ -51,6 +53,11 @@ for (const type of ['php', 'js', 'templates', 'xml']) {
     const html = fs.readFileSync(`coverage/${type}/index.html`, 'utf8');
     assert.ok(/<html/i.test(html), `Missing HTML entry point: ${type}`);
 }
+const scope = read('coverage/javascript-scope.json');
+assert.equal(scope.run, run.id);
+const combined = buildCoverage({run, templates, scope, php: read('coverage/php/line-coverage.json'),
+    javascript: read('coverage/js/coverage-final.json')});
+writeCombinedReport(combined);
 const metrics = {
     xml: {label: 'XML configuration lines', percent: xml.percent},
     php: {label: 'PHP lines', percent: php.percent},
@@ -69,7 +76,7 @@ const limitations = templateLimitations(templates);
 if (includeMachineReport) writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
 fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
     templateLimitations: limitations}, null, 2));
-writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});
+writeIndex({run, generatedAt, combined, templates, xml, tests, cli, htmlValidation});
 if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
     `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
 ).join('\n') + `\n\nFull ${label} run: \`${run.id}\` · ${generatedAt}`);

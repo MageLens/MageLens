@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const {formatPercent} = require('./badges.cjs');
+const {types} = require('./combined-report/data.cjs');
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, character => ({
@@ -19,32 +20,29 @@ function templateLimitations(templates) {
     };
 }
 
-function writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation}) {
+function writeIndex({run, generatedAt, combined, templates, xml, tests, cli, htmlValidation}) {
     const runner = run.runner === 'playwright' ? 'Playwright' : 'Cypress';
     const reports = [
-        ...(xml ? [{key: 'xml', covered: xml.covered, total: xml.total, unit: 'XML lines',
-            description: 'Observed runtime effects from configuration and layout XML. Unmeasured lines are outside the percentage.'}] : []),
-        {key: 'php', covered: php.covered, total: php.total, unit: 'lines',
-            description: 'Executable PHP lines from HTTP requests and Magento CLI commands.'},
-        {key: 'js', covered: js.total.statements.covered, total: js.total.statements.total, unit: 'statements',
-            description: 'Whole .js files executed in the browser.'},
-        {key: 'templates', covered: templates.lines.covered, total: templates.lines.total, unit: 'template lines',
-            description: `HTML/PHTML bindings and inline script execution. DOM presence: ${templates.summary.covered}/${templates.summary.eligible} templates (${templates.summary.percent}%).`}
+        ...Object.entries(types).map(([key, label]) => ({label, ...combined.totals[key]})),
+        {label: 'Overall line coverage (PHP, JavaScript and templates)', ...combined.overall},
+        ...(xml ? [{label: 'XML configuration lines', href: 'xml/index.html', covered: xml.covered, total: xml.total}] : [])
     ];
     const rows = reports.map(report => {
-        const metric = metrics[report.key];
-        const percent = formatPercent(metric.percent);
-        const track = metric.percent === null ? '' : `<div class="track" aria-hidden="true"><span style="width:${metric.percent.toFixed(2)}%"></span></div>`;
+        const percent = report.total ? report.covered / report.total * 100 : null;
+        const track = percent === null ? '' : `<div class="track" aria-hidden="true"><span style="width:${percent.toFixed(2)}%"></span></div>`;
+        const label = report.href ? `<a href="${report.href}">${report.label} <span aria-hidden="true">↗</span></a>` : report.label;
         return `<tr>
-<th scope="row"><a href="${report.key}/index.html">${escapeHtml(metric.label)} <span aria-hidden="true">↗</span></a><small>${report.description}</small></th>
-<td>${report.covered} / ${report.total}<small>${report.unit} covered</small></td>
-<td>${report.total - report.covered}<small>${report.unit} uncovered</small></td>
-<td><strong>${percent}</strong>${track}</td>
+<th scope="row">${label}</th>
+<td>${report.covered} / ${report.total}</td>
+<td>${report.total - report.covered}</td>
+<td><strong>${formatPercent(percent)}</strong>${track}</td>
 </tr>`;
     }).join('\n');
-    const javascript = fs.existsSync('coverage/javascript-summary.json') ? JSON.parse(fs.readFileSync('coverage/javascript-summary.json')) : null;
-    const javascriptDetails = javascript ? `<p class="note">JavaScript reports: <a href="js-application/index.html">application</a> · <a href="js-libraries/index.html">bundled libraries</a>. <a href="javascript-summary.json">Group totals</a> · <a href="javascript-scope.json">Scope and exclusion reasons</a>.</p>` : '';
-    const templateDetails = templates.scripts ? `<p class="note">Template scripts: ${templates.scripts.instrumented} instrumented; ${templates.scripts.unsupported.length} unsupported; ${templates.scripts.generated.length} PHP-generated fragments without a static map. <a href="templates/index.html">Template report</a> · <a href="templates/coverage-summary.json">Template coverage details</a>.</p>` : '';
+    const javascriptDetails = fs.existsSync('coverage/javascript-summary.json') ? `<p>JavaScript groups: <a href="js-application/index.html">application</a> · <a href="js-libraries/index.html">bundled libraries</a>. <a href="javascript-summary.json">Group totals</a> · <a href="javascript-scope.json">Scope and exclusion reasons</a>.</p>` : '';
+    const templateDetails = templates.scripts ? `<p>Template scripts: ${templates.scripts.instrumented} instrumented, ${templates.scripts.unsupported.length} unsupported and ${templates.scripts.generated.length} unmapped PHP-generated fragments. <a href="templates/coverage-summary.json">Template coverage data</a>.</p>` : '';
+    const presence = templates.records
+        ? `DOM presence: ${templates.summary.covered}/${templates.summary.eligible} templates (${templates.summary.percent}%).`
+        : 'DOM presence: no observation records collected.';
     const gaps = templateLimitations(templates);
     const templateWarning = Object.values(gaps).some(items => items.length) ? `<p class="note"><strong>Template measurement is partial.</strong> ${gaps.directives.length} unsupported directives, ${gaps.scripts.length} unsupported scripts and ${gaps.generated.length} unmapped PHP outputs are not fully measured. The percentage covers instrumented constructs only. <a href="templates/coverage-summary.json">Inspect the affected files and reasons</a>.</p>` : '';
     // An unaudited run has no report to open and must not read as a clean result.
@@ -79,6 +77,8 @@ th, td { padding: 20px 24px; border-top: 1px solid #e3e9ed; }
 tbody th { min-width: 290px; font-weight: 600; }
 td { min-width: 140px; font-variant-numeric: tabular-nums; }
 a { color: #086b68; text-underline-offset: 4px; }
+.primary { display: inline-block; padding: 10px 18px; border-radius: 8px; background: #086b68; color: white; font-weight: 600; text-decoration: none; }
+.primary:hover { background: #124340; color: white; }
 a:hover { color: #124340; }
 a:focus-visible { outline: 3px solid #086b68; outline-offset: 4px; }
 small { display: block; margin-top: 8px; font-size: 13px; line-height: 1.5; color: #465d6c; font-weight: 400; }
@@ -96,17 +96,24 @@ code { overflow-wrap: anywhere; }
 <span class="status">${runner} passed · ${tests.totalPassed}/${tests.totalTests} tests</span>
 ${cli.totalTests ? `<span class="status">CLI passed · ${cli.totalPassed}/${cli.totalTests} tests</span>` : ''}
 <h1>MageLens coverage report</h1>
-<p class="intro">PHP, JavaScript, browser-template and XML configuration coverage from the same ${runner} run. Open a report to inspect individual files.</p>
+<p class="intro">PHP, JavaScript, browser-template and XML configuration coverage from the same ${runner} run. Browse project files and module totals in the combined report.</p>
+<p><a class="primary" href="combined/index.html">By directory</a></p>
 <div class="reports">
 <table>
 <caption>Coverage overview</caption>
-<thead><tr><th scope="col">Report</th><th scope="col">Covered</th><th scope="col">Uncovered</th><th scope="col">Coverage</th></tr></thead>
+<thead><tr><th scope="col">Report</th><th scope="col">Covered / eligible lines</th><th scope="col">Uncovered lines</th><th scope="col">Coverage</th></tr></thead>
 <tbody>${rows}</tbody>
 </table>
 </div>
-<p class="note">PHP measures executable lines; JavaScript measures statements so minified bundles do not distort the percentage. Template coverage measures bindings, template expressions and inline scripts in HTML/PHTML, mapped to their original source. Script functions, branches and DOM presence are reported separately. Unvisited eligible code remains in the denominator.</p>
+<p class="note">The overall total counts physical lines once where PHP and template coverage overlap in PHTML. JavaScript lines use mapped statement starts. XML configuration effects have a separate total.</p>
+${combined.overall.partial ? `<p class="note">Partial measurements in ${combined.overall.partial} files. See the directory report for affected paths and reasons.</p>` : ''}
+<details class="note">
+<summary>Collector reports and data</summary>
+<p><a href="php/index.html">PHP lines</a> · <a href="js/index.html">JavaScript statements</a> · <a href="templates/index.html">Template execution</a></p>
+<p>${presence}</p>
 ${javascriptDetails}
 ${templateDetails}
+</details>
 ${templateWarning}
 <div class="reports">
 <table>

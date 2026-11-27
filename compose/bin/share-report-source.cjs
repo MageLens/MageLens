@@ -7,13 +7,17 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {isCoverageExcluded} = require('./project.cjs');
 
-function isShareablePath(file) {
+function isCoverageSourcePath(file) {
     return typeof file === 'string'
         && /^(?:app\/code|app\/design\/(?:frontend|adminhtml)|vendor)\//.test(file)
         && /\.(?:php|phtml|html|js|xml)$/.test(file)
-        && !/[\\\x00-\x1f\x7f-\x9f<>:"|?*]/.test(file)
+        && !/[\\\0]/.test(file)
         && file.split('/').every(part => part && part !== '.' && part !== '..')
         && !isCoverageExcluded(file);
+}
+
+function isShareablePath(file) {
+    return isCoverageSourcePath(file) && !/[\x00-\x1f\x7f-\x9f<>:"|?*]/.test(file);
 }
 
 function createSourceReader(projectRoot, coverageDir) {
@@ -28,7 +32,7 @@ function createSourceReader(projectRoot, coverageDir) {
     }
 
     return file => {
-        if (!isShareablePath(file) || !roots.some(root => file.startsWith(root + '/'))) {
+        if (!isCoverageSourcePath(file) || !roots.some(root => file.startsWith(root + '/'))) {
             throw new Error('Source is outside the measured application scope.');
         }
         const key = 'src/' + file;
