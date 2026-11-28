@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {spawnSync} = require('node:child_process');
+const {spawnSync, execFileSync} = require('node:child_process');
 const root = projectFile();
 const packages = ['redis-6.3.0', 'ssh2-1.5.0', 'swoole-6.2.1', 'imagick-3.8.1'];
 const composerInstall = 'RUN curl -sS https://getcomposer.org/installer | php -- --version=2.9.8 --install-dir=/usr/local/bin --filename=composer';
@@ -113,7 +113,8 @@ test('PHP artifact downloads retry HTTP 504 and fail immediately on HTTP 404', a
     const http = require('node:http');
     const {execFile} = require('node:child_process');
     const {promisify} = require('node:util');
-    const recipe = fs.readFileSync(path.join(root, 'docker/php/Dockerfile'), 'utf8');
+    // Exercise the release downloads even when a source preview replaces them in CI.
+    const recipe = execFileSync('git', ['show', 'HEAD:compose/docker/php/Dockerfile'], {cwd: path.join(__dirname, '..'), encoding: 'utf8'});
     const commands = [...recipe.matchAll(/curl ([^\n]+?) "https:[^"]+" -o/g)].map(match => match[1].split(' '));
     assert.equal(commands.length, 2);
     let status, calls;

@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {configuration, verifyEvidence} = require('./ci/dependency-previews.cjs');
+const {execFileSync} = require('node:child_process');
+const {configuration, verifyEvidence, pcovRecipe} = require('./ci/dependency-previews.cjs');
 const source = {repository: 'MageLens/MagentoTemplateCoverage', pullRequest: 4, sha: 'a'.repeat(40), version: '1.5.5'};
 test('preview configuration rejects floating refs, arbitrary repositories and untracked source PRs', t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magelens-preview-'));
@@ -47,7 +48,8 @@ test('the matrix rejects stale or missing dependency preview provenance', () => 
 });
 
 test('PCOV source previews preserve every unrelated PHP recipe installation', () => {
-    const recipe = fs.readFileSync(path.join(__dirname, '../compose/docker/php/Dockerfile'), 'utf8');
+    // Preview preparation rewrites the worktree recipe before integration checks.
+    const recipe = execFileSync('git', ['show', 'HEAD:compose/docker/php/Dockerfile'], {cwd: path.join(__dirname, '..'), encoding: 'utf8'});
     const preview = pcovRecipe(recipe);
     const blocks = [...recipe.matchAll(/^RUN [^\n]*(?:\n[ \t]+[^\n]*)*/gm)].map(match => match[0]);
     for (const block of blocks) {
