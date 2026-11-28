@@ -8,7 +8,8 @@ License: see LICENSE in the repository root.
 
 ## 1.11.0 - Unreleased
 
-- Prepare PCOV 2.1.4 for PHP 8.6 compatibility and preserve OpenTelemetry while exercising unpublished PCOV source in CI.
+- Pin the MageLens PCOV extension and coverage tools to 2.1.4, which adds Linux NTS support for PHP 8.6.
+- Update HTML-validate to 11.23.0, including the fix for catastrophic backtracking when auditing HTML with validation directives.
 - Add `./bin/run-coverage --include-machine-report`, which writes `coverage/report.sqlite`, a versioned SQLite database of every eligible PHP, JavaScript, template and XML unit with its observations, the test attempts that reached each unit when per-test attribution was collected, views for run, module and file totals and uncovered units, the formal `coverage/schema.sql`, and a coverage-database skill for coding agents. Existing exports are unchanged, and runs without the flag write no database. ([#68](https://github.com/MageLens/MageLens/issues/68))
 
 ## 1.10.0 - 2026-11-24
