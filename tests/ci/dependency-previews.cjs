@@ -50,6 +50,20 @@ function evidence(root = process.cwd()) {
     const actual = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
     return verifyEvidence(expected, actual);
 }
+function pcovRecipe(recipe) {
+    const blocks = [...recipe.matchAll(/^RUN [^\n]*(?:\n[ \t]+[^\n]*)*/gm)].map(match => match[0]);
+    const install = blocks.filter(block => block.includes('pie install "magelens/pcov:'));
+    const tools = blocks.filter(block => block.startsWith('RUN mkdir /opt/pcov-tools'));
+    assert.equal(install.length, 1, 'PCOV preview installation recipe no longer matches');
+    assert.equal(tools.length, 1, 'PCOV preview tools recipe no longer matches');
+    return recipe.replace(install[0],
+        'COPY docker/php/dependency-preview-pcov /tmp/pcov-preview\n' +
+        'RUN apt-get update && apt-get install -y --no-install-recommends $PHPIZE_DEPS \\\n' +
+        '    && cd /tmp/pcov-preview && phpize && ./configure --enable-pcov \\\n' +
+        '    && make -j2 && make install && docker-php-ext-enable pcov \\\n' +
+        '    && php -r \'if (phpversion("pcov") !== getenv("PCOV_VERSION") || !function_exists("pcov\\\\export") || extension_loaded("xdebug")) exit(1);\'')
+        .replace(tools[0], 'RUN mkdir /opt/pcov-tools && cp -a /tmp/pcov-preview/tools/. /opt/pcov-tools/ && rm -rf /tmp/pcov-preview');
+}
 function prepare(root = process.cwd()) {
     const entries = configuration(root);
     if (!Object.keys(entries).length) return;
@@ -90,18 +104,7 @@ function prepare(root = process.cwd()) {
             fs.mkdirSync(target, {recursive: true});
             run('tar', ['-xf', archive, '-C', target]);
             const file = path.join(root, 'compose/docker/php/Dockerfile');
-            let recipe = fs.readFileSync(file, 'utf8');
-            const start = recipe.indexOf('# Current supported installation mechanism');
-            const end = recipe.indexOf('# Magento is installed', start);
-            assert.ok(start >= 0 && end > start, 'PCOV preview recipe no longer matches');
-            recipe = recipe.slice(0, start) +
-                'COPY docker/php/dependency-preview-pcov /tmp/pcov-preview\n' +
-                'RUN apt-get update && apt-get install -y --no-install-recommends $PHPIZE_DEPS \\\n' +
-                '    && cd /tmp/pcov-preview && phpize && ./configure --enable-pcov \\\n' +
-                '    && make -j2 && make install && docker-php-ext-enable pcov \\\n' +
-                '    && php -r \'if (phpversion("pcov") !== getenv("PCOV_VERSION") || !function_exists("pcov\\\\export") || extension_loaded("xdebug")) exit(1);\'\n' +
-                'RUN mkdir /opt/pcov-tools && cp -a /tmp/pcov-preview/tools/. /opt/pcov-tools/ && rm -rf /tmp/pcov-preview\n' + recipe.slice(end);
-            fs.writeFileSync(file, recipe);
+            fs.writeFileSync(file, pcovRecipe(fs.readFileSync(file, 'utf8')));
         }
         result[key] = {...entry, tree, archiveSha256: createHash('sha256').update(fs.readFileSync(archive)).digest('hex')};
     }
@@ -109,5 +112,5 @@ function prepare(root = process.cwd()) {
     fs.writeFileSync(path.join(root, evidenceFile), JSON.stringify(result, null, 2) + '\n');
     console.log(JSON.stringify({dependencyPreviews: result}, null, 2));
 }
-module.exports = {configuration, verifyEvidence, evidence};
+module.exports = {configuration, verifyEvidence, evidence, pcovRecipe};
 if (require.main === module) prepare();
