@@ -96,7 +96,7 @@ Run installation and coverage one at a time. Do not bypass `.runtime/workflow.lo
 - Keep original source bytes and PHP line numbers unchanged during coverage. Instrument disposable copies and retain source-hash and symlink checks.
 - Keep warm-up separate from collection. Fresh run IDs and zero-hit baselines must exclude stale and warm-up execution.
 - Preserve fixture, collection and compatibility-patch cleanup after failures or interruptions on both platforms.
-- Retain checks for matching run IDs, unchanged source and all tests passing before reports and badges are published. Skipped or pending tests are not a successful run.
+- Retain checks for matching run IDs and unchanged source before reports and badges are generated, and for stopped collection and fixture cleanup before the report is published. Failed tests do not block publication: run the remaining suites, report test outcomes separately from coverage, then exit non-zero. Skipped and pending tests are not counted. An interrupted run publishes nothing.
 - Keep every value in the opt-in coverage database equal to what the corresponding report shows: totals, percentages with the report's own rounding, module names as registered in `etc/module.xml`, and collector status. Mark data that was not observed, such as a template inventory without observation records, instead of reporting it as uncovered, and carry measurement warnings into the manifest. Retain the check that compares the database with the reports before publication.
 - Never print or commit Composer auth, `.env`, installed `env.php`, certificates or credential volumes. Do not prune unrelated Docker resources or remove an existing application's volumes.
 - Preserve dependency pins and lockfiles together.

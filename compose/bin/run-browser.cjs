@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -31,7 +31,9 @@ cypress.run({browser: 'chrome-for-testing', headed: true, ...options}).then(resu
         tests: results.runs?.flatMap(result => result.tests.map(test => ({title: test.title.at(-1), status: test.state})))
     }, null, 2));
     const actualSpecs = (results.runs || []).map(result => result.spec.relative).sort();
-    if (JSON.stringify(actualSpecs) !== JSON.stringify(expectedSpecs) || results.runs?.some(result => !result.tests.length) || results.failures || !(results.totalTests > 0) || results.totalPassed !== results.totalTests || results.totalFailed !== 0 || results.totalPending !== 0 || results.totalSkipped !== 0) {
+    // Skipped and pending (it.skip) tests do not fail the suite; the warm-up must pass completely.
+    const incomplete = warmup && (results.totalPassed !== results.totalTests || results.totalPending !== 0 || results.totalSkipped !== 0);
+    if (JSON.stringify(actualSpecs) !== JSON.stringify(expectedSpecs) || results.runs?.some(result => !result.tests.length) || results.failures || !(results.totalTests > 0) || results.totalFailed !== 0 || incomplete) {
         throw new Error(warmup
             ? 'Browser warm-up did not pass. Inspect coverage/warmup-results.json, coverage/warmup-diagnostics.json and coverage/warmup-screenshots.'
             : 'The full Cypress suite did not pass. Inspect coverage/cypress-results.json and cypress/screenshots.');

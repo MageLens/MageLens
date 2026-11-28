@@ -96,7 +96,7 @@ With the default domain and ports:
 | Magento Admin | https://magelens.test/admin/ |
 | Demonstration blog | https://magelens.test/blog/ |
 | Live test runner (Cypress or Playwright) | https://magelens.test:6080/ |
-| Combined coverage report, after a successful test run | https://magelens.test/media/coverage/index.html |
+| Combined coverage report, after a coverage run | https://magelens.test/media/coverage/index.html |
 
 Fresh installations create the Admin account `application` / `ApplicationOnly123456!`. Demo features and usage are documented in the [blog README](src/app/code/Application/Blog/README.md).
 
@@ -128,7 +128,7 @@ By default, the installer adds the domain to your hosts file and uses Mark Shust
 
 PHP coverage excludes emitted HTML and inline JavaScript. Template warnings identify unsupported directives, scripts or PHP-generated output. When a warning is present, the template percentage covers only the parts MageLens can measure.
 
-After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. A successful full run refreshes the test, PHP, JavaScript and template SVG badges in `coverage/badges/`. Pass `--update-readme` to update the badge section in this README. The combined index and `coverage/summary.json` include the XML percentage.
+After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. A successful full run refreshes the test, PHP, JavaScript and template SVG badges in `coverage/badges/`. Pass `--update-readme` to update the badge section in this README. The combined index and `coverage/summary.json` include the XML percentage. Failed tests do not stop the run: the report and badges are still published with the test results, and `./bin/run-coverage` then exits with an error naming the failed suites.
 
 To share coverage, run `./bin/export-coverage` and send only **`coverage/share.html`**. This standalone report contains coverage metrics and project-relative file paths. Keep the full `coverage/` directory private because it contains raw requests and test fixture data. [Export options](docs/coverage.md#reports-and-artifacts)
 

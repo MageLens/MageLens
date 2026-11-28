@@ -39,7 +39,7 @@ ISTANBUL_LIB_REPORT_VERSION: "3.0.1"
 ISTANBUL_REPORTS_VERSION: "3.2.0"
 NYC_VERSION: "18.0.0"
 # Validates the HTML source audited by mageLensValidateHtml in browser tests.
-HTML_VALIDATE_VERSION: "11.21.1"
+HTML_VALIDATE_VERSION: "11.23.0"
 # Renders self-contained offline coverage exports.
 MUSTACHE_VERSION: "4.2.0"
 
