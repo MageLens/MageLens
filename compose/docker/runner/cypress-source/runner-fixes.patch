@@ -1,3 +1,7 @@
+Copyright (c)  MageLens
+SPDX-License-Identifier: Elastic-2.0
+License: see LICENSE in the repository root.
+
 diff --git a/.node-version b/.node-version
 index ce62013c39aed63f656bb7ae41bdd45d81163ffe..229b3ce85a631ccd5991b25f75f414171ccc7942 100644
 --- a/.node-version
@@ -36,18 +40,6 @@ index b4643489376b08d3157d774675bf7c149fd1d023..cd5ccb37033ad64463e7fda358409782
      return 'full'
    }
 
-diff --git a/packages/network-interception/lib/ports/http-interception.ts b/packages/network-interception/lib/ports/http-interception.ts
-index 0e4ba96f29dbef6ece8e5f65f146ef63a7db880e..75d04d575ce17332758932def05bba65eac7bf76 100644
---- a/packages/network-interception/lib/ports/http-interception.ts
-+++ b/packages/network-interception/lib/ports/http-interception.ts
-@@ -12,6 +12,7 @@ export type HttpRequest = {
-   headers?: HttpHeaders
-   body?: HttpBody
-   resourceType?: ResourceType
-+  responseTimeout?: number
-   // Request-stage route-match result, threaded through to the response pause
-   // so classification agrees with the interception that actually ran.
-   hadMatchingRoutes?: boolean
 diff --git a/packages/network-interception/test/unit/document-preparation.spec.ts b/packages/network-interception/test/unit/document-preparation.spec.ts
 index 6e81c43798466f48c1ca3656d2a9828c0d869327..2c02f19a9847f7240a6b559691de54a788196e50 100644
 --- a/packages/network-interception/test/unit/document-preparation.spec.ts
