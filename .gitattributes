@@ -14,6 +14,7 @@
 /LICENSE export-ignore
 /LICENSE.license export-ignore
 /bootstrap.sh export-ignore
+/migrate-checkout.sh export-ignore
 /package.json export-ignore
 /package.json.license export-ignore
 /package-lock.json export-ignore
