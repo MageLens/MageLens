@@ -36,61 +36,48 @@ function fixture(t, failure, arch = 'x64') {
     const config = {afterPack: './scripts/after-pack-hook.js', linux: {executableName: 'Cypress'}};
     fs.writeFileSync(path.join(root, 'electron-builder.json'), JSON.stringify(config));
     const requests = [];
-    let metadataWrites = 0;
     const dependencies = {
-        version: '41.7.0', platform: 'linux', arch, snapshot: {binDir: path.join(root, 'snapshot-tools')},
+        version: '43.8.4', platform: 'linux', arch,
         async downloadArtifact(options) {
             requests.push(options);
             if (failure === 'checksum') throw new Error('Checksum mismatch');
             return options.artifactName;
         },
         async extractZip(artifact, {dir}) {
+            if (failure === 'extraction') throw new Error('Invalid archive');
             fs.mkdirSync(dir, {recursive: true});
-            if (artifact === 'electron') {
-                fs.writeFileSync(path.join(dir, 'version'), failure === 'version' ? '41.6.0' : '41.7.0');
-                fs.writeFileSync(path.join(dir, 'electron'), 'binary', {mode: 0o755});
-            } else {
-                fs.writeFileSync(path.join(dir, 'mksnapshot'), 'binary');
-                if (failure !== 'missing') fs.writeFileSync(path.join(dir, 'v8_context_snapshot_generator'), 'binary');
+            assert.equal(artifact, 'electron', 'Cypress 16.4 no longer uses separate snapshot tools');
+            fs.writeFileSync(path.join(dir, 'version'), failure === 'version' ? '43.8.3' : '43.8.4');
+            if (failure === 'directory') fs.mkdirSync(path.join(dir, 'electron'));
+            else if (failure !== 'missing') {
+                fs.writeFileSync(path.join(dir, 'electron'), failure === 'empty' ? '' : 'binary', {
+                    mode: failure === 'permissions' ? 0o644 : 0o755
+                });
             }
-        },
-        async writeMetadata() { metadataWrites++; }
+        }
     };
-    return {root, config, dependencies, requests, writes: () => metadataWrites};
+    return {root, config, dependencies, requests};
 }
 
-test('Cypress packaging uses the verified exact-version distribution and retains all hooks', async t => {
-    const f = fixture(t);
-    await prepareElectron(f.root, f.dependencies);
-    assert.deepEqual(f.requests, ['electron', 'mksnapshot'].map(artifactName => ({
-        artifactName, version: '41.7.0', platform: 'linux', arch: 'x64',
-        downloadOptions: {timeout: {request: 120000}, retry: {limit: 0}}
-    })));
-    assert.equal(f.writes(), 1);
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'electron-builder.json'))), {
-        ...f.config, electronDist: path.join(f.root, '.magelens-electron')
+for (const arch of ['x64', 'arm64']) {
+    test(`Cypress ${arch} packaging uses the verified exact-version distribution and retains all hooks`, async t => {
+        const f = fixture(t, undefined, arch);
+        await prepareElectron(f.root, f.dependencies);
+        assert.deepEqual(f.requests, [{
+            artifactName: 'electron', version: '43.8.4', platform: 'linux', arch,
+            downloadOptions: {timeout: {request: 120000}, retry: {limit: 0}}
+        }]);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'electron-builder.json'))), {
+            ...f.config, electronDist: path.join(f.root, '.magelens-electron')
+        });
     });
-});
+}
 
-test('Cypress arm64 packaging verifies the exact Electron distribution without x64 snapshot tools', async t => {
-    const f = fixture(t, undefined, 'arm64');
-    await prepareElectron(f.root, f.dependencies);
-    assert.deepEqual(f.requests, [{
-        artifactName: 'electron', version: '41.7.0', platform: 'linux', arch: 'arm64',
-        downloadOptions: {timeout: {request: 120000}, retry: {limit: 0}}
-    }]);
-    assert.equal(f.writes(), 0);
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'electron-builder.json'))), {
-        ...f.config, electronDist: path.join(f.root, '.magelens-electron')
-    });
-});
-
-for (const failure of ['checksum', 'version', 'missing']) {
-    test(`Cypress rejects ${failure} failures before marking snapshot tools ready`, async t => {
+for (const failure of ['checksum', 'extraction', 'version', 'missing', 'empty', 'directory', 'permissions']) {
+    test(`Cypress rejects ${failure} failures before selecting the Electron distribution`, async t => {
         const f = fixture(t, failure);
         await assert.rejects(prepareElectron(f.root, f.dependencies));
-        assert.equal(f.writes(), 0);
         assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'electron-builder.json'))), f.config);
-        assert.ok(f.requests.every(request => request.version === '41.7.0'), 'Never fall back to a different Electron patch');
+        assert.ok(f.requests.every(request => request.version === '43.8.4'), 'Never fall back to a different Electron patch');
     });
 }

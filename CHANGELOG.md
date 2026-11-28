@@ -8,6 +8,7 @@ License: see LICENSE in the repository root.
 
 ## 1.11.0 - Unreleased
 
+- Update Cypress to 16.4.0 for Chromium interception and large-response hang fixes, faster startup and lower memory use, retaining source fixes and all eleven runner regressions.
 - Pin the MageLens PCOV extension and coverage tools to 2.1.4, which adds Linux NTS support for PHP 8.6.
 - Update Chrome for Testing to 158.0.8127.88 for the critical Variations input-validation security fix, with verified amd64 and arm64 archives.
 - Update Composer in the PHP image to 2.11.3 for code-execution, console-markup and credential-redaction security fixes.

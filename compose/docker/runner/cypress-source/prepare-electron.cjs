@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Private Entrepreneur Vitalii Boiko
+// Copyright (c)  MageLens
 // SPDX-License-Identifier: Elastic-2.0
 // License: see LICENSE in the repository root.
 
@@ -22,7 +22,7 @@ async function retryDownload(download, wait = delay) {
 }
 
 async function prepareElectron(root, dependencies) {
-    const {version, platform, arch, downloadArtifact, extractZip, snapshot, writeMetadata} = dependencies;
+    const {version, platform, arch, downloadArtifact, extractZip} = dependencies;
     const directory = path.join(root, '.magelens-electron');
     // @electron/get validates release checksums. Do not retry checksum errors,
     // extraction errors or substitute a different Electron patch version.
@@ -33,24 +33,16 @@ async function prepareElectron(root, dependencies) {
     if (fs.readFileSync(path.join(directory, 'version'), 'utf8').trim() !== version) {
         throw new Error('Downloaded Electron version differs from the pinned source');
     }
-    fs.accessSync(path.join(directory, 'electron'), fs.constants.X_OK);
-    if (arch === 'x64') {
-        const snapshotZip = await download('mksnapshot');
-        await extractZip(snapshotZip, {dir: snapshot.binDir});
-        // Upstream syncAndRun logs download failures but still writes metadata. Only
-        // mark an exact-version download ready after its required tools are present.
-        for (const executable of ['mksnapshot', 'v8_context_snapshot_generator']) {
-            const file = path.join(snapshot.binDir, executable);
-            if (!fs.statSync(file).isFile() || fs.statSync(file).size === 0) throw new Error(`Missing snapshot tool: ${executable}`);
-            fs.chmodSync(file, 0o755);
-            fs.accessSync(file, fs.constants.X_OK);
-        }
-        await writeMetadata();
-    }
+    const executable = path.join(directory, 'electron');
+    const stat = fs.statSync(executable);
+    if (!stat.isFile() || stat.size === 0) throw new Error('Missing Electron executable');
+    fs.accessSync(executable, fs.constants.X_OK);
     const configFile = path.join(root, 'electron-builder.json');
     const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
     // Supply the verified distribution through electron-builder's normal input.
-    // Its packaging hooks, snapshot generation and integrity checks still run.
+    // Cypress 16.4 generates its startup code cache in the upstream afterPack
+    // hook; the former electron-mksnapshot tooling is no longer shipped.
+    // Keep those packaging hooks and integrity checks intact.
     config.electronDist = directory;
     fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
 }
@@ -61,13 +53,10 @@ async function main(root) {
     }
     const upstream = createRequire(path.join(root, 'package.json'));
     const version = upstream('./packages/electron').getElectronVersion();
-    const {Metadata} = upstream('./tooling/electron-mksnapshot/dist/metadata');
     await prepareElectron(root, {
         version, platform: process.platform, arch: process.arch,
         downloadArtifact: upstream('@electron/get').downloadArtifact,
-        extractZip: upstream('extract-zip'),
-        snapshot: upstream('./tooling/electron-mksnapshot/dist/config').config,
-        writeMetadata: () => new Metadata(version).write()
+        extractZip: upstream('extract-zip')
     });
 }
 module.exports = {retryDownload, prepareElectron};

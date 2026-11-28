@@ -68,16 +68,12 @@ yarn workspace @packages/proxy check-ts
 yarn workspace @packages/network-interception check-ts
 yarn workspace @packages/server check-ts
 env -u ELECTRON_RUN_AS_NODE node scripts/binary.js build --version "$version" --platform linux
-# Fetch the exact Electron release and snapshot tools before packaging. Keep
-# download recovery separate from compilation, tests and snapshot generation.
+# Fetch the exact Electron release before packaging. Keep download recovery
+# separate from compilation, tests and upstream startup code-cache generation.
 node /input/prepare-electron.cjs "$PWD"
 case "$(node -p process.arch)" in
     x64) packaged=/build/tmp/cypress-build/linux/build/linux-unpacked ;;
-    arm64)
-        # Upstream Cypress packages linux-arm64 with DISABLE_SNAPSHOT_REQUIRE=1
-        # because Electron's mksnapshot tool does not run on Linux arm64.
-        export DISABLE_SNAPSHOT_REQUIRE=1
-        packaged=/build/tmp/cypress-build/linux/build/linux-arm64-unpacked ;;
+    arm64) packaged=/build/tmp/cypress-build/linux/build/linux-arm64-unpacked ;;
     *) echo 'Unsupported Cypress source-build architecture.' >&2; exit 1 ;;
 esac
 xvfb-run -a env -u ELECTRON_RUN_AS_NODE node scripts/binary.js package --version "$version" --platform linux
