@@ -51,17 +51,24 @@ function badge(type, percent) {
     const color = percent >= 80 ? '#4c1' : percent >= 50 ? '#a4a61d' : '#e05d44';
     return renderBadge(type, value, color);
 }
-function cypressBadge(results, runner = 'cypress') {
+// Skipped and pending tests are not counted: the outcome covers the executed tests only.
+function testOutcome(results) {
     const counts = ['totalTests', 'totalPassed', 'totalFailed', 'totalPending', 'totalSkipped'].map(key => results[key]);
-    if (counts.some(count => !Number.isSafeInteger(count) || count < 0) || !results.totalTests ||
+    if (counts.some(count => !Number.isSafeInteger(count) || count < 0) ||
         counts.slice(1).reduce((sum, count) => sum + count, 0) !== results.totalTests) {
-        throw new Error('Invalid Cypress result counts');
+        throw new Error('Invalid test result counts');
     }
-    const failed = results.totalFailed > 0 || results.failures > 0 || results.status === 'failed';
-    const passed = !failed && results.totalPassed === results.totalTests;
-    const percent = Number((100 * results.totalPassed / results.totalTests).toFixed(2));
-    const status = passed ? 'Passed' : failed ? 'Failed' : 'Incomplete';
-    return renderBadge(runner, `${percent}% (${results.totalPassed}/${results.totalTests}) - ${status}`,
-        passed ? '#4c1' : failed ? '#e05d44' : '#a4a61d');
+    const failed = results.totalFailed > 0 || results.failures > 0 || ![undefined, 'passed', 'finished'].includes(results.status);
+    return {status: failed ? 'failed' : 'passed', passed: results.totalPassed, failed: results.totalFailed,
+        failedTests: (results.tests || []).filter(test => ['failed', 'timedOut', 'interrupted'].includes(test.status)).map(test => test.title)};
 }
-module.exports = {replaceBadgeSection, setBadgeSection, badge, cypressBadge, formatPercent};
+function cypressBadge(results, runner = 'cypress') {
+    const outcome = testOutcome(results);
+    const executed = outcome.passed + outcome.failed;
+    if (!executed) throw new Error('Invalid Cypress result counts');
+    const percent = Number((100 * outcome.passed / executed).toFixed(2));
+    const passed = outcome.status === 'passed';
+    return renderBadge(runner, `${percent}% (${outcome.passed}/${executed}) - ${passed ? 'Passed' : 'Failed'}`,
+        passed ? '#4c1' : '#e05d44');
+}
+module.exports = {replaceBadgeSection, setBadgeSection, badge, cypressBadge, testOutcome, formatPercent};

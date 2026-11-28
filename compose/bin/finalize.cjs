@@ -6,7 +6,7 @@ const {readXmlJson} = require('./xml-report/json.cjs');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const {sourceHashes} = require('./prepare.cjs');
-const {badge, cypressBadge, setBadgeSection, formatPercent} = require('./badges.cjs');
+const {badge, cypressBadge, testOutcome, setBadgeSection, formatPercent} = require('./badges.cjs');
 const {writeIndex, templateLimitations} = require('./report-index.cjs');
 const {writeReport: writeHtmlValidationReport} = require('./html-validation.cjs');
 const {writeDatabase} = require('./report-database.cjs');
@@ -27,14 +27,18 @@ assert.ok(['cypress', 'playwright'].includes(runner));
 const label = runner === 'playwright' ? 'Playwright' : 'Cypress';
 const tests = read(`coverage/${runner}-results.json`);
 const cli = read('coverage/cli-results.json');
-for (const results of [tests, cli]) {
-    assert.equal(results.run, run.id);
-    assert.equal(results.totalPassed, results.totalTests);
-    assert.equal(results.totalFailed, 0);
-    assert.equal(results.totalPending, 0);
-    assert.equal(results.totalSkipped, 0);
+for (const results of [tests, cli]) assert.equal(results.run, run.id);
+// Test outcomes are reported separately from coverage; failed tests do not block publication.
+const outcomes = {[runner]: testOutcome(tests), cli: testOutcome(cli)};
+const exits = read('coverage/suite-status.json');
+assert.equal(exits.run, run.id);
+for (const [suite, results] of [[runner, tests], ['cli', cli]]) {
+    const name = suite === 'cli' ? 'CLI' : label;
+    // Without a failed test, a failed suite status means a runner error, which publishes nothing.
+    assert.ok((exits[suite] !== 0) === (results.totalFailed > 0) && (outcomes[suite].status === 'failed') === (results.totalFailed > 0),
+        `The ${name} suite ended with exit status ${exits[suite]} and run status ${results.status ?? 'none'} but reported ${results.totalFailed} failed tests`);
 }
-assert.ok(tests.totalTests > 0);
+assert.ok(outcomes[runner].passed + outcomes[runner].failed > 0, `No ${label} test was executed`);
 assert.equal(php.run, run.id);
 assert.ok(php.requests.length > 0, 'No current-run PHP requests were collected');
 assert.equal(php.commands.length, cli.commands, 'Missing or extra current-run CLI PHP coverage');
@@ -67,12 +71,17 @@ const htmlValidation = writeHtmlValidationReport(run);
 const limitations = templateLimitations(templates);
 // The coverage database is opt-in: it costs generation time and disk space on every run.
 if (includeMachineReport) writeDatabase({run, generatedAt, php, js, templates, templateLimitations: limitations, xml});
-fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, metrics, htmlValidation,
+fs.writeFileSync('coverage/summary.json', JSON.stringify({run: run.id, generatedAt, tests: outcomes, metrics, htmlValidation,
     templateLimitations: limitations}, null, 2));
-writeIndex({run, generatedAt, metrics, php, js, templates, xml, tests, cli, htmlValidation});
-if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${tests.totalPassed}/${tests.totalTests} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
+writeIndex({run, generatedAt, metrics, php, js, templates, xml, outcomes, htmlValidation});
+const executed = outcomes[runner].passed + outcomes[runner].failed;
+if (process.argv.includes('--update-readme')) setBadgeSection(`[![${label}: ${outcomes[runner].passed}/${executed} passed](coverage/badges/${runner}.svg)](coverage/index.html)\n` + Object.entries(metrics).filter(([type]) => type !== 'xml').map(([type, metric]) =>
     `[![${metric.label}: ${formatPercent(metric.percent)}](coverage/badges/${type}.svg)](coverage/${type}/index.html)`
 ).join('\n') + `\n\nFull ${label} run: \`${run.id}\` · ${generatedAt}`);
 fs.rmSync('coverage/.active-run', {force: true});
 console.log('Verified all reports, current PHP collection and unchanged original sources.');
 console.log(JSON.stringify(metrics, null, 2));
+for (const [suite, outcome] of Object.entries(outcomes).filter(([, outcome]) => outcome.status === 'failed')) {
+    console.error(`Failed ${suite === 'cli' ? 'CLI' : label} tests (${outcome.failed} of ${outcome.passed + outcome.failed}):\n` +
+        outcome.failedTests.map(title => `  - ${title}`).join('\n'));
+}

@@ -33,9 +33,23 @@ Use the same browser-based flows for **functional testing** by mocking external 
 
 ## Repository layout
 
-The installable project lives in [`compose/`](compose/). In a contributor checkout, run `cd compose` before `./install.sh`, `./bin/run-coverage` and other application commands. Bootstrap installations already place those files at the installed project root.
+The installable project lives in [`compose/`](compose/). For a fresh contributor checkout, run `cd compose` before `./install.sh`, `./bin/run-coverage` and other application commands. Bootstrap installations already place those files at the installed project root. If you installed from Git before the move, follow the migration below first.
 
 Maintenance instructions and CI qualification stay at the repository root: see [AGENTS.md](AGENTS.md) and [tests/README.md](tests/README.md). For application development, use [compose/AGENTS.md](compose/AGENTS.md).
+
+### Upgrade an installed Git checkout
+
+Back up the database and local files, including ignored files. Finish any install or coverage run. Before updating Git, run `./bin/application-compose down` from the old checkout root. Use plain `down` to retain the named database and Composer volumes.
+
+After updating Git, run the following from the repository root, before installing or running maintainer checks. The copy requires rsync and enough disk space for a second copy of the local application.
+
+```bash
+./migrate-checkout.sh && cd compose && ./bin/start && ./bin/magento --version
+```
+
+If you already updated Git with containers present, the helper prints their IDs and owning directories. For the IDs belonging to this checkout, run `docker stop <ids>` and then `docker rm <ids>`, without volume flags. Rerun the helper. If another checkout owns the project, resolve that ownership before continuing.
+
+The helper copies the Magento source, environment, runtime profile, generated commands, browser tests and coverage output. It pins the original Compose project name so the recreated services mount the existing database. If a destination file differs, reconcile the listed paths and rerun. The originals stay at the repository root. Review custom files outside the copied directories, links to external paths and absolute host paths in local overrides. Confirm your existing storefront data, domain and test suite from `compose/` before removing old copies.
 
 ## Quick start
 
@@ -102,7 +116,7 @@ With the default domain and ports:
 | Magento Admin | https://magelens.test/admin/ |
 | Demonstration blog | https://magelens.test/blog/ |
 | Live test runner (Cypress or Playwright) | https://magelens.test:6080/ |
-| Combined coverage report, after a successful test run | https://magelens.test/media/coverage/index.html |
+| Combined coverage report, after a coverage run | https://magelens.test/media/coverage/index.html |
 
 Fresh installations create the Admin account `application` / `ApplicationOnly123456!`. Demo features and usage are documented in the [blog README](compose/src/app/code/Application/Blog/README.md).
 
@@ -134,7 +148,7 @@ By default, the installer adds the domain to your hosts file and uses Mark Shust
 
 PHP coverage excludes emitted HTML and inline JavaScript. Template warnings identify unsupported directives, scripts or PHP-generated output. When a warning is present, the template percentage covers only the parts MageLens can measure.
 
-After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. A successful full run refreshes the test, PHP, JavaScript and template SVG badges in `coverage/badges/`. Pass `--update-readme` to update the badge section in this README. The combined index and `coverage/summary.json` include the XML percentage.
+After a successful run, open the URL printed by `./bin/run-coverage` for the combined view. It uses your configured Magento storefront URL and serves the complete report through `pub/media/coverage`. You can also open `coverage/index.html` directly on your machine. A successful full run refreshes the test, PHP, JavaScript and template SVG badges in `coverage/badges/`. Pass `--update-readme` to update the badge section in this README. The combined index and `coverage/summary.json` include the XML percentage. Failed tests do not stop the run: the report and badges are still published with the test results, and `./bin/run-coverage` then exits with an error naming the failed suites.
 
 To share coverage, run `./bin/export-coverage` and send only **`coverage/share.html`**. This standalone report contains coverage metrics and project-relative file paths. Keep the full `coverage/` directory private because it contains raw requests and test fixture data. [Export options](compose/docs/coverage.md#reports-and-artifacts)
 
