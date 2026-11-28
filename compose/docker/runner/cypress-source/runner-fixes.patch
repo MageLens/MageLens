@@ -191,30 +191,31 @@ index 7262ad85abe2e2759a1668e18ee03976a7093a37..995ca8471d377eac1f63689f5ff9ddf6
      const ctx = createCtx()
 
 diff --git a/packages/proxy/test/unit/http/request-middleware.spec.ts b/packages/proxy/test/unit/http/request-middleware.spec.ts
-index 9ce17576e9c151698a1424cbf441bb4cceb60eb4..e2c08c316318bc4d4261bd140a258c6e2003a462 100644
+index 9ce17576e9c151698a1424cbf441bb4cceb60eb4..731d626c7584dccd3d01e85aa8393b5af8767f5e 100644
 --- a/packages/proxy/test/unit/http/request-middleware.spec.ts
 +++ b/packages/proxy/test/unit/http/request-middleware.spec.ts
-@@ -506,6 +506,73 @@ describe('http/request-middleware', () => {
+@@ -506,6 +506,74 @@ describe('http/request-middleware', () => {
    describe('MaybeAttachCrossOriginCookies', () => {
      const { MaybeAttachCrossOriginCookies } = RequestMiddleware
 
-+    it.each([
++    // Cypress preserves complete native headers for both same-origin and same-site navigations.
++    it.each(['same-origin', 'same-site'].flatMap((fetchSite) => [
 +      ['message=updated'],
 +      ['message='],
 +      [],
 +      ['message=path-specific', 'message=domain-wide'],
-+    ])('preserves primary-origin browser cookies %j instead of replaying the jar', async (...browserCookies) => {
++    ].map((browserCookies) => ({ fetchSite, browserCookies }))))('preserves primary-origin browser cookies $browserCookies for $fetchSite instead of replaying the jar', async ({ fetchSite, browserCookies }) => {
 +      const ctx = await getContext(browserCookies, ['message=previous'])
 +
 +      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
-+      ctx.req.headers['sec-fetch-site'] = 'same-origin'
++      ctx.req.headers['sec-fetch-site'] = fetchSite
 +
 +      await testMiddleware([MaybeAttachCrossOriginCookies], ctx)
 +
 +      expect(ctx.req.headers.cookie).toEqual(browserCookies.join('; ') || undefined)
 +    })
 +
-+    it.each(['cross-site', 'same-site', 'none', undefined])('retains simulated cookies on a %s redirect chain', async (fetchSite) => {
++    it.each(['cross-site', 'none', undefined])('retains simulated cookies on a %s redirect chain', async (fetchSite) => {
 +      const ctx = await getContext([], ['message=previous'])
 +
 +      ctx.remoteStates.isPrimarySuperDomainOrigin.mockReturnValue(true)
