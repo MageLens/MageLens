@@ -9,6 +9,10 @@ License: see LICENSE in the repository root.
 ## 1.11.0 - Unreleased
 
 - Update Cypress to 16.4.0 for Chromium interception and large-response hang fixes, faster startup and lower memory use, retaining source fixes and all eleven runner regressions.
+- Update Chrome for Testing to 158.0.8127.88 for the critical Variations input-validation security fix, with verified amd64 and arm64 archives.
+- Update Composer in the PHP image to 2.11.3 for code-execution, console-markup and credential-redaction security fixes.
+- Update MagentoTemplateCoverage to 2.1.5 to decode interrupted HTML attribute references consistently with parse5.
+- Update HTML-validate to 11.23.0, including the fix for catastrophic backtracking when auditing HTML with validation directives.
 - Add `./bin/run-coverage --include-machine-report`, which writes `coverage/report.sqlite`, a versioned SQLite database of every eligible PHP, JavaScript, template and XML unit with its observations, the test attempts that reached each unit when per-test attribution was collected, views for run, module and file totals and uncovered units, the formal `coverage/schema.sql`, and a coverage-database skill for coding agents. Existing exports are unchanged, and runs without the flag write no database. ([#68](https://github.com/MageLens/MageLens/issues/68))
 
 ## 1.10.0 - 2026-11-24
