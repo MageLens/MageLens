@@ -8,6 +8,7 @@ License: see LICENSE in the repository root.
 
 ## 1.11.0 - Unreleased
 
+- Update Chrome for Testing to 158.0.8127.88 for the critical Variations input-validation security fix, with verified amd64 and arm64 archives.
 - Update Composer in the PHP image to 2.11.3 for code-execution, console-markup and credential-redaction security fixes.
 - Update MagentoTemplateCoverage to 2.1.5 to decode interrupted HTML attribute references consistently with parse5.
 - Update HTML-validate to 11.23.0, including the fix for catastrophic backtracking when auditing HTML with validation directives.
